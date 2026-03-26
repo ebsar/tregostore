@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/static/index.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/index.py?_route=api/:path*"
     },
@@ -11,91 +15,95 @@
     },
     {
       "source": "/about",
-      "destination": "/about.html"
+      "destination": "/static/about.html"
     },
     {
       "source": "/kerko",
-      "destination": "/search.html"
+      "destination": "/static/search.html"
     },
     {
       "source": "/profili-biznesit",
-      "destination": "/business-profile-public.html"
+      "destination": "/static/business-profile-public.html"
     },
     {
       "source": "/login",
-      "destination": "/login.html"
+      "destination": "/static/login.html"
     },
     {
       "source": "/forgot-password",
-      "destination": "/forgot-password.html"
+      "destination": "/static/forgot-password.html"
     },
     {
       "source": "/signup",
-      "destination": "/signup.html"
+      "destination": "/static/signup.html"
     },
     {
       "source": "/verifiko-email",
-      "destination": "/verify-email.html"
+      "destination": "/static/verify-email.html"
     },
     {
       "source": "/biznesi-juaj",
-      "destination": "/business-dashboard.html"
+      "destination": "/static/business-dashboard.html"
     },
     {
       "source": "/llogaria",
-      "destination": "/account.html"
+      "destination": "/static/account.html"
     },
     {
       "source": "/te-dhenat-personale",
-      "destination": "/personal-data.html"
+      "destination": "/static/personal-data.html"
     },
     {
       "source": "/adresat",
-      "destination": "/addresses.html"
+      "destination": "/static/addresses.html"
     },
     {
       "source": "/porosite",
-      "destination": "/orders.html"
+      "destination": "/static/orders.html"
     },
     {
       "source": "/porosite-e-biznesit",
-      "destination": "/business-orders.html"
+      "destination": "/static/business-orders.html"
     },
     {
       "source": "/ndrysho-fjalekalimin",
-      "destination": "/change-password.html"
+      "destination": "/static/change-password.html"
     },
     {
       "source": "/produkti",
-      "destination": "/product-detail.html"
+      "destination": "/static/product-detail.html"
     },
     {
       "source": "/wishlist",
-      "destination": "/wishlist.html"
+      "destination": "/static/wishlist.html"
     },
     {
       "source": "/cart",
-      "destination": "/cart.html"
+      "destination": "/static/cart.html"
     },
     {
       "source": "/adresa-e-porosise",
-      "destination": "/checkout-address.html"
+      "destination": "/static/checkout-address.html"
     },
     {
       "source": "/menyra-e-pageses",
-      "destination": "/payment-options.html"
+      "destination": "/static/payment-options.html"
     },
     {
       "source": "/kafshet-shtepiake",
-      "destination": "/pets.html"
+      "destination": "/static/pets.html"
     },
     {
       "source": "/admin-products",
-      "destination": "/admin-products.html"
+      "destination": "/static/admin-products.html"
     },
     {
       "source": "/bizneset-e-regjistruara",
-      "destination": "/registered-businesses.html"
+      "destination": "/static/registered-businesses.html"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/static/:path*"
     }
   ]
 }
