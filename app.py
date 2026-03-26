@@ -28,6 +28,7 @@ SCHEMA_PATH = BASE_DIR / "schema.sql"
 POSTGRES_SCHEMA_PATH = BASE_DIR / "schema_postgres.sql"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SESSION_COOKIE_NAME = "session_token"
+SESSION_MAX_AGE_SECONDS = 86400
 PAGE_ROUTES = {
     "/": "/index.html",
     "/about": "/about.html",
@@ -232,8 +233,6 @@ ORDER_ITEM_SELECT_COLUMNS = """
     quantity,
     created_at
 """
-SESSIONS: dict[str, int] = {}
-
 
 def load_local_env_file() -> None:
     env_path = BASE_DIR / ".env"
@@ -2592,38 +2591,99 @@ def can_manage_product(user: sqlite3.Row, product: sqlite3.Row) -> bool:
 
 def create_session(user_id: int) -> str:
     session_token = secrets.token_urlsafe(32)
-    SESSIONS[session_token] = user_id
+    expires_at = datetime_to_storage_text(utc_now() + timedelta(seconds=SESSION_MAX_AGE_SECONDS))
+
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            DELETE FROM user_sessions
+            WHERE expires_at <= ?
+            """,
+            (datetime_to_storage_text(utc_now()),),
+        )
+        connection.execute(
+            """
+            INSERT INTO user_sessions (token, user_id, expires_at)
+            VALUES (?, ?, ?)
+            """,
+            (session_token, user_id, expires_at),
+        )
+
     return session_token
 
 
 def delete_session(session_token: str | None) -> None:
     if session_token:
-        SESSIONS.pop(session_token, None)
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                DELETE FROM user_sessions
+                WHERE token = ?
+                """,
+                (session_token,),
+            )
 
 
 def delete_sessions_for_user(user_id: int) -> None:
-    expired_tokens = [
-        session_token
-        for session_token, session_user_id in SESSIONS.items()
-        if session_user_id == user_id
-    ]
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            DELETE FROM user_sessions
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
 
-    for session_token in expired_tokens:
-        delete_session(session_token)
+
+def fetch_session_user_id(session_token: str) -> int | None:
+    now_value = utc_now()
+
+    with get_db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, expires_at
+            FROM user_sessions
+            WHERE token = ?
+            LIMIT 1
+            """,
+            (session_token,),
+        ).fetchone()
+
+        if not row:
+            return None
+
+        expires_at = parse_storage_datetime(row["expires_at"])
+        if not expires_at or expires_at <= now_value:
+            connection.execute(
+                """
+                DELETE FROM user_sessions
+                WHERE token = ?
+                """,
+                (session_token,),
+            )
+            return None
+
+        return int(row["user_id"])
 
 
 def build_session_cookie(session_token: str) -> str:
-    return (
+    cookie = (
         f"{SESSION_COOKIE_NAME}={session_token}; "
-        "HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
+        f"HttpOnly; Path=/; SameSite=Lax; Max-Age={SESSION_MAX_AGE_SECONDS}"
     )
+    if IS_VERCEL:
+        cookie += "; Secure"
+    return cookie
 
 
 def build_expired_session_cookie() -> str:
-    return (
+    cookie = (
         f"{SESSION_COOKIE_NAME}=; "
         "HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
     )
+    if IS_VERCEL:
+        cookie += "; Secure"
+    return cookie
 
 
 def parse_session_token(cookie_header: str | None) -> str | None:
@@ -3017,13 +3077,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "message": "U kyqe me sukses.",
-                "redirectTo": (
-                    "/admin-products"
-                    if user["role"] == "admin"
-                    else "/biznesi-juaj"
-                    if user["role"] == "business"
-                    else "/"
-                ),
+                "redirectTo": "/",
                 "user": serialize_user(user),
             },
             headers={"Set-Cookie": build_session_cookie(session_token)},
@@ -5626,12 +5680,12 @@ class AppHandler(SimpleHTTPRequestHandler):
     def get_session_token(self) -> str | None:
         return parse_session_token(self.headers.get("Cookie"))
 
-    def get_current_user(self) -> sqlite3.Row | None:
+    def get_current_user(self):
         session_token = self.get_session_token()
         if not session_token:
             return None
 
-        user_id = SESSIONS.get(session_token)
+        user_id = fetch_session_user_id(session_token)
         if not user_id:
             return None
 

@@ -16,6 +16,20 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS user_sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id
+    ON user_sessions(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
+    ON user_sessions(expires_at);
+
 CREATE TABLE IF NOT EXISTS email_verification_codes (
     user_id INTEGER PRIMARY KEY,
     code_hash TEXT NOT NULL,
