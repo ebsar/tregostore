@@ -3316,8 +3316,6 @@ function initializeChangePasswordPage() {
 function initializeHomePage() {
   const promoTrack = document.getElementById("home-promo-track");
   const promoDots = document.getElementById("home-promo-dots");
-  const promoPrevButton = document.getElementById("home-promo-prev");
-  const promoNextButton = document.getElementById("home-promo-next");
   const promoViewport = promoTrack.closest(".home-promo-viewport");
   const productsStatusElement = document.getElementById("home-products-status");
   const messageElement = document.getElementById("home-page-message");
@@ -3328,8 +3326,6 @@ function initializeHomePage() {
   if (
     !promoTrack ||
     !promoDots ||
-    !promoPrevButton ||
-    !promoNextButton ||
     !promoViewport ||
     !productsStatusElement ||
     !messageElement ||
@@ -3391,14 +3387,6 @@ function initializeHomePage() {
       await Promise.all([loadProducts(), loadFeaturedBusinesses()]);
       grid.addEventListener("click", handleGridAction);
       window.addEventListener("resize", handleGridResize);
-      promoPrevButton.addEventListener("click", () => {
-        goToSlide(currentSlideIndex - 1);
-        restartPromoAutoplay();
-      });
-      promoNextButton.addEventListener("click", () => {
-        goToSlide(currentSlideIndex + 1);
-        restartPromoAutoplay();
-      });
       promoDots.addEventListener("click", handleDotClick);
       promoViewport.addEventListener("touchstart", handlePromoTouchStart, { passive: true });
       promoViewport.addEventListener("touchend", handlePromoTouchEnd, { passive: true });

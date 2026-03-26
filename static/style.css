@@ -1105,7 +1105,7 @@ body[data-page="home"] .home-hero .home-hero-content {
 .home-promo-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 14px;
 }
 
@@ -1132,28 +1132,6 @@ body[data-page="home"] .home-hero .home-hero-content {
 .home-promo-dot.active {
   transform: scale(1.18);
   background: linear-gradient(180deg, #ff8b20, #f26700);
-}
-
-.home-promo-arrow {
-  min-width: 112px;
-  min-height: 46px;
-  padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.74);
-  border-radius: 999px;
-  color: #5d4337;
-  font-weight: 800;
-  cursor: pointer;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 241, 233, 0.44)),
-    linear-gradient(135deg, rgba(255, 210, 176, 0.18), rgba(255, 255, 255, 0.08));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    0 14px 24px rgba(171, 146, 138, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.home-promo-arrow:hover {
-  transform: translateY(-1px);
 }
 
 .home-collection-header {
