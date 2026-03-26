@@ -127,9 +127,12 @@
           </section>
 
           <section id="business-product-form-section" class="card admin-form-card" hidden>
-            <h2>Shto artikull te ri</h2>
+            <h2 id="business-product-form-title">Shto artikull te ri</h2>
             <p id="business-products-note" class="section-text">
               Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.
+            </p>
+            <p id="business-product-edit-state" class="admin-edit-state" hidden>
+              Po editon nje artikull te biznesit tend. Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
             </p>
 
             <form id="business-product-form" class="auth-form">
@@ -210,7 +213,10 @@
                 <textarea name="description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
               </label>
 
-              <button id="business-product-submit" type="submit">Ruaje artikullin</button>
+              <div class="auth-form-actions">
+                <button id="business-product-submit" type="submit">Ruaje artikullin</button>
+                <button id="business-product-cancel" class="button-secondary" type="button" hidden>Anulo editimin</button>
+              </div>
             </form>
 
             <div id="business-product-form-message" class="form-message" role="status" aria-live="polite"></div>

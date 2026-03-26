@@ -2889,6 +2889,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/products":
             self.handle_create_product()
             return
+        if path == "/api/products/update":
+            self.handle_update_product()
+            return
         if path == "/api/products/delete":
             self.handle_delete_product()
             return
@@ -4284,6 +4287,106 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "message": "Artikulli u ruajt me sukses.",
+                "product": serialize_product(product_row),
+            },
+        )
+
+    def handle_update_product(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per ta menaxhuar produktin."},
+            )
+            return
+
+        if user["role"] not in {"admin", "business"}:
+            self.send_json(
+                403,
+                {
+                    "ok": False,
+                    "message": "Vetem admin ose biznes mund ta editoje produktin.",
+                },
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        product_id_errors, product_id = parse_product_id(payload)
+        if product_id_errors or product_id is None:
+            self.send_json(400, {"ok": False, "errors": product_id_errors})
+            return
+
+        product = fetch_product_by_id(product_id)
+        if not product:
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        if not can_manage_product(user, product):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Nuk ke akses ta menaxhosh kete produkt."},
+            )
+            return
+
+        errors, normalized = validate_product_payload(payload)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE products
+                SET
+                    title = ?,
+                    description = ?,
+                    price = ?,
+                    image_path = ?,
+                    image_gallery = ?,
+                    category = ?,
+                    product_type = ?,
+                    size = ?,
+                    color = ?,
+                    stock_quantity = ?
+                WHERE id = ?
+                """,
+                (
+                    normalized["title"],
+                    normalized["description"],
+                    normalized["price"],
+                    normalized["imagePath"],
+                    json.dumps(normalized["imageGallery"], ensure_ascii=False),
+                    normalized["category"],
+                    normalized["productType"],
+                    normalized["size"],
+                    normalized["color"],
+                    normalized["stockQuantity"],
+                    product_id,
+                ),
+            )
+
+            product_row = connection.execute(
+                """
+                SELECT
+                """
+                + PRODUCT_SELECT_COLUMNS
+                + """
+                FROM products
+                WHERE id = ?
+                """,
+                (product_id,),
+            ).fetchone()
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Artikulli u perditesua me sukses.",
                 "product": serialize_product(product_row),
             },
         )

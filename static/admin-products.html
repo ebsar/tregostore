@@ -67,9 +67,12 @@
 
         <div class="admin-products-layout">
           <section id="admin-form-section" class="card admin-form-card" hidden>
-            <h2>Shto artikull te ri</h2>
-            <p class="section-text">
+            <h2 id="admin-product-form-title">Shto artikull te ri</h2>
+            <p id="admin-product-form-intro" class="section-text">
               Zgjidh seksionin sipas menus se faqes, pastaj kategorine e produktit. Madhesia shfaqet vetem per veshjet. Fotoja e pare do te dale si cover ne kartat e produktit.
+            </p>
+            <p id="admin-product-edit-state" class="admin-edit-state" hidden>
+              Po editon nje artikull ekzistues. Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
             </p>
 
             <form id="product-form" class="auth-form">
@@ -150,7 +153,10 @@
                 <textarea name="description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
               </label>
 
-              <button id="product-submit-button" type="submit">Ruaje artikullin</button>
+              <div class="auth-form-actions">
+                <button id="product-submit-button" type="submit">Ruaje artikullin</button>
+                <button id="product-cancel-button" class="button-secondary" type="button" hidden>Anulo editimin</button>
+              </div>
             </form>
 
             <div id="product-form-message" class="form-message" role="status" aria-live="polite"></div>

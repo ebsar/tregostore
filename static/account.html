@@ -61,10 +61,15 @@
 
         <div class="account-layout">
           <aside class="card account-sidebar">
-            <a class="account-nav-link" href="/te-dhenat-personale">Te dhenat personale</a>
-            <a class="account-nav-link" href="/adresat">Adresat</a>
-            <a class="account-nav-link" href="/porosite">Porosite</a>
-            <a class="account-nav-link" href="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</a>
+            <div id="account-role-links" class="account-nav-group" hidden></div>
+            <div class="account-nav-group">
+              <p class="section-label account-nav-label">Opsionet</p>
+              <a class="account-nav-link" href="/te-dhenat-personale">Te dhenat personale</a>
+              <a class="account-nav-link" href="/adresat">Adresat</a>
+              <a class="account-nav-link" href="/porosite">Porosite</a>
+              <a class="account-nav-link" href="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</a>
+            </div>
+            <button id="account-logout-button" class="account-nav-link account-nav-link-button" type="button">Shkycu</button>
           </aside>
 
           <div class="account-sections">

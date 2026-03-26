@@ -244,6 +244,31 @@ function initializeSiteNavigation() {
   }
 
   const isMobileViewport = () => window.matchMedia("(max-width: 920px)").matches;
+  const bindTapToggle = (element, handler) => {
+    let handledByTouch = false;
+
+    element.addEventListener(
+      "touchend",
+      (event) => {
+        handledByTouch = true;
+        event.preventDefault();
+        handler(event);
+        window.setTimeout(() => {
+          handledByTouch = false;
+        }, 320);
+      },
+      { passive: false },
+    );
+
+    element.addEventListener("click", (event) => {
+      if (handledByTouch) {
+        return;
+      }
+
+      handler(event);
+    });
+  };
+
   const closeExpandedNavPanels = () => {
     siteNav.querySelectorAll(".nav-dropdown").forEach((dropdown) => {
       dropdown.classList.remove("open");
@@ -300,7 +325,7 @@ function initializeSiteNavigation() {
   navLinks.innerHTML = renderPrimaryNavigation();
   initializePrimaryNavDropdowns(navLinks);
 
-  mobileToggle.addEventListener("click", () => {
+  bindTapToggle(mobileToggle, () => {
     updateMobileMenuState(!siteNav.classList.contains("mobile-menu-open"));
   });
 
@@ -414,7 +439,13 @@ function initializeSiteNavigation() {
       return;
     }
 
-    trigger.addEventListener("click", async () => {
+    bindTapToggle(trigger, () => {
+      if (isMobileViewport()) {
+        updateMobileMenuState(false);
+        window.location.href = "/llogaria";
+        return;
+      }
+
       const isOpen = !panel.hidden;
       panel.hidden = isOpen;
       trigger.setAttribute("aria-expanded", isOpen ? "false" : "true");
@@ -497,6 +528,31 @@ function initializePrimaryNavDropdowns(navLinks) {
     return;
   }
 
+  const bindTapToggle = (element, handler) => {
+    let handledByTouch = false;
+
+    element.addEventListener(
+      "touchend",
+      (event) => {
+        handledByTouch = true;
+        event.preventDefault();
+        handler(event);
+        window.setTimeout(() => {
+          handledByTouch = false;
+        }, 320);
+      },
+      { passive: false },
+    );
+
+    element.addEventListener("click", (event) => {
+      if (handledByTouch) {
+        return;
+      }
+
+      handler(event);
+    });
+  };
+
   const closeDropdown = (dropdown) => {
     const trigger = dropdown.querySelector(".nav-dropdown-trigger");
     const menu = dropdown.querySelector(".nav-dropdown-menu");
@@ -535,7 +591,7 @@ function initializePrimaryNavDropdowns(navLinks) {
       return;
     }
 
-    trigger.addEventListener("click", (event) => {
+    bindTapToggle(trigger, (event) => {
       event.preventDefault();
       const shouldOpen = menu.hidden;
 
@@ -654,15 +710,27 @@ function populateProductSectionSelect(selectElement, preferredValue = "") {
     return;
   }
 
-  selectElement.innerHTML = PRODUCT_SECTION_OPTIONS
+  const options = [...PRODUCT_SECTION_OPTIONS];
+  const normalizedPreferredValue = String(preferredValue || "").trim();
+  if (
+    normalizedPreferredValue &&
+    !options.some((option) => option.value === normalizedPreferredValue)
+  ) {
+    options.unshift({
+      value: normalizedPreferredValue,
+      label: formatCategoryLabel(normalizedPreferredValue),
+    });
+  }
+
+  selectElement.innerHTML = options
     .map((option) => `
       <option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>
     `)
     .join("");
 
-  const nextValue = PRODUCT_SECTION_OPTIONS.some((option) => option.value === preferredValue)
-    ? preferredValue
-    : PRODUCT_SECTION_OPTIONS[0]?.value || "";
+  const nextValue = options.some((option) => option.value === normalizedPreferredValue)
+    ? normalizedPreferredValue
+    : options[0]?.value || "";
 
   selectElement.value = nextValue;
 }
@@ -673,15 +741,26 @@ function populateProductTypeSelect(sectionValue, selectElement, preferredValue =
     return;
   }
 
-  const options = SECTION_PRODUCT_TYPE_OPTIONS[sectionValue] || [];
+  const options = [...(SECTION_PRODUCT_TYPE_OPTIONS[sectionValue] || [])];
+  const normalizedPreferredValue = String(preferredValue || "").trim();
+  if (
+    normalizedPreferredValue &&
+    !options.some((option) => option.value === normalizedPreferredValue)
+  ) {
+    options.unshift({
+      value: normalizedPreferredValue,
+      label: formatProductTypeLabel(normalizedPreferredValue),
+    });
+  }
+
   selectElement.innerHTML = options
     .map((option) => `
       <option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>
     `)
     .join("");
 
-  const nextValue = options.some((option) => option.value === preferredValue)
-    ? preferredValue
+  const nextValue = options.some((option) => option.value === normalizedPreferredValue)
+    ? normalizedPreferredValue
     : options[0]?.value || "";
 
   selectElement.value = nextValue;
@@ -1897,6 +1976,8 @@ function initializeAccountPage() {
   const nameElement = document.getElementById("account-full-name");
   const emailElement = document.getElementById("account-email");
   const createdAtElement = document.getElementById("account-created-at");
+  const roleLinksElement = document.getElementById("account-role-links");
+  const logoutButton = document.getElementById("account-logout-button");
   const passwordForm = document.getElementById("account-password-form");
   const passwordMessage = document.getElementById("account-password-message");
   const passwordSubmit = document.getElementById("account-password-submit");
@@ -1906,6 +1987,8 @@ function initializeAccountPage() {
     !nameElement ||
     !emailElement ||
     !createdAtElement ||
+    !roleLinksElement ||
+    !logoutButton ||
     !passwordForm ||
     !passwordMessage ||
     !passwordSubmit
@@ -1925,9 +2008,67 @@ function initializeAccountPage() {
     nameElement.textContent = currentUser.fullName;
     emailElement.textContent = currentUser.email;
     createdAtElement.textContent = formatDateLabel(currentUser.createdAt);
+    renderRoleLinks(currentUser);
     showMessage(pageMessage, "", "");
 
     passwordForm.addEventListener("submit", handlePasswordChange);
+    logoutButton.addEventListener("click", handleLogout);
+  }
+
+  function renderRoleLinks(currentUser) {
+    const adminLinks = currentUser.role === "admin"
+      ? [
+          { href: "/admin-products", label: "Artikujt" },
+          { href: "/bizneset-e-regjistruara", label: "Bizneset e regjistruara" },
+        ]
+      : [];
+    const businessLinks = currentUser.role === "business"
+      ? [
+          { href: "/biznesi-juaj", label: "Biznesi juaj" },
+          { href: "/porosite-e-biznesit", label: "Porosite e biznesit" },
+        ]
+      : [];
+    const links = [...adminLinks, ...businessLinks];
+
+    if (links.length === 0) {
+      roleLinksElement.hidden = true;
+      roleLinksElement.innerHTML = "";
+      return;
+    }
+
+    roleLinksElement.hidden = false;
+    roleLinksElement.innerHTML = `
+      <p class="section-label account-nav-label">Roli yt</p>
+      ${links
+        .map(
+          (link) => `
+            <a class="account-nav-link" href="${escapeAttribute(link.href)}">${escapeHtml(link.label)}</a>
+          `,
+        )
+        .join("")}
+    `;
+  }
+
+  async function handleLogout() {
+    setButtonLoading(logoutButton, true, "Shkycu", "Duke dale...");
+
+    try {
+      const { response, data } = await requestJson("/api/logout", {
+        method: "POST",
+      });
+
+      if (!response.ok || !data.ok) {
+        showMessage(pageMessage, data.message || "Dalja nga llogaria nuk funksionoi.", "error");
+        return;
+      }
+
+      window.location.href = data.redirectTo || "/login";
+    } catch (error) {
+      showMessage(pageMessage, "Serveri nuk po pergjigjet. Provoje perseri.", "error");
+      console.error(error);
+    } finally {
+      setButtonLoading(logoutButton, false, "Shkycu", "Duke dale...");
+    }
   }
 
   async function handlePasswordChange(event) {
@@ -1997,8 +2138,12 @@ function initializeBusinessDashboardPage() {
   const businessLogoPreview = document.getElementById("business-logo-preview");
   const productFormSection = document.getElementById("business-product-form-section");
   const productForm = document.getElementById("business-product-form");
+  const productFormTitle = document.getElementById("business-product-form-title");
+  const productFormNote = document.getElementById("business-products-note");
+  const productEditState = document.getElementById("business-product-edit-state");
   const productFormMessageElement = document.getElementById("business-product-form-message");
   const productSubmitButton = document.getElementById("business-product-submit");
+  const productCancelButton = document.getElementById("business-product-cancel");
   const productsListMessageElement = document.getElementById("business-products-list-message");
   const productsListElement = document.getElementById("business-products-list");
   const productCategorySelect = document.getElementById("business-product-category");
@@ -2018,8 +2163,12 @@ function initializeBusinessDashboardPage() {
     !businessLogoPreview ||
     !productFormSection ||
     !productForm ||
+    !productFormTitle ||
+    !productFormNote ||
+    !productEditState ||
     !productFormMessageElement ||
     !productSubmitButton ||
+    !productCancelButton ||
     !productsListMessageElement ||
     !productsListElement ||
     !productCategorySelect ||
@@ -2036,6 +2185,8 @@ function initializeBusinessDashboardPage() {
   let businessProfile = null;
   let previewUrls = [];
   let businessLogoPreviewUrl = "";
+  let productsCache = [];
+  let editingProduct = null;
 
   bootstrap();
 
@@ -2072,6 +2223,7 @@ function initializeBusinessDashboardPage() {
       profileForm.addEventListener("submit", handleBusinessProfileSave);
       businessLogoInput.addEventListener("change", handleBusinessLogoChange);
       productForm.addEventListener("submit", handleProductSubmit);
+      productCancelButton.addEventListener("click", resetProductFormState);
       productCategorySelect.addEventListener("change", handleProductSectionChange);
       productImagesInput.addEventListener("change", renderSelectedImagePreviews);
       productsListElement.addEventListener("click", handleListAction);
@@ -2291,7 +2443,7 @@ function initializeBusinessDashboardPage() {
       stockQuantity: formData.get("stockQuantity")?.toString().trim() || "",
     };
 
-    if (imageFiles.length === 0) {
+    if (!editingProduct && imageFiles.length === 0) {
       showMessage(
         productFormMessageElement,
         "Zgjidh te pakten nje foto te produktit.",
@@ -2300,26 +2452,39 @@ function initializeBusinessDashboardPage() {
       return;
     }
 
+    const idleSubmitText = editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin";
+    const loadingSubmitText = editingProduct ? "Duke ruajtur ndryshimet..." : "Duke ruajtur...";
+
     setButtonLoading(
       productSubmitButton,
       true,
-      "Ruaje artikullin",
-      "Duke ruajtur...",
+      idleSubmitText,
+      loadingSubmitText,
     );
 
     try {
-      const uploadedImagePaths = await uploadProductImagesForPanel(
-        imageFiles,
-        productFormMessageElement,
-      );
-      if (uploadedImagePaths.length === 0) {
-        return;
+      let imageGallery = editingProduct ? getProductImageGallery(editingProduct) : [];
+      if (imageFiles.length > 0) {
+        const uploadedImagePaths = await uploadProductImagesForPanel(
+          imageFiles,
+          productFormMessageElement,
+        );
+        if (uploadedImagePaths.length === 0) {
+          return;
+        }
+
+        imageGallery = uploadedImagePaths;
       }
 
-      payload.imageGallery = uploadedImagePaths;
-      payload.imagePath = uploadedImagePaths[0];
+      payload.imageGallery = imageGallery;
+      payload.imagePath = imageGallery[0] || "";
 
-      const { response, data } = await requestJson("/api/products", {
+      const endpoint = editingProduct ? "/api/products/update" : "/api/products";
+      if (editingProduct) {
+        payload.productId = editingProduct.id;
+      }
+
+      const { response, data } = await requestJson(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -2335,18 +2500,12 @@ function initializeBusinessDashboardPage() {
 
       showMessage(
         productFormMessageElement,
-        "Artikulli u ruajt me sukses ne biznesin tend.",
+        editingProduct
+          ? "Artikulli u perditesua me sukses."
+          : "Artikulli u ruajt me sukses ne biznesin tend.",
         "success",
       );
-      productForm.reset();
-      revokePreviewUrls();
-      renderSelectedImagePreviews();
-      productCategorySelect.value = PRODUCT_SECTION_OPTIONS[0]?.value || "";
-      populateProductTypeSelect(productCategorySelect.value, productTypeSelect);
-      productSizeSelect.value = "";
-      document.getElementById("business-product-color").value = "";
-      document.getElementById("business-product-stock-quantity").value = "1";
-      syncProductSizeField();
+      resetProductFormState();
       await loadProducts();
     } catch (error) {
       showMessage(
@@ -2359,8 +2518,8 @@ function initializeBusinessDashboardPage() {
       setButtonLoading(
         productSubmitButton,
         false,
-        "Ruaje artikullin",
-        "Duke ruajtur...",
+        editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin",
+        loadingSubmitText,
       );
     }
   }
@@ -2384,6 +2543,15 @@ function initializeBusinessDashboardPage() {
       }
 
       const products = Array.isArray(data.products) ? data.products : [];
+      productsCache = products;
+      if (editingProduct) {
+        const refreshedProduct = products.find((item) => Number(item.id) === Number(editingProduct.id));
+        if (!refreshedProduct) {
+          resetProductFormState();
+        } else {
+          editingProduct = refreshedProduct;
+        }
+      }
       if (products.length === 0) {
         productsListElement.innerHTML = `
           <div class="admin-empty-state">
@@ -2420,6 +2588,21 @@ function initializeBusinessDashboardPage() {
 
     const productCard = button.closest(".admin-product-item");
     const action = button.dataset.action;
+
+    if (action === "edit-product") {
+      const product = productsCache.find((item) => Number(item.id) === productId);
+      if (!product) {
+        showMessage(
+          productsListMessageElement,
+          "Produkti nuk u gjet per editim.",
+          "error",
+        );
+        return;
+      }
+
+      beginProductEdit(product);
+      return;
+    }
 
     if (action === "delete-product") {
       const shouldDelete = window.confirm("A do ta fshish kete produkt?");
@@ -2524,14 +2707,28 @@ function initializeBusinessDashboardPage() {
     }
   }
 
-  function renderSelectedImagePreviews() {
+  function renderSelectedImagePreviews(existingPaths = []) {
     revokePreviewUrls();
     const files = Array.from(productImagesInput.files || []);
 
-    if (files.length === 0) {
+    if (files.length === 0 && existingPaths.length === 0) {
       productUploadPreview.innerHTML = `
         <div class="product-upload-empty">Asnje foto nuk eshte zgjedhur ende.</div>
       `;
+      return;
+    }
+
+    if (files.length === 0) {
+      productUploadPreview.innerHTML = existingPaths
+        .map((path, index) => `
+          <figure class="product-upload-preview-item">
+            <img class="product-upload-preview-image" src="${escapeAttribute(path)}" alt="Foto aktuale ${index + 1}">
+            <figcaption class="product-upload-preview-name">
+              ${index === 0 ? "Cover aktual" : `Foto aktuale ${index + 1}`}
+            </figcaption>
+          </figure>
+        `)
+        .join("");
       return;
     }
 
@@ -2557,6 +2754,62 @@ function initializeBusinessDashboardPage() {
       URL.revokeObjectURL(previewUrl);
     });
     previewUrls = [];
+  }
+
+  function beginProductEdit(product) {
+    editingProduct = product;
+    productForm.reset();
+    productImagesInput.value = "";
+    productImagesInput.required = false;
+    productFormTitle.textContent = "Edito artikullin";
+    productFormNote.textContent =
+      "Ndrysho te dhenat e artikullit. Nese nuk zgjedh foto te reja, ruhen fotot ekzistuese.";
+    productEditState.hidden = false;
+    productCancelButton.hidden = false;
+    productSubmitButton.textContent = "Ruaj ndryshimet";
+
+    productForm.elements.title.value = String(product.title || "");
+    productForm.elements.price.value = String(product.price ?? "");
+    productForm.elements.description.value = String(product.description || "");
+    populateProductSectionSelect(productCategorySelect, String(product.category || ""));
+    populateProductTypeSelect(
+      productCategorySelect.value,
+      productTypeSelect,
+      String(product.productType || ""),
+    );
+    syncProductSizeField();
+    productSizeSelect.value = String(product.size || "");
+    document.getElementById("business-product-color").value = String(product.color || "");
+    document.getElementById("business-product-stock-quantity").value = String(product.stockQuantity ?? 0);
+    renderSelectedImagePreviews(getProductImageGallery(product));
+    showMessage(
+      productFormMessageElement,
+      `Po editon artikullin "${product.title}".`,
+      "success",
+    );
+    productFormSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function resetProductFormState() {
+    editingProduct = null;
+    productForm.reset();
+    productImagesInput.value = "";
+    productImagesInput.required = true;
+    productFormTitle.textContent = "Shto artikull te ri";
+    productFormNote.textContent =
+      "Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.";
+    productEditState.hidden = true;
+    productCancelButton.hidden = true;
+    productSubmitButton.textContent = "Ruaje artikullin";
+    populateProductSectionSelect(productCategorySelect);
+    populateProductTypeSelect(productCategorySelect.value, productTypeSelect);
+    productSizeSelect.value = "";
+    document.getElementById("business-product-color").value = "";
+    document.getElementById("business-product-stock-quantity").value = "1";
+    syncProductSizeField();
+    revokePreviewUrls();
+    renderSelectedImagePreviews();
+    showMessage(productFormMessageElement, "", "");
   }
 }
 
@@ -3374,6 +3627,8 @@ function initializeHomePage() {
   let homeRevealResizeFrame = null;
   let promoTouchStartX = 0;
   let promoTouchStartY = 0;
+  let promoTouchLastX = 0;
+  let promoTouchLastY = 0;
   let isPromoTouchActive = false;
 
   bootstrap();
@@ -3389,6 +3644,7 @@ function initializeHomePage() {
       window.addEventListener("resize", handleGridResize);
       promoDots.addEventListener("click", handleDotClick);
       promoViewport.addEventListener("touchstart", handlePromoTouchStart, { passive: true });
+      promoViewport.addEventListener("touchmove", handlePromoTouchMove, { passive: true });
       promoViewport.addEventListener("touchend", handlePromoTouchEnd, { passive: true });
       promoViewport.addEventListener("touchcancel", resetPromoTouchState, { passive: true });
     } catch (error) {
@@ -3475,7 +3731,7 @@ function initializeHomePage() {
   }
 
   function handlePromoTouchStart(event) {
-    const firstTouch = event.changedTouches?.[0];
+    const firstTouch = event.touches?.[0] || event.changedTouches?.[0];
     if (!firstTouch) {
       return;
     }
@@ -3483,7 +3739,23 @@ function initializeHomePage() {
     isPromoTouchActive = true;
     promoTouchStartX = firstTouch.clientX;
     promoTouchStartY = firstTouch.clientY;
+    promoTouchLastX = firstTouch.clientX;
+    promoTouchLastY = firstTouch.clientY;
     stopPromoAutoplay();
+  }
+
+  function handlePromoTouchMove(event) {
+    if (!isPromoTouchActive) {
+      return;
+    }
+
+    const currentTouch = event.touches?.[0] || event.changedTouches?.[0];
+    if (!currentTouch) {
+      return;
+    }
+
+    promoTouchLastX = currentTouch.clientX;
+    promoTouchLastY = currentTouch.clientY;
   }
 
   function handlePromoTouchEnd(event) {
@@ -3491,7 +3763,10 @@ function initializeHomePage() {
       return;
     }
 
-    const lastTouch = event.changedTouches?.[0];
+    const lastTouch = event.changedTouches?.[0] || {
+      clientX: promoTouchLastX,
+      clientY: promoTouchLastY,
+    };
     resetPromoTouchState();
     if (!lastTouch) {
       restartPromoAutoplay();
@@ -3515,6 +3790,8 @@ function initializeHomePage() {
     isPromoTouchActive = false;
     promoTouchStartX = 0;
     promoTouchStartY = 0;
+    promoTouchLastX = 0;
+    promoTouchLastY = 0;
   }
 
   async function refreshCollectionState() {
@@ -5344,7 +5621,11 @@ function initializeAdminProductsPage() {
   const accessElement = document.getElementById("admin-access-note");
   const formSection = document.getElementById("admin-form-section");
   const form = document.getElementById("product-form");
+  const formTitle = document.getElementById("admin-product-form-title");
+  const formIntro = document.getElementById("admin-product-form-intro");
+  const editStateElement = document.getElementById("admin-product-edit-state");
   const submitButton = document.getElementById("product-submit-button");
+  const cancelButton = document.getElementById("product-cancel-button");
   const messageElement = document.getElementById("product-form-message");
   const listMessageElement = document.getElementById("admin-list-message");
   const listElement = document.getElementById("admin-products-list");
@@ -5362,7 +5643,11 @@ function initializeAdminProductsPage() {
     !accessElement ||
     !formSection ||
     !form ||
+    !formTitle ||
+    !formIntro ||
+    !editStateElement ||
     !submitButton ||
+    !cancelButton ||
     !messageElement ||
     !listMessageElement ||
     !listElement ||
@@ -5379,6 +5664,8 @@ function initializeAdminProductsPage() {
   }
 
   let previewUrls = [];
+  let productsCache = [];
+  let editingProduct = null;
 
   bootstrap();
 
@@ -5414,6 +5701,7 @@ function initializeAdminProductsPage() {
       await Promise.all([loadProducts(), loadUsers(data.user)]);
 
       form.addEventListener("submit", handleSubmit);
+      cancelButton.addEventListener("click", resetProductFormState);
       productCategorySelect.addEventListener("change", handleProductSectionChange);
       productImagesInput.addEventListener("change", renderSelectedImagePreviews);
       listElement.addEventListener("click", handleListAction);
@@ -5442,7 +5730,7 @@ function initializeAdminProductsPage() {
       stockQuantity: formData.get("stockQuantity")?.toString().trim() || "",
     };
 
-    if (imageFiles.length === 0) {
+    if (!editingProduct && imageFiles.length === 0) {
       showMessage(
         messageElement,
         "Zgjidh te pakten nje foto te produktit.",
@@ -5451,23 +5739,36 @@ function initializeAdminProductsPage() {
       return;
     }
 
+    const idleSubmitText = editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin";
+    const loadingSubmitText = editingProduct ? "Duke ruajtur ndryshimet..." : "Duke ruajtur...";
+
     setButtonLoading(
       submitButton,
       true,
-      "Ruaje artikullin",
-      "Duke ruajtur...",
+      idleSubmitText,
+      loadingSubmitText,
     );
 
     try {
-      const uploadedImagePaths = await uploadProductImages(imageFiles);
-      if (uploadedImagePaths.length === 0) {
-        return;
+      let imageGallery = editingProduct ? getProductImageGallery(editingProduct) : [];
+      if (imageFiles.length > 0) {
+        const uploadedImagePaths = await uploadProductImages(imageFiles);
+        if (uploadedImagePaths.length === 0) {
+          return;
+        }
+
+        imageGallery = uploadedImagePaths;
       }
 
-      payload.imageGallery = uploadedImagePaths;
-      payload.imagePath = uploadedImagePaths[0];
+      payload.imageGallery = imageGallery;
+      payload.imagePath = imageGallery[0] || "";
 
-      const { response, data } = await requestJson("/api/products", {
+      const endpoint = editingProduct ? "/api/products/update" : "/api/products";
+      if (editingProduct) {
+        payload.productId = editingProduct.id;
+      }
+
+      const { response, data } = await requestJson(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -5483,27 +5784,12 @@ function initializeAdminProductsPage() {
 
       showMessage(
         messageElement,
-        "Artikulli u ruajt me sukses dhe tani del ne faqen e kategorise.",
+        editingProduct
+          ? "Artikulli u perditesua me sukses."
+          : "Artikulli u ruajt me sukses dhe tani del ne faqen e kategorise.",
         "success",
       );
-      form.reset();
-      revokePreviewUrls();
-      renderSelectedImagePreviews();
-      productCategorySelect.value = PRODUCT_SECTION_OPTIONS[0]?.value || "";
-      populateProductTypeSelect(productCategorySelect.value, productTypeSelect);
-      productSizeSelect.value = "";
-      const productColorSelect = document.getElementById("product-color");
-      if (productColorSelect) {
-        productColorSelect.value = "";
-      }
-
-      const stockQuantityInput = document.getElementById("product-stock-quantity");
-      if (stockQuantityInput) {
-        stockQuantityInput.value = "1";
-      }
-
-      syncProductSizeField();
-
+      resetProductFormState();
       await loadProducts();
     } catch (error) {
       showMessage(
@@ -5516,8 +5802,8 @@ function initializeAdminProductsPage() {
       setButtonLoading(
         submitButton,
         false,
-        "Ruaje artikullin",
-        "Duke ruajtur...",
+        editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin",
+        loadingSubmitText,
       );
     }
   }
@@ -5536,6 +5822,15 @@ function initializeAdminProductsPage() {
       }
 
       const products = Array.isArray(data.products) ? data.products : [];
+      productsCache = products;
+      if (editingProduct) {
+        const refreshedProduct = products.find((item) => Number(item.id) === Number(editingProduct.id));
+        if (!refreshedProduct) {
+          resetProductFormState();
+        } else {
+          editingProduct = refreshedProduct;
+        }
+      }
       if (products.length === 0) {
         listElement.innerHTML = `
           <div class="admin-empty-state">
@@ -5611,6 +5906,17 @@ function initializeAdminProductsPage() {
 
     const productCard = button.closest(".admin-product-item");
     const action = button.dataset.action;
+
+    if (action === "edit-product") {
+      const product = productsCache.find((item) => Number(item.id) === productId);
+      if (!product) {
+        showMessage(messageElement, "Produkti nuk u gjet per editim.", "error");
+        return;
+      }
+
+      beginProductEdit(product);
+      return;
+    }
 
     if (action === "delete-product") {
       const shouldDelete = window.confirm("A do ta fshish kete produkt?");
@@ -5824,14 +6130,28 @@ function initializeAdminProductsPage() {
     }
   }
 
-  function renderSelectedImagePreviews() {
+  function renderSelectedImagePreviews(existingPaths = []) {
     revokePreviewUrls();
     const files = Array.from(productImagesInput.files || []);
 
-    if (files.length === 0) {
+    if (files.length === 0 && existingPaths.length === 0) {
       productUploadPreview.innerHTML = `
         <div class="product-upload-empty">Asnje foto nuk eshte zgjedhur ende.</div>
       `;
+      return;
+    }
+
+    if (files.length === 0) {
+      productUploadPreview.innerHTML = existingPaths
+        .map((path, index) => `
+          <figure class="product-upload-preview-item">
+            <img class="product-upload-preview-image" src="${escapeAttribute(path)}" alt="Foto aktuale ${index + 1}">
+            <figcaption class="product-upload-preview-name">
+              ${index === 0 ? "Cover aktual" : `Foto aktuale ${index + 1}`}
+            </figcaption>
+          </figure>
+        `)
+        .join("");
       return;
     }
 
@@ -5857,6 +6177,74 @@ function initializeAdminProductsPage() {
       URL.revokeObjectURL(previewUrl);
     });
     previewUrls = [];
+  }
+
+  function beginProductEdit(product) {
+    editingProduct = product;
+    form.reset();
+    productImagesInput.value = "";
+    productImagesInput.required = false;
+    formTitle.textContent = "Edito artikullin";
+    formIntro.textContent =
+      "Ndrysho te dhenat e artikullit. Nese nuk zgjedh foto te reja, ruhen fotot ekzistuese.";
+    editStateElement.hidden = false;
+    cancelButton.hidden = false;
+    submitButton.textContent = "Ruaj ndryshimet";
+
+    form.elements.title.value = String(product.title || "");
+    form.elements.price.value = String(product.price ?? "");
+    form.elements.description.value = String(product.description || "");
+    populateProductSectionSelect(productCategorySelect, String(product.category || ""));
+    populateProductTypeSelect(
+      productCategorySelect.value,
+      productTypeSelect,
+      String(product.productType || ""),
+    );
+    syncProductSizeField();
+    productSizeSelect.value = String(product.size || "");
+    const productColorSelect = document.getElementById("product-color");
+    if (productColorSelect) {
+      productColorSelect.value = String(product.color || "");
+    }
+
+    const stockQuantityInput = document.getElementById("product-stock-quantity");
+    if (stockQuantityInput) {
+      stockQuantityInput.value = String(product.stockQuantity ?? 0);
+    }
+
+    renderSelectedImagePreviews(getProductImageGallery(product));
+    showMessage(messageElement, `Po editon artikullin "${product.title}".`, "success");
+    formSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function resetProductFormState() {
+    editingProduct = null;
+    form.reset();
+    productImagesInput.value = "";
+    productImagesInput.required = true;
+    formTitle.textContent = "Shto artikull te ri";
+    formIntro.textContent =
+      "Zgjidh seksionin sipas menus se faqes, pastaj kategorine e produktit. Madhesia shfaqet vetem per veshjet. Fotoja e pare do te dale si cover ne kartat e produktit.";
+    editStateElement.hidden = true;
+    cancelButton.hidden = true;
+    submitButton.textContent = "Ruaje artikullin";
+    populateProductSectionSelect(productCategorySelect);
+    populateProductTypeSelect(productCategorySelect.value, productTypeSelect);
+    productSizeSelect.value = "";
+    const productColorSelect = document.getElementById("product-color");
+    if (productColorSelect) {
+      productColorSelect.value = "";
+    }
+
+    const stockQuantityInput = document.getElementById("product-stock-quantity");
+    if (stockQuantityInput) {
+      stockQuantityInput.value = "1";
+    }
+
+    syncProductSizeField();
+    revokePreviewUrls();
+    renderSelectedImagePreviews();
+    showMessage(messageElement, "", "");
   }
 }
 
@@ -6195,6 +6583,9 @@ function renderAdminProductItem(product) {
       <div class="admin-product-side">
         <strong class="admin-product-price">${escapeHtml(formatPrice(product.price))}</strong>
         <div class="admin-product-controls">
+          <button class="product-action-button admin-action-button" type="button" data-action="edit-product" data-product-id="${product.id}">
+            <span>Edito artikullin</span>
+          </button>
           <div class="admin-stock-editor">
             <input class="admin-stock-input" data-restock-input type="number" min="1" step="1" value="1" aria-label="Shto stok">
             <button class="product-action-button admin-action-button" type="button" data-action="restock" data-product-id="${product.id}">

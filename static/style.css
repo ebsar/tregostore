@@ -256,7 +256,7 @@ body[data-page="cart"] .page-shell {
 .site-nav {
   position: sticky;
   top: 18px;
-  z-index: 1200;
+  z-index: 2600;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -277,6 +277,7 @@ body[data-page="cart"] .page-shell {
   -webkit-backdrop-filter: blur(34px) saturate(190%);
   overflow: visible;
   isolation: isolate;
+  touch-action: manipulation;
 }
 
 .site-nav::before,
@@ -399,6 +400,7 @@ body[data-page="cart"] .page-shell {
   backdrop-filter: blur(18px) saturate(180%);
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   cursor: pointer;
+  touch-action: manipulation;
   transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
@@ -442,6 +444,7 @@ body[data-page="cart"] .page-shell {
     0 8px 18px rgba(211, 183, 164, 0.14);
   backdrop-filter: blur(16px) saturate(170%);
   -webkit-backdrop-filter: blur(16px) saturate(170%);
+  touch-action: manipulation;
   transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
@@ -557,6 +560,7 @@ body[data-page="cart"] .page-shell {
   font-size: 0.92rem;
   white-space: nowrap;
   text-decoration: none;
+  touch-action: manipulation;
   transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
@@ -868,7 +872,7 @@ body[data-page="about"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="home"] .site-nav {
@@ -876,7 +880,7 @@ body[data-page="home"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="login"] .site-nav {
@@ -884,7 +888,7 @@ body[data-page="login"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="verify-email"] .site-nav {
@@ -892,7 +896,7 @@ body[data-page="verify-email"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="signup"] .site-nav {
@@ -900,7 +904,7 @@ body[data-page="signup"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="forgot-password"] .site-nav,
@@ -911,7 +915,7 @@ body[data-page="checkout-address"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="pets"] .site-nav {
@@ -919,7 +923,7 @@ body[data-page="pets"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="product-detail"] .site-nav {
@@ -927,7 +931,7 @@ body[data-page="product-detail"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="account"] .site-nav {
@@ -935,7 +939,7 @@ body[data-page="account"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="orders"] .site-nav,
@@ -950,7 +954,7 @@ body[data-page="payment-options"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="admin-products"] .site-nav {
@@ -958,7 +962,7 @@ body[data-page="admin-products"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="wishlist"] .site-nav,
@@ -967,7 +971,7 @@ body[data-page="cart"] .site-nav {
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1200;
+  z-index: 2600;
 }
 
 body[data-page="login"] .site-nav::after,
@@ -2978,6 +2982,15 @@ body[data-page="cart"] .saved-product-copy h3 {
   top: 126px;
 }
 
+.account-nav-group {
+  display: grid;
+  gap: 10px;
+}
+
+.account-nav-label {
+  margin: 0 0 2px;
+}
+
 .account-nav-link {
   display: inline-flex;
   align-items: center;
@@ -2994,6 +3007,13 @@ body[data-page="cart"] .saved-product-copy h3 {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     0 10px 20px rgba(177, 154, 143, 0.08);
+}
+
+.account-nav-link-button {
+  width: 100%;
+  justify-content: flex-start;
+  font: inherit;
+  cursor: pointer;
 }
 
 .account-sections {
@@ -3330,6 +3350,21 @@ body[data-page="cart"] .saved-product-copy h3 {
 .admin-list-card,
 .business-profile-card {
   border-radius: 30px;
+}
+
+.admin-edit-state {
+  margin: 14px 0 -4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  color: #45604c;
+  line-height: 1.6;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.3)),
+    linear-gradient(135deg, rgba(227, 255, 231, 0.16), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 14px 24px rgba(114, 154, 125, 0.08);
 }
 
 .field-row {
@@ -4583,8 +4618,11 @@ button {
 #forgot-password-submit-button,
 #signup-submit-button,
 #change-password-submit,
+#product-submit-button,
+#product-cancel-button,
 #business-profile-submit,
 #business-product-submit,
+#business-product-cancel,
 .cart-checkout-button,
 .ghost-button {
   border: 0;
@@ -4599,6 +4637,7 @@ button {
 #forgot-password-submit-button,
 #signup-submit-button,
 #change-password-submit,
+#product-submit-button,
 #business-profile-submit,
 #business-product-submit,
 .cart-checkout-button {
@@ -4621,6 +4660,7 @@ button {
 #forgot-password-submit-button:hover,
 #signup-submit-button:hover,
 #change-password-submit:hover,
+#product-submit-button:hover,
 #business-profile-submit:hover,
 #business-product-submit:hover,
 .ghost-button:hover {
@@ -4634,11 +4674,18 @@ button {
 #forgot-password-submit-button:disabled,
 #signup-submit-button:disabled,
 #change-password-submit:disabled,
+#product-submit-button:disabled,
 #business-profile-submit:disabled,
 #business-product-submit:disabled,
 .ghost-button:disabled {
   opacity: 0.65;
   cursor: wait;
+}
+
+#product-cancel-button,
+#business-product-cancel,
+.button-secondary {
+  padding: 16px 20px;
 }
 
 .form-message {
