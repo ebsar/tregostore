@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
@@ -10,7 +10,10 @@ const navElement = ref(null);
 const mobileMenuOpen = ref(false);
 const openDropdownKey = ref("");
 const userMenuOpen = ref(false);
+const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
+const searchQuery = ref("");
+const searchInputElement = ref(null);
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -52,6 +55,7 @@ function updateViewportState() {
 function closeExpandedPanels() {
   openDropdownKey.value = "";
   userMenuOpen.value = false;
+  searchMenuOpen.value = false;
 }
 
 function toggleMobileMenu() {
@@ -63,7 +67,20 @@ function toggleMobileMenu() {
 
 function toggleDropdown(key) {
   userMenuOpen.value = false;
+  searchMenuOpen.value = false;
   openDropdownKey.value = openDropdownKey.value === key ? "" : key;
+}
+
+async function toggleSearchPanel() {
+  userMenuOpen.value = false;
+  openDropdownKey.value = "";
+  searchMenuOpen.value = !searchMenuOpen.value;
+
+  if (searchMenuOpen.value) {
+    await nextTick();
+    searchInputElement.value?.focus();
+    searchInputElement.value?.select?.();
+  }
 }
 
 function handleUserTrigger() {
@@ -74,6 +91,7 @@ function handleUserTrigger() {
   }
 
   openDropdownKey.value = "";
+  searchMenuOpen.value = false;
   userMenuOpen.value = !userMenuOpen.value;
 }
 
@@ -101,11 +119,22 @@ async function handleLogout() {
   router.push(data?.redirectTo || "/login");
 }
 
+function submitNavSearch() {
+  const nextValue = searchQuery.value.trim();
+  closeExpandedPanels();
+  mobileMenuOpen.value = false;
+  router.push({
+    path: "/kerko",
+    query: nextValue ? { q: nextValue } : {},
+  });
+}
+
 watch(
   () => route.fullPath,
   () => {
     mobileMenuOpen.value = false;
     closeExpandedPanels();
+    searchQuery.value = String(route.query.q || "").trim();
   },
 );
 
@@ -114,6 +143,7 @@ onMounted(async () => {
   window.addEventListener("resize", updateViewportState);
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
+  searchQuery.value = String(route.query.q || "").trim();
   await ensureSessionLoaded();
 });
 
@@ -137,12 +167,18 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <div class="nav-mobile-tray">
-      <RouterLink class="nav-icon-button search-button nav-mobile-shortcut" to="/kerko" aria-label="Kerko">
+      <button
+        class="nav-icon-button search-button nav-mobile-shortcut"
+        type="button"
+        aria-label="Kerko"
+        :aria-expanded="searchMenuOpen ? 'true' : 'false'"
+        @click="toggleSearchPanel"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
-      </RouterLink>
+      </button>
 
       <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -175,6 +211,21 @@ onBeforeUnmount(() => {
         </svg>
       </button>
     </div>
+
+    <form class="nav-search-panel" :hidden="!searchMenuOpen" role="search" @submit.prevent="submitNavSearch">
+      <label class="sr-only" for="nav-search-input">Kerko produktet</label>
+      <input
+        id="nav-search-input"
+        ref="searchInputElement"
+        v-model="searchQuery"
+        class="nav-search-input"
+        type="search"
+        name="q"
+        placeholder="Shkruaj ketu"
+        autocomplete="off"
+      >
+      <button class="nav-search-submit" type="submit">Kerko</button>
+    </form>
 
     <div id="site-nav-mobile-panel" class="nav-links">
       <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
@@ -214,12 +265,18 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="nav-actions">
-      <RouterLink class="nav-icon-button search-button" to="/kerko" aria-label="Kerko">
+      <button
+        class="nav-icon-button search-button"
+        type="button"
+        aria-label="Kerko"
+        :aria-expanded="searchMenuOpen ? 'true' : 'false'"
+        @click="toggleSearchPanel"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
-      </RouterLink>
+      </button>
 
       <RouterLink class="nav-icon-button wishlist-link" to="/wishlist" aria-label="Wishlist">
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
