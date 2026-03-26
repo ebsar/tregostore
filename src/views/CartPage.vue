@@ -197,7 +197,7 @@ function handleCheckout() {
   }
 
   persistCheckoutSelectedCartIds(selectedItems.value.map((item) => item.id));
-  window.location.href = "/adresa-e-porosise";
+  router.push("/adresa-e-porosise");
 }
 
 function setupHeightSync() {

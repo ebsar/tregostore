@@ -86,7 +86,7 @@ async function toggleSearchPanel() {
 function handleUserTrigger() {
   if (isMobileViewport.value) {
     mobileMenuOpen.value = false;
-    window.location.href = "/llogaria";
+    router.push("/llogaria");
     return;
   }
 
@@ -323,29 +323,29 @@ onBeforeUnmount(() => {
           <span class="nav-user-panel-email">{{ appState.user.email }}</span>
 
           <div class="nav-user-panel-links">
-            <a
+            <RouterLink
               v-for="link in adminLinks"
               :key="link.href"
               class="nav-user-panel-link"
-              :href="link.href"
+              :to="link.href"
             >
               {{ link.label }}
-            </a>
+            </RouterLink>
 
-            <a
+            <RouterLink
               v-for="link in businessLinks"
               :key="link.href"
               class="nav-user-panel-link"
               :class="{ 'nav-user-panel-link-secondary': link.secondary }"
-              :href="link.href"
+              :to="link.href"
             >
               {{ link.label }}
-            </a>
+            </RouterLink>
 
-            <a class="nav-user-panel-link" href="/te-dhenat-personale">Te dhenat personale</a>
-            <a class="nav-user-panel-link nav-user-panel-link-secondary" href="/adresat">Adresat</a>
-            <a class="nav-user-panel-link nav-user-panel-link-secondary" href="/porosite">Porosite</a>
-            <a class="nav-user-panel-link nav-user-panel-link-secondary" href="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</a>
+            <RouterLink class="nav-user-panel-link" to="/te-dhenat-personale">Te dhenat personale</RouterLink>
+            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/adresat">Adresat</RouterLink>
+            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/porosite">Porosite</RouterLink>
+            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</RouterLink>
           </div>
 
           <button class="nav-user-panel-logout" type="button" @click="handleLogout">

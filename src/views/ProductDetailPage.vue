@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import {
   formatCategoryLabel,
@@ -195,9 +195,9 @@ function nextImage() {
     <section v-if="currentProduct" class="product-detail-container">
       <article class="card product-detail-card" :aria-label="currentProduct.title">
         <div class="product-detail-media">
-          <a class="product-detail-back-link" :href="getCategoryUrl(currentProduct.category)">
+          <RouterLink class="product-detail-back-link" :to="getCategoryUrl(currentProduct.category)">
             Kthehu te produktet
-          </a>
+          </RouterLink>
           <div class="product-detail-image-shell">
             <img class="product-detail-image" :src="currentImagePath" :alt="currentProduct.title">
           </div>

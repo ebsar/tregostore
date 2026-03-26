@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from "vue";
+import { RouterLink } from "vue-router";
 
 const props = defineProps({
   slides: {
@@ -135,9 +136,9 @@ onBeforeUnmount(() => {
               <span class="home-promo-badge">{{ slide.badge }}</span>
               <h2>{{ slide.title }}</h2>
               <p>{{ slide.description }}</p>
-              <a class="hero-cta home-promo-cta" :href="slide.ctaHref">
+              <RouterLink class="hero-cta home-promo-cta" :to="slide.ctaHref">
                 {{ slide.ctaLabel }}
-              </a>
+              </RouterLink>
             </div>
           </article>
         </div>

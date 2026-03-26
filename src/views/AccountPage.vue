@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import { requestJson } from "../lib/api";
 import { formatDateLabel } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser, markRouteReady } from "../stores/app-state";
@@ -108,22 +108,22 @@ async function handlePasswordChange(event) {
       <aside class="card account-sidebar">
         <div v-if="roleLinks.length > 0" class="account-nav-group">
           <p class="section-label account-nav-label">Roli yt</p>
-          <a
+          <RouterLink
             v-for="link in roleLinks"
             :key="link.href"
             class="account-nav-link"
-            :href="link.href"
+            :to="link.href"
           >
             {{ link.label }}
-          </a>
+          </RouterLink>
         </div>
 
         <div class="account-nav-group">
           <p class="section-label account-nav-label">Opsionet</p>
-          <a class="account-nav-link" href="/te-dhenat-personale">Te dhenat personale</a>
-          <a class="account-nav-link" href="/adresat">Adresat</a>
-          <a class="account-nav-link" href="/porosite">Porosite</a>
-          <a class="account-nav-link" href="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</a>
+          <RouterLink class="account-nav-link" to="/te-dhenat-personale">Te dhenat personale</RouterLink>
+          <RouterLink class="account-nav-link" to="/adresat">Adresat</RouterLink>
+          <RouterLink class="account-nav-link" to="/porosite">Porosite</RouterLink>
+          <RouterLink class="account-nav-link" to="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</RouterLink>
         </div>
 
         <button class="account-nav-link account-nav-link-button" type="button" @click="handleLogout">
@@ -157,7 +157,7 @@ async function handlePasswordChange(event) {
           <p class="section-text">
             Shko te faqja e adresave per ta ruajtur ose ndryshuar adresen tende default.
           </p>
-          <a class="nav-action nav-action-secondary" href="/adresat">Hape adresen</a>
+          <RouterLink class="nav-action nav-action-secondary" to="/adresat">Hape adresen</RouterLink>
         </section>
 
         <section class="card account-section">
@@ -166,7 +166,7 @@ async function handlePasswordChange(event) {
           <p class="section-text">
             Te gjitha porosite e tua te konfirmuara dalin te faqja e porosive.
           </p>
-          <a class="nav-action nav-action-secondary" href="/porosite">Shiko porosite</a>
+          <RouterLink class="nav-action nav-action-secondary" to="/porosite">Shiko porosite</RouterLink>
         </section>
 
         <section class="card account-section">

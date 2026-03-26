@@ -40,7 +40,7 @@ async function submitForm() {
       ui.type = "error";
       if (data?.redirectTo) {
         window.setTimeout(() => {
-          window.location.href = data.redirectTo;
+          router.push(data.redirectTo);
         }, 1100);
       }
       return;

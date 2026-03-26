@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import PromoSlider from "../components/PromoSlider.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
@@ -298,7 +299,7 @@ async function handleCart(productId) {
       <div class="home-businesses-marquee" aria-live="polite">
         <div class="home-businesses-track">
           <template v-for="(business, index) in [...businesses, ...businesses]" :key="`${business.id}-${index}`">
-            <a class="home-business-badge" :href="business.profileUrl || getBusinessProfileUrl(business.id)">
+            <RouterLink class="home-business-badge" :to="business.profileUrl || getBusinessProfileUrl(business.id)">
               <div class="home-business-logo-shell">
                 <img
                   v-if="business.logoPath"
@@ -314,7 +315,7 @@ async function handleCart(productId) {
                 <strong>{{ business.businessName }}</strong>
                 <span>{{ business.city || "Partner i TREGO" }}</span>
               </div>
-            </a>
+            </RouterLink>
           </template>
         </div>
       </div>

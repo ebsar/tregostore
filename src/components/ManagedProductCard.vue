@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
+import { RouterLink } from "vue-router";
 import {
   formatCategoryLabel,
   formatPrice,
@@ -60,18 +61,18 @@ function submitRestock() {
 
 <template>
   <article class="admin-product-item" :class="{ 'is-hidden': !product.isPublic }">
-    <a class="admin-product-link" :href="getProductDetailUrl(product.id)">
+    <RouterLink class="admin-product-link" :to="getProductDetailUrl(product.id)">
       <div class="admin-product-thumb-wrap">
         <img class="admin-product-thumb" :src="product.imagePath" :alt="product.title">
       </div>
-    </a>
+    </RouterLink>
 
     <div class="admin-product-copy">
       <p class="admin-product-meta">{{ formatCategoryLabel(product.category) }}</p>
       <h3>
-        <a class="admin-product-title-link" :href="getProductDetailUrl(product.id)">
+        <RouterLink class="admin-product-title-link" :to="getProductDetailUrl(product.id)">
           {{ product.title }}
-        </a>
+        </RouterLink>
       </h3>
       <p>{{ product.description }}</p>
       <div class="product-detail-tags product-detail-tags-admin">
