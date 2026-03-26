@@ -137,6 +137,13 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <div class="nav-mobile-tray">
+      <RouterLink class="nav-icon-button search-button nav-mobile-shortcut" to="/kerko" aria-label="Kerko">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6"></circle>
+          <path d="m20 20-4.2-4.2"></path>
+        </svg>
+      </RouterLink>
+
       <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>

@@ -199,6 +199,7 @@ select {
   border-radius: inherit;
   border: 1px dashed rgba(255, 255, 255, 0.2);
   opacity: 0.72;
+  transform-origin: center;
 }
 
 .app-loader-orbit-outer {
@@ -207,10 +208,18 @@ select {
   animation: loaderOrbitSpin 8.6s linear infinite;
 }
 
+.app-loader-orbit-outer::before {
+  animation: loaderOrbitTraceReverse 10.8s linear infinite;
+}
+
 .app-loader-orbit-inner {
   width: 72%;
   height: 72%;
   animation: loaderOrbitSpinReverse 6.4s linear infinite;
+}
+
+.app-loader-orbit-inner::before {
+  animation: loaderOrbitTrace 7.4s linear infinite;
 }
 
 .app-loader-orbit-core {
@@ -226,6 +235,7 @@ select {
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.28);
   opacity: 0.88;
+  animation: loaderOrbitCorePulse 2.4s ease-in-out infinite;
 }
 
 .app-loader-centerpiece {
@@ -844,8 +854,6 @@ body[data-page="signup"] .nav-link-signup {
     0 8px 18px rgba(221, 197, 188, 0.12);
 }
 
-body[data-page="wishlist"] .wishlist-link,
-body[data-page="cart"] .cart-button,
 body[data-page="search"] .search-button {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.52);
@@ -885,6 +893,32 @@ body[data-page="account"] .nav-user-trigger {
 .nav-icon-button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.28);
+}
+
+.search-button,
+.wishlist-link,
+.cart-button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.search-button:hover,
+.wishlist-link:hover,
+.cart-button:hover {
+  background: transparent;
+  color: #6b4936;
+  box-shadow: none;
+}
+
+body[data-page="search"] .search-button,
+body[data-page="wishlist"] .wishlist-link,
+body[data-page="cart"] .cart-button {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .nav-cart-badge {
@@ -955,11 +989,9 @@ body[data-page="account"] .nav-user-trigger {
 
 .wishlist-link:active {
   color: #d44a5a;
-  background: rgba(255, 235, 239, 0.9);
-  border-color: rgba(225, 118, 135, 0.48);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 12px 22px rgba(212, 74, 90, 0.16);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .wishlist-link:active .nav-icon {
@@ -5078,6 +5110,38 @@ code {
   }
 }
 
+@keyframes loaderOrbitTrace {
+  from {
+    transform: rotate(0deg) scale(0.985);
+    opacity: 0.46;
+  }
+
+  50% {
+    opacity: 0.82;
+  }
+
+  to {
+    transform: rotate(360deg) scale(1.015);
+    opacity: 0.46;
+  }
+}
+
+@keyframes loaderOrbitTraceReverse {
+  from {
+    transform: rotate(360deg) scale(1.015);
+    opacity: 0.38;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+
+  to {
+    transform: rotate(0deg) scale(0.985);
+    opacity: 0.38;
+  }
+}
+
 @keyframes loaderOrbitPulse {
   0%,
   100% {
@@ -5088,6 +5152,19 @@ code {
   50% {
     transform: translate(-50%, -50%) scale(1.06);
     opacity: 0.98;
+  }
+}
+
+@keyframes loaderOrbitCorePulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.34;
+  }
+
+  50% {
+    transform: scale(1.08);
+    opacity: 0.84;
   }
 }
 
@@ -5231,6 +5308,7 @@ code {
     justify-content: center;
   }
 
+  .nav-actions .search-button,
   .nav-actions .wishlist-link,
   .nav-actions .cart-button {
     display: none;
