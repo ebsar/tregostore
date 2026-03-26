@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS business_followers (
 CREATE INDEX IF NOT EXISTS idx_business_followers_business
     ON business_followers(business_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS uploaded_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stored_name TEXT NOT NULL UNIQUE,
+    original_filename TEXT NOT NULL DEFAULT '',
+    content_type TEXT NOT NULL,
+    file_bytes BLOB NOT NULL,
+    created_by_user_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploaded_assets_created_at
+    ON uploaded_assets(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,

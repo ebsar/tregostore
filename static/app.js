@@ -1121,12 +1121,29 @@ function initializeSearchPage() {
     const action = button.dataset.action;
 
     if (action === "wishlist") {
+      const previousWishlistIds = new Set(wishlistIds);
+      const nextIsWishlisted = !wishlistIds.has(productId);
+      if (nextIsWishlisted) {
+        wishlistIds.add(productId);
+      } else {
+        wishlistIds.delete(productId);
+      }
+
+      syncRenderedProductState(productId, { isWishlisted: nextIsWishlisted });
+      setProductActionButtonsBusy(productId, "wishlist", true);
+
       const { response, data } = await requestJson("/api/wishlist/toggle", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "wishlist", false);
+
       if (!response.ok || !data.ok) {
+        wishlistIds = previousWishlistIds;
+        syncRenderedProductState(productId, {
+          isWishlisted: previousWishlistIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Wishlist nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -1134,18 +1151,31 @@ function initializeSearchPage() {
       }
 
       wishlistIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isWishlisted: wishlistIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Wishlist u perditesua.", "success");
-      await loadSearchResults(currentQuery);
       return;
     }
 
     if (action === "cart") {
+      const previousCartIds = new Set(cartIds);
+      cartIds.add(productId);
+      syncRenderedProductState(productId, { isInCart: true });
+      setProductActionButtonsBusy(productId, "cart", true);
+
       const { response, data } = await requestJson("/api/cart/add", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "cart", false);
+
       if (!response.ok || !data.ok) {
+        cartIds = previousCartIds;
+        syncRenderedProductState(productId, {
+          isInCart: previousCartIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Shporta nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -1153,8 +1183,10 @@ function initializeSearchPage() {
       }
 
       cartIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isInCart: cartIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Produkti u shtua ne shporte.", "success");
-      await loadSearchResults(currentQuery);
     }
   }
 }
@@ -3977,12 +4009,29 @@ function initializeHomePage() {
     const action = button.dataset.action;
 
     if (action === "wishlist") {
+      const previousWishlistIds = new Set(wishlistIds);
+      const nextIsWishlisted = !wishlistIds.has(productId);
+      if (nextIsWishlisted) {
+        wishlistIds.add(productId);
+      } else {
+        wishlistIds.delete(productId);
+      }
+
+      syncRenderedProductState(productId, { isWishlisted: nextIsWishlisted });
+      setProductActionButtonsBusy(productId, "wishlist", true);
+
       const { response, data } = await requestJson("/api/wishlist/toggle", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "wishlist", false);
+
       if (!response.ok || !data.ok) {
+        wishlistIds = previousWishlistIds;
+        syncRenderedProductState(productId, {
+          isWishlisted: previousWishlistIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Wishlist nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -3990,18 +4039,31 @@ function initializeHomePage() {
       }
 
       wishlistIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isWishlisted: wishlistIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Wishlist u perditesua.", "success");
-      await loadProducts();
       return;
     }
 
     if (action === "cart") {
+      const previousCartIds = new Set(cartIds);
+      cartIds.add(productId);
+      syncRenderedProductState(productId, { isInCart: true });
+      setProductActionButtonsBusy(productId, "cart", true);
+
       const { response, data } = await requestJson("/api/cart/add", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "cart", false);
+
       if (!response.ok || !data.ok) {
+        cartIds = previousCartIds;
+        syncRenderedProductState(productId, {
+          isInCart: previousCartIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Shporta nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4009,8 +4071,10 @@ function initializeHomePage() {
       }
 
       cartIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isInCart: cartIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Produkti u shtua ne shporte.", "success");
-      await loadProducts();
     }
   }
 }
@@ -4411,12 +4475,29 @@ function initializePetsPage() {
     const action = button.dataset.action;
 
     if (action === "wishlist") {
+      const previousWishlistIds = new Set(wishlistIds);
+      const nextIsWishlisted = !wishlistIds.has(productId);
+      if (nextIsWishlisted) {
+        wishlistIds.add(productId);
+      } else {
+        wishlistIds.delete(productId);
+      }
+
+      syncRenderedProductState(productId, { isWishlisted: nextIsWishlisted });
+      setProductActionButtonsBusy(productId, "wishlist", true);
+
       const { response, data } = await requestJson("/api/wishlist/toggle", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "wishlist", false);
+
       if (!response.ok || !data.ok) {
+        wishlistIds = previousWishlistIds;
+        syncRenderedProductState(productId, {
+          isWishlisted: previousWishlistIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Wishlist nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4424,18 +4505,31 @@ function initializePetsPage() {
       }
 
       wishlistIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isWishlisted: wishlistIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Wishlist u perditesua.", "success");
-      await loadProducts();
       return;
     }
 
     if (action === "cart") {
+      const previousCartIds = new Set(cartIds);
+      cartIds.add(productId);
+      syncRenderedProductState(productId, { isInCart: true });
+      setProductActionButtonsBusy(productId, "cart", true);
+
       const { response, data } = await requestJson("/api/cart/add", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "cart", false);
+
       if (!response.ok || !data.ok) {
+        cartIds = previousCartIds;
+        syncRenderedProductState(productId, {
+          isInCart: previousCartIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Shporta nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4443,8 +4537,10 @@ function initializePetsPage() {
       }
 
       cartIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isInCart: cartIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Produkti u shtua ne shporte.", "success");
-      await loadProducts();
     }
   }
 }
@@ -4634,12 +4730,29 @@ function initializeBusinessProfilePage() {
     const action = button.dataset.action;
 
     if (action === "wishlist") {
+      const previousWishlistIds = new Set(wishlistIds);
+      const nextIsWishlisted = !wishlistIds.has(productId);
+      if (nextIsWishlisted) {
+        wishlistIds.add(productId);
+      } else {
+        wishlistIds.delete(productId);
+      }
+
+      syncRenderedProductState(productId, { isWishlisted: nextIsWishlisted });
+      setProductActionButtonsBusy(productId, "wishlist", true);
+
       const { response, data } = await requestJson("/api/wishlist/toggle", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "wishlist", false);
+
       if (!response.ok || !data.ok) {
+        wishlistIds = previousWishlistIds;
+        syncRenderedProductState(productId, {
+          isWishlisted: previousWishlistIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Wishlist nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4647,18 +4760,31 @@ function initializeBusinessProfilePage() {
       }
 
       wishlistIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isWishlisted: wishlistIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Wishlist u perditesua.", "success");
-      await reloadProducts();
       return;
     }
 
     if (action === "cart") {
+      const previousCartIds = new Set(cartIds);
+      cartIds.add(productId);
+      syncRenderedProductState(productId, { isInCart: true });
+      setProductActionButtonsBusy(productId, "cart", true);
+
       const { response, data } = await requestJson("/api/cart/add", {
         method: "POST",
         body: JSON.stringify({ productId }),
       });
 
+      setProductActionButtonsBusy(productId, "cart", false);
+
       if (!response.ok || !data.ok) {
+        cartIds = previousCartIds;
+        syncRenderedProductState(productId, {
+          isInCart: previousCartIds.has(productId),
+        });
         const message =
           data.errors?.join(" ") || data.message || "Shporta nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4666,8 +4792,10 @@ function initializeBusinessProfilePage() {
       }
 
       cartIds = new Set((data.items || []).map((item) => item.id));
+      syncRenderedProductState(productId, {
+        isInCart: cartIds.has(productId),
+      });
       showMessage(messageElement, data.message || "Produkti u shtua ne shporte.", "success");
-      await reloadProducts();
     }
   }
 
@@ -4818,12 +4946,27 @@ function initializeProductDetailPage() {
     }
 
     if (action === "wishlist") {
+      const previousWishlistIds = new Set(wishlistIds);
+      const nextIsWishlisted = !wishlistIds.has(currentProduct.id);
+      if (nextIsWishlisted) {
+        wishlistIds.add(currentProduct.id);
+      } else {
+        wishlistIds.delete(currentProduct.id);
+      }
+
+      setProductActionButtonsBusy(currentProduct.id, "wishlist", true);
+      renderProduct();
+
       const { response, data } = await requestJson("/api/wishlist/toggle", {
         method: "POST",
         body: JSON.stringify({ productId: currentProduct.id }),
       });
 
+      setProductActionButtonsBusy(currentProduct.id, "wishlist", false);
+
       if (!response.ok || !data.ok) {
+        wishlistIds = previousWishlistIds;
+        renderProduct();
         const message =
           data.errors?.join(" ") || data.message || "Wishlist nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -4837,12 +4980,21 @@ function initializeProductDetailPage() {
     }
 
     if (action === "cart") {
+      const previousCartIds = new Set(cartIds);
+      cartIds.add(currentProduct.id);
+      setProductActionButtonsBusy(currentProduct.id, "cart", true);
+      renderProduct();
+
       const { response, data } = await requestJson("/api/cart/add", {
         method: "POST",
         body: JSON.stringify({ productId: currentProduct.id }),
       });
 
+      setProductActionButtonsBusy(currentProduct.id, "cart", false);
+
       if (!response.ok || !data.ok) {
+        cartIds = previousCartIds;
+        renderProduct();
         const message =
           data.errors?.join(" ") || data.message || "Shporta nuk u perditesua.";
         showMessage(messageElement, message, "error");
@@ -7556,6 +7708,53 @@ async function fetchProtectedCollection(url) {
     console.error(error);
     return [];
   }
+}
+
+
+function setProductActionButtonsBusy(productId, action, isBusy) {
+  const normalizedId = Number(productId);
+  if (!Number.isFinite(normalizedId)) {
+    return;
+  }
+
+  document
+    .querySelectorAll(`[data-action="${action}"][data-product-id="${normalizedId}"]`)
+    .forEach((button) => {
+      button.disabled = isBusy;
+      button.classList.toggle("is-pending", isBusy);
+    });
+}
+
+
+function syncRenderedProductState(productId, state = {}) {
+  const normalizedId = Number(productId);
+  if (!Number.isFinite(normalizedId)) {
+    return;
+  }
+
+  const hasWishlisted = Object.prototype.hasOwnProperty.call(state, "isWishlisted");
+  const hasInCart = Object.prototype.hasOwnProperty.call(state, "isInCart");
+
+  document
+    .querySelectorAll(`[data-product-id="${normalizedId}"]`)
+    .forEach((button) => {
+      const action = button.dataset.action;
+      const label = button.querySelector("span");
+
+      if (action === "wishlist" && hasWishlisted) {
+        button.classList.toggle("active", Boolean(state.isWishlisted));
+        if (label) {
+          label.textContent = state.isWishlisted ? "Ne wishlist" : "Wishlist";
+        }
+      }
+
+      if (action === "cart" && hasInCart) {
+        button.classList.toggle("active", Boolean(state.isInCart));
+        if (label) {
+          label.textContent = state.isInCart ? "Ne cart" : "Shto ne cart";
+        }
+      }
+    });
 }
 
 

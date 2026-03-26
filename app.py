@@ -139,6 +139,14 @@ IMAGE_CONTENT_TYPE_EXTENSIONS = {
     "image/gif": ".gif",
     "image/avif": ".avif",
 }
+EXTENSION_CONTENT_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".avif": "image/avif",
+}
 MAX_UPLOAD_FILES = 8
 MAX_UPLOAD_FILE_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_FILES * MAX_UPLOAD_FILE_SIZE + (1024 * 1024)
@@ -494,6 +502,89 @@ def initialize_database() -> None:
         if not is_postgres_connection(connection):
             migrate_database(connection)
         ensure_bootstrap_admin(connection)
+
+
+def should_store_uploads_in_database() -> bool:
+    return IS_VERCEL or use_postgres_database()
+
+
+def guess_content_type_for_extension(extension: str) -> str:
+    return EXTENSION_CONTENT_TYPES.get(str(extension or "").strip().lower(), "application/octet-stream")
+
+
+def store_uploaded_asset(
+    *,
+    stored_name: str,
+    original_filename: str,
+    content_type: str,
+    file_bytes: bytes,
+    created_by_user_id: int | None = None,
+) -> None:
+    if should_store_uploads_in_database():
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO uploaded_assets (
+                    stored_name,
+                    original_filename,
+                    content_type,
+                    file_bytes,
+                    created_by_user_id
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    stored_name,
+                    original_filename,
+                    content_type,
+                    file_bytes,
+                    created_by_user_id,
+                ),
+            )
+        return
+
+    target_path = UPLOADS_DIR / stored_name
+    target_path.write_bytes(file_bytes)
+
+
+def delete_uploaded_asset_by_stored_name(stored_name: str) -> None:
+    clean_name = str(stored_name or "").strip()
+    if not clean_name:
+        return
+
+    if should_store_uploads_in_database():
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                DELETE FROM uploaded_assets
+                WHERE stored_name = ?
+                """,
+                (clean_name,),
+            )
+        return
+
+    (UPLOADS_DIR / clean_name).unlink(missing_ok=True)
+
+
+def fetch_uploaded_asset_by_stored_name(stored_name: str):
+    clean_name = str(stored_name or "").strip()
+    if not clean_name:
+        return None
+
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                stored_name,
+                original_filename,
+                content_type,
+                file_bytes
+            FROM uploaded_assets
+            WHERE stored_name = ?
+            LIMIT 1
+            """,
+            (clean_name,),
+        ).fetchone()
 
 
 def ensure_bootstrap_admin(connection: DatabaseConnection) -> None:
@@ -4071,6 +4162,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         saved_paths: list[str] = []
+        saved_asset_names: list[str] = []
         errors: list[str] = []
 
         for part in image_parts:
@@ -4099,14 +4191,23 @@ class AppHandler(SimpleHTTPRequestHandler):
             base_name = re.sub(r"[^a-zA-Z0-9]+", "-", Path(original_filename).stem)
             safe_name = base_name.strip("-").lower() or "product-photo"
             stored_name = f"{safe_name[:48]}-{secrets.token_hex(6)}{extension}"
-            target_path = UPLOADS_DIR / stored_name
-            target_path.write_bytes(file_bytes)
+            content_type = str(part.get_content_type() or "").strip().lower()
+            if not content_type.startswith("image/"):
+                content_type = guess_content_type_for_extension(extension)
+
+            store_uploaded_asset(
+                stored_name=stored_name,
+                original_filename=original_filename,
+                content_type=content_type,
+                file_bytes=file_bytes,
+                created_by_user_id=int(user["id"]),
+            )
+            saved_asset_names.append(stored_name)
             saved_paths.append(f"/uploads/{stored_name}")
 
         if errors or not saved_paths:
-            for saved_path in saved_paths:
-                uploaded_file = STATIC_DIR / saved_path.lstrip("/")
-                uploaded_file.unlink(missing_ok=True)
+            for stored_name in saved_asset_names:
+                delete_uploaded_asset_by_stored_name(stored_name)
 
             self.send_json(
                 400,
@@ -4187,8 +4288,17 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "-", Path(original_filename).stem).strip("-") or "profile"
         stored_name = f"profile-{user['id']}-{safe_name[:36]}-{secrets.token_hex(6)}{extension}"
-        target_path = UPLOADS_DIR / stored_name
-        target_path.write_bytes(file_bytes)
+        content_type = str(image_part.get_content_type() or "").strip().lower()
+        if not content_type.startswith("image/"):
+            content_type = guess_content_type_for_extension(extension)
+
+        store_uploaded_asset(
+            stored_name=stored_name,
+            original_filename=original_filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+            created_by_user_id=int(user["id"]),
+        )
 
         self.send_json(
             200,
@@ -5763,20 +5873,35 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         target_path = UPLOADS_DIR / relative_path
-        if not target_path.is_file():
+        payload: bytes | None = None
+        content_type = self.guess_type(str(target_path)) or "application/octet-stream"
+
+        if target_path.is_file():
+            try:
+                payload = target_path.read_bytes()
+            except OSError:
+                self.send_error(500, "Skedari nuk u lexua.")
+                return
+        else:
+            uploaded_asset = fetch_uploaded_asset_by_stored_name(relative_path)
+            if not uploaded_asset:
+                self.send_error(404, "Skedari nuk u gjet.")
+                return
+
+            payload = bytes(uploaded_asset["file_bytes"] or b"")
+            content_type = (
+                str(uploaded_asset["content_type"] or "").strip()
+                or content_type
+            )
+
+        if payload is None:
             self.send_error(404, "Skedari nuk u gjet.")
             return
 
-        try:
-            payload = target_path.read_bytes()
-        except OSError:
-            self.send_error(500, "Skedari nuk u lexua.")
-            return
-
-        content_type = self.guess_type(str(target_path)) or "application/octet-stream"
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.end_headers()
         self.wfile.write(payload)
 
