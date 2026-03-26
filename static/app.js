@@ -3318,6 +3318,7 @@ function initializeHomePage() {
   const promoDots = document.getElementById("home-promo-dots");
   const promoPrevButton = document.getElementById("home-promo-prev");
   const promoNextButton = document.getElementById("home-promo-next");
+  const promoViewport = promoTrack.closest(".home-promo-viewport");
   const productsStatusElement = document.getElementById("home-products-status");
   const messageElement = document.getElementById("home-page-message");
   const grid = document.getElementById("home-products-grid");
@@ -3329,6 +3330,7 @@ function initializeHomePage() {
     !promoDots ||
     !promoPrevButton ||
     !promoNextButton ||
+    !promoViewport ||
     !productsStatusElement ||
     !messageElement ||
     !grid
@@ -3374,6 +3376,9 @@ function initializeHomePage() {
   let promoIntervalId = null;
   let homeRevealObserver = null;
   let homeRevealResizeFrame = null;
+  let promoTouchStartX = 0;
+  let promoTouchStartY = 0;
+  let isPromoTouchActive = false;
 
   bootstrap();
 
@@ -3395,6 +3400,9 @@ function initializeHomePage() {
         restartPromoAutoplay();
       });
       promoDots.addEventListener("click", handleDotClick);
+      promoViewport.addEventListener("touchstart", handlePromoTouchStart, { passive: true });
+      promoViewport.addEventListener("touchend", handlePromoTouchEnd, { passive: true });
+      promoViewport.addEventListener("touchcancel", resetPromoTouchState, { passive: true });
     } catch (error) {
       productsStatusElement.textContent =
         "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
@@ -3476,6 +3484,49 @@ function initializeHomePage() {
 
   function restartPromoAutoplay() {
     startPromoAutoplay();
+  }
+
+  function handlePromoTouchStart(event) {
+    const firstTouch = event.changedTouches?.[0];
+    if (!firstTouch) {
+      return;
+    }
+
+    isPromoTouchActive = true;
+    promoTouchStartX = firstTouch.clientX;
+    promoTouchStartY = firstTouch.clientY;
+    stopPromoAutoplay();
+  }
+
+  function handlePromoTouchEnd(event) {
+    if (!isPromoTouchActive) {
+      return;
+    }
+
+    const lastTouch = event.changedTouches?.[0];
+    resetPromoTouchState();
+    if (!lastTouch) {
+      restartPromoAutoplay();
+      return;
+    }
+
+    const deltaX = lastTouch.clientX - promoTouchStartX;
+    const deltaY = lastTouch.clientY - promoTouchStartY;
+    const horizontalThreshold = 42;
+
+    if (Math.abs(deltaX) < horizontalThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) {
+      restartPromoAutoplay();
+      return;
+    }
+
+    goToSlide(deltaX < 0 ? currentSlideIndex + 1 : currentSlideIndex - 1);
+    restartPromoAutoplay();
+  }
+
+  function resetPromoTouchState() {
+    isPromoTouchActive = false;
+    promoTouchStartX = 0;
+    promoTouchStartY = 0;
   }
 
   async function refreshCollectionState() {
