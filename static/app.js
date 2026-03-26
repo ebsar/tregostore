@@ -120,6 +120,7 @@ const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 const LOGIN_GREETING_KEY = "trego_login_greeting";
+const CART_UPDATED_EVENT = "trego:cart-updated";
 const APP_LOADER_MIN_DURATION_MS = 700;
 const APP_LOADER_WINDOW_FALLBACK_MS = 2200;
 const APP_LOADER_MAX_DURATION_MS = 15000;
@@ -281,6 +282,87 @@ function holdAppLoader(reason = "page-content") {
 }
 
 
+function calculateCartItemsCount(items = []) {
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+
+  return items.reduce((total, item) => {
+    const quantity = Number(item?.quantity);
+    if (Number.isFinite(quantity) && quantity > 0) {
+      return total + Math.trunc(quantity);
+    }
+
+    return total + 1;
+  }, 0);
+}
+
+
+function emitCartUpdated(items = []) {
+  document.dispatchEvent(
+    new CustomEvent(CART_UPDATED_EVENT, {
+      detail: {
+        items: Array.isArray(items) ? items : [],
+      },
+    }),
+  );
+}
+
+
+function ensureCartBadgeElements() {
+  document.querySelectorAll(".cart-button").forEach((button) => {
+    if (button.querySelector(".nav-cart-badge")) {
+      return;
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "nav-cart-badge";
+    badge.hidden = true;
+    badge.textContent = "0";
+    button.append(badge);
+  });
+}
+
+
+function setNavCartCount(count) {
+  const normalizedCount = Math.max(0, Number.isFinite(Number(count)) ? Math.trunc(Number(count)) : 0);
+
+  document.querySelectorAll(".cart-button").forEach((button) => {
+    const badge = button.querySelector(".nav-cart-badge");
+    if (!badge) {
+      return;
+    }
+
+    if (normalizedCount <= 0) {
+      badge.hidden = true;
+      badge.textContent = "0";
+      button.classList.remove("has-cart-items");
+      return;
+    }
+
+    badge.hidden = false;
+    badge.textContent = normalizedCount > 99 ? "99+" : String(normalizedCount);
+    button.classList.add("has-cart-items");
+  });
+}
+
+
+async function refreshNavCartCount() {
+  try {
+    const { response, data } = await requestJson("/api/cart");
+    if (!response.ok || !data.ok || !Array.isArray(data.items)) {
+      setNavCartCount(0);
+      return;
+    }
+
+    setNavCartCount(calculateCartItemsCount(data.items));
+  } catch (error) {
+    setNavCartCount(0);
+    console.error(error);
+  }
+}
+
+
 function initializeSiteNavigation() {
   const siteNav = document.querySelector(".site-nav");
   const navLinks = document.querySelector(".nav-links");
@@ -292,6 +374,12 @@ function initializeSiteNavigation() {
   if (!siteNav || !navLinks || !navActions || !brand) {
     return;
   }
+
+  ensureCartBadgeElements();
+  setNavCartCount(0);
+  document.addEventListener(CART_UPDATED_EVENT, (event) => {
+    setNavCartCount(calculateCartItemsCount(event.detail?.items || []));
+  });
 
   const isMobileViewport = () => window.matchMedia("(max-width: 920px)").matches;
   const bindTapToggle = (element, handler) => {
@@ -439,8 +527,11 @@ function initializeSiteNavigation() {
   async function bootstrap() {
     const currentUser = await fetchCurrentUserOptional();
     if (!currentUser) {
+      setNavCartCount(0);
       return;
     }
+
+    await refreshNavCartCount();
 
     loginLink.remove();
     signupLink.remove();
@@ -514,6 +605,7 @@ function initializeSiteNavigation() {
           return;
         }
 
+        setNavCartCount(0);
         window.location.href = data.redirectTo || "/login";
       } catch (error) {
         console.error(error);
@@ -6719,6 +6811,18 @@ async function requestJson(url, options = {}) {
 
   try {
     data = await response.json();
+  } catch (error) {
+    console.error(error);
+  }
+
+  try {
+    const resolvedUrl = new URL(String(url), window.location.origin);
+    if (
+      resolvedUrl.pathname.startsWith("/api/cart") &&
+      Array.isArray(data?.items)
+    ) {
+      emitCartUpdated(data.items);
+    }
   } catch (error) {
     console.error(error);
   }

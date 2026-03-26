@@ -714,6 +714,7 @@ body[data-page="account"] .nav-user-trigger {
 }
 
 .nav-icon-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -735,6 +736,30 @@ body[data-page="account"] .nav-user-trigger {
 .nav-icon-button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.28);
+}
+
+.nav-cart-badge {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ef8b53, #d4603f);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow: 0 8px 18px rgba(212, 96, 63, 0.26);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.nav-cart-badge[hidden] {
+  display: none !important;
 }
 
 .nav-icon {
