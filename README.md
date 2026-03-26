@@ -12,17 +12,18 @@ Ky projekt tani ka:
 - `Kafshet shtepiake`
 - `Admin Products`
 
-Llogarite ruhen ne databazen SQLite, perdoruesi kyqet vetem nese email-i dhe fjalekalimi perputhen me te dhenat e ruajtura, admini mund te shtoje produkte qe dalin automatikisht si karta ne kategori, dhe klienti i kyçur mund t'i ruaje produktet ne `wishlist` ose `cart`.
+Llogarite ruhen ne databaze, perdoruesi kyqet vetem nese email-i dhe fjalekalimi perputhen me te dhenat e ruajtura, admini mund te shtoje produkte qe dalin automatikisht si karta ne kategori, dhe klienti i kyçur mund t'i ruaje produktet ne `wishlist` ose `cart`.
 
 Regjistrimi i ri kerkon edhe verifikim te email-it me kod 6-shifror. Kodi vlen `30 minuta`; nese kerkohet kod i ri, kodi i meparshem skadon automatikisht. Derisa email-i te verifikohet, `Login` nuk lejohet dhe user-i ridrejtohet te faqja `Verifiko emailin`.
 
 ## Teknologjite
 
 - Python 3
-- SQLite
+- SQLite lokalisht
+- PostgreSQL ne deploy nese vendos `DATABASE_URL`
 - HTML / CSS / JavaScript
 
-Nuk ka dependency te jashtme.
+Per `Postgres` ne deploy perdoret `psycopg`.
 
 ## Njoftimet me email per bizneset
 
@@ -91,14 +92,20 @@ Per Vercel:
 
 - projekti tani ka [vercel.json](/Users/ebsarhoxha/Documents/Playground/vercel.json) dhe wrapper-in [api/index.py](/Users/ebsarhoxha/Documents/Playground/api/index.py)
 - route-t e faqeve dhe `api/*` jane pergatitur per deploy
-- ne Vercel databaza SQLite dhe upload-et kalojne ne `/tmp`, pra jane te perkohshme dhe mund te humbin pas restart-it ose cold start-it
+- nese nuk vendos `DATABASE_URL`, ne Vercel databaza SQLite dhe upload-et kalojne ne `/tmp`, pra jane te perkohshme dhe mund te humbin pas restart-it ose cold start-it
+- nese vendos `DATABASE_URL`, aplikacioni kalon automatikisht ne `PostgreSQL` dhe i krijon tabelat nga [schema_postgres.sql](/Users/ebsarhoxha/Documents/Playground/schema_postgres.sql)
 - per te mos mbetur pa admin ne deploy, mund te vendosesh:
   - `TREGO_BOOTSTRAP_ADMIN_NAME`
   - `TREGO_BOOTSTRAP_ADMIN_EMAIL`
   - `TREGO_BOOTSTRAP_ADMIN_PASSWORD`
 - nese nuk ekziston asnje admin, ky admin krijohet automatikisht nga keto env vars
+- per deploy me databaze reale, shto edhe:
+  - `DATABASE_URL`
 
-Pra ky setup eshte i mire per `preview/demo` ne Vercel, por jo ende zgjidhja perfundimtare per prodhim serioz.
+Pra tani ke dy menyra:
+
+- `preview/demo`: pa `DATABASE_URL`, me SQLite te perkohshme
+- `deploy serioz`: me `DATABASE_URL` te PostgreSQL
 
 ## Si funksionon tani
 

@@ -458,7 +458,11 @@ def get_db_connection() -> DatabaseConnection:
                 "Shtoje ne requirements.txt para deploy-it."
             ) from error
 
-        raw_connection = psycopg.connect(get_database_url(), row_factory=dict_row)
+        raw_connection = psycopg.connect(
+            get_database_url(),
+            row_factory=dict_row,
+            prepare_threshold=None,
+        )
         return DatabaseConnection(raw_connection, "postgres")
 
     raw_connection = sqlite3.connect(DB_PATH)
