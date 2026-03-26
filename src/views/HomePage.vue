@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import ProductCard from "../components/ProductCard.vue";
 import PromoSlider from "../components/PromoSlider.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
@@ -12,10 +12,48 @@ const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
+const filtersVisible = ref(false);
 const statusText = ref("Po ngarkohen produktet publike te TREGO.");
+const filters = reactive({
+  size: "",
+  color: "",
+  sort: "",
+});
 const ui = reactive({
   message: "",
   type: "",
+});
+
+const filteredProducts = computed(() => {
+  let nextProducts = [...products.value];
+
+  if (filters.size) {
+    nextProducts = nextProducts.filter((product) => String(product.size || "") === filters.size);
+  }
+
+  if (filters.color) {
+    nextProducts = nextProducts.filter((product) => String(product.color || "") === filters.color);
+  }
+
+  if (filters.sort === "price-asc") {
+    nextProducts.sort((left, right) => Number(left.price || 0) - Number(right.price || 0));
+  } else if (filters.sort === "price-desc") {
+    nextProducts.sort((left, right) => Number(right.price || 0) - Number(left.price || 0));
+  }
+
+  return nextProducts;
+});
+
+const collectionLabel = computed(() => {
+  if (!products.value.length) {
+    return "Nuk ka produkte publike ende.";
+  }
+
+  if (!filters.size && !filters.color && !filters.sort) {
+    return statusText.value;
+  }
+
+  return `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte sipas filtrave te zgjedhur.`;
 });
 
 onMounted(async () => {
@@ -76,6 +114,12 @@ async function loadBusinesses() {
 function setMessage(message, type = "") {
   ui.message = message;
   ui.type = type;
+}
+
+function resetFilters() {
+  filters.size = "";
+  filters.color = "";
+  filters.sort = "";
 }
 
 async function handleWishlist(productId) {
@@ -153,16 +197,76 @@ async function handleCart(productId) {
     <header class="collection-page-header home-collection-header">
       <p class="section-label">Produktet</p>
       <h1>Te gjitha produktet</h1>
-      <p>{{ statusText }}</p>
+      <p>{{ collectionLabel }}</p>
     </header>
+
+    <div class="collection-toolbar">
+      <button
+        class="filter-toggle-button"
+        type="button"
+        :aria-expanded="filtersVisible ? 'true' : 'false'"
+        @click="filtersVisible = !filtersVisible"
+      >
+        Filtro
+      </button>
+    </div>
+
+    <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet ne faqen kryesore">
+      <div class="search-filters-grid">
+        <label class="field">
+          <span>Madhesia</span>
+          <select v-model="filters.size" class="search-filter-select">
+            <option value="">Te gjitha madhesite</option>
+            <option value="XS">XS</option>
+            <option value="S">S</option>
+            <option value="M">M</option>
+            <option value="L">L</option>
+            <option value="XL">XL</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Ngjyra</span>
+          <select v-model="filters.color" class="search-filter-select">
+            <option value="">Te gjitha ngjyrat</option>
+            <option value="bardhe">Bardhe</option>
+            <option value="zeze">Zeze</option>
+            <option value="gri">Gri</option>
+            <option value="beige">Beige</option>
+            <option value="kafe">Kafe</option>
+            <option value="kuqe">Kuqe</option>
+            <option value="roze">Roze</option>
+            <option value="vjollce">Vjollce</option>
+            <option value="blu">Blu</option>
+            <option value="gjelber">Gjelber</option>
+            <option value="verdhe">Verdhe</option>
+            <option value="portokalli">Portokalli</option>
+            <option value="shume-ngjyra">Shume ngjyra</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Cmimi</span>
+          <select v-model="filters.sort" class="search-filter-select">
+            <option value="">Renditja standarde</option>
+            <option value="price-asc">Nga me i uleti</option>
+            <option value="price-desc">Nga me i larti</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="search-filter-actions">
+        <button class="search-reset-button" type="button" @click="resetFilters">Pastro filtrat</button>
+      </div>
+    </section>
 
     <div class="form-message" :class="ui.type" role="status" aria-live="polite">
       {{ ui.message }}
     </div>
 
-    <section v-if="products.length > 0" class="pet-products-grid" aria-label="Te gjitha produktet">
+    <section v-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Te gjitha produktet">
       <ProductCard
-        v-for="product in products"
+        v-for="product in filteredProducts"
         :key="product.id"
         :product="product"
         :is-wishlisted="wishlistIds.includes(product.id)"

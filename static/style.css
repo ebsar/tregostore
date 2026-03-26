@@ -2523,6 +2523,32 @@ body[data-page="cart"] .page-shell::before {
   font-size: 1.02rem;
 }
 
+.collection-toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.filter-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  color: #6d4a39;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-color: rgba(198, 132, 86, 0.38);
+}
+
+.filter-toggle-button:hover {
+  color: #51372b;
+}
+
 .search-page {
   gap: 22px;
 }
@@ -5694,6 +5720,10 @@ code {
   }
 
   .search-reset-button {
+    width: 100%;
+  }
+
+  .collection-toolbar {
     width: 100%;
   }
 

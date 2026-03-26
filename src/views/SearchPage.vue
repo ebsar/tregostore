@@ -15,6 +15,7 @@ const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
+const filtersVisible = ref(false);
 const filters = reactive({
   size: "",
   color: "",
@@ -239,7 +240,18 @@ async function handleCart(productId) {
       <button class="search-submit-button" type="submit">Kerko</button>
     </form>
 
-    <section class="search-filters-panel" aria-label="Filtro produktet">
+    <div class="collection-toolbar">
+      <button
+        class="filter-toggle-button"
+        type="button"
+        :aria-expanded="filtersVisible ? 'true' : 'false'"
+        @click="filtersVisible = !filtersVisible"
+      >
+        Filtro
+      </button>
+    </div>
+
+    <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet">
       <div class="search-filters-grid">
         <label class="field">
           <span>Madhesia</span>
