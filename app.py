@@ -329,8 +329,8 @@ def get_db_connection() -> sqlite3.Connection:
 
 
 def initialize_database() -> None:
-    DATA_DIR.mkdir(exist_ok=True)
-    UPLOADS_DIR.mkdir(exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as connection:
         connection.execute("PRAGMA foreign_keys = ON;")
