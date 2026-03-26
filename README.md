@@ -18,10 +18,11 @@ Regjistrimi i ri kerkon edhe verifikim te email-it me kod 6-shifror. Kodi vlen `
 
 ## Teknologjite
 
-- Python 3
+- Python 3 API
 - SQLite lokalisht
 - PostgreSQL ne deploy nese vendos `DATABASE_URL`
-- HTML / CSS / JavaScript
+- Vue 3 + Vite per frontend-in kryesor te klientit
+- CSS ekzistuese e projektit e perdorur nga frontend-i i ri ne Vue
 
 Per `Postgres` ne deploy perdoret `psycopg`.
 
@@ -60,25 +61,73 @@ Kur SMTP nuk eshte konfiguruar ende, kodi i verifikimit te email-it printohet ed
 
 ## Cfare duhet te instalosh
 
-Ne kete makine nuk ke nevoje te instalosh asgje tjeter, sepse:
+Ne kete makine tash te duhen:
 
-- `Python 3` eshte i instaluar
-- `sqlite3` eshte i instaluar
+- `Python 3`
+- `Node.js 16+`
+- `npm`
 
-Nese e kalon projektin ne nje kompjuter tjeter, sigurohu te kesh `Python 3`.
+Lokalisht backend-i dhe frontend-i nisen ndaras.
 
 ## Si ta nisesh
+
+Backend API:
 
 ```bash
 cd /Users/ebsarhoxha/Documents/Playground
 python3 app.py
 ```
 
-Pastaj hape ne browser:
+Frontend Vue:
+
+```bash
+cd /Users/ebsarhoxha/Documents/Playground
+npm run dev
+```
+
+Pastaj hape ne browser frontend-in:
+
+```text
+http://127.0.0.1:5173
+```
+
+Backend API mbetet te:
 
 ```text
 http://127.0.0.1:8000
 ```
+
+Shenim:
+
+- frontend-i i ri `Vue + Vite` ne kete konfigurim punon me `Node 16+`
+- nese po perdor `nvm`, ne root te projektit mund te besh:
+
+```bash
+nvm use
+```
+
+- krejt frontend-i kryesor tani kalon nga `Vue`, perfshire:
+  - `Home`
+  - `Search`
+  - `Product detail`
+  - `Business profile`
+  - `Login`
+  - `Sign Up`
+  - `Verify email`
+  - `Forgot password`
+  - `Change password`
+  - `Wishlist`
+  - `Cart`
+  - `Llogaria`
+  - `Te dhenat personale`
+  - `Adresat`
+  - `Porosite`
+  - `Porosite e biznesit`
+  - `Checkout address`
+  - `Payment options`
+  - `Admin products`
+  - `Biznesi juaj`
+  - `Bizneset e regjistruara`
 
 ## GitHub dhe Vercel
 
@@ -91,7 +140,8 @@ Per GitHub:
 Per Vercel:
 
 - projekti tani ka [vercel.json](/Users/ebsarhoxha/Documents/Playground/vercel.json) dhe wrapper-in [api/index.py](/Users/ebsarhoxha/Documents/Playground/api/index.py)
-- route-t e faqeve dhe `api/*` jane pergatitur per deploy
+- `Vercel` nderton frontend-in me `npm run build` dhe e sherben nga `dist`
+- route-t e aplikacionit tani shkojne te `Vue SPA`, perfshire edhe `admin`, `business`, `account` dhe `checkout`
 - nese nuk vendos `DATABASE_URL`, ne Vercel databaza SQLite dhe upload-et kalojne ne `/tmp`, pra jane te perkohshme dhe mund te humbin pas restart-it ose cold start-it
 - nese vendos `DATABASE_URL`, aplikacioni kalon automatikisht ne `PostgreSQL` dhe i krijon tabelat nga [schema_postgres.sql](/Users/ebsarhoxha/Documents/Playground/schema_postgres.sql)
 - per te mos mbetur pa admin ne deploy, mund te vendosesh:
@@ -135,18 +185,18 @@ Shenim:
 ## Skedaret kryesore
 
 - `app.py`
+- `api/index.py`
 - `schema.sql`
-- `static/index.html`
-- `static/about.html`
-- `static/login.html`
-- `static/forgot-password.html`
-- `static/signup.html`
-- `static/pets.html`
-- `static/wishlist.html`
-- `static/cart.html`
-- `static/admin-products.html`
-- `static/app.js`
+- `schema_postgres.sql`
+- `index.html`
+- `vite.config.mjs`
+- `public/`
+- `src/App.vue`
+- `src/router/index.js`
+- `src/views/`
+- `src/components/`
 - `static/style.css`
+- `static/*.html` per faqet legacy
 
 ## Databaza
 

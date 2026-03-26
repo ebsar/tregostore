@@ -1,10 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
-    {
-      "source": "/",
-      "destination": "/static/index.html"
-    },
     {
       "source": "/api/:path*",
       "destination": "/api/index.py?_route=api/:path*"
@@ -15,95 +13,99 @@
     },
     {
       "source": "/about",
-      "destination": "/static/about.html"
+      "destination": "/index.html"
+    },
+    {
+      "source": "/",
+      "destination": "/index.html"
     },
     {
       "source": "/kerko",
-      "destination": "/static/search.html"
-    },
-    {
-      "source": "/profili-biznesit",
-      "destination": "/static/business-profile-public.html"
-    },
-    {
-      "source": "/login",
-      "destination": "/static/login.html"
-    },
-    {
-      "source": "/forgot-password",
-      "destination": "/static/forgot-password.html"
-    },
-    {
-      "source": "/signup",
-      "destination": "/static/signup.html"
-    },
-    {
-      "source": "/verifiko-email",
-      "destination": "/static/verify-email.html"
-    },
-    {
-      "source": "/biznesi-juaj",
-      "destination": "/static/business-dashboard.html"
-    },
-    {
-      "source": "/llogaria",
-      "destination": "/static/account.html"
-    },
-    {
-      "source": "/te-dhenat-personale",
-      "destination": "/static/personal-data.html"
-    },
-    {
-      "source": "/adresat",
-      "destination": "/static/addresses.html"
-    },
-    {
-      "source": "/porosite",
-      "destination": "/static/orders.html"
-    },
-    {
-      "source": "/porosite-e-biznesit",
-      "destination": "/static/business-orders.html"
-    },
-    {
-      "source": "/ndrysho-fjalekalimin",
-      "destination": "/static/change-password.html"
-    },
-    {
-      "source": "/produkti",
-      "destination": "/static/product-detail.html"
-    },
-    {
-      "source": "/wishlist",
-      "destination": "/static/wishlist.html"
-    },
-    {
-      "source": "/cart",
-      "destination": "/static/cart.html"
-    },
-    {
-      "source": "/adresa-e-porosise",
-      "destination": "/static/checkout-address.html"
-    },
-    {
-      "source": "/menyra-e-pageses",
-      "destination": "/static/payment-options.html"
+      "destination": "/index.html"
     },
     {
       "source": "/kafshet-shtepiake",
-      "destination": "/static/pets.html"
+      "destination": "/index.html"
+    },
+    {
+      "source": "/profili-biznesit",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/verifiko-email",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ndrysho-fjalekalimin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/produkti",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/wishlist",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/cart",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/llogaria",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/te-dhenat-personale",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/adresat",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/porosite",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/porosite-e-biznesit",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/adresa-e-porosise",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/menyra-e-pageses",
+      "destination": "/index.html"
     },
     {
       "source": "/admin-products",
-      "destination": "/static/admin-products.html"
+      "destination": "/index.html"
+    },
+    {
+      "source": "/biznesi-juaj",
+      "destination": "/index.html"
     },
     {
       "source": "/bizneset-e-regjistruara",
-      "destination": "/static/registered-businesses.html"
+      "destination": "/index.html"
     },
     {
       "source": "/:path*",
-      "destination": "/static/:path*"
+      "destination": "/:path*"
     }
   ]
 }
