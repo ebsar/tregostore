@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Bizneset e regjistruara</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="registered-businesses">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-admin">
+      <section class="registered-businesses-page" aria-label="Bizneset e regjistruara">
+        <header class="admin-products-header">
+          <div>
+            <p class="section-label">Paneli admin</p>
+            <h1>Bizneset e regjistruara</h1>
+            <p class="admin-products-intro">
+              Ketu shfaqen bizneset qe jane regjistruar ne platforme, bashke me te dhenat baze dhe numrin e produkteve qe kane shtuar deri tani.
+            </p>
+          </div>
+          <div class="admin-user-chip">
+            <span>Totali i bizneseve</span>
+            <strong id="registered-businesses-total">0</strong>
+          </div>
+        </header>
+
+        <p id="registered-businesses-access-note" class="admin-access-note">
+          Po ngarkohen bizneset e regjistruara...
+        </p>
+
+        <div class="admin-products-layout">
+          <section class="card admin-form-card">
+            <h2>Krijo llogari biznesi</h2>
+            <p class="section-text">
+              Nga kjo pjese mund te krijosh direkt nje llogari te re per biznesin dhe ai do te kycet me rolin `business`.
+            </p>
+
+            <form id="admin-business-account-form" class="auth-form">
+              <label class="field">
+                <span>Emri dhe mbiemri i pronarit</span>
+                <input name="fullName" type="text" placeholder="p.sh. Arben Krasniqi" required>
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Email-i i biznesit</span>
+                  <input name="email" type="email" placeholder="p.sh. biznesi@email.com" required>
+                </label>
+
+                <label class="field">
+                  <span>Fjalekalimi</span>
+                  <input name="password" type="password" placeholder="Shkruaje fjalekalimin" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Emri i biznesit</span>
+                <input name="businessName" type="text" placeholder="p.sh. Market Rinia" required>
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Nr. i biznesit</span>
+                  <input name="businessNumber" type="text" placeholder="p.sh. BR-204-55" required>
+                </label>
+
+                <label class="field">
+                  <span>Numri i telefonit</span>
+                  <input name="phoneNumber" type="text" placeholder="p.sh. +383 44 123 456" required>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Qyteti</span>
+                  <input name="city" type="text" placeholder="p.sh. Prishtine" required>
+                </label>
+
+                <label class="field">
+                  <span>Adresa e biznesit</span>
+                  <input name="addressLine" type="text" placeholder="Shkruaje adresen e biznesit" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Pershkrimi i biznesit</span>
+                <textarea name="businessDescription" rows="4" placeholder="Shkruaje pershkrimin e biznesit" required></textarea>
+              </label>
+
+              <button id="admin-business-account-submit" type="submit">Krijo llogarine e biznesit</button>
+            </form>
+
+            <div id="registered-businesses-form-message" class="form-message" role="status" aria-live="polite"></div>
+          </section>
+
+          <section class="card admin-list-card">
+            <div class="admin-list-header">
+              <div>
+                <p class="section-label">Lista e bizneseve</p>
+                <h2>Bizneset aktive ne sistem</h2>
+              </div>
+            </div>
+
+            <form id="registered-businesses-search-form" class="search-form registered-businesses-search-form" novalidate>
+              <input
+                id="registered-businesses-search-input"
+                class="search-input"
+                type="search"
+                placeholder="Kerko sipas emrit te biznesit, pronarit ose nr. te biznesit"
+                aria-label="Kerko biznes"
+              >
+              <button id="registered-businesses-search-submit" class="search-submit-button" type="submit">Kerko</button>
+              <button id="registered-businesses-search-reset" class="search-reset-button" type="button">Pastro</button>
+            </form>
+
+            <p id="registered-businesses-search-status" class="search-results-label" aria-live="polite"></p>
+
+            <div id="registered-businesses-message" class="form-message" role="status" aria-live="polite"></div>
+
+            <div id="registered-businesses-list" class="registered-businesses-list">
+              <div class="collection-empty-state">
+                Po ngarkohen bizneset...
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

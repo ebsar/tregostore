@@ -1,0 +1,101 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.py?_route=api/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "/api/index.py?_route=uploads/:path*"
+    },
+    {
+      "source": "/about",
+      "destination": "/about.html"
+    },
+    {
+      "source": "/kerko",
+      "destination": "/search.html"
+    },
+    {
+      "source": "/profili-biznesit",
+      "destination": "/business-profile-public.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/forgot-password.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/signup.html"
+    },
+    {
+      "source": "/verifiko-email",
+      "destination": "/verify-email.html"
+    },
+    {
+      "source": "/biznesi-juaj",
+      "destination": "/business-dashboard.html"
+    },
+    {
+      "source": "/llogaria",
+      "destination": "/account.html"
+    },
+    {
+      "source": "/te-dhenat-personale",
+      "destination": "/personal-data.html"
+    },
+    {
+      "source": "/adresat",
+      "destination": "/addresses.html"
+    },
+    {
+      "source": "/porosite",
+      "destination": "/orders.html"
+    },
+    {
+      "source": "/porosite-e-biznesit",
+      "destination": "/business-orders.html"
+    },
+    {
+      "source": "/ndrysho-fjalekalimin",
+      "destination": "/change-password.html"
+    },
+    {
+      "source": "/produkti",
+      "destination": "/product-detail.html"
+    },
+    {
+      "source": "/wishlist",
+      "destination": "/wishlist.html"
+    },
+    {
+      "source": "/cart",
+      "destination": "/cart.html"
+    },
+    {
+      "source": "/adresa-e-porosise",
+      "destination": "/checkout-address.html"
+    },
+    {
+      "source": "/menyra-e-pageses",
+      "destination": "/payment-options.html"
+    },
+    {
+      "source": "/kafshet-shtepiake",
+      "destination": "/pets.html"
+    },
+    {
+      "source": "/admin-products",
+      "destination": "/admin-products.html"
+    },
+    {
+      "source": "/bizneset-e-regjistruara",
+      "destination": "/registered-businesses.html"
+    }
+  ]
+}

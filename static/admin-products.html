@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Admin Products</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="admin-products">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-admin">
+      <section class="admin-products-page" aria-label="Paneli admin i produkteve">
+        <header class="admin-products-header">
+          <div>
+            <p class="section-label">Paneli admin</p>
+            <h1>Menaxho artikujt</h1>
+            <p class="admin-products-intro">
+              Shto artikuj te rinj dhe ata do te dalin automatikisht ne seksionin perkates te faqes sipas menus se navigimit.
+            </p>
+          </div>
+          <div class="admin-user-chip">
+            <span>Sesioni aktiv</span>
+            <strong id="admin-user-role">Duke u kontrolluar...</strong>
+          </div>
+        </header>
+
+        <p id="admin-access-note" class="admin-access-note">
+          Po kontrollohet aksesimi administrativ...
+        </p>
+
+        <div class="admin-products-layout">
+          <section id="admin-form-section" class="card admin-form-card" hidden>
+            <h2>Shto artikull te ri</h2>
+            <p class="section-text">
+              Zgjidh seksionin sipas menus se faqes, pastaj kategorine e produktit. Madhesia shfaqet vetem per veshjet. Fotoja e pare do te dale si cover ne kartat e produktit.
+            </p>
+
+            <form id="product-form" class="auth-form">
+              <label class="field">
+                <span>Titulli</span>
+                <input name="title" type="text" placeholder="p.sh. Krem per kqent" required>
+              </label>
+
+              <label class="field">
+                <span>Cmimi (€)</span>
+                <input name="price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
+              </label>
+
+              <label class="field">
+                <span>Seksioni i faqes</span>
+                <select id="product-category" name="category" required></select>
+              </label>
+
+              <label class="field">
+                <span>Kategoria e produktit</span>
+                <select id="product-type" name="productType" required></select>
+              </label>
+
+              <div class="field-row">
+                <label id="product-size-field" class="field" hidden>
+                  <span>Madhesia e produktit</span>
+                  <select id="product-size" name="size">
+                    <option value="">Pa madhesi</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Sasia ne stok</span>
+                  <input id="product-stock-quantity" name="stockQuantity" type="number" min="0" step="1" value="1" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Ngjyra e produktit</span>
+                <select id="product-color" name="color">
+                  <option value="">Pa ngjyre specifike</option>
+                  <option value="bardhe">Bardhe</option>
+                  <option value="zeze">Zeze</option>
+                  <option value="gri">Gri</option>
+                  <option value="beige">Beige</option>
+                  <option value="kafe">Kafe</option>
+                  <option value="kuqe">Kuqe</option>
+                  <option value="roze">Roze</option>
+                  <option value="vjollce">Vjollce</option>
+                  <option value="blu">Blu</option>
+                  <option value="gjelber">Gjelber</option>
+                  <option value="verdhe">Verdhe</option>
+                  <option value="portokalli">Portokalli</option>
+                  <option value="shume-ngjyra">Shume ngjyra</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Upload photo</span>
+                <input id="product-images" name="images" type="file" accept="image/*" multiple required>
+              </label>
+
+              <p class="product-upload-help">
+                Mund te zgjedhesh disa foto njeheresh. Te faqja e produktit ato shfaqen me butonin `Next`.
+              </p>
+
+              <div id="product-upload-preview" class="product-upload-preview" aria-live="polite">
+                <div class="product-upload-empty">Asnje foto nuk eshte zgjedhur ende.</div>
+              </div>
+
+              <label class="field">
+                <span>Pershkrimi</span>
+                <textarea name="description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
+              </label>
+
+              <button id="product-submit-button" type="submit">Ruaje artikullin</button>
+            </form>
+
+            <div id="product-form-message" class="form-message" role="status" aria-live="polite"></div>
+          </section>
+
+          <section class="card admin-list-card">
+            <div class="admin-list-header">
+              <div>
+                <p class="section-label">Artikujt</p>
+                <h2>Lista aktuale e produkteve</h2>
+              </div>
+            </div>
+
+            <div id="admin-list-message" class="form-message" role="status" aria-live="polite"></div>
+            <div id="admin-products-list" class="admin-products-list"></div>
+          </section>
+        </div>
+
+        <section class="card admin-users-card">
+          <div class="admin-list-header">
+            <div>
+              <p class="section-label">Perdoruesit</p>
+              <h2>Menaxho rolet e llogarive</h2>
+            </div>
+          </div>
+
+          <p class="section-text">
+            Cdo llogari e re krijohet si user normal. Nga kjo pjese mund te vendosesh kush behet admin, kush behet biznes, dhe kush kthehet prape ne user.
+          </p>
+
+          <div id="admin-users-message" class="form-message" role="status" aria-live="polite"></div>
+          <div id="admin-users-list" class="admin-users-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

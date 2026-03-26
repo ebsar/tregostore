@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Home</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="home">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell page-shell-home-full">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-collection">
+      <section class="collection-page home-collection-page" aria-label="Faqja kryesore">
+        <section class="home-promotions" aria-label="Reklamat kryesore">
+          <div class="home-promo-slider">
+            <div class="home-promo-viewport">
+              <div id="home-promo-track" class="home-promo-track"></div>
+            </div>
+
+            <div class="home-promo-controls">
+              <button id="home-promo-prev" class="home-promo-arrow" type="button" aria-label="Slide i meparshem">Mbrapa</button>
+              <div id="home-promo-dots" class="home-promo-dots" aria-label="Zgjedh slide"></div>
+              <button id="home-promo-next" class="home-promo-arrow" type="button" aria-label="Slide i ardhshem">Tjeter</button>
+            </div>
+          </div>
+        </section>
+
+        <header class="collection-page-header home-collection-header">
+          <p class="section-label">Produktet</p>
+          <h1>Te gjitha produktet</h1>
+          <p id="home-products-status">
+            Po ngarkohen produktet publike te TREGO.
+          </p>
+        </header>
+
+        <div id="home-page-message" class="form-message" role="status" aria-live="polite"></div>
+        <section id="home-products-grid" class="pet-products-grid" aria-label="Te gjitha produktet"></section>
+
+        <section id="home-businesses-section" class="home-businesses-section" aria-label="Bizneset me te cilat punojme" hidden>
+          <header class="collection-page-header home-businesses-header">
+            <p class="section-label">Bizneset partnere</p>
+            <h2>Bizneset me te cilat punojme</h2>
+            <p>
+              Emrat dhe logot e bizneseve qe kane regjistruar profilin e tyre ne TREGO.
+            </p>
+          </header>
+
+          <div class="home-businesses-marquee" aria-live="polite">
+            <div id="home-businesses-track" class="home-businesses-track"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Adresat</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="addresses">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-account">
+      <section class="account-page profile-page" aria-label="Adresat">
+        <header class="account-header profile-page-header">
+          <div>
+            <p class="section-label">Adresat</p>
+            <h1>Adresa default e perdoruesit</h1>
+            <p class="section-text">
+              Ketu mund ta ruash adresen tende kryesore. Me vone kjo adrese mund te perdoret per dergesa dhe lidhje me bizneset tjera.
+            </p>
+          </div>
+        </header>
+
+        <section class="card address-card">
+          <div class="profile-card-header">
+            <div>
+              <p class="section-label">Adresa aktuale</p>
+              <h2>Default address</h2>
+            </div>
+          </div>
+
+          <div id="addresses-page-message" class="form-message" role="status" aria-live="polite"></div>
+
+          <div id="default-address-empty" class="collection-empty-state" hidden>
+            Ende nuk ke ruajtur adrese default. Plotëso formën më poshtë dhe kliko ruaj.
+          </div>
+
+          <div id="default-address-summary" class="address-summary-grid" hidden>
+            <div class="summary-chip">
+              <span>Adresa e vendbanimit</span>
+              <strong id="address-summary-line">-</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Qyteti</span>
+              <strong id="address-summary-city">-</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Shteti</span>
+              <strong id="address-summary-country">-</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Zip code</span>
+              <strong id="address-summary-zip">-</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Numri i telefonit</span>
+              <strong id="address-summary-phone">-</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Statusi</span>
+              <strong>Default</strong>
+            </div>
+          </div>
+
+          <form id="addresses-form" class="auth-form profile-form">
+            <div class="field">
+              <span>Adresa e vendbanimit</span>
+              <input id="address-line-input" name="addressLine" type="text" placeholder="Shkruaje adresen e vendbanimit" required>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Qyteti</span>
+                <input id="city-input" name="city" type="text" placeholder="Shkruaje qytetin" required>
+              </label>
+
+              <label class="field">
+                <span>Shteti</span>
+                <input id="country-input" name="country" type="text" placeholder="Shkruaje shtetin" required>
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Zip code</span>
+                <input id="zip-code-input" name="zipCode" type="text" placeholder="Shkruaje zip code" required>
+              </label>
+
+              <label class="field">
+                <span>Numri i telefonit</span>
+                <input id="phone-number-input" name="phoneNumber" type="tel" placeholder="Shkruaje numrin e telefonit" required>
+              </label>
+            </div>
+
+            <div class="profile-form-actions">
+              <button id="addresses-save-button" class="profile-save-button" type="submit">Ruaj</button>
+              <button id="addresses-cancel-button" class="ghost-button profile-cancel-button" type="button">Cancel</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

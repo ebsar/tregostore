@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Llogaria</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="account">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-account">
+      <section class="account-page" aria-label="Llogaria ime">
+        <header class="account-header">
+          <div>
+            <p class="section-label">Llogaria ime</p>
+            <h1>Menaxho profilin tend</h1>
+            <p class="section-text">
+              Ketu mund t'i shohesh te dhenat personale, adresat, porosite dhe te ndryshosh fjalekalimin.
+            </p>
+          </div>
+        </header>
+
+        <div id="account-page-message" class="form-message" role="status" aria-live="polite"></div>
+
+        <div class="account-layout">
+          <aside class="card account-sidebar">
+            <a class="account-nav-link" href="/te-dhenat-personale">Te dhenat personale</a>
+            <a class="account-nav-link" href="/adresat">Adresat</a>
+            <a class="account-nav-link" href="/porosite">Porosite</a>
+            <a class="account-nav-link" href="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</a>
+          </aside>
+
+          <div class="account-sections">
+            <section id="te-dhenat-personale" class="card account-section">
+              <p class="section-label">Profili</p>
+              <h2>Te dhenat personale</h2>
+              <div class="account-info-grid">
+                <div class="summary-chip">
+                  <span>Emri i plote</span>
+                  <strong id="account-full-name">-</strong>
+                </div>
+                <div class="summary-chip">
+                  <span>Email</span>
+                  <strong id="account-email">-</strong>
+                </div>
+                <div class="summary-chip">
+                  <span>Anetar qe nga</span>
+                  <strong id="account-created-at">-</strong>
+                </div>
+              </div>
+            </section>
+
+            <section id="adresat" class="card account-section">
+              <p class="section-label">Adresat</p>
+              <h2>Adresat e ruajtura</h2>
+              <p class="section-text">
+                Ende nuk kemi shtuar menaxhimin e adresave. Kjo pjese eshte gati per hapin tjeter kur te duash.
+              </p>
+            </section>
+
+            <section id="porosite" class="card account-section">
+              <p class="section-label">Porosite</p>
+              <h2>Historia e porosive</h2>
+              <p class="section-text">
+                Ende nuk ka sistem porosish aktiv. Me vone mund ta lidhim me cart dhe checkout.
+              </p>
+            </section>
+
+            <section id="ndrysho-fjalekalimin" class="card account-section">
+              <p class="section-label">Siguria</p>
+              <h2>Ndryshimi i fjalekalimit</h2>
+              <form id="account-password-form" class="auth-form">
+                <label class="field">
+                  <span>Fjalekalimi aktual</span>
+                  <input name="currentPassword" type="password" placeholder="Shkruaje fjalekalimin aktual" required>
+                </label>
+
+                <label class="field">
+                  <span>Fjalekalimi i ri</span>
+                  <input name="newPassword" type="password" placeholder="Shkruaje fjalekalimin e ri" required>
+                </label>
+
+                <label class="field">
+                  <span>Konfirmo fjalekalimin e ri</span>
+                  <input name="confirmPassword" type="password" placeholder="Shkruaje perseri fjalekalimin e ri" required>
+                </label>
+
+                <button id="account-password-submit" type="submit">Ruaje fjalekalimin e ri</button>
+              </form>
+
+              <div id="account-password-message" class="form-message" role="status" aria-live="polite"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

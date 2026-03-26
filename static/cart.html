@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Cart</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="cart">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-collection">
+      <section class="collection-page" aria-label="Cart products">
+        <header class="collection-page-header">
+          <p class="section-label">Cart</p>
+          <h1>Shporta ime</h1>
+          <p>
+            Ketu shfaqen produktet qe shtohen nga kartat e produkteve. Duhet te jesh i kyçur qe t'i përdorësh.
+          </p>
+        </header>
+
+        <div id="cart-page-message" class="form-message" role="status" aria-live="polite"></div>
+        <div class="cart-layout">
+          <div id="cart-products-panel" class="cart-products-panel">
+            <div id="cart-selection-toolbar" class="saved-products-toolbar" hidden>
+              <div class="saved-products-toolbar-left">
+                <label class="saved-products-select-all" for="cart-select-all">
+                  <input id="cart-select-all" type="checkbox">
+                  <span>Zgjidh produktet per porosi</span>
+                </label>
+                <span id="cart-selected-count" class="saved-products-selected-count">0 produkte te zgjedhura</span>
+              </div>
+            </div>
+
+            <section id="cart-products-grid" class="saved-products-grid" aria-label="Cart grid"></section>
+          </div>
+
+          <aside id="cart-summary-card" class="card cart-summary-card" aria-label="Cart summary">
+            <div class="profile-card-header">
+              <div>
+                <p class="section-label">Pagesa</p>
+                <h2>Permbledhja e porosise</h2>
+              </div>
+            </div>
+
+            <div class="cart-summary-grid">
+              <div class="summary-chip">
+                <span>Produktet ne shporte</span>
+                <strong id="cart-total-items">0</strong>
+              </div>
+              <div class="summary-chip">
+                <span>Shuma totale</span>
+                <strong id="cart-total-price">€0</strong>
+              </div>
+            </div>
+
+            <p class="cart-summary-note">
+              Pasi te vazhdosh me porosine, hapi i ardhshem eshte vendosja e adreses se dergeses.
+            </p>
+
+            <button id="cart-checkout-button" class="cart-checkout-button" type="button" disabled>
+              Vazhdo me porosi
+            </button>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

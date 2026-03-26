@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TREGO | Biznesi juaj</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page="business-dashboard">
+  <div class="background-orb orb-left"></div>
+  <div class="background-orb orb-right"></div>
+
+  <div class="page-shell">
+    <nav class="site-nav" aria-label="Navigimi kryesor">
+      <a class="brand" href="/">
+        <span class="brand-copy">
+          <strong>TREGO</strong>
+          <span>Farm and home</span>
+        </span>
+      </a>
+
+      <div class="nav-links">
+        <a class="nav-link" href="/#bujqesi">Bujqesi</a>
+        <a class="nav-link" href="/#barnat">Barnat</a>
+        <a class="nav-link nav-link-pets" href="/kafshet-shtepiake">Kafshet shtepiake</a>
+        <a class="nav-link" href="/#shtepia">Gjerat per shtepi</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-icon-button wishlist-link" href="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </a>
+        <a class="nav-icon-button cart-button" href="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </a>
+        <a class="nav-action nav-action-secondary nav-link-login" href="/login">Login</a>
+        <a class="nav-action nav-action-primary nav-link-signup" href="/signup">Sign Up</a>
+      </div>
+    </nav>
+
+    <main class="page-main page-main-admin">
+      <section class="business-dashboard-page" aria-label="Biznesi juaj">
+        <header class="admin-products-header">
+          <div>
+            <p class="section-label">Paneli i biznesit</p>
+            <h1>Biznesi juaj</h1>
+            <p class="admin-products-intro">
+              Nga kjo faqe mund ta regjistrosh biznesin, te shtosh artikuj dhe te kontrollosh vetem artikujt qe i ke publikuar ti.
+            </p>
+          </div>
+          <div class="admin-user-chip">
+            <span>Sesioni aktiv</span>
+            <strong id="business-user-role">Duke u kontrolluar...</strong>
+          </div>
+        </header>
+
+        <p id="business-access-note" class="admin-access-note">
+          Po kontrollohet aksesimi i biznesit...
+        </p>
+
+        <div class="business-dashboard-layout">
+          <section class="card business-profile-card">
+            <h2>Regjistrimi i biznesit</h2>
+            <p class="section-text">
+              Ploteso te dhenat e biznesit. Pasi ta ruash, do te kesh akses per t'i shtuar dhe menaxhuar artikujt e biznesit tend.
+            </p>
+
+            <form id="business-profile-form" class="auth-form">
+              <label class="field">
+                <span>Emri i biznesit</span>
+                <input id="business-name" name="businessName" type="text" placeholder="p.sh. Agro Market Rinia" required>
+              </label>
+
+              <label class="field">
+                <span>Pershkrimi i biznesit</span>
+                <textarea id="business-description" name="businessDescription" rows="4" placeholder="Shkruaje pershkrimin e biznesit" required></textarea>
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Nr. i biznesit</span>
+                  <input id="business-number" name="businessNumber" type="text" placeholder="p.sh. BR-204-55" required>
+                </label>
+
+                <label class="field">
+                  <span>Numri i telefonit</span>
+                  <input id="business-phone" name="phoneNumber" type="text" placeholder="p.sh. +383 44 123 456" required>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Qyteti</span>
+                  <input id="business-city" name="city" type="text" placeholder="p.sh. Prishtine" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Adresa e biznesit</span>
+                <input id="business-address" name="addressLine" type="text" placeholder="Shkruaje adresen e biznesit" required>
+              </label>
+
+              <label class="field">
+                <span>Logo e biznesit (opsionale)</span>
+                <input id="business-logo" name="businessLogo" type="file" accept="image/*">
+              </label>
+
+              <p class="product-upload-help">
+                Nese biznesi yt ka logo, mund ta ngarkosh ketu. Ne te kunderten mund ta lesh bosh.
+              </p>
+
+              <div id="business-logo-preview" class="product-upload-preview" aria-live="polite">
+                <div class="product-upload-empty">Nuk eshte zgjedhur asnje logo ende.</div>
+              </div>
+
+              <button id="business-profile-submit" type="submit">Ruaje biznesin</button>
+            </form>
+
+            <div id="business-profile-message" class="form-message" role="status" aria-live="polite"></div>
+          </section>
+
+          <section id="business-product-form-section" class="card admin-form-card" hidden>
+            <h2>Shto artikull te ri</h2>
+            <p id="business-products-note" class="section-text">
+              Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.
+            </p>
+
+            <form id="business-product-form" class="auth-form">
+              <label class="field">
+                <span>Titulli</span>
+                <input name="title" type="text" placeholder="p.sh. Produkt i ri" required>
+              </label>
+
+              <label class="field">
+                <span>Cmimi (€)</span>
+                <input name="price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
+              </label>
+
+              <label class="field">
+                <span>Seksioni i faqes</span>
+                <select id="business-product-category" name="category" required></select>
+              </label>
+
+              <label class="field">
+                <span>Kategoria e produktit</span>
+                <select id="business-product-type" name="productType" required></select>
+              </label>
+
+              <div class="field-row">
+                <label id="business-product-size-field" class="field" hidden>
+                  <span>Madhesia e produktit</span>
+                  <select id="business-product-size" name="size">
+                    <option value="">Pa madhesi</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Sasia ne stok</span>
+                  <input id="business-product-stock-quantity" name="stockQuantity" type="number" min="0" step="1" value="1" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Ngjyra e produktit</span>
+                <select id="business-product-color" name="color">
+                  <option value="">Pa ngjyre specifike</option>
+                  <option value="bardhe">Bardhe</option>
+                  <option value="zeze">Zeze</option>
+                  <option value="gri">Gri</option>
+                  <option value="beige">Beige</option>
+                  <option value="kafe">Kafe</option>
+                  <option value="kuqe">Kuqe</option>
+                  <option value="roze">Roze</option>
+                  <option value="vjollce">Vjollce</option>
+                  <option value="blu">Blu</option>
+                  <option value="gjelber">Gjelber</option>
+                  <option value="verdhe">Verdhe</option>
+                  <option value="portokalli">Portokalli</option>
+                  <option value="shume-ngjyra">Shume ngjyra</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Upload photo</span>
+                <input id="business-product-images" name="images" type="file" accept="image/*" multiple required>
+              </label>
+
+              <p class="product-upload-help">
+                Mund te ngarkosh disa foto per te njejtin artikull. Ato shfaqen vetem te artikulli yt.
+              </p>
+
+              <div id="business-product-upload-preview" class="product-upload-preview" aria-live="polite">
+                <div class="product-upload-empty">Asnje foto nuk eshte zgjedhur ende.</div>
+              </div>
+
+              <label class="field">
+                <span>Pershkrimi</span>
+                <textarea name="description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
+              </label>
+
+              <button id="business-product-submit" type="submit">Ruaje artikullin</button>
+            </form>
+
+            <div id="business-product-form-message" class="form-message" role="status" aria-live="polite"></div>
+          </section>
+        </div>
+
+        <section class="card admin-list-card">
+          <div class="admin-list-header">
+            <div>
+              <p class="section-label">Artikujt e biznesit tend</p>
+              <h2>Lista e artikujve</h2>
+            </div>
+          </div>
+
+          <div id="business-products-list-message" class="form-message" role="status" aria-live="polite"></div>
+          <div id="business-products-list" class="admin-products-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
