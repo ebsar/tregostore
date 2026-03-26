@@ -120,6 +120,11 @@ const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 const LOGIN_GREETING_KEY = "trego_login_greeting";
+const APP_LOADER_MIN_DURATION_MS = 700;
+const APP_LOADER_WINDOW_FALLBACK_MS = 2200;
+const APP_LOADER_MAX_DURATION_MS = 15000;
+
+let appLoaderController = null;
 
 
 function getVerifyEmailUrl(email = "") {
@@ -204,6 +209,7 @@ function initializeLoadingScreen() {
 
   const startedAt = Date.now();
   let isHidden = false;
+  const pendingReasons = new Set(["window"]);
 
   const hideLoader = () => {
     if (isHidden) {
@@ -211,7 +217,7 @@ function initializeLoadingScreen() {
     }
 
     const elapsed = Date.now() - startedAt;
-    const remaining = Math.max(0, 700 - elapsed);
+    const remaining = Math.max(0, APP_LOADER_MIN_DURATION_MS - elapsed);
 
     window.setTimeout(() => {
       if (isHidden) {
@@ -222,12 +228,56 @@ function initializeLoadingScreen() {
       loader.classList.add("is-hidden");
       window.setTimeout(() => {
         loader.remove();
-      }, 700);
+      }, APP_LOADER_MIN_DURATION_MS);
     }, remaining);
   };
 
-  window.addEventListener("load", hideLoader, { once: true });
-  window.setTimeout(hideLoader, 2200);
+  const releaseReason = (reason) => {
+    pendingReasons.delete(reason);
+    if (pendingReasons.size === 0) {
+      hideLoader();
+    }
+  };
+
+  const holdReason = (reason) => {
+    if (!reason || isHidden) {
+      return () => {};
+    }
+
+    pendingReasons.add(reason);
+
+    return () => {
+      releaseReason(reason);
+    };
+  };
+
+  appLoaderController = {
+    hold: holdReason,
+    release: releaseReason,
+    forceHide: () => {
+      pendingReasons.clear();
+      hideLoader();
+    },
+  };
+
+  window.addEventListener("load", () => {
+    releaseReason("window");
+  }, { once: true });
+  window.setTimeout(() => {
+    releaseReason("window");
+  }, APP_LOADER_WINDOW_FALLBACK_MS);
+  window.setTimeout(() => {
+    appLoaderController?.forceHide();
+  }, APP_LOADER_MAX_DURATION_MS);
+}
+
+
+function holdAppLoader(reason = "page-content") {
+  if (!appLoaderController) {
+    return () => {};
+  }
+
+  return appLoaderController.hold(reason);
 }
 
 
@@ -809,24 +859,29 @@ function initializeSearchPage() {
   let currentSize = initialParams.get("size")?.trim().toUpperCase() || "";
   let currentColor = initialParams.get("color")?.trim().toLowerCase() || "";
   let currentSort = initialParams.get("sort")?.trim().toLowerCase() || "";
+  const releasePageLoader = holdAppLoader("search-products");
 
   bootstrap();
 
   async function bootstrap() {
-    currentUser = await fetchCurrentUserOptional();
-    await refreshCollectionState();
+    try {
+      currentUser = await fetchCurrentUserOptional();
+      await refreshCollectionState();
 
-    input.value = currentQuery;
-    sizeFilter.value = currentSize;
-    colorFilter.value = currentColor;
-    sortFilter.value = currentSort;
-    form.addEventListener("submit", handleSearchSubmit);
-    sizeFilter.addEventListener("change", handleFilterChange);
-    colorFilter.addEventListener("change", handleFilterChange);
-    sortFilter.addEventListener("change", handleFilterChange);
-    resetButton.addEventListener("click", handleResetFilters);
-    resultsGrid.addEventListener("click", handleGridAction);
-    await loadSearchResults(currentQuery);
+      input.value = currentQuery;
+      sizeFilter.value = currentSize;
+      colorFilter.value = currentColor;
+      sortFilter.value = currentSort;
+      form.addEventListener("submit", handleSearchSubmit);
+      sizeFilter.addEventListener("change", handleFilterChange);
+      colorFilter.addEventListener("change", handleFilterChange);
+      sortFilter.addEventListener("change", handleFilterChange);
+      resetButton.addEventListener("click", handleResetFilters);
+      resultsGrid.addEventListener("click", handleGridAction);
+      await loadSearchResults(currentQuery);
+    } finally {
+      releasePageLoader();
+    }
   }
 
   async function refreshCollectionState() {
@@ -3812,6 +3867,7 @@ function initializeHomePage() {
   let promoTouchLastX = 0;
   let promoTouchLastY = 0;
   let isPromoTouchActive = false;
+  const releasePageLoader = holdAppLoader("home-products");
 
   bootstrap();
 
@@ -3821,7 +3877,11 @@ function initializeHomePage() {
       renderPromoSlides();
       startPromoAutoplay();
       await refreshCollectionState();
-      await Promise.all([loadProducts(), loadFeaturedBusinesses()]);
+      await loadProducts();
+      releasePageLoader();
+      void loadFeaturedBusinesses().catch((error) => {
+        console.error(error);
+      });
       grid.addEventListener("click", handleGridAction);
       window.addEventListener("resize", handleGridResize);
       promoDots.addEventListener("click", handleDotClick);
@@ -3838,6 +3898,8 @@ function initializeHomePage() {
         </div>
       `;
       console.error(error);
+    } finally {
+      releasePageLoader();
     }
   }
 
@@ -4526,6 +4588,7 @@ function initializePetsPage() {
   let currentUser = null;
   let wishlistIds = new Set();
   let cartIds = new Set();
+  const releasePageLoader = holdAppLoader("pets-products");
 
   bootstrap();
 
@@ -4542,6 +4605,8 @@ function initializePetsPage() {
         </div>
       `;
       console.error(error);
+    } finally {
+      releasePageLoader();
     }
   }
 
@@ -4709,20 +4774,21 @@ function initializeBusinessProfilePage() {
   let currentBusiness = null;
   let wishlistIds = new Set();
   let cartIds = new Set();
+  const releasePageLoader = holdAppLoader("business-profile-products");
 
   bootstrap();
 
   async function bootstrap() {
-    const searchParams = new URLSearchParams(window.location.search);
-    const businessId = Number(searchParams.get("id"));
-
-    if (!Number.isFinite(businessId) || businessId <= 0) {
-      heroElement.innerHTML = renderBusinessProfileEmptyState("Biznesi nuk u gjet.");
-      grid.innerHTML = "";
-      return;
-    }
-
     try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const businessId = Number(searchParams.get("id"));
+
+      if (!Number.isFinite(businessId) || businessId <= 0) {
+        heroElement.innerHTML = renderBusinessProfileEmptyState("Biznesi nuk u gjet.");
+        grid.innerHTML = "";
+        return;
+      }
+
       currentUser = await fetchCurrentUserOptional();
       await refreshCollectionState();
 
@@ -4779,6 +4845,8 @@ function initializeBusinessProfilePage() {
       heroElement.innerHTML = renderBusinessProfileEmptyState("Biznesi nuk u ngarkua. Provoje perseri.");
       grid.innerHTML = "";
       console.error(error);
+    } finally {
+      releasePageLoader();
     }
   }
 
@@ -4999,16 +5067,17 @@ function initializeProductDetailPage() {
   let currentImageIndex = 0;
   let wishlistIds = new Set();
   let cartIds = new Set();
+  const releasePageLoader = holdAppLoader("product-detail");
 
   bootstrap();
 
   async function bootstrap() {
-    if (!Number.isFinite(productId) || productId <= 0) {
-      renderMissingState("Produkti nuk u gjet.");
-      return;
-    }
-
     try {
+      if (!Number.isFinite(productId) || productId <= 0) {
+        renderMissingState("Produkti nuk u gjet.");
+        return;
+      }
+
       currentUser = await fetchCurrentUserOptional();
       await refreshCollectionState();
       await loadProduct();
@@ -5016,6 +5085,8 @@ function initializeProductDetailPage() {
     } catch (error) {
       renderMissingState("Produkti nuk u ngarkua. Provoje perseri pas pak.");
       console.error(error);
+    } finally {
+      releasePageLoader();
     }
   }
 
@@ -5182,29 +5253,34 @@ function initializeWishlistPage() {
   let itemsState = [];
   let selectedIds = new Set();
   let selectionInitialized = false;
+  const releasePageLoader = holdAppLoader("wishlist-products");
 
   bootstrap();
 
   async function bootstrap() {
-    currentUser = await fetchCurrentUserOptional();
+    try {
+      currentUser = await fetchCurrentUserOptional();
 
-    if (!currentUser) {
-      const guestMessage = "Per te perdorur wishlist duhet te kyçesh ose te krijosh llogari.";
-      grid.innerHTML = `
-        <div class="collection-empty-state">
-          ${escapeHtml(guestMessage)}
-        </div>
-      `;
-      toolbar.hidden = true;
-      showMessage(messageElement, guestMessage, "error");
-      return;
+      if (!currentUser) {
+        const guestMessage = "Per te perdorur wishlist duhet te kyçesh ose te krijosh llogari.";
+        grid.innerHTML = `
+          <div class="collection-empty-state">
+            ${escapeHtml(guestMessage)}
+          </div>
+        `;
+        toolbar.hidden = true;
+        showMessage(messageElement, guestMessage, "error");
+        return;
+      }
+
+      grid.addEventListener("click", handleCollectionAction);
+      grid.addEventListener("change", handleSelectionChange);
+      selectAllCheckbox.addEventListener("change", handleSelectAllChange);
+      bulkCartButton.addEventListener("click", handleBulkAddToCart);
+      await loadItems();
+    } finally {
+      releasePageLoader();
     }
-
-    grid.addEventListener("click", handleCollectionAction);
-    grid.addEventListener("change", handleSelectionChange);
-    selectAllCheckbox.addEventListener("change", handleSelectAllChange);
-    bulkCartButton.addEventListener("click", handleBulkAddToCart);
-    await loadItems();
   }
 
   async function loadItems() {
@@ -5468,34 +5544,39 @@ function initializeCartPage() {
   let selectionInitialized = false;
   let summaryResizeObserver = null;
   let summaryResizeFrame = null;
+  const releasePageLoader = holdAppLoader("cart-products");
 
   bootstrap();
 
   async function bootstrap() {
-    currentUser = await fetchCurrentUserOptional();
+    try {
+      currentUser = await fetchCurrentUserOptional();
 
-    if (!currentUser) {
-      const guestMessage = "Per te perdorur shporten duhet te kyçesh ose te krijosh llogari.";
-      grid.innerHTML = `
-        <div class="collection-empty-state">
-          ${escapeHtml(guestMessage)}
-        </div>
-      `;
-      toolbar.hidden = true;
-      updateSummary([]);
-      checkoutButton.disabled = true;
-      scheduleCartPanelHeightSync();
-      showMessage(messageElement, guestMessage, "error");
-      return;
+      if (!currentUser) {
+        const guestMessage = "Per te perdorur shporten duhet te kyçesh ose te krijosh llogari.";
+        grid.innerHTML = `
+          <div class="collection-empty-state">
+            ${escapeHtml(guestMessage)}
+          </div>
+        `;
+        toolbar.hidden = true;
+        updateSummary([]);
+        checkoutButton.disabled = true;
+        scheduleCartPanelHeightSync();
+        showMessage(messageElement, guestMessage, "error");
+        return;
+      }
+
+      checkoutButton.addEventListener("click", handleCheckout);
+      grid.addEventListener("click", handleCollectionAction);
+      grid.addEventListener("change", handleSelectionChange);
+      selectAllCheckbox.addEventListener("change", handleSelectAllChange);
+      window.addEventListener("resize", scheduleCartPanelHeightSync);
+      setupCartHeightSync();
+      await loadItems();
+    } finally {
+      releasePageLoader();
     }
-
-    checkoutButton.addEventListener("click", handleCheckout);
-    grid.addEventListener("click", handleCollectionAction);
-    grid.addEventListener("change", handleSelectionChange);
-    selectAllCheckbox.addEventListener("change", handleSelectAllChange);
-    window.addEventListener("resize", scheduleCartPanelHeightSync);
-    setupCartHeightSync();
-    await loadItems();
   }
 
   async function loadItems() {
