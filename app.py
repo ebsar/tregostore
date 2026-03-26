@@ -4834,6 +4834,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
+        updated_at_value = datetime_to_storage_text(utc_now())
         with get_db_connection() as connection:
             connection.execute(
                 """
@@ -4842,9 +4843,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                 ON CONFLICT(user_id, product_id)
                 DO UPDATE SET
                     quantity = quantity + 1,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 """,
-                (user["id"], product_id),
+                (user["id"], product_id, updated_at_value),
             )
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
@@ -4924,6 +4925,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
 
+        updated_at_value = datetime_to_storage_text(utc_now())
         with get_db_connection() as connection:
             existing_row = connection.execute(
                 """
@@ -4944,10 +4946,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             connection.execute(
                 """
                 UPDATE cart_items
-                SET quantity = ?, updated_at = CURRENT_TIMESTAMP
+                SET quantity = ?, updated_at = ?
                 WHERE user_id = ? AND product_id = ?
                 """,
-                (quantity, user["id"], product_id),
+                (quantity, updated_at_value, user["id"], product_id),
             )
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
