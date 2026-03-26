@@ -153,6 +153,9 @@ MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_FILES * MAX_UPLOAD_FILE_SIZE + (1024 * 1024
 EMAIL_VERIFICATION_CODE_LENGTH = 6
 EMAIL_VERIFICATION_TTL_MINUTES = 30
 EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
+PASSWORD_RESET_CODE_LENGTH = 6
+PASSWORD_RESET_TTL_MINUTES = 30
+PASSWORD_RESET_MAX_ATTEMPTS = 5
 ADDRESS_SELECT_COLUMNS = """
     id,
     user_id,
@@ -1006,11 +1009,25 @@ def generate_email_verification_code() -> str:
     )
 
 
+def generate_password_reset_code() -> str:
+    return "".join(
+        secrets.choice("0123456789")
+        for _ in range(PASSWORD_RESET_CODE_LENGTH)
+    )
+
+
 def build_email_verification_redirect(email: str) -> str:
     clean_email = str(email or "").strip().lower()
     if not clean_email:
         return "/verifiko-email"
     return f"/verifiko-email?email={quote(clean_email)}"
+
+
+def build_password_reset_redirect(email: str) -> str:
+    clean_email = str(email or "").strip().lower()
+    if not clean_email:
+        return "/ndrysho-fjalekalimin?mode=reset"
+    return f"/ndrysho-fjalekalimin?mode=reset&email={quote(clean_email)}"
 
 
 def validate_registration(data: dict[str, str]) -> list[str]:
@@ -1090,11 +1107,15 @@ def validate_email_resend(data: dict[str, object]) -> tuple[list[str], str]:
 def validate_password_reset(data: dict[str, str]) -> list[str]:
     errors: list[str] = []
     email = data.get("email", "").strip().lower()
+    code = re.sub(r"\D", "", str(data.get("code", "")))
     new_password = data.get("newPassword", "")
     confirm_password = data.get("confirmPassword", "")
 
     if not EMAIL_RE.match(email):
         errors.append("Vendos nje email valid.")
+
+    if len(code) != PASSWORD_RESET_CODE_LENGTH:
+        errors.append("Kodi per ndryshim te fjalekalimit duhet te kete 6 shifra.")
 
     if len(new_password) < 8:
         errors.append("Fjalekalimi i ri duhet te kete te pakten 8 karaktere.")
@@ -1866,6 +1887,79 @@ def is_email_verification_expired(row: sqlite3.Row | None) -> bool:
     return expires_at < utc_now()
 
 
+def fetch_password_reset_row(
+    connection: sqlite3.Connection,
+    user_id: int,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+            user_id,
+            code_hash,
+            expires_at,
+            attempts,
+            created_at,
+            updated_at
+        FROM password_reset_codes
+        WHERE user_id = ?
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+
+
+def save_password_reset_code(
+    connection: sqlite3.Connection,
+    user_id: int,
+    code: str,
+) -> str:
+    expires_at = datetime_to_storage_text(
+        utc_now() + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES)
+    )
+    code_hash = hash_password(code)
+    connection.execute(
+        """
+        INSERT INTO password_reset_codes (
+            user_id,
+            code_hash,
+            expires_at,
+            attempts,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            code_hash = excluded.code_hash,
+            expires_at = excluded.expires_at,
+            attempts = 0,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (user_id, code_hash, expires_at),
+    )
+    return expires_at
+
+
+def delete_password_reset_code(
+    connection: sqlite3.Connection,
+    user_id: int,
+) -> None:
+    connection.execute(
+        "DELETE FROM password_reset_codes WHERE user_id = ?",
+        (user_id,),
+    )
+
+
+def is_password_reset_expired(row: sqlite3.Row | None) -> bool:
+    if not row:
+        return True
+
+    expires_at = parse_storage_datetime(row["expires_at"])
+    if not expires_at:
+        return True
+
+    return expires_at < utc_now()
+
+
 def build_email_verification_message(
     user: sqlite3.Row | dict[str, object],
     code: str,
@@ -1897,6 +1991,41 @@ def build_email_verification_message(
     return {
         "to_email": recipient_email,
         "subject": "Kodi i verifikimit per TREGO",
+        "body": body,
+    }
+
+
+def build_password_reset_message(
+    user: sqlite3.Row | dict[str, object],
+    code: str,
+) -> dict[str, str]:
+    first_name = str(
+        user["first_name"]
+        if isinstance(user, sqlite3.Row)
+        else user.get("first_name", "")
+    ).strip()
+    full_name = str(
+        user["full_name"]
+        if isinstance(user, sqlite3.Row)
+        else user.get("full_name", "")
+    ).strip()
+    greeting_name = first_name or full_name or "perdorues"
+    recipient_email = str(
+        user["email"] if isinstance(user, sqlite3.Row) else user.get("email", "")
+    ).strip()
+
+    body = (
+        f"Pershendetje {greeting_name},\n\n"
+        f"Kerkuat ndryshim te fjalekalimit ne TREGO.\n"
+        f"Kodi yt per ndryshim te fjalekalimit eshte: {code}\n\n"
+        f"Ky kod skadon per {PASSWORD_RESET_TTL_MINUTES} minuta.\n"
+        f"Nese nuk e ke kerkuar ti, injoroje kete email.\n\n"
+        f"TREGO"
+    )
+
+    return {
+        "to_email": recipient_email,
+        "subject": "Kodi per ndryshim te fjalekalimit ne TREGO",
         "body": body,
     }
 
@@ -1959,6 +2088,25 @@ def send_email_verification_code(
         ).strip()
         print(
             f"[TREGO] Kodi i verifikimit per {recipient_email}: {code}",
+            flush=True,
+        )
+
+    return warnings
+
+
+def send_password_reset_code(
+    user: sqlite3.Row | dict[str, object],
+    code: str,
+) -> list[str]:
+    message_payload = build_password_reset_message(user, code)
+    warnings = send_email_messages([message_payload])
+
+    if warnings:
+        recipient_email = str(
+            user["email"] if isinstance(user, sqlite3.Row) else user.get("email", "")
+        ).strip()
+        print(
+            f"[TREGO] Kodi per ndryshim te fjalekalimit per {recipient_email}: {code}",
             flush=True,
         )
 
@@ -2907,10 +3055,15 @@ class AppHandler(SimpleHTTPRequestHandler):
             "/porosite",
             "/ndrysho-fjalekalimin",
         }:
-            user = self.get_current_user()
-            if not user:
-                self.send_redirect("/login")
-                return
+            is_password_reset_mode = (
+                path == "/ndrysho-fjalekalimin"
+                and str(query_params.get("mode", [""])[0]).strip().lower() == "reset"
+            )
+            if not is_password_reset_mode:
+                user = self.get_current_user()
+                if not user:
+                    self.send_redirect("/login")
+                    return
 
         if path in PAGE_ROUTES:
             self.path = PAGE_ROUTES[path]
@@ -2934,6 +3087,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/forgot-password":
             self.handle_forgot_password()
+            return
+        if path == "/api/password-reset/confirm":
+            self.handle_password_reset_confirm()
             return
         if path == "/api/logout":
             self.handle_logout()
@@ -5250,16 +5406,151 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        fetch_user_by_email(email)
+        user = fetch_user_by_email(email)
+        email_warnings: list[str] = []
+        if user:
+            reset_code = generate_password_reset_code()
+            with get_db_connection() as connection:
+                save_password_reset_code(connection, user["id"], reset_code)
+            email_warnings = send_password_reset_code(user, reset_code)
+
+        message = (
+            "Nese ekziston nje llogari me kete email, kodi per ndryshim te fjalekalimit u dergua."
+        )
+        if user and email_warnings:
+            message = (
+                "Kodi u krijua, por email-i nuk u dergua. "
+                "Kontrollo SMTP-ne ose terminalin lokal te serverit."
+            )
+
         self.send_json(
             200,
             {
                 "ok": True,
-                "message": (
-                    "Kerkesa per kod u pranua. Ne kete version, dergimi real me email "
-                    "mund te lidhet me vone."
-                ),
+                "message": message,
+                "warnings": email_warnings,
+                "redirectTo": build_password_reset_redirect(email),
             },
+        )
+
+    def handle_password_reset_confirm(self) -> None:
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors = validate_password_reset(payload)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        email = str(payload.get("email", "")).strip().lower()
+        code = re.sub(r"\D", "", str(payload.get("code", "")))
+        new_password = str(payload.get("newPassword", ""))
+
+        with get_db_connection() as connection:
+            user = connection.execute(
+                """
+                SELECT
+                """
+                + USER_AUTH_SELECT_COLUMNS
+                + """
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+                """,
+                (email,),
+            ).fetchone()
+
+            if not user:
+                self.send_json(
+                    404,
+                    {"ok": False, "message": "Llogaria me kete email nuk u gjet."},
+                )
+                return
+
+            reset_row = fetch_password_reset_row(connection, user["id"])
+            if not reset_row:
+                self.send_json(
+                    404,
+                    {
+                        "ok": False,
+                        "message": "Nuk u gjet kod aktiv. Kerko dergim te ri te kodit.",
+                    },
+                )
+                return
+
+            if is_password_reset_expired(reset_row):
+                delete_password_reset_code(connection, user["id"])
+                self.send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "message": (
+                            "Kodi ka skaduar pas 30 minutash. "
+                            "Kerko nje kod te ri per ndryshimin e fjalekalimit."
+                        ),
+                    },
+                )
+                return
+
+            attempts = int(reset_row["attempts"] or 0)
+            if attempts >= PASSWORD_RESET_MAX_ATTEMPTS:
+                self.send_json(
+                    429,
+                    {
+                        "ok": False,
+                        "message": (
+                            "Ke kaluar numrin e tentativave. "
+                            "Kerko nje kod te ri per ndryshimin e fjalekalimit."
+                        ),
+                    },
+                )
+                return
+
+            if not verify_password(code, reset_row["code_hash"]):
+                connection.execute(
+                    """
+                    UPDATE password_reset_codes
+                    SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                    """,
+                    (user["id"],),
+                )
+                next_attempts = attempts + 1
+                remaining_attempts = max(
+                    0,
+                    PASSWORD_RESET_MAX_ATTEMPTS - next_attempts,
+                )
+                message = "Kodi per ndryshim te fjalekalimit nuk eshte i sakte."
+                if remaining_attempts > 0:
+                    message += f" Te kane mbetur edhe {remaining_attempts} tentativa."
+                else:
+                    message += " Kerko nje kod te ri."
+
+                self.send_json(400, {"ok": False, "message": message})
+                return
+
+            connection.execute(
+                """
+                UPDATE users
+                SET password_hash = ?
+                WHERE id = ?
+                """,
+                (hash_password(new_password), user["id"]),
+            )
+            delete_password_reset_code(connection, user["id"])
+
+        delete_sessions_for_user(user["id"])
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Fjalekalimi u ndryshua me sukses. Tani mund te kyçesh.",
+                "redirectTo": "/login",
+            },
+            headers={"Set-Cookie": build_expired_session_cookie()},
         )
 
     def handle_change_password(self) -> None:
@@ -5304,6 +5595,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (new_password_hash, user["id"]),
             )
+            delete_password_reset_code(connection, user["id"])
 
         delete_sessions_for_user(user["id"])
         self.send_json(

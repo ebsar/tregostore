@@ -3521,20 +3521,92 @@ function initializeChangePasswordPage() {
   const messageElement = document.getElementById("change-password-message");
   const submitButton = document.getElementById("change-password-submit");
 
-  if (!form || !messageElement || !submitButton) {
+  const resendButton = document.getElementById("change-password-resend-button");
+  const labelElement = document.getElementById("change-password-label");
+  const titleElement = document.getElementById("change-password-title");
+  const leadElement = document.getElementById("change-password-lead");
+  const emailField = document.getElementById("change-password-email-field");
+  const emailInput = document.getElementById("change-password-email");
+  const codeField = document.getElementById("change-password-code-field");
+  const codeInput = document.getElementById("change-password-code");
+  const currentField = document.getElementById("change-password-current-field");
+  const currentInput = document.getElementById("change-password-current");
+
+  if (
+    !form ||
+    !messageElement ||
+    !submitButton ||
+    !resendButton ||
+    !labelElement ||
+    !titleElement ||
+    !leadElement ||
+    !emailField ||
+    !emailInput ||
+    !codeField ||
+    !codeInput ||
+    !currentField ||
+    !currentInput
+  ) {
     return;
   }
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const resetMode =
+    (searchParams.get("mode") || "").trim().toLowerCase() === "reset";
+  const prefilledEmail = (searchParams.get("email") || "").trim();
+  let currentMode = "account";
+
+  form.addEventListener("submit", handlePasswordChange);
+  resendButton.addEventListener("click", handleResendCode);
   bootstrap();
 
   async function bootstrap() {
+    if (resetMode) {
+      applyResetMode();
+      return;
+    }
+
     const currentUser = await fetchCurrentUserOptional();
     if (!currentUser) {
       window.location.href = "/login";
       return;
     }
 
-    form.addEventListener("submit", handlePasswordChange);
+    applyAccountMode();
+  }
+
+  function applyAccountMode() {
+    currentMode = "account";
+    labelElement.textContent = "Siguria";
+    titleElement.textContent = "Ndrysho fjalekalimin";
+    leadElement.textContent =
+      "Shkruaje fjalekalimin aktual dhe vendos nje te ri. Pas ruajtjes do te duhet te kyçesh perseri.";
+    emailField.hidden = true;
+    codeField.hidden = true;
+    resendButton.hidden = true;
+    currentField.hidden = false;
+    emailInput.required = false;
+    codeInput.required = false;
+    currentInput.required = true;
+  }
+
+  function applyResetMode() {
+    currentMode = "reset";
+    labelElement.textContent = "Rikthimi i qasjes";
+    titleElement.textContent = "Shkruaje kodin dhe fjalekalimin e ri";
+    leadElement.textContent =
+      "Kodi 6-shifror vjen ne email. Pasi ta vendosesh kodin e sakte, mund ta ndryshosh fjalekalimin menjehere.";
+    emailField.hidden = false;
+    codeField.hidden = false;
+    resendButton.hidden = false;
+    currentField.hidden = true;
+    currentInput.required = false;
+    currentInput.value = "";
+    emailInput.required = true;
+    codeInput.required = true;
+    if (prefilledEmail && !emailInput.value.trim()) {
+      emailInput.value = prefilledEmail;
+    }
   }
 
   async function handlePasswordChange(event) {
@@ -3542,21 +3614,39 @@ function initializeChangePasswordPage() {
     showMessage(messageElement, "", "");
 
     const formData = new FormData(form);
-    const payload = {
-      currentPassword: formData.get("currentPassword")?.toString() || "",
-      newPassword: formData.get("newPassword")?.toString() || "",
-      confirmPassword: formData.get("confirmPassword")?.toString() || "",
-    };
+    const isResetFlow = currentMode === "reset";
+    const payload = isResetFlow
+      ? {
+          email: formData.get("email")?.toString().trim() || "",
+          code: formData.get("code")?.toString().trim() || "",
+          newPassword: formData.get("newPassword")?.toString() || "",
+          confirmPassword: formData.get("confirmPassword")?.toString() || "",
+        }
+      : {
+          currentPassword: formData.get("currentPassword")?.toString() || "",
+          newPassword: formData.get("newPassword")?.toString() || "",
+          confirmPassword: formData.get("confirmPassword")?.toString() || "",
+        };
+
+    const buttonIdleText = isResetFlow
+      ? "Ndryshoje fjalekalimin"
+      : "Ruaje fjalekalimin e ri";
+    const buttonLoadingText = isResetFlow
+      ? "Duke verifikuar kodin..."
+      : "Duke ruajtur...";
 
     setButtonLoading(
       submitButton,
       true,
-      "Ruaje fjalekalimin e ri",
-      "Duke ruajtur...",
+      buttonIdleText,
+      buttonLoadingText,
     );
 
     try {
-      const { response, data } = await requestJson("/api/change-password", {
+      const endpoint = isResetFlow
+        ? "/api/password-reset/confirm"
+        : "/api/change-password";
+      const { response, data } = await requestJson(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -3576,6 +3666,9 @@ function initializeChangePasswordPage() {
         "success",
       );
       form.reset();
+      if (isResetFlow && payload.email) {
+        emailInput.value = payload.email;
+      }
       window.setTimeout(() => {
         window.location.href = data.redirectTo || "/login";
       }, 900);
@@ -3590,8 +3683,65 @@ function initializeChangePasswordPage() {
       setButtonLoading(
         submitButton,
         false,
-        "Ruaje fjalekalimin e ri",
-        "Duke ruajtur...",
+        buttonIdleText,
+        buttonLoadingText,
+      );
+    }
+  }
+
+  async function handleResendCode() {
+    if (currentMode !== "reset") {
+      return;
+    }
+
+    showMessage(messageElement, "", "");
+    const email = emailInput.value.trim();
+
+    setButtonLoading(
+      resendButton,
+      true,
+      "Dergoje kodin perseri",
+      "Duke derguar...",
+    );
+
+    try {
+      const { response, data } = await requestJson("/api/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok || !data.ok) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Kodi i ri nuk u dergua.";
+        showMessage(messageElement, message, "error");
+        return;
+      }
+
+      showMessage(
+        messageElement,
+        data.message || "Kodi i ri u dergua me sukses.",
+        "success",
+      );
+
+      const redirectTarget =
+        data.redirectTo ||
+        `/ndrysho-fjalekalimin?mode=reset&email=${encodeURIComponent(email)}`;
+      window.history.replaceState({}, "", redirectTarget);
+    } catch (error) {
+      showMessage(
+        messageElement,
+        "Serveri nuk po pergjigjet. Provoje perseri.",
+        "error",
+      );
+      console.error(error);
+    } finally {
+      setButtonLoading(
+        resendButton,
+        false,
+        "Dergoje kodin perseri",
+        "Duke derguar...",
       );
     }
   }
@@ -6446,7 +6596,12 @@ function initializeForgotPasswordPage() {
         data.message || "Kerkesa per kod u pranua.",
         "success",
       );
-      form.reset();
+      const redirectTarget =
+        data.redirectTo ||
+        `/ndrysho-fjalekalimin?mode=reset&email=${encodeURIComponent(payload.email)}`;
+      window.setTimeout(() => {
+        window.location.href = redirectTarget;
+      }, 900);
     } catch (error) {
       showMessage(
         messageElement,
