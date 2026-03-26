@@ -232,17 +232,121 @@ function initializeLoadingScreen() {
 
 
 function initializeSiteNavigation() {
+  const siteNav = document.querySelector(".site-nav");
   const navLinks = document.querySelector(".nav-links");
   const navActions = document.querySelector(".nav-actions");
   const loginLink = navActions?.querySelector(".nav-link-login");
   const signupLink = navActions?.querySelector(".nav-link-signup");
+  const brand = siteNav?.querySelector(".brand");
 
-  if (navLinks) {
-    navLinks.innerHTML = renderPrimaryNavigation();
-    initializePrimaryNavDropdowns(navLinks);
+  if (!siteNav || !navLinks || !navActions || !brand) {
+    return;
   }
 
-  if (!navActions || !loginLink || !signupLink) {
+  const isMobileViewport = () => window.matchMedia("(max-width: 920px)").matches;
+  const closeExpandedNavPanels = () => {
+    siteNav.querySelectorAll(".nav-dropdown").forEach((dropdown) => {
+      dropdown.classList.remove("open");
+      const trigger = dropdown.querySelector(".nav-dropdown-trigger");
+      const menu = dropdown.querySelector(".nav-dropdown-menu");
+      if (trigger) {
+        trigger.setAttribute("aria-expanded", "false");
+      }
+      if (menu) {
+        menu.hidden = true;
+      }
+    });
+
+    siteNav.querySelectorAll(".nav-user-menu").forEach((menu) => {
+      const trigger = menu.querySelector(".nav-user-trigger");
+      const panel = menu.querySelector(".nav-user-panel");
+      if (trigger) {
+        trigger.setAttribute("aria-expanded", "false");
+      }
+      if (panel) {
+        panel.hidden = true;
+      }
+      menu.classList.remove("open");
+    });
+  };
+
+  let mobileToggle = siteNav.querySelector(".nav-mobile-toggle");
+  if (!mobileToggle) {
+    mobileToggle = document.createElement("button");
+    mobileToggle.type = "button";
+    mobileToggle.className = "nav-mobile-toggle";
+    mobileToggle.setAttribute("aria-expanded", "false");
+    mobileToggle.setAttribute("aria-controls", "site-nav-mobile-panel");
+    mobileToggle.setAttribute("aria-label", "Hape menune");
+    mobileToggle.innerHTML = menuIcon();
+    brand.insertAdjacentElement("afterend", mobileToggle);
+  }
+
+  if (!navLinks.id) {
+    navLinks.id = "site-nav-mobile-panel";
+  }
+
+  const updateMobileMenuState = (isOpen) => {
+    siteNav.classList.toggle("mobile-menu-open", isOpen);
+    mobileToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    mobileToggle.setAttribute("aria-label", isOpen ? "Mbylle menune" : "Hape menune");
+    mobileToggle.innerHTML = isOpen ? closeIcon() : menuIcon();
+
+    if (!isOpen) {
+      closeExpandedNavPanels();
+    }
+  };
+
+  navLinks.innerHTML = renderPrimaryNavigation();
+  initializePrimaryNavDropdowns(navLinks);
+
+  mobileToggle.addEventListener("click", () => {
+    updateMobileMenuState(!siteNav.classList.contains("mobile-menu-open"));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!isMobileViewport() || !siteNav.classList.contains("mobile-menu-open")) {
+      return;
+    }
+
+    if (!siteNav.contains(event.target)) {
+      updateMobileMenuState(false);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      updateMobileMenuState(false);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!isMobileViewport()) {
+      updateMobileMenuState(false);
+    }
+  });
+
+  siteNav.addEventListener("click", (event) => {
+    if (!isMobileViewport()) {
+      return;
+    }
+
+    const clickedLink = event.target.closest("a");
+    if (!clickedLink || !siteNav.contains(clickedLink)) {
+      return;
+    }
+
+    if (clickedLink.closest(".nav-dropdown-menu") || clickedLink.closest(".nav-user-panel")) {
+      updateMobileMenuState(false);
+      return;
+    }
+
+    if (!clickedLink.closest(".nav-actions")) {
+      updateMobileMenuState(false);
+    }
+  });
+
+  if (!loginLink || !signupLink) {
     return;
   }
 
@@ -7113,6 +7217,27 @@ function eyeOffIcon() {
       <path d="M10.6 6.3A11.8 11.8 0 0 1 12 6c6.2 0 10 6 10 6a18 18 0 0 1-3.4 3.9"></path>
       <path d="M6.7 6.8C3.8 8.7 2 12 2 12s3.8 6 10 6c1.7 0 3.2-.4 4.6-1"></path>
       <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+    </svg>
+  `;
+}
+
+
+function menuIcon() {
+  return `
+    <svg class="nav-icon nav-icon-menu" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16"></path>
+      <path d="M4 12h16"></path>
+      <path d="M4 17h16"></path>
+    </svg>
+  `;
+}
+
+
+function closeIcon() {
+  return `
+    <svg class="nav-icon nav-icon-menu" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 6l12 12"></path>
+      <path d="M18 6 6 18"></path>
     </svg>
   `;
 }

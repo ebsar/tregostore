@@ -25,6 +25,7 @@ UPLOADS_DIR = RUNTIME_ROOT_DIR / "uploads" if IS_VERCEL else STATIC_DIR / "uploa
 DATA_DIR = RUNTIME_ROOT_DIR / "data" if IS_VERCEL else BASE_DIR / "data"
 DB_PATH = DATA_DIR / "accounts.db"
 SCHEMA_PATH = BASE_DIR / "schema.sql"
+POSTGRES_SCHEMA_PATH = BASE_DIR / "schema_postgres.sql"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SESSION_COOKIE_NAME = "session_token"
 PAGE_ROUTES = {
@@ -280,6 +281,119 @@ def read_text_env(name: str, default_value: str = "") -> str:
     return str(os.environ.get(name, default_value)).strip()
 
 
+def get_database_url() -> str:
+    return read_text_env("DATABASE_URL")
+
+
+def use_postgres_database() -> bool:
+    return bool(get_database_url())
+
+
+def adapt_query_placeholders(query: str) -> str:
+    if not use_postgres_database():
+        return query
+
+    return query.replace("?", "%s")
+
+
+def iterate_sql_statements(script: str):
+    current_lines: list[str] = []
+
+    for line in script.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        current_lines.append(line)
+        if stripped.endswith(";"):
+            statement = "\n".join(current_lines).strip()
+            if statement:
+                yield statement
+            current_lines = []
+
+    statement = "\n".join(current_lines).strip()
+    if statement:
+        yield statement
+
+
+def get_database_integrity_errors():
+    error_types: list[type[BaseException]] = [sqlite3.IntegrityError]
+
+    try:
+        from psycopg import IntegrityError as PsycopgIntegrityError
+    except ImportError:
+        PsycopgIntegrityError = None
+
+    if PsycopgIntegrityError is not None:
+        error_types.append(PsycopgIntegrityError)
+
+    return tuple(error_types)
+
+
+DB_INTEGRITY_ERRORS = get_database_integrity_errors()
+
+
+class DatabaseCursor:
+    def __init__(self, cursor, backend: str):
+        self._cursor = cursor
+        self.backend = backend
+        self.lastrowid = getattr(cursor, "lastrowid", None)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self._cursor)
+
+    def __getattr__(self, name: str):
+        return getattr(self._cursor, name)
+
+
+class DatabaseConnection:
+    def __init__(self, raw_connection, backend: str):
+        self._raw_connection = raw_connection
+        self.backend = backend
+
+    def execute(self, query: str, params=()):
+        cursor = self._raw_connection.execute(
+            adapt_query_placeholders(query),
+            () if params is None else params,
+        )
+        return DatabaseCursor(cursor, self.backend)
+
+    def executescript(self, script: str):
+        for statement in iterate_sql_statements(script):
+            self.execute(statement)
+
+    def commit(self):
+        self._raw_connection.commit()
+
+    def rollback(self):
+        self._raw_connection.rollback()
+
+    def close(self):
+        self._raw_connection.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+
+        self.close()
+        return False
+
+
+def is_postgres_connection(connection: DatabaseConnection) -> bool:
+    return getattr(connection, "backend", "sqlite") == "postgres"
+
+
 def get_smtp_settings() -> dict[str, object]:
     host = str(os.environ.get("TREGO_SMTP_HOST", "")).strip()
     username = str(os.environ.get("TREGO_SMTP_USERNAME", "")).strip()
@@ -333,11 +447,38 @@ def build_full_name(first_name: str, last_name: str) -> str:
     return " ".join(part for part in [first_name.strip(), last_name.strip()] if part).strip()
 
 
-def get_db_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON;")
-    return connection
+def get_db_connection() -> DatabaseConnection:
+    if use_postgres_database():
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as error:
+            raise RuntimeError(
+                "DATABASE_URL eshte vendosur, por mungon paketa 'psycopg'. "
+                "Shtoje ne requirements.txt para deploy-it."
+            ) from error
+
+        raw_connection = psycopg.connect(get_database_url(), row_factory=dict_row)
+        return DatabaseConnection(raw_connection, "postgres")
+
+    raw_connection = sqlite3.connect(DB_PATH)
+    raw_connection.row_factory = sqlite3.Row
+    raw_connection.execute("PRAGMA foreign_keys = ON;")
+    return DatabaseConnection(raw_connection, "sqlite")
+
+
+def execute_insert_and_get_id(connection: DatabaseConnection, query: str, params=()) -> int:
+    if not is_postgres_connection(connection):
+        cursor = connection.execute(query, params)
+        return int(cursor.lastrowid)
+
+    insert_query = query.strip().rstrip(";")
+    cursor = connection.execute(f"{insert_query} RETURNING id", params)
+    row = cursor.fetchone()
+    if not row:
+        raise RuntimeError("Nuk u kthye ID pas INSERT-it ne Postgres.")
+
+    return int(row["id"])
 
 
 def initialize_database() -> None:
@@ -345,13 +486,14 @@ def initialize_database() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as connection:
-        connection.execute("PRAGMA foreign_keys = ON;")
-        connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        migrate_database(connection)
+        schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
+        connection.executescript(schema_path.read_text(encoding="utf-8"))
+        if not is_postgres_connection(connection):
+            migrate_database(connection)
         ensure_bootstrap_admin(connection)
 
 
-def ensure_bootstrap_admin(connection: sqlite3.Connection) -> None:
+def ensure_bootstrap_admin(connection: DatabaseConnection) -> None:
     if count_admin_users(connection) > 0:
         return
 
@@ -432,7 +574,10 @@ def ensure_bootstrap_admin(connection: sqlite3.Connection) -> None:
     )
 
 
-def migrate_database(connection: sqlite3.Connection) -> None:
+def migrate_database(connection: DatabaseConnection) -> None:
+    if is_postgres_connection(connection):
+        return
+
     if not column_exists(connection, "users", "first_name"):
         connection.execute(
             "ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"
@@ -688,10 +833,24 @@ def migrate_database(connection: sqlite3.Connection) -> None:
 
 
 def column_exists(
-    connection: sqlite3.Connection,
+    connection: DatabaseConnection,
     table_name: str,
     column_name: str,
 ) -> bool:
+    if is_postgres_connection(connection):
+        row = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        return bool(row)
+
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return any(row["name"] == column_name for row in rows)
 
@@ -2735,7 +2894,8 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         try:
             with get_db_connection() as connection:
-                cursor = connection.execute(
+                user_id = execute_insert_and_get_id(
+                    connection,
                     """
                     INSERT INTO users (
                         full_name,
@@ -2764,9 +2924,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "",
                     ),
                 )
-                user_id = cursor.lastrowid
                 save_email_verification_code(connection, user_id, verification_code)
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
                 {"ok": False, "message": "Ky email ekziston tashme ne databaze."},
@@ -3469,7 +3628,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """,
                     (user["id"],),
                 ).fetchone()
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
                 {"ok": False, "message": "Ky numer biznesi ekziston tashme ne sistem."},
@@ -3533,7 +3692,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     )
                     return
 
-                user_cursor = connection.execute(
+                user_id = execute_insert_and_get_id(
+                    connection,
                     """
                     INSERT INTO users (
                         full_name,
@@ -3562,7 +3722,6 @@ class AppHandler(SimpleHTTPRequestHandler):
                         datetime_to_storage_text(utc_now()),
                     ),
                 )
-                user_id = user_cursor.lastrowid
 
                 connection.execute(
                     """
@@ -3610,7 +3769,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """,
                     (user_id,),
                 ).fetchone()
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
                 {"ok": False, "message": "Ky email ekziston tashme ne databaze."},
@@ -4017,7 +4176,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         with get_db_connection() as connection:
-            cursor = connection.execute(
+            product_id = execute_insert_and_get_id(
+                connection,
                 """
                 INSERT INTO products (
                     title,
@@ -4048,7 +4208,6 @@ class AppHandler(SimpleHTTPRequestHandler):
                     user["id"],
                 ),
             )
-            product_id = cursor.lastrowid
 
             product_row = connection.execute(
                 """
@@ -4423,7 +4582,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 str(user["last_name"] or ""),
             ) or str(user["email"] or "").strip())
 
-            order_cursor = connection.execute(
+            order_id = execute_insert_and_get_id(
+                connection,
                 """
                 INSERT INTO orders (
                     user_id,
@@ -4451,7 +4611,6 @@ class AppHandler(SimpleHTTPRequestHandler):
                     cleaned_address["phone_number"],
                 ),
             )
-            order_id = int(order_cursor.lastrowid)
 
             for item in checkout_items:
                 quantity = max(1, int(item["quantity"] or 1))
@@ -5018,7 +5177,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     ),
                 )
             else:
-                cursor = connection.execute(
+                address_id = execute_insert_and_get_id(
+                    connection,
                     """
                     INSERT INTO user_addresses (
                         user_id,
@@ -5040,7 +5200,6 @@ class AppHandler(SimpleHTTPRequestHandler):
                         cleaned_payload["phone_number"],
                     ),
                 )
-                address_id = cursor.lastrowid
 
             saved_address = connection.execute(
                 """
