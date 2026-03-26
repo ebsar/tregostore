@@ -159,9 +159,9 @@ select {
   z-index: 1;
   display: grid;
   justify-items: center;
-  gap: 22px;
-  width: min(420px, calc(100vw - 40px));
-  padding: 12px 12px 4px;
+  gap: 18px;
+  width: min(280px, calc(100vw - 40px));
+  padding: 8px 8px 4px;
 }
 
 .app-loader-panel::before {
@@ -170,156 +170,47 @@ select {
 
 .app-loader-stage {
   position: relative;
-  width: min(250px, 62vw);
+  width: min(170px, 44vw);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
   isolation: isolate;
 }
 
-.app-loader-orbit {
-  position: relative;
-  position: absolute;
-  inset: 50%;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background:
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 62%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 20px 40px rgba(183, 155, 138, 0.1);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.app-loader-orbit::before {
-  content: "";
-  position: absolute;
-  inset: 10px;
-  border-radius: inherit;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  opacity: 0.72;
-  transform-origin: center;
-}
-
-.app-loader-orbit-outer {
-  width: 100%;
-  height: 100%;
-  animation: loaderOrbitSpin 8.6s linear infinite;
-}
-
-.app-loader-orbit-outer::before {
-  animation: loaderOrbitTraceReverse 10.8s linear infinite;
-}
-
-.app-loader-orbit-inner {
-  width: 72%;
-  height: 72%;
-  animation: loaderOrbitSpinReverse 6.4s linear infinite;
-}
-
-.app-loader-orbit-inner::before {
-  animation: loaderOrbitTrace 7.4s linear infinite;
-}
-
-.app-loader-orbit-core {
-  width: 48%;
-  height: 48%;
-  border-style: solid;
-  opacity: 0.82;
-  animation: loaderOrbitPulse 2.4s ease-in-out infinite;
-}
-
-.app-loader-orbit-core::before {
-  inset: 7px;
-  border-style: solid;
-  border-color: rgba(255, 255, 255, 0.28);
-  opacity: 0.88;
-  animation: loaderOrbitCorePulse 2.4s ease-in-out infinite;
-}
-
 .app-loader-centerpiece {
   position: absolute;
-  width: 54%;
+  width: 100%;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
   background: transparent;
   overflow: visible;
   z-index: 1;
+  animation: loaderLogoPulse 1.8s ease-in-out infinite;
 }
 
 .app-loader-logo {
   width: 100%;
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 18px 30px rgba(255, 255, 255, 0.36));
-}
-
-.app-loader-center-shine {
-  position: absolute;
-  inset: -8% auto -8% -18%;
-  width: 34%;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0));
-  transform: rotate(18deg);
-  opacity: 0.62;
-  filter: blur(2px);
-  animation: loaderCenterShimmer 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 18px 30px rgba(255, 255, 255, 0.4));
 }
 
 .app-loader-copy-block {
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 0;
   text-align: center;
 }
 
 .app-loader-copy {
   margin: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
   width: auto;
   color: rgba(93, 73, 63, 0.82);
-  font-size: 0.96rem;
+  font-size: 1rem;
   line-height: 1.4;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
   text-transform: lowercase;
-}
-
-.app-loader-brand {
-  color: rgba(72, 52, 42, 0.94);
-  font-size: clamp(1.9rem, 3.4vw, 2.45rem);
-  line-height: 1;
-  letter-spacing: -0.03em;
-  text-shadow: 0 10px 34px rgba(255, 255, 255, 0.32);
-  text-transform: lowercase;
-}
-
-.app-loader-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 20px;
-}
-
-.app-loader-dots span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(194, 126, 77, 0.92);
-  opacity: 0.22;
-  animation: loaderDotPulse 1.2s ease-in-out infinite;
-}
-
-.app-loader-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.app-loader-dots span:nth-child(3) {
-  animation-delay: 0.4s;
 }
 
 @media (max-width: 640px) {
@@ -328,17 +219,13 @@ select {
   }
 
   .app-loader-panel {
-    gap: 18px;
-    width: min(100%, 420px);
+    gap: 14px;
+    width: min(100%, 220px);
     padding: 10px 6px 0;
   }
 
   .app-loader-stage {
-    width: min(220px, 60vw);
-  }
-
-  .app-loader-brand {
-    font-size: clamp(1.64rem, 9vw, 2.12rem);
+    width: min(140px, 38vw);
   }
 
   .app-loader-copy {
@@ -5188,110 +5075,16 @@ code {
   }
 }
 
-@keyframes loaderOrbitSpin {
-  from {
-    transform: translate(-50%, -50%) rotate(0deg);
-  }
-
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-}
-
-@keyframes loaderOrbitSpinReverse {
-  from {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-
-  to {
-    transform: translate(-50%, -50%) rotate(0deg);
-  }
-}
-
-@keyframes loaderOrbitTrace {
-  from {
-    transform: rotate(0deg) scale(0.985);
-    opacity: 0.46;
-  }
-
-  50% {
-    opacity: 0.82;
-  }
-
-  to {
-    transform: rotate(360deg) scale(1.015);
-    opacity: 0.46;
-  }
-}
-
-@keyframes loaderOrbitTraceReverse {
-  from {
-    transform: rotate(360deg) scale(1.015);
-    opacity: 0.38;
-  }
-
-  50% {
-    opacity: 0.72;
-  }
-
-  to {
-    transform: rotate(0deg) scale(0.985);
-    opacity: 0.38;
-  }
-}
-
-@keyframes loaderOrbitPulse {
+@keyframes loaderLogoPulse {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(0.94);
-    opacity: 0.66;
-  }
-
-  50% {
-    transform: translate(-50%, -50%) scale(1.06);
-    opacity: 0.98;
-  }
-}
-
-@keyframes loaderOrbitCorePulse {
-  0%,
-  100% {
-    transform: scale(0.92);
-    opacity: 0.34;
-  }
-
-  50% {
-    transform: scale(1.08);
+    transform: scale(0.96);
     opacity: 0.84;
   }
-}
 
-@keyframes loaderCenterShimmer {
-  0% {
-    transform: translateX(-140%) rotate(18deg);
-    opacity: 0;
-  }
-
-  26% {
-    opacity: 0.78;
-  }
-
-  100% {
-    transform: translateX(340%) rotate(18deg);
-    opacity: 0;
-  }
-}
-
-@keyframes loaderDotPulse {
-  0%,
-  100% {
-    opacity: 0.2;
-    transform: scale(0.82);
-  }
-
-  45% {
-    opacity: 1;
-    transform: scale(1.18);
+  50% {
+    transform: scale(1.06);
+    opacity: 0.84;
   }
 }
 
