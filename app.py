@@ -1,6 +1,6 @@
 import argparse
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
@@ -988,18 +988,32 @@ def utc_now() -> datetime:
 
 
 def datetime_to_storage_text(value: datetime) -> str:
-    return value.replace(microsecond=0).isoformat(sep=" ")
+    normalized_value = value
+    if normalized_value.tzinfo is not None:
+        normalized_value = normalized_value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    return normalized_value.replace(microsecond=0).isoformat(sep=" ")
 
 
 def parse_storage_datetime(value: object) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
+    parsed_value: datetime | None = None
 
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
+    if isinstance(value, datetime):
+        parsed_value = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        try:
+            parsed_value = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    if parsed_value.tzinfo is not None:
+        parsed_value = parsed_value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    return parsed_value.replace(microsecond=0)
 
 
 def generate_email_verification_code() -> str:
