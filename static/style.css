@@ -88,6 +88,7 @@ select {
   padding: 24px;
   pointer-events: all;
   transition: opacity 0.55s ease, visibility 0.55s ease;
+  overflow: hidden;
 }
 
 .app-loader.is-hidden {
@@ -100,12 +101,36 @@ select {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 32%),
-    radial-gradient(circle at top right, rgba(241, 221, 197, 0.26), rgba(255, 255, 255, 0) 28%),
-    radial-gradient(circle at bottom left, rgba(223, 241, 214, 0.22), rgba(255, 255, 255, 0) 30%),
-    linear-gradient(135deg, rgba(255, 252, 247, 0.34), rgba(248, 241, 232, 0.22));
-  backdrop-filter: blur(10px) saturate(115%);
-  -webkit-backdrop-filter: blur(10px) saturate(115%);
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0) 24%),
+    radial-gradient(circle at 82% 14%, rgba(255, 220, 194, 0.34), rgba(255, 255, 255, 0) 24%),
+    radial-gradient(circle at 22% 84%, rgba(219, 239, 210, 0.24), rgba(255, 255, 255, 0) 26%),
+    linear-gradient(135deg, rgba(255, 250, 244, 0.72), rgba(249, 241, 232, 0.5) 54%, rgba(245, 238, 247, 0.62));
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+.app-loader-glow {
+  position: absolute;
+  width: min(38vw, 520px);
+  height: min(38vw, 520px);
+  border-radius: 50%;
+  filter: blur(26px);
+  opacity: 0.7;
+  pointer-events: none;
+  animation: loaderGlowPulse 5.5s ease-in-out infinite alternate;
+}
+
+.app-loader-glow-left {
+  top: 10%;
+  left: -8%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 244, 235, 0.24) 44%, rgba(255, 255, 255, 0) 74%);
+}
+
+.app-loader-glow-right {
+  right: -10%;
+  bottom: 8%;
+  background: radial-gradient(circle, rgba(255, 211, 186, 0.5) 0%, rgba(255, 232, 220, 0.18) 42%, rgba(255, 255, 255, 0) 74%);
+  animation-delay: -2.4s;
 }
 
 .app-loader-panel {
@@ -113,100 +138,260 @@ select {
   z-index: 1;
   display: grid;
   justify-items: center;
-  gap: 18px;
-  width: min(460px, calc(100vw - 40px));
-  padding: 18px 20px 12px;
-  perspective: 1200px;
+  gap: 28px;
+  width: min(560px, calc(100vw - 40px));
+  padding: 18px 18px 8px;
 }
 
 .app-loader-panel::before {
   content: none;
 }
 
-.app-loader-icons {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  perspective: 1200px;
-}
-
-.app-loader-icon-chip {
-  --loader-chip-color: #7d533c;
+.app-loader-stage {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 92px;
-  height: 92px;
-  border-radius: 28px;
-  color: var(--loader-chip-color);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.02));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 24px 38px rgba(123, 98, 85, 0.12),
-    0 10px 18px rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  transform-style: preserve-3d;
-  will-change: transform, opacity, box-shadow;
-  opacity: 0.76;
+  width: min(320px, 72vw);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
 }
 
-.app-loader-icon-chip-bag {
-  --loader-chip-color: #5f7c52;
-  animation: loaderFocusBag 2.9s ease-in-out infinite;
-}
-
-.app-loader-icon-chip-cart {
-  --loader-chip-color: #a35f3e;
-  animation: loaderFocusCart 2.9s ease-in-out infinite;
-}
-
-.app-loader-icon-chip-box {
-  --loader-chip-color: #805847;
-  animation: loaderFocusBox 2.9s ease-in-out infinite;
-}
-
-.app-loader-icon-chip::before {
-  content: "";
+.app-loader-orbit {
+  position: relative;
   position: absolute;
-  inset: -14px;
-  border-radius: 32px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 72%);
-  opacity: 0.22;
-  filter: blur(12px);
-  transform: translateZ(-16px);
+  inset: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 62%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    0 24px 50px rgba(183, 155, 138, 0.12);
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
+.app-loader-orbit::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: inherit;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  opacity: 0.68;
+}
+
+.app-loader-orbit-outer {
+  width: 100%;
+  height: 100%;
+  animation: loaderOrbitSpin 9s linear infinite;
+}
+
+.app-loader-orbit-inner {
+  width: 76%;
+  height: 76%;
+  animation: loaderOrbitSpinReverse 7s linear infinite;
+}
+
+.app-loader-centerpiece {
+  position: absolute;
+  width: 58%;
+  aspect-ratio: 1;
+  border-radius: 36px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.14)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.06) 58%, rgba(255, 255, 255, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 34px 72px rgba(174, 148, 134, 0.2),
+    0 12px 24px rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  overflow: hidden;
+}
+
+.app-loader-logo-shell {
+  position: relative;
+  width: 74%;
+  aspect-ratio: 1;
+  border-radius: 28px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.34) 42%, rgba(255, 255, 255, 0.18) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 16px 28px rgba(255, 255, 255, 0.24);
+  z-index: 1;
+}
+
+.app-loader-logo {
+  width: 82%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 26px rgba(255, 255, 255, 0.32));
+}
+
+.app-loader-center-shine {
+  position: absolute;
+  inset: -24% auto -24% -32%;
+  width: 48%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0));
+  transform: rotate(18deg);
+  opacity: 0.7;
+  filter: blur(2px);
+  animation: loaderCenterShimmer 2.9s ease-in-out infinite;
+}
+
+.app-loader-floating {
+  --loader-float-shadow: rgba(172, 135, 112, 0.16);
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 74px;
+  height: 74px;
+  border-radius: 24px;
+  color: rgba(91, 67, 56, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.18)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 22px 44px var(--loader-float-shadow);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  will-change: transform;
+}
+
+.app-loader-floating-bag {
+  top: 8%;
+  left: 10%;
+  color: #5f7c52;
+  animation: loaderFloatBag 4.2s ease-in-out infinite;
+}
+
+.app-loader-floating-cart {
+  top: 18%;
+  right: 8%;
+  color: #ab6a42;
+  animation: loaderFloatCart 4.2s ease-in-out infinite;
+}
+
+.app-loader-floating-box {
+  right: 16%;
+  bottom: 10%;
+  color: #8d6450;
+  animation: loaderFloatBox 4.2s ease-in-out infinite;
+}
+
 .app-loader-icon {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 8px 12px rgba(255, 255, 255, 0.2));
+  filter: drop-shadow(0 10px 16px rgba(255, 255, 255, 0.26));
+}
+
+.app-loader-copy-block {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.app-loader-eyebrow {
+  margin: 0;
+  color: rgba(193, 126, 77, 0.95);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
 }
 
 .app-loader-copy {
   margin: 0;
-  color: rgba(93, 73, 63, 0.82);
-  font-size: 0.94rem;
-  text-align: center;
-  letter-spacing: 0.02em;
+  width: min(420px, 92%);
+  color: rgba(93, 73, 63, 0.78);
+  font-size: 0.96rem;
+  line-height: 1.65;
+  letter-spacing: 0.015em;
 }
 
 .app-loader-brand {
-  color: rgba(79, 55, 42, 0.92);
-  font-size: clamp(1.55rem, 3vw, 2rem);
+  color: rgba(72, 52, 42, 0.94);
+  font-size: clamp(1.9rem, 3.6vw, 2.65rem);
+  line-height: 1.08;
   letter-spacing: -0.03em;
-  text-shadow: 0 8px 24px rgba(255, 255, 255, 0.32);
+  text-shadow: 0 10px 34px rgba(255, 255, 255, 0.32);
+}
+
+.app-loader-progress {
+  position: relative;
+  width: min(240px, 64vw);
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.82),
+    0 8px 22px rgba(191, 159, 141, 0.12);
+}
+
+.app-loader-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 52%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(215, 140, 86, 0.82), rgba(245, 190, 117, 0.94), rgba(255, 255, 255, 0.95));
+  box-shadow: 0 0 18px rgba(228, 173, 109, 0.32);
+  animation: loaderProgressSweep 1.8s ease-in-out infinite;
+}
+
+@media (max-width: 640px) {
+  .app-loader {
+    padding: 18px;
+  }
+
+  .app-loader-panel {
+    gap: 24px;
+    width: min(100%, 420px);
+    padding: 10px 6px 0;
+  }
+
+  .app-loader-stage {
+    width: min(280px, 78vw);
+  }
+
+  .app-loader-floating {
+    width: 64px;
+    height: 64px;
+    border-radius: 22px;
+  }
+
+  .app-loader-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .app-loader-brand {
+    font-size: clamp(1.72rem, 9vw, 2.24rem);
+  }
+
+  .app-loader-copy {
+    width: min(320px, 100%);
+    font-size: 0.9rem;
+  }
+
+  .app-loader-progress {
+    width: min(220px, 74vw);
+  }
 }
 
 .page-shell {
@@ -4883,116 +5068,94 @@ code {
   }
 }
 
-@keyframes loaderFloat {
+@keyframes loaderGlowPulse {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.96);
+    opacity: 0.52;
+  }
+
+  100% {
+    transform: translate3d(24px, -18px, 0) scale(1.08);
+    opacity: 0.82;
+  }
+}
+
+@keyframes loaderOrbitSpin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes loaderOrbitSpinReverse {
+  from {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+}
+
+@keyframes loaderCenterShimmer {
+  0% {
+    transform: translateX(-140%) rotate(18deg);
+    opacity: 0;
+  }
+
+  26% {
+    opacity: 0.78;
+  }
+
+  100% {
+    transform: translateX(340%) rotate(18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes loaderFloatBag {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0) rotate(-10deg) scale(0.98);
   }
 
   50% {
-    transform: translateY(-8px);
+    transform: translate3d(-8px, -18px, 0) rotate(-2deg) scale(1.06);
   }
 }
 
-@keyframes loaderSheen {
+@keyframes loaderFloatCart {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(8deg) scale(1);
+  }
+
+  50% {
+    transform: translate3d(10px, -16px, 0) rotate(0deg) scale(1.08);
+  }
+}
+
+@keyframes loaderFloatBox {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(12deg) scale(0.98);
+  }
+
+  50% {
+    transform: translate3d(-10px, -14px, 0) rotate(2deg) scale(1.05);
+  }
+}
+
+@keyframes loaderProgressSweep {
   0% {
-    transform: translateX(-24%) rotate(12deg);
-    opacity: 0;
-  }
-
-  35% {
-    opacity: 0.85;
+    transform: translateX(-62%);
   }
 
   100% {
-    transform: translateX(230%) rotate(12deg);
-    opacity: 0;
-  }
-}
-
-@keyframes loaderFocusBag {
-  0%,
-  100% {
-    transform: translate3d(0, 10px, 0) rotateX(58deg) rotateY(-16deg) scale(0.92);
-    opacity: 0.62;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.4),
-      0 16px 24px rgba(123, 98, 85, 0.08),
-      0 8px 12px rgba(255, 255, 255, 0.08);
-  }
-
-  10%,
-  24% {
-    transform: translate3d(0, -10px, 48px) rotateX(2deg) rotateY(-7deg) scale(1.08);
-    opacity: 1;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.68),
-      0 28px 42px rgba(95, 124, 82, 0.2),
-      0 14px 24px rgba(255, 255, 255, 0.14);
-  }
-
-  36%,
-  88% {
-    transform: translate3d(0, 8px, 0) rotateX(52deg) rotateY(-12deg) scale(0.95);
-    opacity: 0.7;
-  }
-}
-
-@keyframes loaderFocusCart {
-  0%,
-  26%,
-  100% {
-    transform: translate3d(0, 10px, 0) rotateX(58deg) rotateY(0deg) scale(0.92);
-    opacity: 0.62;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.4),
-      0 16px 24px rgba(123, 98, 85, 0.08),
-      0 8px 12px rgba(255, 255, 255, 0.08);
-  }
-
-  38%,
-  56% {
-    transform: translate3d(0, -12px, 52px) rotateX(0deg) rotateY(0deg) scale(1.1);
-    opacity: 1;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.68),
-      0 30px 44px rgba(163, 95, 62, 0.22),
-      0 14px 24px rgba(255, 255, 255, 0.14);
-  }
-
-  66%,
-  90% {
-    transform: translate3d(0, 8px, 0) rotateX(52deg) rotateY(0deg) scale(0.95);
-    opacity: 0.7;
-  }
-}
-
-@keyframes loaderFocusBox {
-  0%,
-  58%,
-  100% {
-    transform: translate3d(0, 10px, 0) rotateX(58deg) rotateY(16deg) scale(0.92);
-    opacity: 0.62;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.4),
-      0 16px 24px rgba(123, 98, 85, 0.08),
-      0 8px 12px rgba(255, 255, 255, 0.08);
-  }
-
-  70%,
-  88% {
-    transform: translate3d(0, -10px, 48px) rotateX(2deg) rotateY(7deg) scale(1.08);
-    opacity: 1;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.68),
-      0 28px 42px rgba(128, 88, 71, 0.2),
-      0 14px 24px rgba(255, 255, 255, 0.14);
-  }
-
-  30%,
-  64% {
-    transform: translate3d(0, 8px, 0) rotateX(52deg) rotateY(12deg) scale(0.95);
-    opacity: 0.7;
+    transform: translateX(168%);
   }
 }
 
