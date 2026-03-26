@@ -512,6 +512,7 @@ body[data-page="cart"] .page-shell {
   gap: 8px;
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
 
 .nav-mobile-toggle {
@@ -535,6 +536,7 @@ body[data-page="cart"] .page-shell {
   backdrop-filter: blur(18px) saturate(180%);
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   cursor: pointer;
+  flex-shrink: 0;
   touch-action: manipulation;
   transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
@@ -734,6 +736,9 @@ body[data-page="cart"] .page-shell {
 .nav-chevron {
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
+  flex-shrink: 0;
+  display: block;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.9;
@@ -775,13 +780,17 @@ body[data-page="cart"] .page-shell {
 .nav-dropdown-item {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 42px;
+  width: 100%;
   padding: 10px 14px;
   border-radius: 16px;
   color: #6a4b3a;
   font-weight: 700;
   text-decoration: none;
+  text-align: left;
+  line-height: 1.35;
+  white-space: normal;
   border: 1px solid rgba(255, 255, 255, 0.72);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 240, 230, 0.42)),
@@ -5151,6 +5160,7 @@ code {
 
   .nav-mobile-tray {
     display: inline-flex;
+    justify-content: flex-end;
   }
 
   .nav-links,
@@ -5195,11 +5205,24 @@ code {
     text-align: left;
   }
 
+  .nav-dropdown-trigger {
+    gap: 12px;
+  }
+
+  .nav-dropdown-trigger span {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
   .nav-dropdown-menu {
     position: static;
     min-width: 100%;
     margin-top: 8px;
     transform: none;
+  }
+
+  .nav-dropdown-item {
+    min-height: 48px;
   }
 
   .nav-actions .nav-icon-button {
@@ -5343,6 +5366,11 @@ code {
   .nav-mobile-shortcut {
     width: 44px;
     height: 44px;
+    flex-shrink: 0;
+  }
+
+  .brand-logo {
+    width: 92px;
   }
 
   .nav-link,

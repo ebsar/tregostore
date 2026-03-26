@@ -179,7 +179,7 @@ onBeforeUnmount(() => {
             @click="toggleDropdown(section.key)"
           >
             <span>{{ section.label }}</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m7 10 5 5 5-5"></path>
             </svg>
           </button>
