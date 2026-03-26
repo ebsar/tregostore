@@ -92,6 +92,11 @@ Per Vercel:
 - projekti tani ka [vercel.json](/Users/ebsarhoxha/Documents/Playground/vercel.json) dhe wrapper-in [api/index.py](/Users/ebsarhoxha/Documents/Playground/api/index.py)
 - route-t e faqeve dhe `api/*` jane pergatitur per deploy
 - ne Vercel databaza SQLite dhe upload-et kalojne ne `/tmp`, pra jane te perkohshme dhe mund te humbin pas restart-it ose cold start-it
+- per te mos mbetur pa admin ne deploy, mund te vendosesh:
+  - `TREGO_BOOTSTRAP_ADMIN_NAME`
+  - `TREGO_BOOTSTRAP_ADMIN_EMAIL`
+  - `TREGO_BOOTSTRAP_ADMIN_PASSWORD`
+- nese nuk ekziston asnje admin, ky admin krijohet automatikisht nga keto env vars
 
 Pra ky setup eshte i mire per `preview/demo` ne Vercel, por jo ende zgjidhja perfundimtare per prodhim serioz.
 

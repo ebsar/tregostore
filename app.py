@@ -276,6 +276,10 @@ def read_bool_env(name: str, default_value: bool) -> bool:
     return raw_value in {"1", "true", "yes", "on", "po"}
 
 
+def read_text_env(name: str, default_value: str = "") -> str:
+    return str(os.environ.get(name, default_value)).strip()
+
+
 def get_smtp_settings() -> dict[str, object]:
     host = str(os.environ.get("TREGO_SMTP_HOST", "")).strip()
     username = str(os.environ.get("TREGO_SMTP_USERNAME", "")).strip()
@@ -295,6 +299,14 @@ def get_smtp_settings() -> dict[str, object]:
         "password": password,
         "from_email": from_email,
         "use_tls": read_bool_env("TREGO_SMTP_USE_TLS", True),
+    }
+
+
+def get_bootstrap_admin_settings() -> dict[str, str]:
+    return {
+        "full_name": read_text_env("TREGO_BOOTSTRAP_ADMIN_NAME"),
+        "email": read_text_env("TREGO_BOOTSTRAP_ADMIN_EMAIL").lower(),
+        "password": str(os.environ.get("TREGO_BOOTSTRAP_ADMIN_PASSWORD", "")),
     }
 
 
@@ -336,6 +348,88 @@ def initialize_database() -> None:
         connection.execute("PRAGMA foreign_keys = ON;")
         connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         migrate_database(connection)
+        ensure_bootstrap_admin(connection)
+
+
+def ensure_bootstrap_admin(connection: sqlite3.Connection) -> None:
+    if count_admin_users(connection) > 0:
+        return
+
+    settings = get_bootstrap_admin_settings()
+    full_name = settings["full_name"]
+    email = settings["email"]
+    password = settings["password"]
+
+    if not full_name or not email or len(password) < 8 or not EMAIL_RE.match(email):
+        return
+
+    first_name, last_name = split_full_name(full_name)
+    existing_user = connection.execute(
+        """
+        SELECT id
+        FROM users
+        WHERE email = ?
+        LIMIT 1
+        """,
+        (email,),
+    ).fetchone()
+
+    if existing_user:
+        connection.execute(
+            """
+            UPDATE users
+            SET
+                full_name = ?,
+                first_name = ?,
+                last_name = ?,
+                password_hash = ?,
+                role = 'admin',
+                is_email_verified = 1,
+                email_verified_at = COALESCE(NULLIF(email_verified_at, ''), CURRENT_TIMESTAMP)
+            WHERE id = ?
+            """,
+            (
+                full_name,
+                first_name,
+                last_name,
+                hash_password(password),
+                existing_user["id"],
+            ),
+        )
+        print(
+            f"[TREGO] Bootstrap admin u aktivizua per {email}.",
+            flush=True,
+        )
+        return
+
+    connection.execute(
+        """
+        INSERT INTO users (
+            full_name,
+            first_name,
+            last_name,
+            email,
+            password_hash,
+            birth_date,
+            gender,
+            role,
+            is_email_verified,
+            email_verified_at
+        )
+        VALUES (?, ?, ?, ?, ?, '', '', 'admin', 1, CURRENT_TIMESTAMP)
+        """,
+        (
+            full_name,
+            first_name,
+            last_name,
+            email,
+            hash_password(password),
+        ),
+    )
+    print(
+        f"[TREGO] Bootstrap admin u krijua per {email}.",
+        flush=True,
+    )
 
 
 def migrate_database(connection: sqlite3.Connection) -> None:
