@@ -564,6 +564,14 @@ body[data-page="cart"] .page-shell {
   flex-shrink: 0;
 }
 
+.nav-mobile-tray {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
 .nav-mobile-toggle {
   display: none;
   position: relative;
@@ -596,9 +604,14 @@ body[data-page="cart"] .page-shell {
     0 14px 26px rgba(209, 180, 165, 0.2);
 }
 
-.nav-icon-menu {
+.nav-mobile-toggle-icon {
   width: 22px;
   height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.95;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .nav-dropdown {
@@ -5197,6 +5210,10 @@ code {
     display: inline-flex;
   }
 
+  .nav-mobile-tray {
+    display: inline-flex;
+  }
+
   .nav-links,
   .nav-actions {
     display: none;
@@ -5247,9 +5264,14 @@ code {
   }
 
   .nav-actions .nav-icon-button {
-    flex: 1 1 calc(33.333% - 7px);
+    flex: 1 1 calc(50% - 5px);
     min-height: 52px;
     justify-content: center;
+  }
+
+  .nav-actions .wishlist-link,
+  .nav-actions .cart-button {
+    display: none;
   }
 
   .nav-actions .nav-action,
@@ -5373,6 +5395,15 @@ code {
 
   .nav-icon-button {
     min-height: 50px;
+  }
+
+  .nav-mobile-tray {
+    gap: 6px;
+  }
+
+  .nav-mobile-shortcut {
+    width: 44px;
+    height: 44px;
   }
 
   .nav-link,
