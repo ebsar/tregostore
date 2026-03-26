@@ -502,8 +502,7 @@ def initialize_database() -> None:
     with get_db_connection() as connection:
         schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
         connection.executescript(schema_path.read_text(encoding="utf-8"))
-        if not is_postgres_connection(connection):
-            migrate_database(connection)
+        migrate_database(connection)
         ensure_bootstrap_admin(connection)
 
 
@@ -672,8 +671,7 @@ def ensure_bootstrap_admin(connection: DatabaseConnection) -> None:
 
 
 def migrate_database(connection: DatabaseConnection) -> None:
-    if is_postgres_connection(connection):
-        return
+    now_text_value = datetime_to_storage_text(utc_now())
 
     if not column_exists(connection, "users", "first_name"):
         connection.execute(
@@ -927,6 +925,34 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 """,
                 (primary_image_path, serialized_gallery, product["id"]),
             )
+
+    if not column_exists(connection, "cart_items", "created_at"):
+        connection.execute(
+            "ALTER TABLE cart_items ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "cart_items", "updated_at"):
+        connection.execute(
+            "ALTER TABLE cart_items ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE cart_items
+        SET
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), ?),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), COALESCE(NULLIF(TRIM(created_at), ''), ?))
+        """
+        ,
+        (now_text_value, now_text_value),
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_cart_user_updated_at
+        ON cart_items(user_id, updated_at DESC)
+        """
+    )
 
 
 def column_exists(
@@ -4842,7 +4868,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 VALUES (?, ?, 1)
                 ON CONFLICT(user_id, product_id)
                 DO UPDATE SET
-                    quantity = quantity + 1,
+                    quantity = cart_items.quantity + EXCLUDED.quantity,
                     updated_at = ?
                 """,
                 (user["id"], product_id, updated_at_value),
