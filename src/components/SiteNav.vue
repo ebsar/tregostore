@@ -122,13 +122,13 @@ function handleWindowScroll() {
   }
 
   const scrollDelta = currentScrollY - lastScrollY;
-  if (Math.abs(scrollDelta) < 6) {
+  if (Math.abs(scrollDelta) < 12) {
     return;
   }
 
-  if (scrollDelta > 0) {
+  if (scrollDelta > 0 && currentScrollY > 72) {
     isScrollCompact.value = true;
-  } else {
+  } else if (scrollDelta < 0 || currentScrollY <= 28) {
     isScrollCompact.value = false;
   }
 
