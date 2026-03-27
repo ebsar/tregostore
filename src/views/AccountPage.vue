@@ -11,7 +11,7 @@ const ui = reactive({
   type: "",
 });
 
-const roleLinks = computed(() => {
+const accountLinks = computed(() => {
   if (!appState.user) {
     return [];
   }
@@ -20,17 +20,41 @@ const roleLinks = computed(() => {
     return [
       { href: "/admin-products", label: "Artikujt" },
       { href: "/bizneset-e-regjistruara", label: "Bizneset e regjistruara" },
+      { href: "/admin-porosite", label: "Porosit" },
+      { href: "/te-dhenat-personale", label: "Te dhenat personale" },
     ];
   }
 
   if (appState.user.role === "business") {
     return [
-      { href: "/biznesi-juaj", label: "Biznesi juaj" },
-      { href: "/porosite-e-biznesit", label: "Porosite e biznesit" },
+      { href: "/biznesi-juaj", label: "Biznesi i imi" },
+      { href: "/porosite-e-biznesit", label: "Porosite e bera" },
+      { href: "/te-dhenat-personale", label: "Te dhenat personale" },
     ];
   }
 
-  return [];
+  return [
+    { href: "/porosite", label: "Porosite" },
+    { href: "/refund-returne", label: "Refund / Returne" },
+    { href: "/adresat", label: "Adresat" },
+    { href: "/te-dhenat-personale", label: "Te dhenat personale" },
+  ];
+});
+
+const accountLinksLabel = computed(() => {
+  if (!appState.user) {
+    return "Llogaria";
+  }
+
+  if (appState.user.role === "admin") {
+    return "Admin";
+  }
+
+  if (appState.user.role === "business") {
+    return "Biznesi";
+  }
+
+  return "Opsionet";
 });
 
 onMounted(async () => {
@@ -106,10 +130,10 @@ async function handlePasswordChange(event) {
 
     <div class="account-layout" v-if="appState.user">
       <aside class="card account-sidebar">
-        <div v-if="roleLinks.length > 0" class="account-nav-group">
-          <p class="section-label account-nav-label">Roli yt</p>
+        <div class="account-nav-group">
+          <p class="section-label account-nav-label">{{ accountLinksLabel }}</p>
           <RouterLink
-            v-for="link in roleLinks"
+            v-for="link in accountLinks"
             :key="link.href"
             class="account-nav-link"
             :to="link.href"
@@ -118,15 +142,7 @@ async function handlePasswordChange(event) {
           </RouterLink>
         </div>
 
-        <div class="account-nav-group">
-          <p class="section-label account-nav-label">Opsionet</p>
-          <RouterLink class="account-nav-link" to="/te-dhenat-personale">Te dhenat personale</RouterLink>
-          <RouterLink class="account-nav-link" to="/adresat">Adresat</RouterLink>
-          <RouterLink class="account-nav-link" to="/porosite">Porosite</RouterLink>
-          <RouterLink class="account-nav-link" to="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</RouterLink>
-        </div>
-
-        <button class="account-nav-link account-nav-link-button" type="button" @click="handleLogout">
+        <button class="account-nav-link account-nav-link-button account-nav-link-danger" type="button" @click="handleLogout">
           Shkycu
         </button>
       </aside>

@@ -16,6 +16,8 @@ import PersonalDataPage from "../views/PersonalDataPage.vue";
 import AddressesPage from "../views/AddressesPage.vue";
 import OrdersPage from "../views/OrdersPage.vue";
 import BusinessOrdersPage from "../views/BusinessOrdersPage.vue";
+import RefundReturnsPage from "../views/RefundReturnsPage.vue";
+import AdminOrdersPage from "../views/AdminOrdersPage.vue";
 import CheckoutAddressPage from "../views/CheckoutAddressPage.vue";
 import PaymentOptionsPage from "../views/PaymentOptionsPage.vue";
 import AdminProductsPage from "../views/AdminProductsPage.vue";
@@ -31,6 +33,7 @@ const routes = [
       title: "TREGO | Home",
       shellClass: "page-shell page-shell-home-full",
       mainClass: "page-main page-main-collection",
+      routeLoader: true,
     },
   },
   {
@@ -41,6 +44,7 @@ const routes = [
       title: "TREGO | Kerko produkte",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
+      routeLoader: true,
     },
   },
   {
@@ -55,6 +59,7 @@ const routes = [
       title: "TREGO | Produkti",
       shellClass: "page-shell",
       mainClass: "page-main page-main-product",
+      routeLoader: true,
     },
   },
   {
@@ -65,6 +70,7 @@ const routes = [
       title: "TREGO | Profili i biznesit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
+      routeLoader: true,
     },
   },
   {
@@ -125,6 +131,7 @@ const routes = [
       title: "TREGO | Wishlist",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
+      routeLoader: true,
     },
   },
   {
@@ -135,6 +142,7 @@ const routes = [
       title: "TREGO | Cart",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
+      routeLoader: true,
     },
   },
   {
@@ -145,6 +153,7 @@ const routes = [
       title: "TREGO | Llogaria",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -155,6 +164,7 @@ const routes = [
       title: "TREGO | Te dhenat personale",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -165,6 +175,7 @@ const routes = [
       title: "TREGO | Adresat",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -175,6 +186,18 @@ const routes = [
       title: "TREGO | Porosite",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/refund-returne",
+    component: RefundReturnsPage,
+    meta: {
+      pageKey: "refund-returns",
+      title: "TREGO | Refund / Returne",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -185,6 +208,18 @@ const routes = [
       title: "TREGO | Porosite e biznesit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/admin-porosite",
+    component: AdminOrdersPage,
+    meta: {
+      pageKey: "admin-orders",
+      title: "TREGO | Porosit e adminit",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -195,6 +230,7 @@ const routes = [
       title: "TREGO | Adresa e porosise",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -205,6 +241,7 @@ const routes = [
       title: "TREGO | Menyra e pageses",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
+      routeLoader: true,
     },
   },
   {
@@ -215,6 +252,7 @@ const routes = [
       title: "TREGO | Admin Products",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
+      routeLoader: true,
     },
   },
   {
@@ -225,6 +263,7 @@ const routes = [
       title: "TREGO | Biznesi juaj",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
+      routeLoader: true,
     },
   },
   {
@@ -235,6 +274,7 @@ const routes = [
       title: "TREGO | Bizneset e regjistruara",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
+      routeLoader: true,
     },
   },
   {
@@ -251,8 +291,10 @@ const router = createRouter({
   },
 });
 
-router.beforeEach(() => {
-  beginRouteLoading();
+router.beforeEach((to) => {
+  if (to.meta?.routeLoader) {
+    beginRouteLoading();
+  }
 });
 
 export default router;

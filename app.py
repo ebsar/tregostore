@@ -29,6 +29,8 @@ POSTGRES_SCHEMA_PATH = BASE_DIR / "schema_postgres.sql"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
+PRODUCTS_PAGE_DEFAULT_LIMIT = 12
+PRODUCTS_PAGE_MAX_LIMIT = 24
 PAGE_ROUTES = {
     "/": "/index.html",
     "/about": "/about.html",
@@ -926,6 +928,39 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 (primary_image_path, serialized_gallery, product["id"]),
             )
 
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_category_id
+        ON products(is_public, category, id DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_creator_id
+        ON products(is_public, created_by_user_id, id DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_product_type
+        ON products(product_type)
+        """
+    )
+    if is_postgres_connection(connection):
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_title_lower
+            ON products ((LOWER(title)))
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_title
+            ON products(title)
+            """
+        )
+
     if not column_exists(connection, "cart_items", "created_at"):
         connection.execute(
             "ALTER TABLE cart_items ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
@@ -1583,6 +1618,39 @@ def parse_product_ids(
     return errors, product_ids
 
 
+def parse_products_pagination_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], int, int]:
+    errors: list[str] = []
+    raw_limit = str(query_params.get("limit", [""])[0]).strip()
+    raw_offset = str(query_params.get("offset", [""])[0]).strip()
+
+    limit = PRODUCTS_PAGE_DEFAULT_LIMIT
+    offset = 0
+
+    if raw_limit:
+        try:
+            parsed_limit = int(raw_limit)
+            if parsed_limit <= 0:
+                errors.append("Limiti i produkteve duhet te jete me i madh se 0.")
+            else:
+                limit = min(parsed_limit, PRODUCTS_PAGE_MAX_LIMIT)
+        except ValueError:
+            errors.append("Limiti i produkteve nuk eshte valid.")
+
+    if raw_offset:
+        try:
+            parsed_offset = int(raw_offset)
+            if parsed_offset < 0:
+                errors.append("Offset-i i produkteve nuk mund te jete negativ.")
+            else:
+                offset = parsed_offset
+        except ValueError:
+            errors.append("Offset-i i produkteve nuk eshte valid.")
+
+    return errors, limit, offset
+
+
 def parse_positive_quantity(
     data: dict[str, object],
     field_name: str = "quantity",
@@ -1736,6 +1804,18 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
+
+
+def serialize_session_user(row: sqlite3.Row) -> dict[str, object]:
+    payload = serialize_user(row)
+    if row["role"] == "business":
+        business_profile = fetch_business_profile_for_user(row["id"])
+        if business_profile:
+            serialized_profile = serialize_business_profile(business_profile)
+            payload["businessName"] = serialized_profile["businessName"]
+            payload["businessLogoPath"] = serialized_profile["logoPath"]
+
+    return payload
 
 
 def serialize_product(row: sqlite3.Row) -> dict[str, object]:
@@ -2426,9 +2506,12 @@ def is_business_followed_by_user(business_id: int, user_id: int) -> bool:
 def fetch_products(
     category: str | None = None,
     *,
+    category_group: str | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         conditions: list[str] = []
@@ -2437,6 +2520,9 @@ def fetch_products(
         if category:
             conditions.append("category = ?")
             parameters.append(category)
+        elif category_group:
+            conditions.append("category LIKE ?")
+            parameters.append(f"{category_group}-%")
 
         if created_by_user_id is not None:
             conditions.append("created_by_user_id = ?")
@@ -2454,6 +2540,11 @@ def fetch_products(
         if conditions:
             where_clause = "WHERE " + " AND ".join(conditions)
 
+        limit_offset_clause = ""
+        if limit is not None:
+            limit_offset_clause = "\nLIMIT ?\nOFFSET ?"
+            parameters.extend([limit, max(0, int(offset))])
+
         return connection.execute(
             """
             SELECT
@@ -2465,9 +2556,59 @@ def fetch_products(
             + where_clause
             + """
             ORDER BY id DESC
+            """
+            + limit_offset_clause
+            + """
             """,
             parameters,
         ).fetchall()
+
+
+def count_products(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+    include_hidden: bool = False,
+    created_by_user_id: int | None = None,
+    search_text: str | None = None,
+) -> int:
+    with get_db_connection() as connection:
+        conditions: list[str] = []
+        parameters: list[object] = []
+
+        if category:
+            conditions.append("category = ?")
+            parameters.append(category)
+        elif category_group:
+            conditions.append("category LIKE ?")
+            parameters.append(f"{category_group}-%")
+
+        if created_by_user_id is not None:
+            conditions.append("created_by_user_id = ?")
+            parameters.append(created_by_user_id)
+
+        if search_text:
+            conditions.append("(LOWER(title) LIKE ? OR LOWER(description) LIKE ?)")
+            search_pattern = f"%{search_text.lower()}%"
+            parameters.extend([search_pattern, search_pattern])
+
+        if not include_hidden:
+            conditions.append("is_public = 1")
+
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS total_count
+            FROM products
+            """
+            + where_clause,
+            parameters,
+        ).fetchone()
+
+    return int(row["total_count"] or 0)
 
 
 def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
@@ -3224,7 +3365,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        self.send_json(200, {"ok": True, "user": serialize_user(user)})
+        self.send_json(200, {"ok": True, "user": serialize_session_user(user)})
 
     def handle_register(self) -> None:
         try:
@@ -3368,7 +3509,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "message": "U kyqe me sukses.",
                 "redirectTo": "/",
-                "user": serialize_user(user),
+                "user": serialize_session_user(user),
             },
             headers={"Set-Cookie": build_session_cookie(session_token)},
         )
@@ -3567,6 +3708,8 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_products_list(self, query_params: dict[str, list[str]]) -> None:
         category = query_params.get("category", [""])[0].strip().lower() or None
+        category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
 
         if category and category not in PRODUCT_CATEGORIES:
             self.send_json(
@@ -3575,23 +3718,104 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        products = [serialize_product(row) for row in fetch_products(category)]
-        self.send_json(200, {"ok": True, "products": products})
-
-    def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
-        search_text = query_params.get("q", [""])[0].strip()
-
-        if not search_text:
-            self.send_json(200, {"ok": True, "products": [], "query": ""})
+        if category_group and category_group not in {"clothing", "cosmetics"}:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
+            )
             return
 
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
+            return
+
+        total_count = count_products(category, category_group=category_group)
         products = [
             serialize_product(row)
-            for row in fetch_products(search_text=search_text)
+            for row in fetch_products(
+                category,
+                category_group=category_group,
+                limit=limit,
+                offset=offset,
+            )
         ]
         self.send_json(
             200,
-            {"ok": True, "products": products, "query": search_text},
+            {
+                "ok": True,
+                "products": products,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
+        )
+
+    def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
+        search_text = query_params.get("q", [""])[0].strip()
+        category = query_params.get("category", [""])[0].strip().lower() or None
+        category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
+            return
+
+        if category and category not in PRODUCT_CATEGORIES:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Kategoria e kerkuar nuk eshte valide."},
+            )
+            return
+
+        if category_group and category_group not in {"clothing", "cosmetics"}:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
+            )
+            return
+
+        if not search_text:
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "products": [],
+                    "query": "",
+                    "limit": limit,
+                    "offset": offset,
+                    "total": 0,
+                    "hasMore": False,
+                },
+            )
+            return
+
+        total_count = count_products(
+            category,
+            category_group=category_group,
+            search_text=search_text,
+        )
+        products = [
+            serialize_product(row)
+            for row in fetch_products(
+                category,
+                category_group=category_group,
+                search_text=search_text,
+                limit=limit,
+                offset=offset,
+            )
+        ]
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "products": products,
+                "query": search_text,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
         )
 
     def handle_product_detail(self, query_params: dict[str, list[str]]) -> None:

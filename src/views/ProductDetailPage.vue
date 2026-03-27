@@ -44,6 +44,14 @@ const imageGallery = computed(() => getProductImageGallery(currentProduct.value)
 const currentImagePath = computed(
   () => imageGallery.value[currentImageIndex.value] || currentProduct.value?.imagePath || "",
 );
+const backTarget = computed(() => {
+  const candidate = String(route.query.back || "").trim();
+  if (candidate.startsWith("/")) {
+    return candidate;
+  }
+
+  return getCategoryUrl(currentProduct.value?.category);
+});
 
 watch(
   () => route.fullPath,
@@ -195,7 +203,7 @@ function nextImage() {
     <section v-if="currentProduct" class="product-detail-container">
       <article class="card product-detail-card" :aria-label="currentProduct.title">
         <div class="product-detail-media">
-          <RouterLink class="product-detail-back-link" :to="getCategoryUrl(currentProduct.category)">
+          <RouterLink class="product-detail-back-link" :to="backTarget">
             Kthehu te produktet
           </RouterLink>
           <div class="product-detail-image-shell">

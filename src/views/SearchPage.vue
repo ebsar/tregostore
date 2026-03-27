@@ -1,20 +1,25 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
-import { formatCategoryLabel } from "../lib/shop";
+import { formatCategoryGroupLabel, formatCategoryLabel } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
+const PRODUCTS_PAGE_SIZE = 12;
+const SEARCH_INPUT_DEBOUNCE_MS = 320;
 
-const query = ref("");
+const draftQuery = ref("");
 const products = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
+const totalProductsCount = ref(0);
+const hasMoreProducts = ref(false);
+const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
 const filters = reactive({
   size: "",
@@ -25,12 +30,25 @@ const ui = reactive({
   message: "",
   type: "",
 });
+let searchDebounceTimeoutId = 0;
 
 const categoryFilter = computed(() => String(route.query.category || "").trim().toLowerCase());
+const categoryGroupFilter = computed(() => String(route.query.categoryGroup || "").trim().toLowerCase());
 const productTypeFilter = computed(() => String(route.query.productType || "").trim().toLowerCase());
+const activeQuery = computed(() => String(route.query.q || "").trim());
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
+
+  if (categoryGroupFilter.value) {
+    nextProducts = nextProducts.filter((product) =>
+      String(product.category || "").startsWith(`${categoryGroupFilter.value}-`),
+    );
+  }
+
+  if (categoryFilter.value) {
+    nextProducts = nextProducts.filter((product) => String(product.category || "") === categoryFilter.value);
+  }
 
   if (productTypeFilter.value) {
     nextProducts = nextProducts.filter((product) => product.productType === productTypeFilter.value);
@@ -59,29 +77,56 @@ const resultsLabel = computed(() => {
   }
 
   const scopeParts = [];
-  if (query.value) {
-    scopeParts.push(`kerkimin "${query.value}"`);
+  if (activeQuery.value) {
+    scopeParts.push(`kerkimin "${activeQuery.value}"`);
   }
   if (categoryFilter.value) {
     scopeParts.push(formatCategoryLabel(categoryFilter.value));
   }
+  if (categoryGroupFilter.value) {
+    scopeParts.push(formatCategoryGroupLabel(categoryGroupFilter.value));
+  }
 
-  return `Po shfaqen ${filteredProducts.value.length} produkte${
-    scopeParts.length ? ` per ${scopeParts.join(" • ")}` : ""
-  }.`;
+  const scopeLabel = scopeParts.length ? ` per ${scopeParts.join(" • ")}` : "";
+
+  if (!filters.size && !filters.color && !filters.sort) {
+    return totalProductsCount.value > products.value.length
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte${scopeLabel}.`
+      : `Po shfaqen ${products.value.length} produkte${scopeLabel}.`;
+  }
+
+  return totalProductsCount.value > 0
+    ? `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte te ngarkuara (${totalProductsCount.value} gjithsej)${scopeLabel}.`
+    : `Po shfaqen ${filteredProducts.value.length} produkte${scopeLabel}.`;
 });
 
 watch(
   () => route.fullPath,
   async () => {
-    query.value = String(route.query.q || "").trim();
+    draftQuery.value = activeQuery.value;
     await bootstrap();
   },
 );
 
+watch(draftQuery, (nextValue) => {
+  window.clearTimeout(searchDebounceTimeoutId);
+  const normalizedDraft = String(nextValue || "").trim();
+  if (normalizedDraft === activeQuery.value) {
+    return;
+  }
+
+  searchDebounceTimeoutId = window.setTimeout(() => {
+    submitSearch();
+  }, SEARCH_INPUT_DEBOUNCE_MS);
+});
+
 onMounted(async () => {
-  query.value = String(route.query.q || "").trim();
+  draftQuery.value = activeQuery.value;
   await bootstrap();
+});
+
+onBeforeUnmount(() => {
+  window.clearTimeout(searchDebounceTimeoutId);
 });
 
 async function bootstrap() {
@@ -115,31 +160,71 @@ async function refreshCollectionState() {
   setCartItems(cartItems);
 }
 
-async function loadProducts() {
-  const requestUrl = query.value
-    ? `/api/products/search?q=${encodeURIComponent(query.value)}`
-    : `/api/products${categoryFilter.value ? `?category=${encodeURIComponent(categoryFilter.value)}` : ""}`;
+async function loadProducts(options = {}) {
+  const { append = false } = options;
+  const params = new URLSearchParams();
+  params.set("limit", String(PRODUCTS_PAGE_SIZE));
+  params.set("offset", String(append ? products.value.length : 0));
 
-  const { response, data } = await requestJson(requestUrl);
+  if (activeQuery.value) {
+    params.set("q", activeQuery.value);
+  }
+
+  if (categoryFilter.value) {
+    params.set("category", categoryFilter.value);
+  }
+
+  if (categoryGroupFilter.value) {
+    params.set("categoryGroup", categoryGroupFilter.value);
+  }
+
+  const requestUrl = activeQuery.value
+    ? `/api/products/search?${params.toString()}`
+    : `/api/products?${params.toString()}`;
+
+  const { response, data } = await requestJson(requestUrl, {}, { cacheTtlMs: 8000 });
   if (!response.ok || !data?.ok) {
     ui.message = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     ui.type = "error";
-    products.value = [];
+    if (!append) {
+      products.value = [];
+      totalProductsCount.value = 0;
+      hasMoreProducts.value = false;
+    }
     return;
   }
 
-  products.value = Array.isArray(data.products) ? data.products : [];
+  const nextProducts = Array.isArray(data.products) ? data.products : [];
+  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  totalProductsCount.value = Number(data.total || products.value.length || 0);
+  hasMoreProducts.value = Boolean(data.hasMore);
   ui.message = "";
   ui.type = "";
 }
 
+async function loadMoreProducts() {
+  if (loadingMoreProducts.value || !hasMoreProducts.value) {
+    return;
+  }
+
+  loadingMoreProducts.value = true;
+  try {
+    await loadProducts({ append: true });
+  } finally {
+    loadingMoreProducts.value = false;
+  }
+}
+
 function submitSearch() {
+  window.clearTimeout(searchDebounceTimeoutId);
+  const normalizedQuery = String(draftQuery.value || "").trim();
   router.replace({
     path: "/kerko",
     query: {
+      ...(categoryGroupFilter.value ? { categoryGroup: categoryGroupFilter.value } : {}),
       ...(categoryFilter.value ? { category: categoryFilter.value } : {}),
       ...(productTypeFilter.value ? { productType: productTypeFilter.value } : {}),
-      ...(query.value.trim() ? { q: query.value.trim() } : {}),
+      ...(normalizedQuery ? { q: normalizedQuery } : {}),
     },
   });
 }
@@ -230,7 +315,7 @@ async function handleCart(productId) {
 
     <form class="search-form" role="search" @submit.prevent="submitSearch">
       <input
-        v-model="query"
+        v-model="draftQuery"
         class="search-input"
         name="q"
         type="search"
@@ -318,6 +403,12 @@ async function handleCart(productId) {
         @cart="handleCart"
       />
     </section>
+
+    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
+      <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
+      </button>
+    </div>
 
     <div v-else class="collection-empty-state">
       Nuk u gjet asnje produkt per kete kerkim.

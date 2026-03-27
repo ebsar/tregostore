@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import {
   formatCategoryLabel,
   formatPrice,
@@ -26,6 +26,8 @@ const emit = defineEmits([
 ]);
 
 const restockQuantity = ref(1);
+const route = useRoute();
+const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
 
 const visibilityLabel = computed(() =>
   props.product.isPublic ? "Mshehe nga userat" : "Shfaqe per userat",
@@ -61,7 +63,7 @@ function submitRestock() {
 
 <template>
   <article class="admin-product-item" :class="{ 'is-hidden': !product.isPublic }">
-    <RouterLink class="admin-product-link" :to="getProductDetailUrl(product.id)">
+    <RouterLink class="admin-product-link" :to="detailUrl">
       <div class="admin-product-thumb-wrap">
         <img class="admin-product-thumb" :src="product.imagePath" :alt="product.title">
       </div>
@@ -70,7 +72,7 @@ function submitRestock() {
     <div class="admin-product-copy">
       <p class="admin-product-meta">{{ formatCategoryLabel(product.category) }}</p>
       <h3>
-        <RouterLink class="admin-product-title-link" :to="getProductDetailUrl(product.id)">
+        <RouterLink class="admin-product-title-link" :to="detailUrl">
           {{ product.title }}
         </RouterLink>
       </h3>

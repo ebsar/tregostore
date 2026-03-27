@@ -131,6 +131,10 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_public_category_id ON products(is_public, category, id DESC);
+CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public, created_by_user_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_products_title ON products(title);
+CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
 
 CREATE TABLE IF NOT EXISTS wishlist_items (
     user_id INTEGER NOT NULL,

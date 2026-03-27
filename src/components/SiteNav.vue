@@ -23,26 +23,76 @@ const cartBadgeLabel = computed(() => {
   return appState.cartCount > 99 ? "99+" : String(appState.cartCount);
 });
 
-const adminLinks = computed(() => {
-  if (appState.user?.role !== "admin") {
+const isBusinessUser = computed(() => appState.user?.role === "business");
+
+const userMenuLinks = computed(() => {
+  if (!appState.user) {
     return [];
   }
 
+  if (appState.user.role === "admin") {
+    return [
+      { label: "Artikujt", href: "/admin-products" },
+      { label: "Bizneset e regjistruara", href: "/bizneset-e-regjistruara" },
+      { label: "Porosit", href: "/admin-porosite" },
+      { label: "Te dhenat personale", href: "/te-dhenat-personale" },
+    ];
+  }
+
+  if (appState.user.role === "business") {
+    return [
+      { label: "Biznesi i imi", href: "/biznesi-juaj" },
+      { label: "Porosite e bera", href: "/porosite-e-biznesit" },
+      { label: "Te dhenat personale", href: "/te-dhenat-personale" },
+    ];
+  }
+
   return [
-    { label: "Artikujt", href: "/admin-products" },
-    { label: "Bizneset e regjistruara", href: "/bizneset-e-regjistruara" },
+    { label: "Porosite", href: "/porosite" },
+    { label: "Refund / Returne", href: "/refund-returne" },
+    { label: "Adresat", href: "/adresat" },
+    { label: "Te dhenat personale", href: "/te-dhenat-personale" },
   ];
 });
 
-const businessLinks = computed(() => {
-  if (appState.user?.role !== "business") {
-    return [];
+const userDisplayName = computed(() => {
+  if (!appState.user) {
+    return "";
   }
 
-  return [
-    { label: "Biznesi juaj", href: "/biznesi-juaj" },
-    { label: "Porosite e biznesit", href: "/porosite-e-biznesit", secondary: true },
-  ];
+  if (appState.user.role === "business") {
+    return String(appState.user.businessName || "").trim() || String(appState.user.fullName || "").trim();
+  }
+
+  return String(appState.user.fullName || "").trim();
+});
+
+const userAvatarPath = computed(() => {
+  if (!appState.user) {
+    return "";
+  }
+
+  if (appState.user.role === "business" && String(appState.user.businessLogoPath || "").trim()) {
+    return String(appState.user.businessLogoPath || "").trim();
+  }
+
+  return String(appState.user.profileImagePath || "").trim();
+});
+
+const userPanelLabel = computed(() => {
+  if (!appState.user) {
+    return "";
+  }
+
+  if (appState.user.role === "admin") {
+    return "Administrimi";
+  }
+
+  if (appState.user.role === "business") {
+    return "Biznesi yt";
+  }
+
+  return "Llogaria ime";
 });
 
 function updateViewportState() {
@@ -167,6 +217,18 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <div class="nav-mobile-tray">
+      <RouterLink
+        v-if="isBusinessUser"
+        class="nav-icon-button add-product-button nav-mobile-shortcut"
+        to="/biznesi-juaj?view=add-product"
+        aria-label="Shto artikull te ri"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14"></path>
+          <path d="M5 12h14"></path>
+        </svg>
+      </RouterLink>
+
       <button
         class="nav-icon-button search-button nav-mobile-shortcut"
         type="button"
@@ -212,31 +274,46 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <form class="nav-search-panel" :hidden="!searchMenuOpen" role="search" @submit.prevent="submitNavSearch">
-      <label class="sr-only" for="nav-search-input">Kerko produktet</label>
-      <input
-        id="nav-search-input"
-        ref="searchInputElement"
-        v-model="searchQuery"
-        class="nav-search-input"
-        type="search"
-        name="q"
-        placeholder="Shkruaj ketu"
-        autocomplete="off"
+    <Transition name="nav-floating-panel">
+      <form
+        v-if="searchMenuOpen"
+        class="nav-search-panel"
+        role="search"
+        @submit.prevent="submitNavSearch"
       >
-      <button class="nav-search-submit" type="submit">Kerko</button>
-    </form>
+        <label class="sr-only" for="nav-search-input">Kerko produktet</label>
+        <input
+          id="nav-search-input"
+          ref="searchInputElement"
+          v-model="searchQuery"
+          class="nav-search-input"
+          type="search"
+          name="q"
+          placeholder="Shkruaj ketu"
+          autocomplete="off"
+        >
+        <button class="nav-search-submit" type="submit">Kerko</button>
+      </form>
+    </Transition>
 
     <div id="site-nav-mobile-panel" class="nav-links">
       <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
-        <div v-if="section.items" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
-          <button
-            class="nav-dropdown-trigger"
-            type="button"
-            :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
-            @click="toggleDropdown(section.key)"
+        <div v-if="section.items" class="nav-dropdown nav-dropdown-split" :class="{ open: openDropdownKey === section.key }">
+          <RouterLink
+            class="nav-link nav-dropdown-link"
+            :to="section.href"
+            @click="closeExpandedPanels"
           >
             <span>{{ section.label }}</span>
+          </RouterLink>
+
+          <button
+            class="nav-dropdown-toggle"
+            type="button"
+            :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
+            :aria-label="`Hape menune per ${section.label}`"
+            @click="toggleDropdown(section.key)"
+          >
             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m7 10 5 5 5-5"></path>
             </svg>
@@ -248,6 +325,7 @@ onBeforeUnmount(() => {
               :key="item.href"
               class="nav-dropdown-item"
               :to="item.href"
+              @click="closeExpandedPanels"
             >
               {{ item.label }}
             </RouterLink>
@@ -258,6 +336,7 @@ onBeforeUnmount(() => {
           v-else
           class="nav-link"
           :to="section.href"
+          @click="closeExpandedPanels"
         >
           {{ section.label }}
         </RouterLink>
@@ -265,6 +344,18 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="nav-actions">
+      <RouterLink
+        v-if="isBusinessUser"
+        class="nav-icon-button add-product-button"
+        to="/biznesi-juaj?view=add-product"
+        aria-label="Shto artikull te ri"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14"></path>
+          <path d="M5 12h14"></path>
+        </svg>
+      </RouterLink>
+
       <button
         class="nav-icon-button search-button"
         type="button"
@@ -314,44 +405,72 @@ onBeforeUnmount(() => {
           aria-label="Hape menune e perdoruesit"
           @click="handleUserTrigger"
         >
-          <span class="nav-user-name">{{ appState.user.fullName }}</span>
+          <span class="nav-user-avatar" aria-hidden="true">
+            <img
+              v-if="userAvatarPath"
+              class="nav-user-avatar-image"
+              :src="userAvatarPath"
+              :alt="userDisplayName"
+            >
+            <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
+                <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
+              </svg>
+            </span>
+          </span>
+
+          <span class="nav-user-trigger-copy">
+            <span class="nav-user-name">{{ userDisplayName }}</span>
+          </span>
+
+          <svg class="nav-user-trigger-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m7 10 5 5 5-5"></path>
+          </svg>
         </button>
 
-        <div class="nav-user-panel" :hidden="!userMenuOpen || isMobileViewport">
-          <p class="nav-user-panel-label">Llogaria ime</p>
-          <strong class="nav-user-panel-name">{{ appState.user.fullName }}</strong>
-          <span class="nav-user-panel-email">{{ appState.user.email }}</span>
+        <Transition name="nav-floating-panel">
+          <div v-if="userMenuOpen && !isMobileViewport" class="nav-user-panel">
+            <div class="nav-user-panel-head">
+              <span class="nav-user-avatar nav-user-avatar-large" aria-hidden="true">
+                <img
+                  v-if="userAvatarPath"
+                  class="nav-user-avatar-image"
+                  :src="userAvatarPath"
+                  :alt="userDisplayName"
+                >
+                <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
+                    <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
+                  </svg>
+                </span>
+              </span>
 
-          <div class="nav-user-panel-links">
-            <RouterLink
-              v-for="link in adminLinks"
-              :key="link.href"
-              class="nav-user-panel-link"
-              :to="link.href"
-            >
-              {{ link.label }}
-            </RouterLink>
+              <div class="nav-user-panel-copy">
+                <p class="nav-user-panel-label">{{ userPanelLabel }}</p>
+                <strong class="nav-user-panel-name">{{ userDisplayName }}</strong>
+                <span class="nav-user-panel-email">{{ appState.user.email }}</span>
+              </div>
+            </div>
 
-            <RouterLink
-              v-for="link in businessLinks"
-              :key="link.href"
-              class="nav-user-panel-link"
-              :class="{ 'nav-user-panel-link-secondary': link.secondary }"
-              :to="link.href"
-            >
-              {{ link.label }}
-            </RouterLink>
+            <div class="nav-user-panel-links">
+              <RouterLink
+                v-for="link in userMenuLinks"
+                :key="link.href"
+                class="nav-user-panel-link"
+                :to="link.href"
+                @click="closeExpandedPanels"
+              >
+                {{ link.label }}
+              </RouterLink>
+            </div>
 
-            <RouterLink class="nav-user-panel-link" to="/te-dhenat-personale">Te dhenat personale</RouterLink>
-            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/adresat">Adresat</RouterLink>
-            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/porosite">Porosite</RouterLink>
-            <RouterLink class="nav-user-panel-link nav-user-panel-link-secondary" to="/ndrysho-fjalekalimin">Ndryshimi i fjalekalimit</RouterLink>
+            <button class="nav-user-panel-logout" type="button" @click="handleLogout">
+              Shkycu
+            </button>
           </div>
-
-          <button class="nav-user-panel-logout" type="button" @click="handleLogout">
-            Shkycu
-          </button>
-        </div>
+        </Transition>
       </div>
     </div>
   </nav>

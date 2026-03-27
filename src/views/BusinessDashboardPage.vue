@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
 import { requestJson, resolveApiMessage, uploadImages } from "../lib/api";
 import {
@@ -14,6 +14,7 @@ import {
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
+const route = useRoute();
 const businessProfile = ref(null);
 const products = ref([]);
 const logoFile = ref(null);
@@ -21,6 +22,8 @@ const logoPreviewUrl = ref("");
 const selectedFiles = ref([]);
 const previewUrls = ref([]);
 const editingProduct = ref(null);
+const productFormSection = ref(null);
+const productTitleInput = ref(null);
 
 const profileForm = reactive({
   businessName: "",
@@ -79,10 +82,20 @@ onMounted(async () => {
 
     ui.accessNote = "Je kyçur si biznes. Ketu mund ta regjistrosh biznesin dhe t'i menaxhosh vetem artikujt e tu.";
     await Promise.all([loadBusinessProfile(), loadProducts()]);
+    await handleRouteView();
   } finally {
     markRouteReady();
   }
 });
+
+watch(
+  () => route.query.view,
+  async (view) => {
+    if (view === "add-product") {
+      await handleRouteView();
+    }
+  },
+);
 
 onBeforeUnmount(() => {
   revokeLogoPreview();
@@ -219,6 +232,25 @@ function resetProductForm() {
   revokePreviewUrls();
   ui.productMessage = "";
   ui.productTypeMessage = "";
+}
+
+async function handleRouteView() {
+  if (String(route.query.view || "").trim() !== "add-product") {
+    return;
+  }
+
+  resetProductForm();
+  await nextTick();
+
+  if (businessProfile.value && productFormSection.value) {
+    productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      productTitleInput.value?.focus?.();
+    }, 220);
+    return;
+  }
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function beginProductEdit(product) {
@@ -454,7 +486,7 @@ async function handleRestockProduct({ productId, quantity }) {
         </div>
       </section>
 
-      <section v-if="businessProfile" class="card admin-form-card">
+      <section v-if="businessProfile" ref="productFormSection" class="card admin-form-card">
         <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
         <p class="section-text">
           Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.
@@ -466,7 +498,7 @@ async function handleRestockProduct({ productId, quantity }) {
         <form class="auth-form" @submit.prevent="submitProduct">
           <label class="field">
             <span>Titulli</span>
-            <input v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
+            <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
           </label>
 
           <label class="field">

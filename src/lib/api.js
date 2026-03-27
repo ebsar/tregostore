@@ -1,6 +1,34 @@
-export async function requestJson(url, options = {}) {
+const GET_REQUEST_CACHE = new Map();
+const INFLIGHT_GET_REQUESTS = new Map();
+
+function cloneJsonPayload(value) {
+  return JSON.parse(JSON.stringify(value ?? {}));
+}
+
+function createResponseMeta(response) {
+  return {
+    ok: Boolean(response?.ok),
+    status: Number(response?.status || 0),
+    statusText: String(response?.statusText || ""),
+  };
+}
+
+function normalizeMethod(options = {}) {
+  return String(options.method || "GET").trim().toUpperCase();
+}
+
+function invalidateRequestCache() {
+  GET_REQUEST_CACHE.clear();
+  INFLIGHT_GET_REQUESTS.clear();
+}
+
+export async function requestJson(url, options = {}, runtime = {}) {
   const config = { ...options };
   config.headers = { ...(options.headers || {}) };
+  const method = normalizeMethod(config);
+  const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
+  const cacheKey = runtime.cacheKey || `${method}:${url}`;
+  const canUseCache = method === "GET" && !config.body && cacheTtlMs > 0;
 
   if (
     config.body &&
@@ -10,16 +38,70 @@ export async function requestJson(url, options = {}) {
     config.headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, config);
-  let data = {};
+  if (canUseCache) {
+    const cachedEntry = GET_REQUEST_CACHE.get(cacheKey);
+    if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+      return {
+        response: { ...cachedEntry.response },
+        data: cloneJsonPayload(cachedEntry.data),
+      };
+    }
 
-  try {
-    data = await response.json();
-  } catch (error) {
-    console.error(error);
+    const inflightRequest = INFLIGHT_GET_REQUESTS.get(cacheKey);
+    if (inflightRequest) {
+      const result = await inflightRequest;
+      return {
+        response: { ...result.response },
+        data: cloneJsonPayload(result.data),
+      };
+    }
   }
 
-  return { response, data };
+  const pendingRequest = (async () => {
+    const response = await fetch(url, config);
+    let data = {};
+
+    try {
+      data = await response.json();
+    } catch (error) {
+      console.error(error);
+    }
+
+    const result = {
+      response: createResponseMeta(response),
+      data,
+    };
+
+    if (canUseCache && response.ok) {
+      GET_REQUEST_CACHE.set(cacheKey, {
+        expiresAt: Date.now() + cacheTtlMs,
+        response: result.response,
+        data: cloneJsonPayload(result.data),
+      });
+    }
+
+    if (method !== "GET" && response.ok) {
+      invalidateRequestCache();
+    }
+
+    return result;
+  })();
+
+  if (canUseCache) {
+    INFLIGHT_GET_REQUESTS.set(cacheKey, pendingRequest);
+  }
+
+  try {
+    const result = await pendingRequest;
+    return {
+      response: { ...result.response },
+      data: result.data,
+    };
+  } finally {
+    if (canUseCache) {
+      INFLIGHT_GET_REQUESTS.delete(cacheKey);
+    }
+  }
 }
 
 export async function fetchCurrentUserOptional() {

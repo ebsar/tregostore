@@ -26,6 +26,10 @@ export function beginRouteLoading() {
 }
 
 export function markRouteReady(token = routeLoaderToken) {
+  if (!appState.loaderVisible) {
+    return;
+  }
+
   const remaining = Math.max(
     0,
     APP_LOADER_MIN_DURATION_MS - (Date.now() - appState.loaderStartedAt),
@@ -51,13 +55,40 @@ export function setCartItems(items = []) {
   setCartCount(calculateCartItemsCount(items));
 }
 
+async function enrichUserSessionData(user) {
+  if (!user || user.role !== "business") {
+    return user;
+  }
+
+  try {
+    const { response, data } = await requestJson("/api/business/profile");
+    if (!response.ok || !data?.ok || !data.profile) {
+      return user;
+    }
+
+    return {
+      ...user,
+      businessName: String(data.profile.businessName || "").trim(),
+      businessLogoPath: String(data.profile.logoPath || "").trim(),
+    };
+  } catch (error) {
+    console.error(error);
+    return user;
+  }
+}
+
 export async function ensureSessionLoaded(options = {}) {
   const { force = false } = options;
-  if (appState.sessionLoaded && !force) {
+  if (
+    appState.sessionLoaded &&
+    !force &&
+    !(appState.user?.role === "business" && !String(appState.user?.businessName || "").trim())
+  ) {
     return appState.user;
   }
 
-  const user = await fetchCurrentUserOptional();
+  const currentUser = await fetchCurrentUserOptional();
+  const user = await enrichUserSessionData(currentUser);
   appState.user = user;
   appState.sessionLoaded = true;
 

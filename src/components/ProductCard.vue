@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { formatCategoryLabel, formatPrice, formatProductColorLabel, formatProductTypeLabel, getProductDetailUrl } from "../lib/shop";
 
 const props = defineProps({
@@ -26,8 +27,9 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["wishlist", "cart"]);
+const route = useRoute();
 
-const detailUrl = computed(() => getProductDetailUrl(props.product.id));
+const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
 const details = computed(() =>
   [
     formatProductTypeLabel(props.product.productType),

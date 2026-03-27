@@ -7,12 +7,16 @@ import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib
 import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
+const PRODUCTS_PAGE_SIZE = 12;
 const products = ref([]);
 const businesses = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
+const totalProductsCount = ref(0);
+const hasMoreProducts = ref(false);
+const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
 const statusText = ref("Po ngarkohen produktet publike te TREGO.");
 const filters = reactive({
@@ -51,10 +55,14 @@ const collectionLabel = computed(() => {
   }
 
   if (!filters.size && !filters.color && !filters.sort) {
-    return statusText.value;
+    return totalProductsCount.value > products.value.length
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
+      : statusText.value;
   }
 
-  return `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte sipas filtrave te zgjedhur.`;
+  return totalProductsCount.value > 0
+    ? `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte te ngarkuara (${totalProductsCount.value} gjithsej) sipas filtrave te zgjedhur.`
+    : `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte sipas filtrave te zgjedhur.`;
 });
 
 onMounted(async () => {
@@ -88,23 +96,49 @@ async function refreshCollectionState() {
   setCartItems(cartItems);
 }
 
-async function loadProducts() {
-  const { response, data } = await requestJson("/api/products");
+async function loadProducts(options = {}) {
+  const { append = false } = options;
+  const offset = append ? products.value.length : 0;
+  const { response, data } = await requestJson(
+    `/api/products?limit=${PRODUCTS_PAGE_SIZE}&offset=${offset}`,
+    {},
+    { cacheTtlMs: 10000 },
+  );
   if (!response.ok || !data?.ok) {
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
-    products.value = [];
+    if (!append) {
+      products.value = [];
+      totalProductsCount.value = 0;
+      hasMoreProducts.value = false;
+    }
     return;
   }
 
-  products.value = Array.isArray(data.products) ? data.products : [];
+  const nextProducts = Array.isArray(data.products) ? data.products : [];
+  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  totalProductsCount.value = Number(data.total || products.value.length || 0);
+  hasMoreProducts.value = Boolean(data.hasMore);
   statusText.value =
-    products.value.length > 0
-      ? `Po shfaqen ${products.value.length} produkte publike te TREGO.`
+    totalProductsCount.value > 0
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
       : "Nuk ka produkte publike ende.";
 }
 
+async function loadMoreProducts() {
+  if (loadingMoreProducts.value || !hasMoreProducts.value) {
+    return;
+  }
+
+  loadingMoreProducts.value = true;
+  try {
+    await loadProducts({ append: true });
+  } finally {
+    loadingMoreProducts.value = false;
+  }
+}
+
 async function loadBusinesses() {
-  const { response, data } = await requestJson("/api/businesses/public");
+  const { response, data } = await requestJson("/api/businesses/public", {}, { cacheTtlMs: 30000 });
   if (!response.ok || !data?.ok) {
     return;
   }
@@ -154,7 +188,7 @@ async function handleWishlist(productId) {
   }
 
   wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
-  setMessage(data.message || "Wishlist u perditesua.", "success");
+  setMessage(data.message || "Produkti u shtua ne shporte.", "success");
 }
 
 async function handleCart(productId) {
@@ -278,6 +312,12 @@ async function handleCart(productId) {
         @cart="handleCart"
       />
     </section>
+
+    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
+      <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
+      </button>
+    </div>
 
     <div v-else class="collection-empty-state">
       Nuk ka produkte publike ende.

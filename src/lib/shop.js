@@ -3,12 +3,13 @@ export const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address_draft";
 export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
-export const APP_LOADER_MIN_DURATION_MS = 700;
+export const APP_LOADER_MIN_DURATION_MS = 260;
 
 export const PRIMARY_NAVIGATION = [
   {
     key: "clothing",
     label: "Veshje",
+    href: "/kerko?categoryGroup=clothing",
     items: [
       { label: "Meshkuj", href: "/kerko?category=clothing-men" },
       { label: "Femra", href: "/kerko?category=clothing-women" },
@@ -17,7 +18,8 @@ export const PRIMARY_NAVIGATION = [
   },
   {
     key: "cosmetics",
-    label: "Kozmetik",
+    label: "Kozmetika",
+    href: "/kerko?categoryGroup=cosmetics",
     items: [
       { label: "Meshkuj", href: "/kerko?category=cosmetics-men" },
       { label: "Femra", href: "/kerko?category=cosmetics-women" },
@@ -344,6 +346,15 @@ export function formatCategoryLabel(category) {
   return labels[category] || humanizeSlug(category);
 }
 
+export function formatCategoryGroupLabel(group) {
+  const labels = {
+    clothing: "Veshje",
+    cosmetics: "Kozmetika",
+  };
+
+  return labels[String(group || "").trim().toLowerCase()] || humanizeSlug(group);
+}
+
 export function formatProductTypeLabel(productType) {
   const labels = {
     clothing: "Veshje",
@@ -428,8 +439,14 @@ export function formatDateLabel(value) {
   });
 }
 
-export function getProductDetailUrl(productId) {
-  return `/produkti?id=${encodeURIComponent(productId)}`;
+export function getProductDetailUrl(productId, backPath = "") {
+  const cleanBackPath = String(backPath || "").trim();
+  const baseUrl = `/produkti?id=${encodeURIComponent(productId)}`;
+  if (!cleanBackPath) {
+    return baseUrl;
+  }
+
+  return `${baseUrl}&back=${encodeURIComponent(cleanBackPath)}`;
 }
 
 export function getBusinessProfileUrl(businessId) {
