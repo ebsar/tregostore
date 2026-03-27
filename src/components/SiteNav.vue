@@ -15,7 +15,7 @@ const isMobileViewport = ref(false);
 const isScrollCompact = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
-let scrollCompactTimeoutId = 0;
+let lastScrollY = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -102,31 +102,37 @@ function updateViewportState() {
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
     isScrollCompact.value = false;
-    window.clearTimeout(scrollCompactTimeoutId);
   }
-}
-
-function scheduleScrollCompactReset() {
-  window.clearTimeout(scrollCompactTimeoutId);
-  scrollCompactTimeoutId = window.setTimeout(() => {
-    isScrollCompact.value = false;
-  }, 220);
+  lastScrollY = window.scrollY;
 }
 
 function handleWindowScroll() {
+  const currentScrollY = Math.max(0, window.scrollY);
+
   if (!isMobileViewport.value || mobileMenuOpen.value) {
     isScrollCompact.value = false;
+    lastScrollY = currentScrollY;
     return;
   }
 
-  if (window.scrollY <= 10) {
-    window.clearTimeout(scrollCompactTimeoutId);
+  if (currentScrollY <= 10) {
     isScrollCompact.value = false;
+    lastScrollY = currentScrollY;
     return;
   }
 
-  isScrollCompact.value = true;
-  scheduleScrollCompactReset();
+  const scrollDelta = currentScrollY - lastScrollY;
+  if (Math.abs(scrollDelta) < 6) {
+    return;
+  }
+
+  if (scrollDelta > 0) {
+    isScrollCompact.value = true;
+  } else {
+    isScrollCompact.value = false;
+  }
+
+  lastScrollY = currentScrollY;
 }
 
 function closeExpandedPanels() {
@@ -219,8 +225,8 @@ watch(
 watch(mobileMenuOpen, (isOpen) => {
   if (isOpen) {
     isScrollCompact.value = false;
-    window.clearTimeout(scrollCompactTimeoutId);
   }
+  lastScrollY = window.scrollY;
 });
 
 onMounted(async () => {
@@ -238,7 +244,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
-  window.clearTimeout(scrollCompactTimeoutId);
 });
 </script>
 
