@@ -320,7 +320,7 @@ async function handleCart(productId) {
       </button>
     </div>
 
-    <div v-else class="collection-empty-state">
+    <div v-if="products.length === 0" class="collection-empty-state">
       Nuk ka produkte publike ende.
     </div>
 
