@@ -12,8 +12,10 @@ const openDropdownKey = ref("");
 const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
+const isMobileSearchOnly = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
+let lastScrollY = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -99,7 +101,33 @@ function updateViewportState() {
   isMobileViewport.value = window.matchMedia("(max-width: 920px)").matches;
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
+    isMobileSearchOnly.value = false;
   }
+}
+
+function handleWindowScroll() {
+  if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
+    isMobileSearchOnly.value = false;
+    lastScrollY = window.scrollY || window.pageYOffset || 0;
+    return;
+  }
+
+  const currentScrollY = window.scrollY || window.pageYOffset || 0;
+  const delta = currentScrollY - lastScrollY;
+
+  if (currentScrollY <= 24) {
+    isMobileSearchOnly.value = false;
+    lastScrollY = currentScrollY;
+    return;
+  }
+
+  if (delta > 10) {
+    isMobileSearchOnly.value = true;
+  } else if (delta < -8) {
+    isMobileSearchOnly.value = false;
+  }
+
+  lastScrollY = currentScrollY;
 }
 
 function closeExpandedPanels() {
@@ -183,6 +211,7 @@ watch(
   () => route.fullPath,
   () => {
     mobileMenuOpen.value = false;
+    isMobileSearchOnly.value = false;
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
   },
@@ -190,7 +219,9 @@ watch(
 
 onMounted(async () => {
   updateViewportState();
+  lastScrollY = window.scrollY || window.pageYOffset || 0;
   window.addEventListener("resize", updateViewportState);
+  window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
@@ -198,6 +229,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewportState);
+  window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
 });
@@ -209,6 +241,7 @@ onBeforeUnmount(() => {
     class="site-nav"
     :class="{
       'mobile-menu-open': mobileMenuOpen,
+      'mobile-search-only': isMobileSearchOnly,
     }"
     aria-label="Navigimi kryesor"
   >
@@ -241,6 +274,7 @@ onBeforeUnmount(() => {
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
+        <span class="nav-mobile-search-label">Kerko...</span>
       </button>
 
       <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
