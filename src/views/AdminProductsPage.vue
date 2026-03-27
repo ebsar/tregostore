@@ -1,12 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useQueryClient } from "@tanstack/vue-query";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import AdminUserCard from "../components/AdminUserCard.vue";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
-import ProductListSkeleton from "../components/ProductListSkeleton.vue";
 import { requestJson, resolveApiMessage, uploadImages } from "../lib/api";
-import { fetchAdminProductsPage, usePaginatedProductsQuery } from "../lib/paginated-products";
 import {
   PRODUCT_COLOR_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
@@ -18,15 +15,11 @@ import {
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
-const queryClient = useQueryClient();
+const products = ref([]);
 const users = ref([]);
 const selectedFiles = ref([]);
 const previewUrls = ref([]);
 const editingProduct = ref(null);
-const productsQueryEnabled = ref(false);
-const usersLoadComplete = ref(false);
-const routeReadyMarked = ref(false);
-const adminProductsQueryKey = ["admin", "products"];
 
 const productForm = reactive(createEmptyProductState());
 const ui = reactive({
@@ -39,15 +32,6 @@ const ui = reactive({
   usersType: "",
 });
 
-const productsQuery = usePaginatedProductsQuery({
-  queryKey: adminProductsQueryKey,
-  enabled: productsQueryEnabled,
-  fetchPage: ({ offset, limit }) => fetchAdminProductsPage({ offset, limit }),
-  errorMessage: "Lista e artikujve nuk u ngarkua.",
-  loadMoreErrorMessage: "Artikujt e tjere nuk u ngarkuan.",
-});
-
-const products = productsQuery.products;
 const productTypeOptions = computed(() => SECTION_PRODUCT_TYPE_OPTIONS[productForm.category] || []);
 const clothingSection = computed(() => isClothingSection(productForm.category));
 const productPreviewItems = computed(() => {
@@ -64,23 +48,6 @@ const productPreviewItems = computed(() => {
   }));
 });
 
-watch(
-  () => [
-    productsQueryEnabled.value,
-    usersLoadComplete.value,
-    productsQuery.isInitialLoading.value,
-  ],
-  ([queryEnabled, usersReady, isInitialLoading]) => {
-    if (!queryEnabled || !usersReady || isInitialLoading || routeReadyMarked.value) {
-      return;
-    }
-
-    routeReadyMarked.value = true;
-    markRouteReady();
-  },
-  { immediate: true },
-);
-
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
@@ -95,12 +62,9 @@ onMounted(async () => {
     }
 
     ui.accessNote = "Je kyçur si admin. Ketu mund t'i menaxhosh artikujt dhe rolet.";
-    productsQueryEnabled.value = true;
-    await loadUsers();
-  } catch (error) {
-    console.error(error);
+    await Promise.all([loadProducts(), loadUsers()]);
   } finally {
-    usersLoadComplete.value = true;
+    markRouteReady();
   }
 });
 
@@ -139,6 +103,20 @@ function syncProductType() {
   }
 }
 
+async function loadProducts() {
+  const { response, data } = await requestJson("/api/admin/products");
+  if (!response.ok || !data?.ok) {
+    ui.listMessage = resolveApiMessage(data, "Lista e artikujve nuk u ngarkua.");
+    ui.listType = "error";
+    products.value = [];
+    return;
+  }
+
+  ui.listMessage = "";
+  ui.listType = "";
+  products.value = Array.isArray(data.products) ? data.products : [];
+}
+
 async function loadUsers() {
   const { response, data } = await requestJson("/api/admin/users");
   if (!response.ok || !data?.ok) {
@@ -153,17 +131,13 @@ async function loadUsers() {
   users.value = Array.isArray(data.users) ? data.users : [];
 }
 
-function resetProductForm(options = {}) {
-  const { preserveFeedback = false } = options;
+function resetProductForm() {
   Object.assign(productForm, createEmptyProductState());
   editingProduct.value = null;
   selectedFiles.value = [];
   revokePreviewUrls();
-
-  if (!preserveFeedback) {
-    ui.formMessage = "";
-    ui.formType = "";
-  }
+  ui.formMessage = "";
+  ui.formType = "";
 }
 
 function beginProductEdit(product) {
@@ -188,10 +162,6 @@ function handleFilesChange(event) {
   revokePreviewUrls();
   selectedFiles.value = Array.from(event.target.files || []);
   previewUrls.value = selectedFiles.value.map((file) => URL.createObjectURL(file));
-}
-
-async function invalidateProductsList() {
-  await queryClient.invalidateQueries({ queryKey: adminProductsQueryKey });
 }
 
 async function submitProduct() {
@@ -245,8 +215,8 @@ async function submitProduct() {
 
   ui.formMessage = data.message || (editingProduct.value ? "Artikulli u perditesua me sukses." : "Artikulli u ruajt me sukses.");
   ui.formType = "success";
-  resetProductForm({ preserveFeedback: true });
-  await invalidateProductsList();
+  resetProductForm();
+  await loadProducts();
 }
 
 async function submitProductAction(url, payload, fallbackMessage, target = "list") {
@@ -277,7 +247,7 @@ async function handleDeleteProduct(product) {
     "Produkti u fshi me sukses.",
   );
   if (ok) {
-    await invalidateProductsList();
+    await loadProducts();
   }
 }
 
@@ -288,7 +258,7 @@ async function handleToggleVisibility(product) {
     "Dukshmeria e produktit u perditesua.",
   );
   if (ok) {
-    await invalidateProductsList();
+    await loadProducts();
   }
 }
 
@@ -302,7 +272,7 @@ async function handleToggleStock(product) {
     "Shfaqja e stokut u perditesua.",
   );
   if (ok) {
-    await invalidateProductsList();
+    await loadProducts();
   }
 }
 
@@ -313,7 +283,7 @@ async function handleRestockProduct({ productId, quantity }) {
     "Stoku u perditesua me sukses.",
   );
   if (ok) {
-    await invalidateProductsList();
+    await loadProducts();
   }
 }
 
@@ -361,10 +331,6 @@ async function handleSetUserPassword({ userId, newPassword, reset }) {
   if (ok && typeof reset === "function") {
     reset();
   }
-}
-
-async function loadMoreProducts() {
-  await productsQuery.loadMore();
 }
 </script>
 
@@ -517,15 +483,9 @@ async function loadMoreProducts() {
           {{ ui.listMessage }}
         </div>
 
-        <ProductListSkeleton
-          v-if="productsQuery.isInitialLoading"
-          :count="10"
-          variant="managed"
-        />
-
-        <div v-else class="admin-products-list">
+        <div class="admin-products-list">
           <div v-if="products.length === 0" class="admin-empty-state">
-            {{ productsQuery.errorMessage || "Ende nuk ka produkte ne sistem." }}
+            Ende nuk ka produkte ne sistem.
           </div>
 
           <ManagedProductCard
@@ -538,37 +498,6 @@ async function loadMoreProducts() {
             @toggle-stock-public="handleToggleStock"
             @restock="handleRestockProduct"
           />
-        </div>
-
-        <div v-if="products.length > 0 && productsQuery.hasMore" class="collection-load-more">
-          <button
-            class="search-reset-button collection-load-more-button"
-            type="button"
-            :disabled="productsQuery.isLoadingMore"
-            @click="loadMoreProducts"
-          >
-            <span class="collection-load-more-button-content">
-              <span
-                v-if="productsQuery.isLoadingMore"
-                class="collection-load-more-spinner"
-                aria-hidden="true"
-              ></span>
-              <span>{{ productsQuery.isLoadingMore ? "Duke ngarkuar..." : "Shfaq me shume" }}</span>
-            </span>
-          </button>
-        </div>
-
-        <p v-else-if="products.length > 0" class="collection-load-more-note">
-          Po shfaqen te gjitha produktet e disponueshme.
-        </p>
-
-        <div
-          v-if="productsQuery.loadMoreErrorMessage"
-          class="form-message error collection-inline-error"
-          role="status"
-          aria-live="polite"
-        >
-          {{ productsQuery.loadMoreErrorMessage }}
         </div>
       </section>
     </div>

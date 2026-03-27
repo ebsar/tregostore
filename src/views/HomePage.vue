@@ -1,21 +1,24 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import ProductListSkeleton from "../components/ProductListSkeleton.vue";
 import PromoSlider from "../components/PromoSlider.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
-import { fetchCatalogProductsPage, usePaginatedProductsQuery } from "../lib/paginated-products";
 import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
+const PRODUCTS_PAGE_SIZE = 12;
+const products = ref([]);
 const businesses = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
+const totalProductsCount = ref(0);
+const hasMoreProducts = ref(false);
+const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
-const routeReadyMarked = ref(false);
+const statusText = ref("Po ngarkohen produktet publike te TREGO.");
 const filters = reactive({
   size: "",
   color: "",
@@ -25,14 +28,6 @@ const ui = reactive({
   message: "",
   type: "",
 });
-const productsQuery = usePaginatedProductsQuery({
-  queryKey: ["products", "home-public-list"],
-  fetchPage: ({ offset, limit }) => fetchCatalogProductsPage({ offset, limit }),
-  errorMessage: "Produktet nuk u ngarkuan.",
-  loadMoreErrorMessage: "Produktet e tjera nuk u ngarkuan.",
-});
-const products = productsQuery.products;
-const totalProductsCount = productsQuery.total;
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
@@ -55,14 +50,6 @@ const filteredProducts = computed(() => {
 });
 
 const collectionLabel = computed(() => {
-  if (productsQuery.isInitialLoading.value) {
-    return "Po ngarkohen produktet publike te TREGO.";
-  }
-
-  if (productsQuery.errorMessage.value && !products.value.length) {
-    return productsQuery.errorMessage.value;
-  }
-
   if (!products.value.length) {
     return "Nuk ka produkte publike ende.";
   }
@@ -70,7 +57,7 @@ const collectionLabel = computed(() => {
   if (!filters.size && !filters.color && !filters.sort) {
     return totalProductsCount.value > products.value.length
       ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
-      : `Po shfaqen ${products.value.length} produkte publike te TREGO.`;
+      : statusText.value;
   }
 
   return totalProductsCount.value > 0
@@ -80,25 +67,18 @@ const collectionLabel = computed(() => {
 
 onMounted(async () => {
   try {
-    await ensureSessionLoaded().then(() => refreshCollectionState());
+    await Promise.all([
+      ensureSessionLoaded().then(() => refreshCollectionState()),
+      loadProducts(),
+    ]);
+    markRouteReady();
     void loadBusinesses();
   } catch (error) {
+    statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
     console.error(error);
+    markRouteReady();
   }
 });
-
-watch(
-  () => productsQuery.isInitialLoading.value,
-  (isInitialLoading) => {
-    if (isInitialLoading || routeReadyMarked.value) {
-      return;
-    }
-
-    routeReadyMarked.value = true;
-    markRouteReady();
-  },
-  { immediate: true },
-);
 
 async function refreshCollectionState() {
   if (!appState.user) {
@@ -117,8 +97,45 @@ async function refreshCollectionState() {
   setCartItems(cartItems);
 }
 
+async function loadProducts(options = {}) {
+  const { append = false } = options;
+  const offset = append ? products.value.length : 0;
+  const { response, data } = await requestJson(
+    `/api/products?limit=${PRODUCTS_PAGE_SIZE}&offset=${offset}`,
+    {},
+    { cacheTtlMs: 10000 },
+  );
+  if (!response.ok || !data?.ok) {
+    statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
+    if (!append) {
+      products.value = [];
+      totalProductsCount.value = 0;
+      hasMoreProducts.value = false;
+    }
+    return;
+  }
+
+  const nextProducts = Array.isArray(data.products) ? data.products : [];
+  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  totalProductsCount.value = Number(data.total || products.value.length || 0);
+  hasMoreProducts.value = Boolean(data.hasMore);
+  statusText.value =
+    totalProductsCount.value > 0
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
+      : "Nuk ka produkte publike ende.";
+}
+
 async function loadMoreProducts() {
-  await productsQuery.loadMore();
+  if (loadingMoreProducts.value || !hasMoreProducts.value) {
+    return;
+  }
+
+  loadingMoreProducts.value = true;
+  try {
+    await loadProducts({ append: true });
+  } finally {
+    loadingMoreProducts.value = false;
+  }
 }
 
 async function loadBusinesses() {
@@ -283,13 +300,7 @@ async function handleCart(productId) {
       {{ ui.message }}
     </div>
 
-    <ProductListSkeleton
-      v-if="productsQuery.isInitialLoading"
-      :count="10"
-      variant="catalog"
-    />
-
-    <section v-else-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Te gjitha produktet">
+    <section v-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Te gjitha produktet">
       <ProductCard
         v-for="product in filteredProducts"
         :key="product.id"
@@ -303,39 +314,14 @@ async function handleCart(productId) {
       />
     </section>
 
-    <div v-if="products.length > 0 && productsQuery.hasMore" class="collection-load-more">
-      <button
-        class="search-reset-button collection-load-more-button"
-        type="button"
-        :disabled="productsQuery.isLoadingMore"
-        @click="loadMoreProducts"
-      >
-        <span class="collection-load-more-button-content">
-          <span
-            v-if="productsQuery.isLoadingMore"
-            class="collection-load-more-spinner"
-            aria-hidden="true"
-          ></span>
-          <span>{{ productsQuery.isLoadingMore ? "Duke ngarkuar..." : "Shfaq me shume" }}</span>
-        </span>
+    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
+      <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
       </button>
     </div>
 
-    <p v-else-if="products.length > 0" class="collection-load-more-note">
-      Po shfaqen te gjitha produktet e disponueshme.
-    </p>
-
-    <div
-      v-if="productsQuery.loadMoreErrorMessage"
-      class="form-message error collection-inline-error"
-      role="status"
-      aria-live="polite"
-    >
-      {{ productsQuery.loadMoreErrorMessage }}
-    </div>
-
-    <div v-if="!productsQuery.isInitialLoading && products.length === 0" class="collection-empty-state">
-      {{ productsQuery.errorMessage || "Nuk ka produkte publike ende." }}
+    <div v-if="products.length === 0" class="collection-empty-state">
+      Nuk ka produkte publike ende.
     </div>
 
     <section

@@ -2822,38 +2822,8 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
             """,
             (business_id,),
         ).fetchone()
-
-
-def count_public_products_for_business(business_id: int) -> int:
+def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
-        row = connection.execute(
-            """
-            SELECT COUNT(*) AS total_count
-            FROM products p
-            INNER JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
-            WHERE bp.id = ?
-              AND p.is_public = 1
-            """,
-            (business_id,),
-        ).fetchone()
-
-    return int(row["total_count"] or 0)
-
-
-def fetch_public_products_for_business(
-    business_id: int,
-    *,
-    limit: int | None = None,
-    offset: int = 0,
-) -> list[sqlite3.Row]:
-    with get_db_connection() as connection:
-        parameters: list[object] = [business_id]
-        limit_offset_clause = ""
-
-        if limit is not None:
-            limit_offset_clause = "\nLIMIT ?\nOFFSET ?"
-            parameters.extend([limit, max(0, int(offset))])
-
         return connection.execute(
             """
             SELECT
@@ -2877,9 +2847,8 @@ def fetch_public_products_for_business(
             WHERE bp.id = ?
               AND p.is_public = 1
             ORDER BY p.id DESC
-            """
-            + limit_offset_clause,
-            parameters,
+            """,
+            (business_id,),
         ).fetchall()
 
 
@@ -3635,7 +3604,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.handle_business_profile()
             return
         if path == "/api/business/products":
-            self.handle_business_products_list(query_params)
+            self.handle_business_products_list()
             return
         if path == "/api/business/public":
             self.handle_public_business_detail(query_params)
@@ -3653,7 +3622,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.handle_products_list(query_params)
             return
         if path == "/api/admin/products":
-            self.handle_admin_products_list(query_params)
+            self.handle_admin_products_list()
             return
         if path == "/api/wishlist":
             self.handle_wishlist()
@@ -4237,10 +4206,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "products": products,
-                "limit": limit,
+                "limit": limit if limit is not None else len(products),
                 "offset": offset,
                 "total": total_count,
-                "hasMore": offset + len(products) < total_count,
+                "hasMore": bool(limit is not None and offset + len(products) < total_count),
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -4276,7 +4245,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "products": [],
                     "query": "",
-                    "limit": limit,
+                    "limit": limit if limit is not None else 0,
                     "offset": offset,
                     "total": 0,
                     "hasMore": False,
@@ -4305,10 +4274,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "products": products,
                 "query": search_text,
-                "limit": limit,
+                "limit": limit if limit is not None else len(products),
                 "offset": offset,
                 "total": total_count,
-                "hasMore": offset + len(products) < total_count,
+                "hasMore": bool(limit is not None and offset + len(products) < total_count),
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -4390,7 +4359,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            limit = int(raw_limit) if raw_limit else PRODUCTS_PAGE_DEFAULT_LIMIT
+            limit = int(raw_limit) if raw_limit else None
         except ValueError:
             limit = PRODUCTS_PAGE_DEFAULT_LIMIT
 
@@ -4399,7 +4368,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         except ValueError:
             offset = 0
 
-        limit = max(1, min(PRODUCTS_PAGE_MAX_LIMIT, limit))
+        if limit is not None:
+            limit = max(1, min(PRODUCTS_PAGE_MAX_LIMIT, limit))
         offset = max(0, offset)
 
         query_fingerprint = compute_image_fingerprint(image_bytes)
@@ -4423,7 +4393,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         matched_products = score_products_by_visual_similarity(query_fingerprint, candidates)
 
         total_count = len(matched_products)
-        visible_products = matched_products[offset : offset + limit]
+        visible_products = (
+            matched_products[offset : offset + limit]
+            if limit is not None
+            else matched_products[offset:]
+        )
 
         self.send_json(
             200,
@@ -4431,10 +4405,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "mode": "visual",
                 "products": [serialize_product(row) for row in visible_products],
-                "limit": limit,
+                "limit": limit if limit is not None else len(visible_products),
                 "offset": offset,
                 "total": total_count,
-                "hasMore": offset + len(visible_products) < total_count,
+                "hasMore": bool(limit is not None and offset + len(visible_products) < total_count),
                 "message": (
                     "U gjeten produkte te ngjashme sipas fotos."
                     if visible_products
@@ -4465,10 +4439,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         self.send_json(200, {"ok": True, "product": serialize_product(product)})
 
-    def handle_admin_products_list(
-        self,
-        query_params: dict[str, list[str]],
-    ) -> None:
+    def handle_admin_products_list(self) -> None:
         user = self.get_current_user()
         if not user:
             self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
@@ -4481,31 +4452,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
-        if pagination_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors})
-            return
-
-        total_count = count_products(include_hidden=True)
         products = [
-            serialize_product(row)
-            for row in fetch_products(
-                include_hidden=True,
-                limit=limit,
-                offset=offset,
-            )
+            serialize_product(row) for row in fetch_products(include_hidden=True)
         ]
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "products": products,
-                "limit": limit,
-                "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
-            },
-        )
+        self.send_json(200, {"ok": True, "products": products})
 
     def handle_admin_users_list(self) -> None:
         user = self.get_current_user()
@@ -4615,30 +4565,13 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
-        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
-        if pagination_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors})
-            return
-
-        total_count = count_public_products_for_business(business_id)
         products = [
             serialize_product(row)
-            for row in fetch_public_products_for_business(
-                business_id,
-                limit=limit,
-                offset=offset,
-            )
+            for row in fetch_public_products_for_business(business_id)
         ]
         self.send_json(
             200,
-            {
-                "ok": True,
-                "products": products,
-                "limit": limit,
-                "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
-            },
+            {"ok": True, "products": products},
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
 
@@ -4671,10 +4604,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
-    def handle_business_products_list(
-        self,
-        query_params: dict[str, list[str]],
-    ) -> None:
+    def handle_business_products_list(self) -> None:
         user = self.get_current_user()
         if not user:
             self.send_json(
@@ -4690,35 +4620,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
-        if pagination_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors})
-            return
-
-        total_count = count_products(
-            include_hidden=True,
-            created_by_user_id=user["id"],
-        )
         products = [
             serialize_product(row)
             for row in fetch_products(
                 include_hidden=True,
                 created_by_user_id=user["id"],
-                limit=limit,
-                offset=offset,
             )
         ]
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "products": products,
-                "limit": limit,
-                "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
-            },
-        )
+        self.send_json(200, {"ok": True, "products": products})
 
     def handle_business_follow_toggle(self) -> None:
         user = self.get_current_user()
