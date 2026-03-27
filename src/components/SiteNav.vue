@@ -17,8 +17,10 @@ const mobileNavProgress = ref(0);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
 let lastScrollY = 0;
+let pendingScrollY = 0;
 let targetMobileNavProgress = 0;
 let mobileNavAnimationFrame = 0;
+let mobileNavScrollFrame = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -117,12 +119,12 @@ function animateMobileNavProgress() {
   mobileNavAnimationFrame = 0;
   const delta = targetMobileNavProgress - mobileNavProgress.value;
 
-  if (Math.abs(delta) < 0.004) {
+  if (Math.abs(delta) < 0.003) {
     mobileNavProgress.value = targetMobileNavProgress;
     return;
   }
 
-  mobileNavProgress.value += delta * 0.18;
+  mobileNavProgress.value += delta * 0.14;
   mobileNavAnimationFrame = window.requestAnimationFrame(animateMobileNavProgress);
 }
 
@@ -144,19 +146,20 @@ function setMobileNavProgress(nextValue, options = {}) {
   }
 }
 
-function handleWindowScroll() {
+function applyMobileScrollState(currentScrollY) {
   if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
     isMobileSearchOnly.value = false;
     setMobileNavProgress(0, { immediate: mobileMenuOpen.value || searchMenuOpen.value });
-    lastScrollY = window.scrollY || window.pageYOffset || 0;
+    lastScrollY = currentScrollY;
     return;
   }
 
-  const currentScrollY = window.scrollY || window.pageYOffset || 0;
   const delta = currentScrollY - lastScrollY;
-  const compactDistance = 180;
-  const compactStart = 8;
-  setMobileNavProgress((currentScrollY - compactStart) / compactDistance);
+  const compactDistance = 210;
+  const compactStart = 6;
+  const rawProgress = Math.max(0, Math.min((currentScrollY - compactStart) / compactDistance, 1));
+  const easedProgress = rawProgress * rawProgress * (3 - (2 * rawProgress));
+  setMobileNavProgress(easedProgress);
 
   if (currentScrollY <= 24) {
     isMobileSearchOnly.value = false;
@@ -165,13 +168,28 @@ function handleWindowScroll() {
     return;
   }
 
-  if (currentScrollY > 156 && delta > 12) {
+  if (!isMobileSearchOnly.value && rawProgress > 0.975 && currentScrollY > 198) {
     isMobileSearchOnly.value = true;
-  } else if (delta < -7 || currentScrollY < 104) {
+  } else if (isMobileSearchOnly.value && (rawProgress < 0.62 || currentScrollY < 128 || delta < -10)) {
     isMobileSearchOnly.value = false;
   }
 
   lastScrollY = currentScrollY;
+}
+
+function flushMobileScrollFrame() {
+  mobileNavScrollFrame = 0;
+  applyMobileScrollState(pendingScrollY);
+}
+
+function handleWindowScroll() {
+  pendingScrollY = window.scrollY || window.pageYOffset || 0;
+
+  if (mobileNavScrollFrame) {
+    return;
+  }
+
+  mobileNavScrollFrame = window.requestAnimationFrame(flushMobileScrollFrame);
 }
 
 function closeExpandedPanels() {
@@ -273,6 +291,7 @@ watch(
 onMounted(async () => {
   updateViewportState();
   lastScrollY = window.scrollY || window.pageYOffset || 0;
+  pendingScrollY = lastScrollY;
   window.addEventListener("resize", updateViewportState);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
@@ -283,6 +302,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (mobileNavAnimationFrame) {
     window.cancelAnimationFrame(mobileNavAnimationFrame);
+  }
+  if (mobileNavScrollFrame) {
+    window.cancelAnimationFrame(mobileNavScrollFrame);
   }
   window.removeEventListener("resize", updateViewportState);
   window.removeEventListener("scroll", handleWindowScroll);
@@ -370,7 +392,7 @@ onBeforeUnmount(() => {
     <Transition name="nav-floating-panel">
       <button
         v-if="searchMenuOpen"
-        class="nav-search-backdrop"
+        class="nav-search-dismiss-layer"
         type="button"
         aria-label="Mbylle kerkimin"
         @click="closeExpandedPanels"
