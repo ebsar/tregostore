@@ -106,7 +106,7 @@ export async function requestJson(url, options = {}, runtime = {}) {
 
 export async function fetchCurrentUserOptional() {
   try {
-    const { response, data } = await requestJson("/api/me");
+    const { response, data } = await requestJson("/api/me", {}, { cacheTtlMs: 1500 });
     if (!response.ok || !data.ok || !data.user) {
       return null;
     }

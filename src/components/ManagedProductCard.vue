@@ -69,6 +69,8 @@ function submitRestock() {
           class="admin-product-thumb"
           :src="product.imagePath"
           :alt="product.title"
+          width="640"
+          height="640"
           loading="lazy"
           decoding="async"
         >

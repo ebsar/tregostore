@@ -148,7 +148,7 @@ function initializeBrandLogo() {
 
     brandLink.classList.add("has-logo");
     brandLink.innerHTML = `
-      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGO">
+      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO">
       <span class="sr-only">TREGO</span>
     `;
   });

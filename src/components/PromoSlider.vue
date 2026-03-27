@@ -127,11 +127,20 @@ onBeforeUnmount(() => {
           :style="{ transform: `translateX(-${currentIndex * 100}%)` }"
         >
           <article
-            v-for="slide in slides"
+            v-for="(slide, index) in slides"
             :key="slide.title"
             class="home-promo-slide"
-            :style="{ backgroundImage: `linear-gradient(135deg, rgba(8, 20, 12, 0.18), rgba(8, 20, 12, 0.62)), url('${slide.imagePath}')` }"
           >
+            <img
+              class="home-promo-image"
+              :src="slide.imagePath"
+              :alt="slide.title"
+              width="885"
+              height="333"
+              :loading="index === 0 ? 'eager' : 'lazy'"
+              decoding="async"
+              :fetchpriority="index === 0 ? 'high' : 'auto'"
+            >
             <div class="home-promo-copy">
               <span class="home-promo-badge">{{ slide.badge }}</span>
               <h2>{{ slide.title }}</h2>

@@ -64,6 +64,8 @@ function handleSave() {
             class="registered-business-avatar-image"
             :src="business.logoPath"
             :alt="business.businessName"
+            width="180"
+            height="180"
             loading="lazy"
             decoding="async"
           >

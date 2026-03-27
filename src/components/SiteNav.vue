@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
-import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
+import { appState, logoutUser } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
@@ -236,7 +236,6 @@ onMounted(async () => {
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
-  await ensureSessionLoaded();
 });
 
 onBeforeUnmount(() => {
@@ -258,7 +257,7 @@ onBeforeUnmount(() => {
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGO">
+      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO" width="1536" height="1024" fetchpriority="high">
       <span class="sr-only">TREGO</span>
     </RouterLink>
 
@@ -457,6 +456,10 @@ onBeforeUnmount(() => {
               class="nav-user-avatar-image"
               :src="userAvatarPath"
               :alt="userDisplayName"
+              width="160"
+              height="160"
+              loading="lazy"
+              decoding="async"
             >
             <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -484,6 +487,10 @@ onBeforeUnmount(() => {
                   class="nav-user-avatar-image"
                   :src="userAvatarPath"
                   :alt="userDisplayName"
+                  width="160"
+                  height="160"
+                  loading="lazy"
+                  decoding="async"
                 >
                 <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
                   <svg viewBox="0 0 24 24" aria-hidden="true">

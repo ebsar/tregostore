@@ -6,7 +6,7 @@
     <div class="app-loader-panel">
       <div class="app-loader-stage">
         <div class="app-loader-centerpiece">
-          <img class="app-loader-logo" src="/trego-logo.png" alt="TREGO">
+          <img class="app-loader-logo" src="/trego-logo.webp" alt="TREGO" width="1536" height="1024" fetchpriority="high">
         </div>
       </div>
 

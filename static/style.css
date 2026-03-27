@@ -96,6 +96,11 @@ select {
   font: inherit;
 }
 
+img {
+  max-width: 100%;
+  height: auto;
+}
+
 .app-loader {
   position: fixed;
   inset: 0;
@@ -186,7 +191,7 @@ select {
 
 .app-loader-stage {
   position: relative;
-  width: min(170px, 44vw);
+  width: min(230px, 58vw);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -313,6 +318,7 @@ body[data-page="cart"] .page-shell {
   gap: 12px;
   width: clamp(1120px, 82vw, 1500px);
   max-width: calc(100% - 8px);
+  min-height: 76px;
   margin: 0 auto 28px;
   padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.78);
@@ -383,17 +389,23 @@ body[data-page="cart"] .page-shell {
 }
 
 .brand.has-logo {
+  display: inline-flex;
+  align-items: center;
+  height: 52px;
   padding: 0;
   background: transparent;
   border: none;
   box-shadow: none;
+  overflow: visible;
 }
 
 .brand-logo {
   display: block;
-  width: clamp(82px, 8vw, 128px);
+  width: clamp(100px, 9.4vw, 156px);
   height: auto;
   object-fit: contain;
+  transform: scale(1.18);
+  transform-origin: left center;
   transition: width 220ms ease, transform 220ms ease, opacity 220ms ease;
 }
 
@@ -1407,19 +1419,29 @@ body[data-page="home"] .home-hero .home-hero-content {
   display: flex;
   align-items: end;
   padding: clamp(28px, 4vw, 44px);
-  background-size: cover;
-  background-position: center center;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .home-promo-slide::before {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(135deg, rgba(255, 153, 0, 0.08), rgba(0, 28, 84, 0.18));
+    linear-gradient(135deg, rgba(8, 20, 12, 0.18), rgba(8, 20, 12, 0.62));
   pointer-events: none;
+}
+
+.home-promo-image {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 .home-promo-copy {
@@ -1506,6 +1528,8 @@ body[data-page="home"] .home-hero .home-hero-content {
   display: grid;
   gap: 18px;
   padding-inline: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 280px;
 }
 
 .home-businesses-header {
@@ -2218,6 +2242,8 @@ body[data-page="cart"] .page-shell::before {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 20px;
+  content-visibility: auto;
+  contain-intrinsic-size: 1200px;
 }
 
 .pet-product-link,
@@ -5321,11 +5347,29 @@ code {
 }
 
 @media (max-width: 920px) {
+  .site-nav,
+  .nav-search-panel,
+  .nav-dropdown-menu,
+  .nav-user-panel,
+  .search-filters-panel,
+  .card,
+  .pet-product-card,
+  .saved-product-card,
+  .admin-product-item,
+  .registered-business-card,
+  .login-card,
+  .signup-card,
+  .home-businesses-marquee {
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+  }
+
   .site-nav {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     width: min(100%, 1220px);
+    min-height: 68px;
     padding: 12px;
     border-radius: 34px;
   }
@@ -5379,7 +5423,8 @@ code {
   }
 
   .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .brand-logo {
-    width: 80px;
+    width: 92px;
+    transform: scale(1.16);
   }
 
   .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .brand {
@@ -5626,6 +5671,12 @@ code {
 }
 
 @media (max-width: 640px) {
+  body[data-page="verify-email"] {
+    background:
+      linear-gradient(180deg, rgba(18, 28, 18, 0.16), rgba(18, 28, 18, 0.34)),
+      url("/gruri.webp") center center / cover no-repeat;
+  }
+
   .page-shell {
     width: min(100% - 20px, 1120px);
   }
@@ -5665,7 +5716,8 @@ code {
   }
 
   .brand-logo {
-    width: 92px;
+    width: 110px;
+    transform: scale(1.14);
   }
 
   .nav-link,

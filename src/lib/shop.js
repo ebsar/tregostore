@@ -3,7 +3,7 @@ export const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address_draft";
 export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
-export const APP_LOADER_MIN_DURATION_MS = 260;
+export const APP_LOADER_MIN_DURATION_MS = 160;
 
 export const PRIMARY_NAVIGATION = [
   {

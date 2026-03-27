@@ -347,6 +347,8 @@ async function handleCart(productId) {
                   class="home-business-logo"
                   :src="business.logoPath"
                   :alt="business.businessName"
+                  width="160"
+                  height="160"
                   loading="lazy"
                   decoding="async"
                 >

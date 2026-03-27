@@ -216,6 +216,8 @@ function nextImage() {
               class="product-detail-image"
               :src="currentImagePath"
               :alt="currentProduct.title"
+              width="1200"
+              height="1200"
               decoding="async"
               fetchpriority="high"
             >

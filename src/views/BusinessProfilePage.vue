@@ -237,6 +237,10 @@ async function handleCart(productId) {
               class="business-public-logo"
               :src="business.logoPath"
               :alt="business.businessName"
+              width="240"
+              height="240"
+              loading="lazy"
+              decoding="async"
             >
             <span v-else class="business-public-logo-fallback">
               {{ getBusinessInitials(business.businessName) }}

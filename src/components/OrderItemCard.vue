@@ -26,6 +26,8 @@ defineProps({
         class="order-item-image"
         :src="item.imagePath"
         :alt="item.title || 'Produkt'"
+        width="320"
+        height="320"
         loading="lazy"
         decoding="async"
       >
