@@ -104,11 +104,42 @@ export async function requestJson(url, options = {}, runtime = {}) {
     }
 
     let data = {};
+    const responseContentType = String(response.headers?.get("content-type") || "").toLowerCase();
 
     try {
-      data = await response.json();
-    } catch (error) {
-      console.error(error);
+      const rawBody = await response.text();
+      const trimmedBody = rawBody.trim();
+
+      if (trimmedBody) {
+        const looksLikeJson = (
+          responseContentType.includes("application/json")
+          || trimmedBody.startsWith("{")
+          || trimmedBody.startsWith("[")
+        );
+
+        if (looksLikeJson) {
+          try {
+            data = JSON.parse(trimmedBody);
+          } catch {
+            data = {
+              ok: false,
+              message: "Pergjigjja e serverit nuk ishte JSON i vlefshem.",
+            };
+          }
+        } else {
+          data = response.ok
+            ? {}
+            : {
+                ok: false,
+                message: "Serveri ktheu nje pergjigjje jo-JSON.",
+              };
+        }
+      }
+    } catch {
+      data = {
+        ok: false,
+        message: "Pergjigjja e serverit nuk mund te lexohej.",
+      };
     }
 
     const result = {

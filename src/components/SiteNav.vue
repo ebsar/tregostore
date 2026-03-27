@@ -4,6 +4,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
+import { requestJson } from "../lib/api";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -19,9 +20,67 @@ const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
+const navigationSections = ref(cloneNavigationSections(PRIMARY_NAVIGATION));
 let mobileNavMatchMedia = null;
 let mobileNavScrollTrigger = null;
 const resolveMobileNavEase = gsap.parseEase("power2.out");
+
+function cloneNavigationSections(sections = []) {
+  return Array.isArray(sections)
+    ? sections
+        .map((section) => {
+          const key = String(section?.key || "").trim();
+          const label = String(section?.label || "").trim();
+          const href = String(section?.href || "").trim();
+          if (!key || !label || !href) {
+            return null;
+          }
+
+          const items = Array.isArray(section?.items)
+            ? section.items
+                .map((item) => {
+                  const itemLabel = String(item?.label || "").trim();
+                  const itemHref = String(item?.href || "").trim();
+                  if (!itemLabel || !itemHref) {
+                    return null;
+                  }
+
+                  return {
+                    label: itemLabel,
+                    href: itemHref,
+                  };
+                })
+                .filter(Boolean)
+            : [];
+
+          return {
+            key,
+            label,
+            href,
+            ...(items.length ? { items } : {}),
+          };
+        })
+        .filter(Boolean)
+    : [];
+}
+
+async function loadNavigationSections() {
+  try {
+    const { response, data } = await requestJson("/api/navigation", {}, { cacheTtlMs: 5 * 60 * 1000 });
+    if (!response.ok || !data?.ok || !Array.isArray(data.navigation)) {
+      return;
+    }
+
+    const nextSections = cloneNavigationSections(data.navigation);
+    if (!nextSections.length) {
+      return;
+    }
+
+    navigationSections.value = nextSections;
+  } catch (error) {
+    console.error(error);
+  }
+}
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -160,9 +219,6 @@ function setupMobileNavScrollTrigger() {
   mobileNavMatchMedia = gsap.matchMedia();
   mobileNavMatchMedia.add("(max-width: 920px)", () => {
     applyMobileNavShellProgress(0);
-    gsap.set(navElement.value, {
-      force3D: true,
-    });
 
     mobileNavScrollTrigger = ScrollTrigger.create({
       start: 0,
@@ -218,24 +274,41 @@ function toggleDropdown(key) {
   openDropdownKey.value = openDropdownKey.value === key ? "" : key;
 }
 
-async function toggleSearchPanel() {
+function waitForNextFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+async function openSearchPanel() {
+  if (isMobileViewport.value) {
+    mobileMenuOpen.value = false;
+  }
+
   userMenuOpen.value = false;
   openDropdownKey.value = "";
-  const shouldOpen = !searchMenuOpen.value;
 
-  if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
+  if (isMobileViewport.value && isMobileSearchOnly.value) {
     isMobileSearchOnly.value = false;
     applyMobileNavShellProgress(0);
     await nextTick();
+    ScrollTrigger.refresh();
+    await waitForNextFrame();
   }
 
-  searchMenuOpen.value = shouldOpen;
+  searchMenuOpen.value = true;
+  await nextTick();
+  searchInputElement.value?.focus();
+  searchInputElement.value?.select?.();
+}
 
-  if (shouldOpen) {
-    await nextTick();
-    searchInputElement.value?.focus();
-    searchInputElement.value?.select?.();
+async function toggleSearchPanel() {
+  if (searchMenuOpen.value) {
+    searchMenuOpen.value = false;
+    return;
   }
+
+  await openSearchPanel();
 }
 
 function handleUserTrigger() {
@@ -311,6 +384,7 @@ watch([mobileMenuOpen, searchMenuOpen], ([menuOpen, searchOpen]) => {
 });
 
 onMounted(async () => {
+  void loadNavigationSections();
   updateViewportState();
   window.addEventListener("resize", updateViewportState);
   document.addEventListener("click", closeOnOutsideClick);
@@ -446,7 +520,7 @@ onBeforeUnmount(() => {
     </Transition>
 
     <div id="site-nav-mobile-panel" class="nav-links">
-      <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
+      <template v-for="section in navigationSections" :key="section.key">
         <div v-if="section.items" class="nav-dropdown nav-dropdown-split" :class="{ open: openDropdownKey === section.key }">
           <RouterLink
             class="nav-link nav-dropdown-link"

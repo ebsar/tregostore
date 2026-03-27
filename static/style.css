@@ -5566,12 +5566,13 @@ code {
 
   .site-nav {
     --mobile-nav-progress: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: space-between;
     left: 50%;
     right: auto;
-    width: min(calc(100vw - 20px), 1220px);
+    width: calc(100vw - 20px);
     max-width: calc(100vw - 20px);
     min-height: calc(68px - (4px * var(--mobile-nav-progress)));
     padding: calc(10px - (0.8px * var(--mobile-nav-progress))) calc(10px - (0.4px * var(--mobile-nav-progress)));
@@ -5582,32 +5583,25 @@ code {
       0 calc(22px - (7px * var(--mobile-nav-progress))) calc(48px - (12px * var(--mobile-nav-progress))) rgba(205, 182, 173, calc(0.24 - (0.08 * var(--mobile-nav-progress)))),
       inset 0 1px 0 rgba(255, 255, 255, 0.86);
     transition: none;
-    contain: none;
-    will-change: min-height, padding, border-radius, box-shadow, width;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
   }
 
   body[data-page] .site-nav {
     top: calc(var(--safe-top) + 10px);
-    transform: translate3d(-50%, 0, 0);
+    transform: translateX(-50%);
   }
 
   .brand {
+    order: 1;
+    flex: 0 0 auto;
     width: auto;
     justify-content: flex-start;
     min-width: 0;
     transition: none;
-    will-change: opacity;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
   }
 
   .brand-logo {
     width: clamp(88px, 24vw, 108px);
     transition: none;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
   }
 
   .nav-mobile-toggle {
@@ -5618,17 +5612,15 @@ code {
   }
 
   .nav-mobile-tray {
+    order: 2;
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
+    margin-left: auto;
     gap: 6px;
-    min-width: max-content;
+    min-width: 0;
     overflow: visible;
     transition: none;
-    transform-origin: right center;
-    will-change: opacity;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
   }
 
   .nav-mobile-shortcut,
@@ -5648,7 +5640,7 @@ code {
     left: 50% !important;
     right: auto !important;
     top: calc(var(--safe-top) + 10px) !important;
-    transform: translate3d(-50%, 0, 0) !important;
+    transform: translateX(-50%) !important;
     position: fixed;
     display: flex;
     justify-content: center;
@@ -5739,9 +5731,17 @@ code {
 
   .nav-links,
   .nav-actions {
+    flex: 1 0 100%;
     display: none;
     width: 100%;
-    grid-column: 1 / -1;
+  }
+
+  .nav-links {
+    order: 3;
+  }
+
+  .nav-actions {
+    order: 4;
   }
 
   .site-nav.mobile-menu-open .nav-links,

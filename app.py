@@ -120,6 +120,11 @@ SHOP_SECTION_PRODUCT_TYPES = {
 }
 LEGACY_PRODUCT_TYPES = {"clothing", "cream", "food", "tools", "other"}
 PRODUCT_CATEGORIES = LEGACY_PRODUCT_CATEGORIES | set(SHOP_SECTION_PRODUCT_TYPES.keys())
+PRODUCT_CATEGORY_GROUPS = {
+    category.split("-", 1)[0]
+    for category in SHOP_SECTION_PRODUCT_TYPES
+    if "-" in category
+}
 PRODUCT_TYPES = LEGACY_PRODUCT_TYPES | {
     product_type
     for product_types in SHOP_SECTION_PRODUCT_TYPES.values()
@@ -140,6 +145,47 @@ PRODUCT_COLORS = {
     "verdhe",
     "portokalli",
     "shume-ngjyra",
+}
+CATEGORY_GROUP_LABELS = {
+    "clothing": "Veshje",
+    "cosmetics": "Kozmetika",
+}
+CATEGORY_LABELS = {
+    "clothing-men": "Veshje per meshkuj",
+    "clothing-women": "Veshje per femra",
+    "clothing-kids": "Veshje per femije",
+    "cosmetics-men": "Kozmetik per meshkuj",
+    "cosmetics-women": "Kozmetik per femra",
+    "cosmetics-kids": "Kozmetik per femije",
+    "pets": "Kafshet shtepiake",
+    "agriculture": "Bujqesi",
+    "medicine": "Barnat",
+    "home": "Shtepi",
+    "sport": "Sport",
+    "technology": "Teknologji",
+}
+CATEGORY_SUFFIX_LABELS = {
+    "men": "Meshkuj",
+    "women": "Femra",
+    "kids": "Femije",
+}
+NAVIGATION_SECTION_ORDER = {
+    "clothing": 10,
+    "cosmetics": 20,
+    "home": 30,
+    "sport": 40,
+    "technology": 50,
+    "pets": 60,
+    "agriculture": 70,
+    "medicine": 80,
+}
+NAVIGATION_CATEGORY_ORDER = {
+    "clothing-men": 10,
+    "clothing-women": 20,
+    "clothing-kids": 30,
+    "cosmetics-men": 10,
+    "cosmetics-women": 20,
+    "cosmetics-kids": 30,
 }
 USER_ROLES = {"client", "admin", "business"}
 GENDER_OPTIONS = {"mashkull", "femer"}
@@ -178,6 +224,9 @@ PUBLIC_BUSINESSES_CACHE_HEADERS = {
 }
 PUBLIC_STATS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
+}
+PUBLIC_NAVIGATION_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=1800"
 }
 ADDRESS_SELECT_COLUMNS = """
     id,
@@ -268,6 +317,112 @@ ORDER_ITEM_SELECT_COLUMNS = """
     quantity,
     created_at
 """
+
+
+def humanize_slug(value: str) -> str:
+    normalized_value = str(value or "").strip().replace("_", "-")
+    if not normalized_value:
+        return ""
+
+    parts = [part for part in normalized_value.split("-") if part]
+    if not parts:
+        return normalized_value
+
+    return " ".join(part.capitalize() for part in parts)
+
+
+def get_category_label(category: str) -> str:
+    normalized_category = str(category or "").strip().lower()
+    return CATEGORY_LABELS.get(normalized_category, humanize_slug(normalized_category))
+
+
+def get_category_group_label(group: str) -> str:
+    normalized_group = str(group or "").strip().lower()
+    return CATEGORY_GROUP_LABELS.get(normalized_group, humanize_slug(normalized_group))
+
+
+def get_navigation_child_label(category: str) -> str:
+    normalized_category = str(category or "").strip().lower()
+    if "-" in normalized_category:
+        suffix = normalized_category.split("-", 1)[1]
+        if suffix in CATEGORY_SUFFIX_LABELS:
+            return CATEGORY_SUFFIX_LABELS[suffix]
+
+    return get_category_label(normalized_category)
+
+
+def navigation_section_sort_key(section_key: str) -> tuple[int, str]:
+    normalized_key = str(section_key or "").strip().lower()
+    return (NAVIGATION_SECTION_ORDER.get(normalized_key, 999), normalized_key)
+
+
+def navigation_category_sort_key(category: str) -> tuple[int, str]:
+    normalized_category = str(category or "").strip().lower()
+    return (NAVIGATION_CATEGORY_ORDER.get(normalized_category, 999), normalized_category)
+
+
+def build_primary_navigation() -> list[dict[str, object]]:
+    grouped_categories: defaultdict[str, list[str]] = defaultdict(list)
+    standalone_categories: list[str] = []
+
+    for raw_category in PRODUCT_CATEGORIES:
+        category = str(raw_category or "").strip().lower()
+        if not category:
+            continue
+
+        if "-" in category:
+            group_key, _ = category.split("-", 1)
+            grouped_categories[group_key].append(category)
+            continue
+
+        standalone_categories.append(category)
+
+    navigation_items: list[dict[str, object]] = []
+
+    for group_key, categories in grouped_categories.items():
+        sorted_categories = sorted(set(categories), key=navigation_category_sort_key)
+        if not sorted_categories:
+            continue
+
+        if len(sorted_categories) == 1:
+            single_category = sorted_categories[0]
+            navigation_items.append(
+                {
+                    "key": single_category,
+                    "label": get_category_label(single_category),
+                    "href": f"/kerko?category={quote(single_category)}",
+                }
+            )
+            continue
+
+        navigation_items.append(
+            {
+                "key": group_key,
+                "label": get_category_group_label(group_key),
+                "href": f"/kerko?categoryGroup={quote(group_key)}",
+                "items": [
+                    {
+                        "label": get_navigation_child_label(category),
+                        "href": f"/kerko?category={quote(category)}",
+                    }
+                    for category in sorted_categories
+                ],
+            }
+        )
+
+    for category in sorted(set(standalone_categories), key=navigation_section_sort_key):
+        navigation_items.append(
+            {
+                "key": category,
+                "label": get_category_label(category),
+                "href": f"/kerko?category={quote(category)}",
+            }
+        )
+
+    return sorted(
+        navigation_items,
+        key=lambda item: navigation_section_sort_key(str(item.get("key", ""))),
+    )
 
 def load_local_env_file() -> None:
     env_path = BASE_DIR / ".env"
@@ -3374,6 +3529,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/stats":
             self.handle_stats()
             return
+        if path == "/api/navigation":
+            self.handle_navigation()
+            return
         if path == "/api/me":
             self.handle_me()
             return
@@ -3598,6 +3756,13 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {"ok": True, "data": fetch_stats()},
             headers=PUBLIC_STATS_CACHE_HEADERS,
+        )
+
+    def handle_navigation(self) -> None:
+        self.send_json(
+            200,
+            {"ok": True, "navigation": build_primary_navigation()},
+            headers=PUBLIC_NAVIGATION_CACHE_HEADERS,
         )
 
     def handle_me(self) -> None:
@@ -3962,7 +4127,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in {"clothing", "cosmetics"}:
+        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
@@ -4013,7 +4178,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in {"clothing", "cosmetics"}:
+        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
@@ -4133,7 +4298,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in {"clothing", "cosmetics"}:
+        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
