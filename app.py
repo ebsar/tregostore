@@ -12,6 +12,8 @@ import re
 import secrets
 import sqlite3
 import smtplib
+import threading
+import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,6 +44,12 @@ SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
 PRODUCTS_PAGE_MAX_LIMIT = 24
+APP_SCHEMA_VERSION = "2026-03-27-1"
+DATABASE_INITIALIZATION_LOCK_KEY = (27032026, 1)
+DATABASE_INITIALIZATION_POLL_SECONDS = 0.25
+DATABASE_INITIALIZATION_TIMEOUT_SECONDS = 12.0
+_DATABASE_INITIALIZED = False
+_DATABASE_INITIALIZATION_MUTEX = threading.Lock()
 PAGE_ROUTES = {
     "/": "/index.html",
     "/about": "/about.html",
@@ -675,26 +683,102 @@ def execute_insert_and_get_id(connection: DatabaseConnection, query: str, params
 
 
 def initialize_database() -> None:
+    global _DATABASE_INITIALIZED
+
+    if _DATABASE_INITIALIZED:
+        return
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    with get_db_connection() as connection:
-        acquire_database_initialization_lock(connection)
-        schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
-        connection.executescript(schema_path.read_text(encoding="utf-8"))
-        migrate_database(connection)
-        ensure_bootstrap_admin(connection)
+    with _DATABASE_INITIALIZATION_MUTEX:
+        if _DATABASE_INITIALIZED:
+            return
+
+        with get_db_connection() as connection:
+            ensure_app_metadata_table(connection)
+            connection.commit()
+
+            if is_database_schema_current(connection):
+                _DATABASE_INITIALIZED = True
+                return
+
+            wait_deadline = time.monotonic() + DATABASE_INITIALIZATION_TIMEOUT_SECONDS
+            while not acquire_database_initialization_lock(connection):
+                if is_database_schema_current(connection):
+                    _DATABASE_INITIALIZED = True
+                    return
+
+                if time.monotonic() >= wait_deadline:
+                    raise RuntimeError(
+                        "Database initialization timed out while waiting for another instance."
+                    )
+
+                time.sleep(DATABASE_INITIALIZATION_POLL_SECONDS)
+
+            if is_database_schema_current(connection):
+                _DATABASE_INITIALIZED = True
+                return
+
+            schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
+            connection.executescript(schema_path.read_text(encoding="utf-8"))
+            migrate_database(connection)
+            ensure_bootstrap_admin(connection)
+            mark_schema_version_applied(connection)
+            connection.commit()
+            _DATABASE_INITIALIZED = True
 
 
-def acquire_database_initialization_lock(connection: DatabaseConnection) -> None:
-    if not is_postgres_connection(connection):
-        return
-
-    # Serialize startup schema/migration work across concurrent Vercel cold starts.
+def ensure_app_metadata_table(connection: DatabaseConnection) -> None:
     connection.execute(
-        "SELECT pg_advisory_xact_lock(?, ?)",
-        (27032026, 1),
+        """
+        CREATE TABLE IF NOT EXISTS app_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+        """
     )
+
+
+def get_applied_schema_version(connection: DatabaseConnection) -> str:
+    row = connection.execute(
+        """
+        SELECT value
+        FROM app_metadata
+        WHERE key = 'schema_version'
+        LIMIT 1
+        """
+    ).fetchone()
+    if not row:
+        return ""
+
+    return str(row["value"] or "").strip()
+
+
+def is_database_schema_current(connection: DatabaseConnection) -> bool:
+    return get_applied_schema_version(connection) == APP_SCHEMA_VERSION
+
+
+def mark_schema_version_applied(connection: DatabaseConnection) -> None:
+    connection.execute(
+        """
+        INSERT INTO app_metadata (key, value)
+        VALUES ('schema_version', ?)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """,
+        (APP_SCHEMA_VERSION,),
+    )
+
+
+def acquire_database_initialization_lock(connection: DatabaseConnection) -> bool:
+    if not is_postgres_connection(connection):
+        return True
+
+    row = connection.execute(
+        "SELECT pg_try_advisory_xact_lock(?, ?) AS acquired",
+        DATABASE_INITIALIZATION_LOCK_KEY,
+    ).fetchone()
+    return bool(row and row["acquired"])
 
 
 def should_store_uploads_in_database() -> bool:

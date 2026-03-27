@@ -17,15 +17,42 @@ export const appState = reactive({
 
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
+let routeLoaderFallbackTimeoutId = 0;
+const ROUTE_LOADER_MAX_DURATION_MS = 5000;
+
+function clearRouteLoaderFallbackTimeout() {
+  if (!routeLoaderFallbackTimeoutId) {
+    return;
+  }
+
+  window.clearTimeout(routeLoaderFallbackTimeoutId);
+  routeLoaderFallbackTimeoutId = 0;
+}
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
   appState.loaderVisible = true;
   appState.loaderStartedAt = Date.now();
-  return routeLoaderToken;
+  const currentToken = routeLoaderToken;
+
+  clearRouteLoaderFallbackTimeout();
+  routeLoaderFallbackTimeoutId = window.setTimeout(() => {
+    if (currentToken !== routeLoaderToken) {
+      return;
+    }
+
+    appState.loaderVisible = false;
+    routeLoaderFallbackTimeoutId = 0;
+  }, ROUTE_LOADER_MAX_DURATION_MS);
+
+  return currentToken;
 }
 
 export function markRouteReady(token = routeLoaderToken) {
+  if (token === routeLoaderToken) {
+    clearRouteLoaderFallbackTimeout();
+  }
+
   if (!appState.loaderVisible) {
     return;
   }
