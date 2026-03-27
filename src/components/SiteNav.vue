@@ -152,9 +152,16 @@ function toggleDropdown(key) {
 async function toggleSearchPanel() {
   userMenuOpen.value = false;
   openDropdownKey.value = "";
-  searchMenuOpen.value = !searchMenuOpen.value;
+  const shouldOpen = !searchMenuOpen.value;
 
-  if (searchMenuOpen.value) {
+  if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
+    isMobileSearchOnly.value = false;
+    await nextTick();
+  }
+
+  searchMenuOpen.value = shouldOpen;
+
+  if (shouldOpen) {
     await nextTick();
     searchInputElement.value?.focus();
     searchInputElement.value?.select?.();
@@ -310,10 +317,21 @@ onBeforeUnmount(() => {
     </div>
 
     <Transition name="nav-floating-panel">
+      <button
+        v-if="searchMenuOpen"
+        class="nav-search-backdrop"
+        type="button"
+        aria-label="Mbylle kerkimin"
+        @click="closeExpandedPanels"
+      ></button>
+    </Transition>
+
+    <Transition name="nav-floating-panel">
       <form
         v-if="searchMenuOpen"
         class="nav-search-panel"
         role="search"
+        @click.stop
         @submit.prevent="submitNavSearch"
       >
         <label class="sr-only" for="nav-search-input">Kerko produktet</label>
