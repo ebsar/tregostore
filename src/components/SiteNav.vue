@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
-import { appState, logoutUser } from "../stores/app-state";
+import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
