@@ -363,11 +363,13 @@ onBeforeUnmount(() => {
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="6"></circle>
-          <path d="m20 20-4.2-4.2"></path>
-        </svg>
-        <span class="nav-mobile-search-label">Kerko...</span>
+        <span class="nav-mobile-search-content">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6"></circle>
+            <path d="m20 20-4.2-4.2"></path>
+          </svg>
+          <span class="nav-mobile-search-label">Kerko ketu...</span>
+        </span>
       </button>
 
       <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
@@ -428,7 +430,7 @@ onBeforeUnmount(() => {
           class="nav-search-input"
           type="search"
           name="q"
-          placeholder="Shkruaj ketu"
+          placeholder="Kerko ketu..."
           autocomplete="off"
         >
         <button class="nav-search-submit" type="submit">Kerko</button>

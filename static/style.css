@@ -985,6 +985,13 @@ body[data-page="account"] .nav-user-trigger {
   display: none;
 }
 
+.nav-mobile-search-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
 .nav-icon-button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.28);
@@ -5735,9 +5742,20 @@ code {
     box-shadow: none;
   }
 
+  .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-search-content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin: 0 auto;
+    min-width: max-content;
+  }
+
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-shortcut.search-button .nav-icon {
-    width: 12px;
-    height: 12px;
+    display: block;
+    width: 13px;
+    height: 13px;
+    flex: 0 0 13px;
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-search-label {
@@ -5746,11 +5764,12 @@ code {
     justify-content: center;
     flex: 0 0 auto;
     color: #6f5a4f;
-    font-size: 0.76rem;
+    font-size: 0.78rem;
     font-weight: 700;
     line-height: 1;
     text-align: center;
     transform: none;
+    white-space: nowrap;
   }
 
   .nav-links,
