@@ -524,10 +524,22 @@ def initialize_database() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as connection:
+        acquire_database_initialization_lock(connection)
         schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
         connection.executescript(schema_path.read_text(encoding="utf-8"))
         migrate_database(connection)
         ensure_bootstrap_admin(connection)
+
+
+def acquire_database_initialization_lock(connection: DatabaseConnection) -> None:
+    if not is_postgres_connection(connection):
+        return
+
+    # Serialize startup schema/migration work across concurrent Vercel cold starts.
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(?, ?)",
+        (27032026, 1),
+    )
 
 
 def should_store_uploads_in_database() -> bool:

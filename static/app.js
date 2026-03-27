@@ -118,6 +118,8 @@ document.addEventListener("DOMContentLoaded", () => {
 const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address";
 const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
+const GET_REQUEST_TIMEOUT_MS = 15000;
+const MUTATION_REQUEST_TIMEOUT_MS = 30000;
 const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 const LOGIN_GREETING_KEY = "trego_login_greeting";
 const CART_UPDATED_EVENT = "trego:cart-updated";
@@ -6797,6 +6799,8 @@ function initializeForgotPasswordPage() {
 async function requestJson(url, options = {}) {
   const config = { ...options };
   config.headers = { ...(options.headers || {}) };
+  const method = String(config.method || "GET").trim().toUpperCase();
+  const timeoutMs = method === "GET" ? GET_REQUEST_TIMEOUT_MS : MUTATION_REQUEST_TIMEOUT_MS;
 
   if (
     config.body &&
@@ -6806,7 +6810,39 @@ async function requestJson(url, options = {}) {
     config.headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, config);
+  const abortController = typeof AbortController === "function" ? new AbortController() : null;
+  const externalSignal = config.signal;
+  let timeoutId = 0;
+
+  if (abortController) {
+    config.signal = abortController.signal;
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        abortController.abort(externalSignal.reason);
+      } else {
+        externalSignal.addEventListener(
+          "abort",
+          () => abortController.abort(externalSignal.reason),
+          { once: true },
+        );
+      }
+    }
+
+    timeoutId = window.setTimeout(() => {
+      abortController.abort(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  }
+
+  let response;
+
+  try {
+    response = await fetch(url, config);
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   let data = {};
 
   try {

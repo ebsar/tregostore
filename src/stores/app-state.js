@@ -61,7 +61,7 @@ async function enrichUserSessionData(user) {
   }
 
   try {
-    const { response, data } = await requestJson("/api/business/profile");
+    const { response, data } = await requestJson("/api/business-profile");
     if (!response.ok || !data?.ok || !data.profile) {
       return user;
     }

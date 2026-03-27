@@ -21,7 +21,7 @@ const searchQuery = ref("");
 const searchInputElement = ref(null);
 let mobileNavMatchMedia = null;
 let mobileNavScrollTrigger = null;
-let mobileNavTween = null;
+const resolveMobileNavEase = gsap.parseEase("power2.out");
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -132,12 +132,14 @@ function syncMobileNavFromScroll(trigger) {
   if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
     isMobileSearchOnly.value = false;
     applyMobileNavShellProgress(0);
-    mobileNavTween?.progress(0);
     return;
   }
 
-  const rawProgress = trigger.progress;
+  const rawProgress = Math.max(0, Math.min(trigger.progress, 1));
+  const shellProgress = rawProgress <= 0.01 ? 0 : resolveMobileNavEase(rawProgress);
   const currentScrollY = trigger.scroll();
+
+  applyMobileNavShellProgress(shellProgress);
 
   if (!isMobileSearchOnly.value && rawProgress > 0.985 && trigger.direction > 0 && currentScrollY > 190) {
     isMobileSearchOnly.value = true;
@@ -161,20 +163,13 @@ function setupMobileNavScrollTrigger() {
     gsap.set(navElement.value, {
       force3D: true,
     });
-    mobileNavTween = gsap.to(navElement.value, {
-      "--mobile-nav-progress": 1,
-      duration: 1,
-      ease: "power1.out",
-      paused: true,
-      overwrite: "auto",
-    });
 
     mobileNavScrollTrigger = ScrollTrigger.create({
       start: 0,
       end: 180,
-      scrub: 0.9,
+      scrub: 0.55,
       fastScrollEnd: false,
-      animation: mobileNavTween,
+      invalidateOnRefresh: true,
       onUpdate(self) {
         syncMobileNavFromScroll(self);
       },
@@ -193,8 +188,6 @@ function setupMobileNavScrollTrigger() {
 
     return () => {
       isMobileSearchOnly.value = false;
-      mobileNavTween?.kill();
-      mobileNavTween = null;
       mobileNavScrollTrigger = null;
       applyMobileNavShellProgress(0);
     };
@@ -209,6 +202,11 @@ function closeExpandedPanels() {
 
 function toggleMobileMenu() {
   mobileMenuOpen.value = !mobileMenuOpen.value;
+  if (mobileMenuOpen.value) {
+    closeExpandedPanels();
+    return;
+  }
+
   if (!mobileMenuOpen.value) {
     closeExpandedPanels();
   }
@@ -304,12 +302,10 @@ watch([mobileMenuOpen, searchMenuOpen], ([menuOpen, searchOpen]) => {
   if (menuOpen || searchOpen) {
     isMobileSearchOnly.value = false;
     applyMobileNavShellProgress(0);
-    mobileNavTween?.progress(0);
     return;
   }
 
-  if (mobileNavTween && mobileNavScrollTrigger) {
-    mobileNavTween.progress(mobileNavScrollTrigger.progress);
+  if (mobileNavScrollTrigger) {
     syncMobileNavFromScroll(mobileNavScrollTrigger);
   }
 });
@@ -329,7 +325,6 @@ onBeforeUnmount(() => {
     mobileNavMatchMedia.revert();
     mobileNavMatchMedia = null;
   }
-  mobileNavTween = null;
   window.removeEventListener("resize", updateViewportState);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
