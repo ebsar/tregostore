@@ -136,7 +136,6 @@ CREATE INDEX IF NOT EXISTS idx_products_public_category_id ON products(is_public
 CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public, created_by_user_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title ON products(title);
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
-CREATE INDEX IF NOT EXISTS idx_products_public_image_fingerprint ON products(is_public, image_fingerprint);
 
 CREATE TABLE IF NOT EXISTS wishlist_items (
     user_id INTEGER NOT NULL,
