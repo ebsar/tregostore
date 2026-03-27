@@ -355,53 +355,70 @@ onBeforeUnmount(() => {
       <span class="sr-only">TREGO</span>
     </RouterLink>
 
-    <div class="nav-mobile-tray">
+    <div class="nav-mobile-tray" :class="{ 'is-search-pill': isMobileSearchOnly && !mobileMenuOpen }">
       <button
-        class="nav-icon-button search-button nav-mobile-shortcut"
+        v-if="isMobileSearchOnly && !mobileMenuOpen"
+        class="nav-icon-button search-button nav-mobile-search-pill"
         type="button"
         aria-label="Kerko"
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
-        <span class="nav-mobile-search-content">
+        <span class="nav-mobile-search-pill-content">
+          <svg class="nav-icon nav-mobile-search-pill-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6"></circle>
+            <path d="m20 20-4.2-4.2"></path>
+          </svg>
+          <span class="nav-mobile-search-pill-label">Kerko ketu...</span>
+          <span class="nav-mobile-search-pill-spacer" aria-hidden="true"></span>
+        </span>
+      </button>
+
+      <template v-else>
+        <button
+          class="nav-icon-button search-button nav-mobile-shortcut"
+          type="button"
+          aria-label="Kerko"
+          :aria-expanded="searchMenuOpen ? 'true' : 'false'"
+          @click="toggleSearchPanel"
+        >
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="6"></circle>
             <path d="m20 20-4.2-4.2"></path>
           </svg>
-          <span class="nav-mobile-search-label">Kerko ketu...</span>
-        </span>
-      </button>
+        </button>
 
-      <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-        </svg>
-      </RouterLink>
+        <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </RouterLink>
 
-      <RouterLink class="nav-icon-button cart-button nav-mobile-shortcut" to="/cart" aria-label="My Cart">
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
-          <circle cx="10" cy="19" r="1.4"></circle>
-          <circle cx="18" cy="19" r="1.4"></circle>
-        </svg>
-        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-      </RouterLink>
+        <RouterLink class="nav-icon-button cart-button nav-mobile-shortcut" to="/cart" aria-label="My Cart">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+          <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+        </RouterLink>
 
-      <button
-        class="nav-mobile-toggle"
-        type="button"
-        :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
-        aria-controls="site-nav-mobile-panel"
-        :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
-        @click="toggleMobileMenu"
-      >
-        <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 7h16M4 12h16M4 17h16"></path>
-        </svg>
-        <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 6l12 12M18 6 6 18"></path>
-        </svg>
-      </button>
+        <button
+          class="nav-mobile-toggle"
+          type="button"
+          :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
+          aria-controls="site-nav-mobile-panel"
+          :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
+          @click="toggleMobileMenu"
+        >
+          <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16"></path>
+          </svg>
+          <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18"></path>
+          </svg>
+        </button>
+      </template>
     </div>
 
     <Transition name="nav-floating-panel">
