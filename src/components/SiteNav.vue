@@ -121,8 +121,6 @@ function applyMobileNavShellProgress(progressValue) {
 
   gsap.set(navElement.value, {
     "--mobile-nav-progress": normalizedProgress.toFixed(3),
-    "--mobile-nav-scale": String(1 - (normalizedProgress * 0.018)),
-    "--mobile-nav-offset-y": `${(-1.5 * normalizedProgress).toFixed(2)}px`,
   });
 }
 
@@ -165,8 +163,6 @@ function setupMobileNavScrollTrigger() {
     });
     mobileNavTween = gsap.to(navElement.value, {
       "--mobile-nav-progress": 1,
-      "--mobile-nav-scale": 0.982,
-      "--mobile-nav-offset-y": "-1.5px",
       duration: 1,
       ease: "power1.out",
       paused: true,

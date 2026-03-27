@@ -5566,8 +5566,6 @@ code {
 
   .site-nav {
     --mobile-nav-progress: 0;
-    --mobile-nav-scale: 1;
-    --mobile-nav-offset-y: 0px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
@@ -5586,6 +5584,11 @@ code {
     will-change: transform, min-height, padding, border-radius, box-shadow;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+  }
+
+  body[data-page] .site-nav {
+    top: calc(var(--safe-top) + 10px);
+    transform: translate3d(-50%, 0, 0);
   }
 
   .brand {
@@ -5644,7 +5647,7 @@ code {
   .site-nav.mobile-search-only:not(.mobile-menu-open) {
     left: 50% !important;
     right: auto !important;
-    top: calc(var(--safe-top) + 10px) !important;
+    top: calc(var(--safe-top) + 8px) !important;
     transform: translateX(-50%) !important;
     position: fixed;
     display: flex;
