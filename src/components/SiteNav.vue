@@ -1,8 +1,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
+
+gsap.registerPlugin(ScrollTrigger);
 
 const route = useRoute();
 const router = useRouter();
@@ -13,14 +17,11 @@ const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
-const mobileNavProgress = ref(0);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
-let lastScrollY = 0;
-let pendingScrollY = 0;
-let targetMobileNavProgress = 0;
-let mobileNavAnimationFrame = 0;
-let mobileNavScrollFrame = 0;
+let mobileNavMatchMedia = null;
+let mobileNavScrollTrigger = null;
+let mobileNavTween = null;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -102,94 +103,106 @@ const userPanelLabel = computed(() => {
   return "Llogaria ime";
 });
 
-const navStyle = computed(() => ({
-  "--mobile-nav-progress": mobileNavProgress.value.toFixed(3),
-}));
-
 function updateViewportState() {
   isMobileViewport.value = window.matchMedia("(max-width: 920px)").matches;
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
     isMobileSearchOnly.value = false;
-    setMobileNavProgress(0, { immediate: true });
+    applyMobileNavShellProgress(0);
   }
 }
 
-function animateMobileNavProgress() {
-  mobileNavAnimationFrame = 0;
-  const delta = targetMobileNavProgress - mobileNavProgress.value;
-
-  if (Math.abs(delta) < 0.003) {
-    mobileNavProgress.value = targetMobileNavProgress;
+function applyMobileNavShellProgress(progressValue) {
+  if (!navElement.value) {
     return;
   }
 
-  mobileNavProgress.value += delta * 0.14;
-  mobileNavAnimationFrame = window.requestAnimationFrame(animateMobileNavProgress);
+  const normalizedProgress = Math.max(0, Math.min(progressValue, 1));
+
+  gsap.set(navElement.value, {
+    "--mobile-nav-progress": normalizedProgress.toFixed(3),
+    "--mobile-nav-scale": String(1 - (normalizedProgress * 0.018)),
+    "--mobile-nav-offset-y": `${(-1.5 * normalizedProgress).toFixed(2)}px`,
+  });
 }
 
-function setMobileNavProgress(nextValue, options = {}) {
-  const immediate = options.immediate === true;
-  targetMobileNavProgress = Math.max(0, Math.min(nextValue, 1));
-
-  if (immediate) {
-    if (mobileNavAnimationFrame) {
-      window.cancelAnimationFrame(mobileNavAnimationFrame);
-      mobileNavAnimationFrame = 0;
-    }
-    mobileNavProgress.value = targetMobileNavProgress;
+function syncMobileNavFromScroll(trigger) {
+  if (!trigger) {
     return;
   }
 
-  if (!mobileNavAnimationFrame) {
-    mobileNavAnimationFrame = window.requestAnimationFrame(animateMobileNavProgress);
-  }
-}
-
-function applyMobileScrollState(currentScrollY) {
   if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
     isMobileSearchOnly.value = false;
-    setMobileNavProgress(0, { immediate: mobileMenuOpen.value || searchMenuOpen.value });
-    lastScrollY = currentScrollY;
+    applyMobileNavShellProgress(0);
+    mobileNavTween?.progress(0);
     return;
   }
 
-  const delta = currentScrollY - lastScrollY;
-  const compactDistance = 210;
-  const compactStart = 6;
-  const rawProgress = Math.max(0, Math.min((currentScrollY - compactStart) / compactDistance, 1));
-  const easedProgress = rawProgress * rawProgress * (3 - (2 * rawProgress));
-  setMobileNavProgress(easedProgress);
+  const rawProgress = trigger.progress;
+  const currentScrollY = trigger.scroll();
 
-  if (currentScrollY <= 24) {
-    isMobileSearchOnly.value = false;
-    setMobileNavProgress(0, { immediate: true });
-    lastScrollY = currentScrollY;
-    return;
-  }
-
-  if (!isMobileSearchOnly.value && rawProgress > 0.975 && currentScrollY > 198) {
+  if (!isMobileSearchOnly.value && rawProgress > 0.985 && trigger.direction > 0 && currentScrollY > 190) {
     isMobileSearchOnly.value = true;
-  } else if (isMobileSearchOnly.value && (rawProgress < 0.62 || currentScrollY < 128 || delta < -10)) {
+  } else if (isMobileSearchOnly.value && (rawProgress < 0.72 || trigger.direction < 0 || currentScrollY < 136)) {
     isMobileSearchOnly.value = false;
   }
-
-  lastScrollY = currentScrollY;
 }
 
-function flushMobileScrollFrame() {
-  mobileNavScrollFrame = 0;
-  applyMobileScrollState(pendingScrollY);
-}
-
-function handleWindowScroll() {
-  pendingScrollY = window.scrollY || window.pageYOffset || 0;
-
-  if (mobileNavScrollFrame) {
+function setupMobileNavScrollTrigger() {
+  if (!navElement.value || typeof window === "undefined") {
     return;
   }
 
-  mobileNavScrollFrame = window.requestAnimationFrame(flushMobileScrollFrame);
+  if (mobileNavMatchMedia) {
+    mobileNavMatchMedia.revert();
+  }
+
+  mobileNavMatchMedia = gsap.matchMedia();
+  mobileNavMatchMedia.add("(max-width: 920px)", () => {
+    applyMobileNavShellProgress(0);
+    gsap.set(navElement.value, {
+      force3D: true,
+    });
+    mobileNavTween = gsap.to(navElement.value, {
+      "--mobile-nav-progress": 1,
+      "--mobile-nav-scale": 0.982,
+      "--mobile-nav-offset-y": "-1.5px",
+      duration: 1,
+      ease: "power1.out",
+      paused: true,
+      overwrite: "auto",
+    });
+
+    mobileNavScrollTrigger = ScrollTrigger.create({
+      start: 0,
+      end: 180,
+      scrub: 0.9,
+      fastScrollEnd: false,
+      animation: mobileNavTween,
+      onUpdate(self) {
+        syncMobileNavFromScroll(self);
+      },
+      onRefresh(self) {
+        syncMobileNavFromScroll(self);
+      },
+      onLeaveBack() {
+        isMobileSearchOnly.value = false;
+        applyMobileNavShellProgress(0);
+      },
+    });
+
+    window.requestAnimationFrame(() => {
+      mobileNavScrollTrigger?.refresh();
+    });
+
+    return () => {
+      isMobileSearchOnly.value = false;
+      mobileNavTween?.kill();
+      mobileNavTween = null;
+      mobileNavScrollTrigger = null;
+      applyMobileNavShellProgress(0);
+    };
+  });
 }
 
 function closeExpandedPanels() {
@@ -218,7 +231,7 @@ async function toggleSearchPanel() {
 
   if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
     isMobileSearchOnly.value = false;
-    setMobileNavProgress(0, { immediate: true });
+    applyMobileNavShellProgress(0);
     await nextTick();
   }
 
@@ -282,32 +295,46 @@ watch(
   () => {
     mobileMenuOpen.value = false;
     isMobileSearchOnly.value = false;
-    setMobileNavProgress(0, { immediate: true });
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
+    nextTick(() => {
+      applyMobileNavShellProgress(0);
+      ScrollTrigger.refresh();
+    });
   },
 );
 
+watch([mobileMenuOpen, searchMenuOpen], ([menuOpen, searchOpen]) => {
+  if (menuOpen || searchOpen) {
+    isMobileSearchOnly.value = false;
+    applyMobileNavShellProgress(0);
+    mobileNavTween?.progress(0);
+    return;
+  }
+
+  if (mobileNavTween && mobileNavScrollTrigger) {
+    mobileNavTween.progress(mobileNavScrollTrigger.progress);
+    syncMobileNavFromScroll(mobileNavScrollTrigger);
+  }
+});
+
 onMounted(async () => {
   updateViewportState();
-  lastScrollY = window.scrollY || window.pageYOffset || 0;
-  pendingScrollY = lastScrollY;
   window.addEventListener("resize", updateViewportState);
-  window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
+  await nextTick();
+  setupMobileNavScrollTrigger();
 });
 
 onBeforeUnmount(() => {
-  if (mobileNavAnimationFrame) {
-    window.cancelAnimationFrame(mobileNavAnimationFrame);
+  if (mobileNavMatchMedia) {
+    mobileNavMatchMedia.revert();
+    mobileNavMatchMedia = null;
   }
-  if (mobileNavScrollFrame) {
-    window.cancelAnimationFrame(mobileNavScrollFrame);
-  }
+  mobileNavTween = null;
   window.removeEventListener("resize", updateViewportState);
-  window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
 });
@@ -318,11 +345,9 @@ onBeforeUnmount(() => {
     ref="navElement"
     class="site-nav"
     :class="{
-      'mobile-scroll-compact': mobileNavProgress > 0.01,
       'mobile-menu-open': mobileMenuOpen,
       'mobile-search-only': isMobileSearchOnly,
     }"
-    :style="navStyle"
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
