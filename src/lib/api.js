@@ -1,7 +1,5 @@
 const GET_REQUEST_CACHE = new Map();
 const INFLIGHT_GET_REQUESTS = new Map();
-const DEFAULT_GET_TIMEOUT_MS = 15000;
-const DEFAULT_MUTATION_TIMEOUT_MS = 30000;
 
 function cloneJsonPayload(value) {
   return JSON.parse(JSON.stringify(value ?? {}));
@@ -29,13 +27,6 @@ export async function requestJson(url, options = {}, runtime = {}) {
   config.headers = { ...(options.headers || {}) };
   const method = normalizeMethod(config);
   const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
-  const timeoutMs = Math.max(
-    0,
-    Number(
-      runtime.timeoutMs
-      ?? (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : DEFAULT_MUTATION_TIMEOUT_MS),
-    ),
-  );
   const cacheKey = runtime.cacheKey || `${method}:${url}`;
   const canUseCache = method === "GET" && !config.body && cacheTtlMs > 0;
 
@@ -67,79 +58,13 @@ export async function requestJson(url, options = {}, runtime = {}) {
   }
 
   const pendingRequest = (async () => {
-    const abortController = typeof AbortController === "function" ? new AbortController() : null;
-    const requestSignal = abortController?.signal;
-    const externalSignal = config.signal;
-    let timeoutId = 0;
-
-    if (abortController) {
-      config.signal = requestSignal;
-      if (externalSignal) {
-        if (externalSignal.aborted) {
-          abortController.abort(externalSignal.reason);
-        } else {
-          externalSignal.addEventListener(
-            "abort",
-            () => abortController.abort(externalSignal.reason),
-            { once: true },
-          );
-        }
-      }
-    }
-
-    if (abortController && timeoutMs > 0) {
-      timeoutId = globalThis.setTimeout(() => {
-        abortController.abort(new Error(`Request timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    }
-
-    let response;
-
-    try {
-      response = await fetch(url, config);
-    } finally {
-      if (timeoutId) {
-        globalThis.clearTimeout(timeoutId);
-      }
-    }
-
+    const response = await fetch(url, config);
     let data = {};
-    const responseContentType = String(response.headers?.get("content-type") || "").toLowerCase();
 
     try {
-      const rawBody = await response.text();
-      const trimmedBody = rawBody.trim();
-
-      if (trimmedBody) {
-        const looksLikeJson = (
-          responseContentType.includes("application/json")
-          || trimmedBody.startsWith("{")
-          || trimmedBody.startsWith("[")
-        );
-
-        if (looksLikeJson) {
-          try {
-            data = JSON.parse(trimmedBody);
-          } catch {
-            data = {
-              ok: false,
-              message: "Pergjigjja e serverit nuk ishte JSON i vlefshem.",
-            };
-          }
-        } else {
-          data = response.ok
-            ? {}
-            : {
-                ok: false,
-                message: "Serveri ktheu nje pergjigjje jo-JSON.",
-              };
-        }
-      }
-    } catch {
-      data = {
-        ok: false,
-        message: "Pergjigjja e serverit nuk mund te lexohej.",
-      };
+      data = await response.json();
+    } catch (error) {
+      console.error(error);
     }
 
     const result = {

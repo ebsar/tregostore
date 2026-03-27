@@ -12,8 +12,6 @@ import re
 import secrets
 import sqlite3
 import smtplib
-import threading
-import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,12 +42,6 @@ SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
 PRODUCTS_PAGE_MAX_LIMIT = 24
-APP_SCHEMA_VERSION = "2026-03-27-1"
-DATABASE_INITIALIZATION_LOCK_KEY = (27032026, 1)
-DATABASE_INITIALIZATION_POLL_SECONDS = 0.25
-DATABASE_INITIALIZATION_TIMEOUT_SECONDS = 12.0
-_DATABASE_INITIALIZED = False
-_DATABASE_INITIALIZATION_MUTEX = threading.Lock()
 PAGE_ROUTES = {
     "/": "/index.html",
     "/about": "/about.html",
@@ -128,11 +120,6 @@ SHOP_SECTION_PRODUCT_TYPES = {
 }
 LEGACY_PRODUCT_TYPES = {"clothing", "cream", "food", "tools", "other"}
 PRODUCT_CATEGORIES = LEGACY_PRODUCT_CATEGORIES | set(SHOP_SECTION_PRODUCT_TYPES.keys())
-PRODUCT_CATEGORY_GROUPS = {
-    category.split("-", 1)[0]
-    for category in SHOP_SECTION_PRODUCT_TYPES
-    if "-" in category
-}
 PRODUCT_TYPES = LEGACY_PRODUCT_TYPES | {
     product_type
     for product_types in SHOP_SECTION_PRODUCT_TYPES.values()
@@ -153,47 +140,6 @@ PRODUCT_COLORS = {
     "verdhe",
     "portokalli",
     "shume-ngjyra",
-}
-CATEGORY_GROUP_LABELS = {
-    "clothing": "Veshje",
-    "cosmetics": "Kozmetika",
-}
-CATEGORY_LABELS = {
-    "clothing-men": "Veshje per meshkuj",
-    "clothing-women": "Veshje per femra",
-    "clothing-kids": "Veshje per femije",
-    "cosmetics-men": "Kozmetik per meshkuj",
-    "cosmetics-women": "Kozmetik per femra",
-    "cosmetics-kids": "Kozmetik per femije",
-    "pets": "Kafshet shtepiake",
-    "agriculture": "Bujqesi",
-    "medicine": "Barnat",
-    "home": "Shtepi",
-    "sport": "Sport",
-    "technology": "Teknologji",
-}
-CATEGORY_SUFFIX_LABELS = {
-    "men": "Meshkuj",
-    "women": "Femra",
-    "kids": "Femije",
-}
-NAVIGATION_SECTION_ORDER = {
-    "clothing": 10,
-    "cosmetics": 20,
-    "home": 30,
-    "sport": 40,
-    "technology": 50,
-    "pets": 60,
-    "agriculture": 70,
-    "medicine": 80,
-}
-NAVIGATION_CATEGORY_ORDER = {
-    "clothing-men": 10,
-    "clothing-women": 20,
-    "clothing-kids": 30,
-    "cosmetics-men": 10,
-    "cosmetics-women": 20,
-    "cosmetics-kids": 30,
 }
 USER_ROLES = {"client", "admin", "business"}
 GENDER_OPTIONS = {"mashkull", "femer"}
@@ -232,9 +178,6 @@ PUBLIC_BUSINESSES_CACHE_HEADERS = {
 }
 PUBLIC_STATS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
-}
-PUBLIC_NAVIGATION_CACHE_HEADERS = {
-    "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=1800"
 }
 ADDRESS_SELECT_COLUMNS = """
     id,
@@ -325,112 +268,6 @@ ORDER_ITEM_SELECT_COLUMNS = """
     quantity,
     created_at
 """
-
-
-def humanize_slug(value: str) -> str:
-    normalized_value = str(value or "").strip().replace("_", "-")
-    if not normalized_value:
-        return ""
-
-    parts = [part for part in normalized_value.split("-") if part]
-    if not parts:
-        return normalized_value
-
-    return " ".join(part.capitalize() for part in parts)
-
-
-def get_category_label(category: str) -> str:
-    normalized_category = str(category or "").strip().lower()
-    return CATEGORY_LABELS.get(normalized_category, humanize_slug(normalized_category))
-
-
-def get_category_group_label(group: str) -> str:
-    normalized_group = str(group or "").strip().lower()
-    return CATEGORY_GROUP_LABELS.get(normalized_group, humanize_slug(normalized_group))
-
-
-def get_navigation_child_label(category: str) -> str:
-    normalized_category = str(category or "").strip().lower()
-    if "-" in normalized_category:
-        suffix = normalized_category.split("-", 1)[1]
-        if suffix in CATEGORY_SUFFIX_LABELS:
-            return CATEGORY_SUFFIX_LABELS[suffix]
-
-    return get_category_label(normalized_category)
-
-
-def navigation_section_sort_key(section_key: str) -> tuple[int, str]:
-    normalized_key = str(section_key or "").strip().lower()
-    return (NAVIGATION_SECTION_ORDER.get(normalized_key, 999), normalized_key)
-
-
-def navigation_category_sort_key(category: str) -> tuple[int, str]:
-    normalized_category = str(category or "").strip().lower()
-    return (NAVIGATION_CATEGORY_ORDER.get(normalized_category, 999), normalized_category)
-
-
-def build_primary_navigation() -> list[dict[str, object]]:
-    grouped_categories: defaultdict[str, list[str]] = defaultdict(list)
-    standalone_categories: list[str] = []
-
-    for raw_category in PRODUCT_CATEGORIES:
-        category = str(raw_category or "").strip().lower()
-        if not category:
-            continue
-
-        if "-" in category:
-            group_key, _ = category.split("-", 1)
-            grouped_categories[group_key].append(category)
-            continue
-
-        standalone_categories.append(category)
-
-    navigation_items: list[dict[str, object]] = []
-
-    for group_key, categories in grouped_categories.items():
-        sorted_categories = sorted(set(categories), key=navigation_category_sort_key)
-        if not sorted_categories:
-            continue
-
-        if len(sorted_categories) == 1:
-            single_category = sorted_categories[0]
-            navigation_items.append(
-                {
-                    "key": single_category,
-                    "label": get_category_label(single_category),
-                    "href": f"/kerko?category={quote(single_category)}",
-                }
-            )
-            continue
-
-        navigation_items.append(
-            {
-                "key": group_key,
-                "label": get_category_group_label(group_key),
-                "href": f"/kerko?categoryGroup={quote(group_key)}",
-                "items": [
-                    {
-                        "label": get_navigation_child_label(category),
-                        "href": f"/kerko?category={quote(category)}",
-                    }
-                    for category in sorted_categories
-                ],
-            }
-        )
-
-    for category in sorted(set(standalone_categories), key=navigation_section_sort_key):
-        navigation_items.append(
-            {
-                "key": category,
-                "label": get_category_label(category),
-                "href": f"/kerko?category={quote(category)}",
-            }
-        )
-
-    return sorted(
-        navigation_items,
-        key=lambda item: navigation_section_sort_key(str(item.get("key", ""))),
-    )
 
 def load_local_env_file() -> None:
     env_path = BASE_DIR / ".env"
@@ -683,102 +520,14 @@ def execute_insert_and_get_id(connection: DatabaseConnection, query: str, params
 
 
 def initialize_database() -> None:
-    global _DATABASE_INITIALIZED
-
-    if _DATABASE_INITIALIZED:
-        return
-
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    with _DATABASE_INITIALIZATION_MUTEX:
-        if _DATABASE_INITIALIZED:
-            return
-
-        with get_db_connection() as connection:
-            ensure_app_metadata_table(connection)
-            connection.commit()
-
-            if is_database_schema_current(connection):
-                _DATABASE_INITIALIZED = True
-                return
-
-            wait_deadline = time.monotonic() + DATABASE_INITIALIZATION_TIMEOUT_SECONDS
-            while not acquire_database_initialization_lock(connection):
-                if is_database_schema_current(connection):
-                    _DATABASE_INITIALIZED = True
-                    return
-
-                if time.monotonic() >= wait_deadline:
-                    raise RuntimeError(
-                        "Database initialization timed out while waiting for another instance."
-                    )
-
-                time.sleep(DATABASE_INITIALIZATION_POLL_SECONDS)
-
-            if is_database_schema_current(connection):
-                _DATABASE_INITIALIZED = True
-                return
-
-            schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
-            connection.executescript(schema_path.read_text(encoding="utf-8"))
-            migrate_database(connection)
-            ensure_bootstrap_admin(connection)
-            mark_schema_version_applied(connection)
-            connection.commit()
-            _DATABASE_INITIALIZED = True
-
-
-def ensure_app_metadata_table(connection: DatabaseConnection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS app_metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL DEFAULT ''
-        )
-        """
-    )
-
-
-def get_applied_schema_version(connection: DatabaseConnection) -> str:
-    row = connection.execute(
-        """
-        SELECT value
-        FROM app_metadata
-        WHERE key = 'schema_version'
-        LIMIT 1
-        """
-    ).fetchone()
-    if not row:
-        return ""
-
-    return str(row["value"] or "").strip()
-
-
-def is_database_schema_current(connection: DatabaseConnection) -> bool:
-    return get_applied_schema_version(connection) == APP_SCHEMA_VERSION
-
-
-def mark_schema_version_applied(connection: DatabaseConnection) -> None:
-    connection.execute(
-        """
-        INSERT INTO app_metadata (key, value)
-        VALUES ('schema_version', ?)
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-        """,
-        (APP_SCHEMA_VERSION,),
-    )
-
-
-def acquire_database_initialization_lock(connection: DatabaseConnection) -> bool:
-    if not is_postgres_connection(connection):
-        return True
-
-    row = connection.execute(
-        "SELECT pg_try_advisory_xact_lock(?, ?) AS acquired",
-        DATABASE_INITIALIZATION_LOCK_KEY,
-    ).fetchone()
-    return bool(row and row["acquired"])
+    with get_db_connection() as connection:
+        schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
+        connection.executescript(schema_path.read_text(encoding="utf-8"))
+        migrate_database(connection)
+        ensure_bootstrap_admin(connection)
 
 
 def should_store_uploads_in_database() -> bool:
@@ -2822,6 +2571,8 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
             """,
             (business_id,),
         ).fetchone()
+
+
 def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         return connection.execute(
@@ -3582,9 +3333,6 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/stats":
             self.handle_stats()
             return
-        if path == "/api/navigation":
-            self.handle_navigation()
-            return
         if path == "/api/me":
             self.handle_me()
             return
@@ -3809,13 +3557,6 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {"ok": True, "data": fetch_stats()},
             headers=PUBLIC_STATS_CACHE_HEADERS,
-        )
-
-    def handle_navigation(self) -> None:
-        self.send_json(
-            200,
-            {"ok": True, "navigation": build_primary_navigation()},
-            headers=PUBLIC_NAVIGATION_CACHE_HEADERS,
         )
 
     def handle_me(self) -> None:
@@ -4180,7 +3921,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
+        if category_group and category_group not in {"clothing", "cosmetics"}:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
@@ -4206,10 +3947,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "products": products,
-                "limit": limit if limit is not None else len(products),
+                "limit": limit,
                 "offset": offset,
                 "total": total_count,
-                "hasMore": bool(limit is not None and offset + len(products) < total_count),
+                "hasMore": offset + len(products) < total_count,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -4231,7 +3972,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
+        if category_group and category_group not in {"clothing", "cosmetics"}:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
@@ -4245,7 +3986,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "products": [],
                     "query": "",
-                    "limit": limit if limit is not None else 0,
+                    "limit": limit,
                     "offset": offset,
                     "total": 0,
                     "hasMore": False,
@@ -4274,10 +4015,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "products": products,
                 "query": search_text,
-                "limit": limit if limit is not None else len(products),
+                "limit": limit,
                 "offset": offset,
                 "total": total_count,
-                "hasMore": bool(limit is not None and offset + len(products) < total_count),
+                "hasMore": offset + len(products) < total_count,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -4351,7 +4092,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if category_group and category_group not in PRODUCT_CATEGORY_GROUPS:
+        if category_group and category_group not in {"clothing", "cosmetics"}:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
@@ -4359,7 +4100,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            limit = int(raw_limit) if raw_limit else None
+            limit = int(raw_limit) if raw_limit else PRODUCTS_PAGE_DEFAULT_LIMIT
         except ValueError:
             limit = PRODUCTS_PAGE_DEFAULT_LIMIT
 
@@ -4368,8 +4109,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         except ValueError:
             offset = 0
 
-        if limit is not None:
-            limit = max(1, min(PRODUCTS_PAGE_MAX_LIMIT, limit))
+        limit = max(1, min(PRODUCTS_PAGE_MAX_LIMIT, limit))
         offset = max(0, offset)
 
         query_fingerprint = compute_image_fingerprint(image_bytes)
@@ -4393,11 +4133,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         matched_products = score_products_by_visual_similarity(query_fingerprint, candidates)
 
         total_count = len(matched_products)
-        visible_products = (
-            matched_products[offset : offset + limit]
-            if limit is not None
-            else matched_products[offset:]
-        )
+        visible_products = matched_products[offset : offset + limit]
 
         self.send_json(
             200,
@@ -4405,10 +4141,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "mode": "visual",
                 "products": [serialize_product(row) for row in visible_products],
-                "limit": limit if limit is not None else len(visible_products),
+                "limit": limit,
                 "offset": offset,
                 "total": total_count,
-                "hasMore": bool(limit is not None and offset + len(visible_products) < total_count),
+                "hasMore": offset + len(visible_products) < total_count,
                 "message": (
                     "U gjeten produkte te ngjashme sipas fotos."
                     if visible_products

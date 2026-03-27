@@ -17,43 +17,15 @@ export const appState = reactive({
 
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
-let routeLoaderFallbackTimeoutId = 0;
-let sessionLoadPromise = null;
-const ROUTE_LOADER_MAX_DURATION_MS = 5000;
-
-function clearRouteLoaderFallbackTimeout() {
-  if (!routeLoaderFallbackTimeoutId) {
-    return;
-  }
-
-  window.clearTimeout(routeLoaderFallbackTimeoutId);
-  routeLoaderFallbackTimeoutId = 0;
-}
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
   appState.loaderVisible = true;
   appState.loaderStartedAt = Date.now();
-  const currentToken = routeLoaderToken;
-
-  clearRouteLoaderFallbackTimeout();
-  routeLoaderFallbackTimeoutId = window.setTimeout(() => {
-    if (currentToken !== routeLoaderToken) {
-      return;
-    }
-
-    appState.loaderVisible = false;
-    routeLoaderFallbackTimeoutId = 0;
-  }, ROUTE_LOADER_MAX_DURATION_MS);
-
-  return currentToken;
+  return routeLoaderToken;
 }
 
 export function markRouteReady(token = routeLoaderToken) {
-  if (token === routeLoaderToken) {
-    clearRouteLoaderFallbackTimeout();
-  }
-
   if (!appState.loaderVisible) {
     return;
   }
@@ -89,7 +61,7 @@ async function enrichUserSessionData(user) {
   }
 
   try {
-    const { response, data } = await requestJson("/api/business-profile");
+    const { response, data } = await requestJson("/api/business/profile");
     if (!response.ok || !data?.ok || !data.profile) {
       return user;
     }
@@ -115,35 +87,19 @@ export async function ensureSessionLoaded(options = {}) {
     return appState.user;
   }
 
-  if (sessionLoadPromise && !force) {
-    return sessionLoadPromise;
+  const currentUser = await fetchCurrentUserOptional();
+  const user = await enrichUserSessionData(currentUser);
+  appState.user = user;
+  appState.sessionLoaded = true;
+
+  if (!user) {
+    setCartCount(0);
+    return null;
   }
 
-  const nextPromise = (async () => {
-    const currentUser = await fetchCurrentUserOptional();
-    const user = await enrichUserSessionData(currentUser);
-    appState.user = user;
-    appState.sessionLoaded = true;
-
-    if (!user) {
-      setCartCount(0);
-      return null;
-    }
-
-    const cartItems = await fetchProtectedCollection("/api/cart", { timeoutMs: 5000 });
-    setCartItems(cartItems);
-    return user;
-  })();
-
-  sessionLoadPromise = nextPromise;
-
-  try {
-    return await nextPromise;
-  } finally {
-    if (sessionLoadPromise === nextPromise) {
-      sessionLoadPromise = null;
-    }
-  }
+  const cartItems = await fetchProtectedCollection("/api/cart");
+  setCartItems(cartItems);
+  return user;
 }
 
 export async function refreshSession() {

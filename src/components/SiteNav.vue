@@ -1,13 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
-import { requestJson } from "../lib/api";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
-
-gsap.registerPlugin(ScrollTrigger);
 
 const route = useRoute();
 const router = useRouter();
@@ -20,67 +15,7 @@ const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
-const navigationSections = ref(cloneNavigationSections(PRIMARY_NAVIGATION));
-let mobileNavMatchMedia = null;
-let mobileNavScrollTrigger = null;
-const resolveMobileNavEase = gsap.parseEase("power3.out");
-
-function cloneNavigationSections(sections = []) {
-  return Array.isArray(sections)
-    ? sections
-        .map((section) => {
-          const key = String(section?.key || "").trim();
-          const label = String(section?.label || "").trim();
-          const href = String(section?.href || "").trim();
-          if (!key || !label || !href) {
-            return null;
-          }
-
-          const items = Array.isArray(section?.items)
-            ? section.items
-                .map((item) => {
-                  const itemLabel = String(item?.label || "").trim();
-                  const itemHref = String(item?.href || "").trim();
-                  if (!itemLabel || !itemHref) {
-                    return null;
-                  }
-
-                  return {
-                    label: itemLabel,
-                    href: itemHref,
-                  };
-                })
-                .filter(Boolean)
-            : [];
-
-          return {
-            key,
-            label,
-            href,
-            ...(items.length ? { items } : {}),
-          };
-        })
-        .filter(Boolean)
-    : [];
-}
-
-async function loadNavigationSections() {
-  try {
-    const { response, data } = await requestJson("/api/navigation", {}, { cacheTtlMs: 5 * 60 * 1000 });
-    if (!response.ok || !data?.ok || !Array.isArray(data.navigation)) {
-      return;
-    }
-
-    const nextSections = cloneNavigationSections(data.navigation);
-    if (!nextSections.length) {
-      return;
-    }
-
-    navigationSections.value = nextSections;
-  } catch (error) {
-    console.error(error);
-  }
-}
+let lastScrollY = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -167,87 +102,32 @@ function updateViewportState() {
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
     isMobileSearchOnly.value = false;
-    applyMobileNavShellProgress(0);
   }
 }
 
-function applyMobileNavShellProgress(progressValue) {
-  if (!navElement.value) {
-    return;
-  }
-
-  const normalizedProgress = Math.max(0, Math.min(progressValue, 1));
-
-  gsap.set(navElement.value, {
-    "--mobile-nav-progress": normalizedProgress.toFixed(3),
-  });
-}
-
-function syncMobileNavFromScroll(trigger) {
-  if (!trigger) {
-    return;
-  }
-
+function handleWindowScroll() {
   if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
     isMobileSearchOnly.value = false;
-    applyMobileNavShellProgress(0);
+    lastScrollY = window.scrollY || window.pageYOffset || 0;
     return;
   }
 
-  const rawProgress = Math.max(0, Math.min(trigger.progress, 1));
-  const shellProgress = rawProgress <= 0.01 ? 0 : resolveMobileNavEase(rawProgress);
-  const currentScrollY = trigger.scroll();
+  const currentScrollY = window.scrollY || window.pageYOffset || 0;
+  const delta = currentScrollY - lastScrollY;
 
-  applyMobileNavShellProgress(shellProgress);
+  if (currentScrollY <= 24) {
+    isMobileSearchOnly.value = false;
+    lastScrollY = currentScrollY;
+    return;
+  }
 
-  if (!isMobileSearchOnly.value && rawProgress > 0.985 && trigger.direction > 0 && currentScrollY > 190) {
+  if (delta > 10) {
     isMobileSearchOnly.value = true;
-  } else if (isMobileSearchOnly.value && (rawProgress < 0.72 || trigger.direction < 0 || currentScrollY < 136)) {
+  } else if (delta < -8) {
     isMobileSearchOnly.value = false;
   }
-}
 
-function setupMobileNavScrollTrigger() {
-  if (!navElement.value || typeof window === "undefined") {
-    return;
-  }
-
-  if (mobileNavMatchMedia) {
-    mobileNavMatchMedia.revert();
-  }
-
-  mobileNavMatchMedia = gsap.matchMedia();
-  mobileNavMatchMedia.add("(max-width: 920px)", () => {
-    applyMobileNavShellProgress(0);
-
-    mobileNavScrollTrigger = ScrollTrigger.create({
-      start: 0,
-      end: 220,
-      scrub: 0.8,
-      fastScrollEnd: false,
-      invalidateOnRefresh: true,
-      onUpdate(self) {
-        syncMobileNavFromScroll(self);
-      },
-      onRefresh(self) {
-        syncMobileNavFromScroll(self);
-      },
-      onLeaveBack() {
-        isMobileSearchOnly.value = false;
-        applyMobileNavShellProgress(0);
-      },
-    });
-
-    window.requestAnimationFrame(() => {
-      mobileNavScrollTrigger?.refresh();
-    });
-
-    return () => {
-      isMobileSearchOnly.value = false;
-      mobileNavScrollTrigger = null;
-      applyMobileNavShellProgress(0);
-    };
-  });
+  lastScrollY = currentScrollY;
 }
 
 function closeExpandedPanels() {
@@ -258,11 +138,6 @@ function closeExpandedPanels() {
 
 function toggleMobileMenu() {
   mobileMenuOpen.value = !mobileMenuOpen.value;
-  if (mobileMenuOpen.value) {
-    closeExpandedPanels();
-    return;
-  }
-
   if (!mobileMenuOpen.value) {
     closeExpandedPanels();
   }
@@ -274,41 +149,23 @@ function toggleDropdown(key) {
   openDropdownKey.value = openDropdownKey.value === key ? "" : key;
 }
 
-function waitForNextFrame() {
-  return new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve());
-  });
-}
-
-async function openSearchPanel() {
-  if (isMobileViewport.value) {
-    mobileMenuOpen.value = false;
-  }
-
+async function toggleSearchPanel() {
   userMenuOpen.value = false;
   openDropdownKey.value = "";
+  const shouldOpen = !searchMenuOpen.value;
 
-  if (isMobileViewport.value && isMobileSearchOnly.value) {
+  if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
     isMobileSearchOnly.value = false;
-    applyMobileNavShellProgress(0);
     await nextTick();
-    ScrollTrigger.refresh();
-    await waitForNextFrame();
   }
 
-  searchMenuOpen.value = true;
-  await nextTick();
-  searchInputElement.value?.focus();
-  searchInputElement.value?.select?.();
-}
+  searchMenuOpen.value = shouldOpen;
 
-async function toggleSearchPanel() {
-  if (searchMenuOpen.value) {
-    searchMenuOpen.value = false;
-    return;
+  if (shouldOpen) {
+    await nextTick();
+    searchInputElement.value?.focus();
+    searchInputElement.value?.select?.();
   }
-
-  await openSearchPanel();
 }
 
 function handleUserTrigger() {
@@ -364,42 +221,22 @@ watch(
     isMobileSearchOnly.value = false;
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
-    nextTick(() => {
-      applyMobileNavShellProgress(0);
-      ScrollTrigger.refresh();
-    });
   },
 );
 
-watch([mobileMenuOpen, searchMenuOpen], ([menuOpen, searchOpen]) => {
-  if (menuOpen || searchOpen) {
-    isMobileSearchOnly.value = false;
-    applyMobileNavShellProgress(0);
-    return;
-  }
-
-  if (mobileNavScrollTrigger) {
-    syncMobileNavFromScroll(mobileNavScrollTrigger);
-  }
-});
-
 onMounted(async () => {
-  void loadNavigationSections();
   updateViewportState();
+  lastScrollY = window.scrollY || window.pageYOffset || 0;
   window.addEventListener("resize", updateViewportState);
+  window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
-  await nextTick();
-  setupMobileNavScrollTrigger();
 });
 
 onBeforeUnmount(() => {
-  if (mobileNavMatchMedia) {
-    mobileNavMatchMedia.revert();
-    mobileNavMatchMedia = null;
-  }
   window.removeEventListener("resize", updateViewportState);
+  window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
 });
@@ -420,76 +257,69 @@ onBeforeUnmount(() => {
       <span class="sr-only">TREGO</span>
     </RouterLink>
 
-    <div class="nav-mobile-tray" :class="{ 'is-search-pill': isMobileSearchOnly && !mobileMenuOpen }">
+    <div class="nav-mobile-tray">
+      <RouterLink
+        v-if="isBusinessUser"
+        class="nav-icon-button add-product-button nav-mobile-shortcut"
+        to="/biznesi-juaj?view=add-product"
+        aria-label="Shto artikull te ri"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14"></path>
+          <path d="M5 12h14"></path>
+        </svg>
+      </RouterLink>
+
       <button
-        v-if="isMobileSearchOnly && !mobileMenuOpen"
-        class="nav-icon-button search-button nav-mobile-search-pill"
+        class="nav-icon-button search-button nav-mobile-shortcut"
         type="button"
         aria-label="Kerko"
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
-        <span class="nav-mobile-search-pill-content">
-          <svg class="nav-icon nav-mobile-search-pill-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="6"></circle>
-            <path d="m20 20-4.2-4.2"></path>
-          </svg>
-          <span class="nav-mobile-search-pill-label">Kerko ketu...</span>
-          <span class="nav-mobile-search-pill-spacer" aria-hidden="true"></span>
-        </span>
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6"></circle>
+          <path d="m20 20-4.2-4.2"></path>
+        </svg>
+        <span class="nav-mobile-search-label">Kerko...</span>
       </button>
 
-      <template v-else>
-        <button
-          class="nav-icon-button search-button nav-mobile-shortcut"
-          type="button"
-          aria-label="Kerko"
-          :aria-expanded="searchMenuOpen ? 'true' : 'false'"
-          @click="toggleSearchPanel"
-        >
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="6"></circle>
-            <path d="m20 20-4.2-4.2"></path>
-          </svg>
-        </button>
+      <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+        </svg>
+      </RouterLink>
 
-        <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-          </svg>
-        </RouterLink>
+      <RouterLink class="nav-icon-button cart-button nav-mobile-shortcut" to="/cart" aria-label="My Cart">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+          <circle cx="10" cy="19" r="1.4"></circle>
+          <circle cx="18" cy="19" r="1.4"></circle>
+        </svg>
+        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+      </RouterLink>
 
-        <RouterLink class="nav-icon-button cart-button nav-mobile-shortcut" to="/cart" aria-label="My Cart">
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
-            <circle cx="10" cy="19" r="1.4"></circle>
-            <circle cx="18" cy="19" r="1.4"></circle>
-          </svg>
-          <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-        </RouterLink>
-
-        <button
-          class="nav-mobile-toggle"
-          type="button"
-          :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
-          aria-controls="site-nav-mobile-panel"
-          :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
-          @click="toggleMobileMenu"
-        >
-          <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16"></path>
-          </svg>
-          <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18"></path>
-          </svg>
-        </button>
-      </template>
+      <button
+        class="nav-mobile-toggle"
+        type="button"
+        :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
+        aria-controls="site-nav-mobile-panel"
+        :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
+        @click="toggleMobileMenu"
+      >
+        <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"></path>
+        </svg>
+        <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18"></path>
+        </svg>
+      </button>
     </div>
 
     <Transition name="nav-floating-panel">
       <button
         v-if="searchMenuOpen"
-        class="nav-search-dismiss-layer"
+        class="nav-search-backdrop"
         type="button"
         aria-label="Mbylle kerkimin"
         @click="closeExpandedPanels"
@@ -512,7 +342,7 @@ onBeforeUnmount(() => {
           class="nav-search-input"
           type="search"
           name="q"
-          placeholder="Kerko ketu..."
+          placeholder="Shkruaj ketu"
           autocomplete="off"
         >
         <button class="nav-search-submit" type="submit">Kerko</button>
@@ -520,7 +350,7 @@ onBeforeUnmount(() => {
     </Transition>
 
     <div id="site-nav-mobile-panel" class="nav-links">
-      <template v-for="section in navigationSections" :key="section.key">
+      <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
         <div v-if="section.items" class="nav-dropdown nav-dropdown-split" :class="{ open: openDropdownKey === section.key }">
           <RouterLink
             class="nav-link nav-dropdown-link"
@@ -542,19 +372,17 @@ onBeforeUnmount(() => {
             </svg>
           </button>
 
-          <Transition name="nav-dropdown-panel">
-            <div v-if="openDropdownKey === section.key" class="nav-dropdown-menu">
-              <RouterLink
-                v-for="item in section.items"
-                :key="item.href"
-                class="nav-dropdown-item"
-                :to="item.href"
-                @click="closeExpandedPanels"
-              >
-                {{ item.label }}
-              </RouterLink>
-            </div>
-          </Transition>
+          <div class="nav-dropdown-menu" :hidden="openDropdownKey !== section.key">
+            <RouterLink
+              v-for="item in section.items"
+              :key="item.href"
+              class="nav-dropdown-item"
+              :to="item.href"
+              @click="closeExpandedPanels"
+            >
+              {{ item.label }}
+            </RouterLink>
+          </div>
         </div>
 
         <RouterLink
@@ -705,15 +533,6 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
       </div>
-
-      <RouterLink
-        v-if="isBusinessUser && isMobileViewport"
-        class="nav-action nav-action-primary nav-mobile-business-action"
-        to="/biznesi-juaj?view=add-product"
-        @click="closeExpandedPanels"
-      >
-        Shto artikull
-      </RouterLink>
     </div>
   </nav>
 </template>

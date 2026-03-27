@@ -118,33 +118,6 @@ document.addEventListener("DOMContentLoaded", () => {
 const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address";
 const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
-const GET_REQUEST_TIMEOUT_MS = 15000;
-const MUTATION_REQUEST_TIMEOUT_MS = 30000;
-const PRIMARY_NAVIGATION_FALLBACK = [
-  {
-    key: "clothing",
-    label: "Veshje",
-    href: "/kerko?categoryGroup=clothing",
-    items: [
-      { label: "Meshkuj", href: "/kerko?category=clothing-men" },
-      { label: "Femra", href: "/kerko?category=clothing-women" },
-      { label: "Femije", href: "/kerko?category=clothing-kids" },
-    ],
-  },
-  {
-    key: "cosmetics",
-    label: "Kozmetika",
-    href: "/kerko?categoryGroup=cosmetics",
-    items: [
-      { label: "Meshkuj", href: "/kerko?category=cosmetics-men" },
-      { label: "Femra", href: "/kerko?category=cosmetics-women" },
-      { label: "Femije", href: "/kerko?category=cosmetics-kids" },
-    ],
-  },
-  { key: "home", label: "Shtepi", href: "/kerko?category=home" },
-  { key: "sport", label: "Sport", href: "/kerko?category=sport" },
-  { key: "technology", label: "Teknologji", href: "/kerko?category=technology" },
-];
 const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 const LOGIN_GREETING_KEY = "trego_login_greeting";
 const CART_UPDATED_EVENT = "trego:cart-updated";
@@ -469,44 +442,8 @@ function initializeSiteNavigation() {
     mobileToggle.setAttribute("aria-controls", "site-nav-mobile-panel");
     mobileToggle.setAttribute("aria-label", "Hape menune");
     mobileToggle.innerHTML = menuIcon();
+    brand.insertAdjacentElement("afterend", mobileToggle);
   }
-
-  let mobileTray = siteNav.querySelector(".nav-mobile-tray");
-  if (!mobileTray) {
-    mobileTray = document.createElement("div");
-    mobileTray.className = "nav-mobile-tray";
-    brand.insertAdjacentElement("afterend", mobileTray);
-  }
-
-  if (!mobileTray.querySelector(".search-button")) {
-    const searchLink = document.createElement("a");
-    searchLink.className = "nav-icon-button search-button nav-mobile-shortcut";
-    searchLink.href = "/kerko";
-    searchLink.setAttribute("aria-label", "Kerko");
-    searchLink.innerHTML = searchIcon();
-    mobileTray.append(searchLink);
-  }
-
-  if (!mobileTray.querySelector(".wishlist-link")) {
-    const wishlistLink = document.createElement("a");
-    wishlistLink.className = "nav-icon-button wishlist-link nav-mobile-shortcut";
-    wishlistLink.href = "/wishlist";
-    wishlistLink.setAttribute("aria-label", "Wishlist");
-    wishlistLink.innerHTML = heartIcon();
-    mobileTray.append(wishlistLink);
-  }
-
-  if (!mobileTray.querySelector(".cart-button")) {
-    const cartLink = document.createElement("a");
-    cartLink.className = "nav-icon-button cart-button nav-mobile-shortcut";
-    cartLink.href = "/cart";
-    cartLink.setAttribute("aria-label", "My Cart");
-    cartLink.innerHTML = cartIcon();
-    mobileTray.append(cartLink);
-  }
-
-  mobileToggle.classList.add("nav-mobile-shortcut");
-  mobileTray.append(mobileToggle);
 
   if (!navLinks.id) {
     navLinks.id = "site-nav-mobile-panel";
@@ -522,6 +459,9 @@ function initializeSiteNavigation() {
       closeExpandedNavPanels();
     }
   };
+
+  navLinks.innerHTML = renderPrimaryNavigation();
+  initializePrimaryNavDropdowns(navLinks);
 
   bindTapToggle(mobileToggle, () => {
     updateMobileMenuState(!siteNav.classList.contains("mobile-menu-open"));
@@ -585,12 +525,7 @@ function initializeSiteNavigation() {
   bootstrap();
 
   async function bootstrap() {
-    const [currentUser, primaryNavigation] = await Promise.all([
-      fetchCurrentUserOptional(),
-      fetchPrimaryNavigation(),
-    ]);
-    navLinks.innerHTML = renderPrimaryNavigation(primaryNavigation);
-    initializePrimaryNavDropdowns(navLinks);
+    const currentUser = await fetchCurrentUserOptional();
     if (!currentUser) {
       setNavCartCount(0);
       return;
@@ -698,64 +633,34 @@ function initializeSiteNavigation() {
 }
 
 
-async function fetchPrimaryNavigation() {
-  try {
-    const { response, data } = await requestJson("/api/navigation");
-    if (!response.ok || !data?.ok || !Array.isArray(data.navigation) || data.navigation.length === 0) {
-      return PRIMARY_NAVIGATION_FALLBACK;
-    }
-
-    return data.navigation;
-  } catch (error) {
-    console.error(error);
-    return PRIMARY_NAVIGATION_FALLBACK;
-  }
-}
-
-
-function renderPrimaryNavigation(navigation = PRIMARY_NAVIGATION_FALLBACK) {
-  const sections = Array.isArray(navigation) && navigation.length > 0
-    ? navigation
-    : PRIMARY_NAVIGATION_FALLBACK;
-
-  return sections
-    .map((section) => {
-      const key = String(section?.key || "").trim() || "section";
-      const label = String(section?.label || "").trim();
-      const href = String(section?.href || "/").trim() || "/";
-      const items = Array.isArray(section?.items) ? section.items : [];
-
-      if (!label) {
-        return "";
-      }
-
-      if (items.length > 0) {
-        return `
-          <div class="nav-dropdown">
-            <button class="nav-dropdown-trigger" type="button" aria-expanded="false">
-              <span>${escapeHtml(label)}</span>
-              ${chevronDownIcon()}
-            </button>
-            <div class="nav-dropdown-menu" hidden>
-              ${items
-                .map((item) => {
-                  const itemLabel = String(item?.label || "").trim();
-                  const itemHref = String(item?.href || "/").trim() || "/";
-                  if (!itemLabel) {
-                    return "";
-                  }
-
-                  return `<a class="nav-dropdown-item" href="${escapeAttribute(itemHref)}">${escapeHtml(itemLabel)}</a>`;
-                })
-                .join("")}
-            </div>
-          </div>
-        `;
-      }
-
-      return `<a class="nav-link nav-link-${escapeAttribute(key)}" href="${escapeAttribute(href)}">${escapeHtml(label)}</a>`;
-    })
-    .join("");
+function renderPrimaryNavigation() {
+  return `
+    <div class="nav-dropdown">
+      <button class="nav-dropdown-trigger" type="button" aria-expanded="false">
+        <span>Veshje</span>
+        ${chevronDownIcon()}
+      </button>
+      <div class="nav-dropdown-menu" hidden>
+        <a class="nav-dropdown-item" href="/kerko?category=clothing-men">Meshkuj</a>
+        <a class="nav-dropdown-item" href="/kerko?category=clothing-women">Femra</a>
+        <a class="nav-dropdown-item" href="/kerko?category=clothing-kids">Femije</a>
+      </div>
+    </div>
+    <div class="nav-dropdown">
+      <button class="nav-dropdown-trigger" type="button" aria-expanded="false">
+        <span>Kozmetik</span>
+        ${chevronDownIcon()}
+      </button>
+      <div class="nav-dropdown-menu" hidden>
+        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-men">Meshkuj</a>
+        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-women">Femra</a>
+        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-kids">Femije</a>
+      </div>
+    </div>
+    <a class="nav-link nav-link-home" href="/kerko?category=home">Shtepi</a>
+    <a class="nav-link nav-link-sport" href="/kerko?category=sport">Sport</a>
+    <a class="nav-link nav-link-tech" href="/kerko?category=technology">Teknologji</a>
+  `;
 }
 
 
@@ -6892,8 +6797,6 @@ function initializeForgotPasswordPage() {
 async function requestJson(url, options = {}) {
   const config = { ...options };
   config.headers = { ...(options.headers || {}) };
-  const method = String(config.method || "GET").trim().toUpperCase();
-  const timeoutMs = method === "GET" ? GET_REQUEST_TIMEOUT_MS : MUTATION_REQUEST_TIMEOUT_MS;
 
   if (
     config.body &&
@@ -6903,39 +6806,7 @@ async function requestJson(url, options = {}) {
     config.headers["Content-Type"] = "application/json";
   }
 
-  const abortController = typeof AbortController === "function" ? new AbortController() : null;
-  const externalSignal = config.signal;
-  let timeoutId = 0;
-
-  if (abortController) {
-    config.signal = abortController.signal;
-    if (externalSignal) {
-      if (externalSignal.aborted) {
-        abortController.abort(externalSignal.reason);
-      } else {
-        externalSignal.addEventListener(
-          "abort",
-          () => abortController.abort(externalSignal.reason),
-          { once: true },
-        );
-      }
-    }
-
-    timeoutId = window.setTimeout(() => {
-      abortController.abort(new Error(`Request timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  }
-
-  let response;
-
-  try {
-    response = await fetch(url, config);
-  } finally {
-    if (timeoutId) {
-      window.clearTimeout(timeoutId);
-    }
-  }
-
+  const response = await fetch(url, config);
   let data = {};
 
   try {
