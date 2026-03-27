@@ -114,13 +114,9 @@ img {
 .app-loader {
   position: fixed;
   inset: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
   width: 100vw;
   min-width: 100vw;
-  height: 100dvh;
+  height: 100vh;
   min-height: 100vh;
   z-index: 999999;
   display: grid;
@@ -185,13 +181,9 @@ img {
   gap: 18px;
   width: 100vw;
   min-width: 100vw;
-  height: 100dvh;
+  height: 100vh;
   min-height: 100vh;
-  padding:
-    calc(env(safe-area-inset-top, 0px) + 24px)
-    calc(env(safe-area-inset-right, 0px) + 24px)
-    calc(env(safe-area-inset-bottom, 0px) + 24px)
-    calc(env(safe-area-inset-left, 0px) + 24px);
+  padding: 24px;
   box-sizing: border-box;
 }
 
@@ -248,7 +240,7 @@ img {
   .app-loader {
     width: 100vw;
     min-width: 100vw;
-    height: 100dvh;
+    height: 100vh;
     min-height: 100vh;
   }
 
@@ -256,13 +248,9 @@ img {
     gap: 14px;
     width: 100vw;
     min-width: 100vw;
-    height: 100dvh;
+    height: 100vh;
     min-height: 100vh;
-    padding:
-      calc(env(safe-area-inset-top, 0px) + 20px)
-      calc(env(safe-area-inset-right, 0px) + 18px)
-      calc(env(safe-area-inset-bottom, 0px) + 20px)
-      calc(env(safe-area-inset-left, 0px) + 18px);
+    padding: 20px 18px;
   }
 
   .app-loader-stage {
