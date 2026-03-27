@@ -13,9 +13,12 @@ const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
+const mobileNavProgress = ref(0);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
 let lastScrollY = 0;
+let targetMobileNavProgress = 0;
+let mobileNavAnimationFrame = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -97,33 +100,74 @@ const userPanelLabel = computed(() => {
   return "Llogaria ime";
 });
 
+const navStyle = computed(() => ({
+  "--mobile-nav-progress": mobileNavProgress.value.toFixed(3),
+}));
+
 function updateViewportState() {
   isMobileViewport.value = window.matchMedia("(max-width: 920px)").matches;
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
     isMobileSearchOnly.value = false;
+    setMobileNavProgress(0, { immediate: true });
+  }
+}
+
+function animateMobileNavProgress() {
+  mobileNavAnimationFrame = 0;
+  const delta = targetMobileNavProgress - mobileNavProgress.value;
+
+  if (Math.abs(delta) < 0.004) {
+    mobileNavProgress.value = targetMobileNavProgress;
+    return;
+  }
+
+  mobileNavProgress.value += delta * 0.18;
+  mobileNavAnimationFrame = window.requestAnimationFrame(animateMobileNavProgress);
+}
+
+function setMobileNavProgress(nextValue, options = {}) {
+  const immediate = options.immediate === true;
+  targetMobileNavProgress = Math.max(0, Math.min(nextValue, 1));
+
+  if (immediate) {
+    if (mobileNavAnimationFrame) {
+      window.cancelAnimationFrame(mobileNavAnimationFrame);
+      mobileNavAnimationFrame = 0;
+    }
+    mobileNavProgress.value = targetMobileNavProgress;
+    return;
+  }
+
+  if (!mobileNavAnimationFrame) {
+    mobileNavAnimationFrame = window.requestAnimationFrame(animateMobileNavProgress);
   }
 }
 
 function handleWindowScroll() {
   if (!isMobileViewport.value || mobileMenuOpen.value || searchMenuOpen.value) {
     isMobileSearchOnly.value = false;
+    setMobileNavProgress(0, { immediate: mobileMenuOpen.value || searchMenuOpen.value });
     lastScrollY = window.scrollY || window.pageYOffset || 0;
     return;
   }
 
   const currentScrollY = window.scrollY || window.pageYOffset || 0;
   const delta = currentScrollY - lastScrollY;
+  const compactDistance = 180;
+  const compactStart = 8;
+  setMobileNavProgress((currentScrollY - compactStart) / compactDistance);
 
   if (currentScrollY <= 24) {
     isMobileSearchOnly.value = false;
+    setMobileNavProgress(0, { immediate: true });
     lastScrollY = currentScrollY;
     return;
   }
 
-  if (delta > 10) {
+  if (currentScrollY > 156 && delta > 12) {
     isMobileSearchOnly.value = true;
-  } else if (delta < -8) {
+  } else if (delta < -7 || currentScrollY < 104) {
     isMobileSearchOnly.value = false;
   }
 
@@ -156,6 +200,7 @@ async function toggleSearchPanel() {
 
   if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
     isMobileSearchOnly.value = false;
+    setMobileNavProgress(0, { immediate: true });
     await nextTick();
   }
 
@@ -219,6 +264,7 @@ watch(
   () => {
     mobileMenuOpen.value = false;
     isMobileSearchOnly.value = false;
+    setMobileNavProgress(0, { immediate: true });
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
   },
@@ -235,6 +281,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (mobileNavAnimationFrame) {
+    window.cancelAnimationFrame(mobileNavAnimationFrame);
+  }
   window.removeEventListener("resize", updateViewportState);
   window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
@@ -247,9 +296,11 @@ onBeforeUnmount(() => {
     ref="navElement"
     class="site-nav"
     :class="{
+      'mobile-scroll-compact': mobileNavProgress > 0.01,
       'mobile-menu-open': mobileMenuOpen,
       'mobile-search-only': isMobileSearchOnly,
     }"
+    :style="navStyle"
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
