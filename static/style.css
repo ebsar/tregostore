@@ -302,6 +302,14 @@ body[data-page="cart"] .page-shell {
   overflow: visible;
   isolation: isolate;
   touch-action: manipulation;
+  transition:
+    width 220ms ease,
+    max-width 220ms ease,
+    padding 220ms ease,
+    border-radius 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease,
+    transform 220ms ease;
 }
 
 .site-nav::before,
@@ -355,6 +363,7 @@ body[data-page="cart"] .page-shell {
   width: clamp(82px, 8vw, 128px);
   height: auto;
   object-fit: contain;
+  transition: width 220ms ease, transform 220ms ease, opacity 220ms ease;
 }
 
 .brand-copy {
@@ -410,6 +419,7 @@ body[data-page="cart"] .page-shell {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
+  transition: gap 220ms ease;
 }
 
 .nav-mobile-toggle {
@@ -5289,6 +5299,18 @@ code {
     border-radius: 34px;
   }
 
+  .site-nav.mobile-scroll-compact:not(.mobile-menu-open) {
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    padding: 9px 10px;
+    border-radius: 999px;
+    grid-template-columns: auto auto;
+    gap: 10px;
+    box-shadow:
+      0 16px 34px rgba(205, 182, 173, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+
   .brand {
     width: auto;
     justify-content: flex-start;
@@ -5302,6 +5324,45 @@ code {
   .nav-mobile-tray {
     display: inline-flex;
     justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  .nav-mobile-shortcut,
+  .nav-mobile-toggle {
+    transition:
+      width 220ms ease,
+      min-width 220ms ease,
+      height 220ms ease,
+      opacity 180ms ease,
+      transform 220ms ease,
+      margin 220ms ease,
+      padding 220ms ease;
+  }
+
+  .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .brand-logo {
+    width: 78px;
+  }
+
+  .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .nav-mobile-tray {
+    gap: 0;
+  }
+
+  .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .nav-mobile-shortcut {
+    width: 0;
+    min-width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    transform: scale(0.82);
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .nav-mobile-toggle {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
   }
 
   .nav-links,

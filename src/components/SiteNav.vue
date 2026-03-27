@@ -12,8 +12,10 @@ const openDropdownKey = ref("");
 const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
+const isScrollCompact = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
+let scrollCompactTimeoutId = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -99,7 +101,32 @@ function updateViewportState() {
   isMobileViewport.value = window.matchMedia("(max-width: 920px)").matches;
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
+    isScrollCompact.value = false;
+    window.clearTimeout(scrollCompactTimeoutId);
   }
+}
+
+function scheduleScrollCompactReset() {
+  window.clearTimeout(scrollCompactTimeoutId);
+  scrollCompactTimeoutId = window.setTimeout(() => {
+    isScrollCompact.value = false;
+  }, 220);
+}
+
+function handleWindowScroll() {
+  if (!isMobileViewport.value || mobileMenuOpen.value) {
+    isScrollCompact.value = false;
+    return;
+  }
+
+  if (window.scrollY <= 10) {
+    window.clearTimeout(scrollCompactTimeoutId);
+    isScrollCompact.value = false;
+    return;
+  }
+
+  isScrollCompact.value = true;
+  scheduleScrollCompactReset();
 }
 
 function closeExpandedPanels() {
@@ -183,14 +210,23 @@ watch(
   () => route.fullPath,
   () => {
     mobileMenuOpen.value = false;
+    isScrollCompact.value = false;
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
   },
 );
 
+watch(mobileMenuOpen, (isOpen) => {
+  if (isOpen) {
+    isScrollCompact.value = false;
+    window.clearTimeout(scrollCompactTimeoutId);
+  }
+});
+
 onMounted(async () => {
   updateViewportState();
   window.addEventListener("resize", updateViewportState);
+  window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
@@ -199,8 +235,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewportState);
+  window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
+  window.clearTimeout(scrollCompactTimeoutId);
 });
 </script>
 
@@ -208,7 +246,10 @@ onBeforeUnmount(() => {
   <nav
     ref="navElement"
     class="site-nav"
-    :class="{ 'mobile-menu-open': mobileMenuOpen }"
+    :class="{
+      'mobile-menu-open': mobileMenuOpen,
+      'mobile-scroll-compact': isScrollCompact && isMobileViewport && !mobileMenuOpen,
+    }"
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
