@@ -5,6 +5,7 @@ from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
 import hashlib
+from io import BytesIO
 import json
 import os
 import re
@@ -15,6 +16,16 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
+
+try:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    PILLOW_AVAILABLE = True
+except ImportError:
+    Image = None
+    ImageOps = None
+    UnidentifiedImageError = OSError
+    PILLOW_AVAILABLE = False
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -152,6 +163,7 @@ EXTENSION_CONTENT_TYPES = {
 MAX_UPLOAD_FILES = 8
 MAX_UPLOAD_FILE_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_FILES * MAX_UPLOAD_FILE_SIZE + (1024 * 1024)
+VISUAL_SEARCH_HASH_SIZE = 8
 EMAIL_VERIFICATION_CODE_LENGTH = 6
 EMAIL_VERIFICATION_TTL_MINUTES = 30
 EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
@@ -214,6 +226,7 @@ PRODUCT_SELECT_COLUMNS = """
     price,
     image_path,
     image_gallery,
+    image_fingerprint,
     category,
     product_type,
     size,
@@ -600,6 +613,86 @@ def fetch_uploaded_asset_by_stored_name(stored_name: str):
         ).fetchone()
 
 
+def extract_stored_upload_name_from_path(image_path: object) -> str:
+    normalized_path = normalize_image_path(image_path)
+    if not normalized_path.startswith("/uploads/"):
+        return ""
+
+    return normalized_path.removeprefix("/uploads/").strip()
+
+
+def fetch_uploaded_asset_bytes_by_path(image_path: object) -> bytes:
+    stored_name = extract_stored_upload_name_from_path(image_path)
+    if not stored_name:
+        return b""
+
+    if should_store_uploads_in_database():
+        asset_row = fetch_uploaded_asset_by_stored_name(stored_name)
+        return bytes(asset_row["file_bytes"]) if asset_row and asset_row["file_bytes"] else b""
+
+    file_path = UPLOADS_DIR / stored_name
+    if not file_path.exists():
+        return b""
+
+    try:
+        return file_path.read_bytes()
+    except OSError:
+        return b""
+
+
+def compute_image_fingerprint(file_bytes: bytes) -> str:
+    if not PILLOW_AVAILABLE or not file_bytes:
+        return ""
+
+    try:
+        with Image.open(BytesIO(file_bytes)) as raw_image:
+            prepared_image = ImageOps.exif_transpose(raw_image).convert("L")
+            resize_mode = (
+                Image.Resampling.LANCZOS
+                if hasattr(Image, "Resampling")
+                else Image.LANCZOS
+            )
+            prepared_image = prepared_image.resize(
+                (VISUAL_SEARCH_HASH_SIZE, VISUAL_SEARCH_HASH_SIZE),
+                resize_mode,
+            )
+            pixels = list(prepared_image.getdata())
+    except (UnidentifiedImageError, OSError, ValueError):
+        return ""
+
+    if not pixels:
+        return ""
+
+    average_value = sum(pixels) / len(pixels)
+    bits = "".join("1" if pixel >= average_value else "0" for pixel in pixels)
+    return f"{int(bits, 2):0{len(bits) // 4}x}"
+
+
+def compute_product_image_fingerprint(
+    image_gallery: object,
+    *,
+    fallback_image_path: object = "",
+) -> str:
+    gallery_paths = normalize_image_gallery_value(
+        image_gallery,
+        fallback_image_path=fallback_image_path,
+    )
+    for image_path in gallery_paths:
+        file_bytes = fetch_uploaded_asset_bytes_by_path(image_path)
+        image_fingerprint = compute_image_fingerprint(file_bytes)
+        if image_fingerprint:
+            return image_fingerprint
+
+    return ""
+
+
+def compute_hamming_distance(left_hash: str, right_hash: str) -> int:
+    if not left_hash or not right_hash or len(left_hash) != len(right_hash):
+        return 10**9
+
+    return sum(left_char != right_char for left_char, right_char in zip(left_hash, right_hash))
+
+
 def ensure_bootstrap_admin(connection: DatabaseConnection) -> None:
     if count_admin_users(connection) > 0:
         return
@@ -887,6 +980,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE products ADD COLUMN image_gallery TEXT NOT NULL DEFAULT '[]'"
         )
 
+    if not column_exists(connection, "products", "image_fingerprint"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN image_fingerprint TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE products
@@ -969,6 +1067,13 @@ def migrate_database(connection: DatabaseConnection) -> None:
             ON products(title)
             """
         )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_image_fingerprint
+        ON products(is_public, image_fingerprint)
+        """
+    )
 
     if not column_exists(connection, "cart_items", "created_at"):
         connection.execute(
@@ -2620,6 +2725,88 @@ def count_products(
     return int(row["total_count"] or 0)
 
 
+def update_product_image_fingerprint(
+    connection: DatabaseConnection,
+    product_id: int,
+    image_fingerprint: str,
+) -> None:
+    connection.execute(
+        """
+        UPDATE products
+        SET image_fingerprint = ?
+        WHERE id = ?
+        """,
+        (str(image_fingerprint or "").strip(), product_id),
+    )
+
+
+def fetch_visual_search_candidates(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        conditions = ["is_public = 1"]
+        parameters: list[object] = []
+
+        if category:
+            conditions.append("category = ?")
+            parameters.append(category)
+        elif category_group:
+            conditions.append("category LIKE ?")
+            parameters.append(f"{category_group}-%")
+
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+        return connection.execute(
+            """
+            SELECT
+            """
+            + PRODUCT_SELECT_COLUMNS
+            + """
+            FROM products
+            """
+            + where_clause
+            + """
+            ORDER BY id DESC
+            """,
+            parameters,
+        ).fetchall()
+
+
+def score_products_by_visual_similarity(
+    query_fingerprint: str,
+    candidates: list[sqlite3.Row],
+) -> list[sqlite3.Row]:
+    if not query_fingerprint:
+        return []
+
+    scored_rows: list[tuple[int, int, sqlite3.Row]] = []
+
+    with get_db_connection() as connection:
+        for row in candidates:
+            image_fingerprint = str(row["image_fingerprint"] or "").strip()
+            if not image_fingerprint:
+                image_fingerprint = compute_product_image_fingerprint(
+                    row["image_gallery"],
+                    fallback_image_path=row["image_path"],
+                )
+                if image_fingerprint:
+                    update_product_image_fingerprint(connection, int(row["id"]), image_fingerprint)
+
+            if not image_fingerprint:
+                continue
+
+            distance = compute_hamming_distance(query_fingerprint, image_fingerprint)
+            if distance >= 10**9:
+                continue
+
+            scored_rows.append((distance, -int(row["id"]), row))
+
+    scored_rows.sort(key=lambda item: (item[0], item[1]))
+    return [row for _, _, row in scored_rows]
+
+
 def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
     with get_db_connection() as connection:
         return connection.execute(
@@ -3323,6 +3510,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/uploads":
             self.handle_image_uploads()
             return
+        if path == "/api/products/visual-search":
+            self.handle_products_visual_search()
+            return
         if path == "/api/products":
             self.handle_create_product()
             return
@@ -3829,6 +4019,137 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "offset": offset,
                 "total": total_count,
                 "hasMore": offset + len(products) < total_count,
+            },
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+        )
+
+    def handle_products_visual_search(self) -> None:
+        if not PILLOW_AVAILABLE:
+            self.send_json(
+                503,
+                {
+                    "ok": False,
+                    "message": (
+                        "Kerkimi me foto nuk eshte aktiv ende ne server. "
+                        "Instalo Pillow dhe provo perseri."
+                    ),
+                },
+            )
+            return
+
+        try:
+            message = self.read_multipart_message()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        image_parts = [
+            part
+            for part in message.iter_parts()
+            if part.get_content_disposition() == "form-data"
+            and part.get_param("name", header="content-disposition") == "image"
+            and part.get_filename()
+        ]
+
+        if not image_parts:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Zgjidh ose fotografo nje imazh per kerkimin vizual."},
+            )
+            return
+
+        image_part = image_parts[0]
+        image_bytes = image_part.get_payload(decode=True) or b""
+        if not image_bytes:
+            self.send_json(400, {"ok": False, "message": "Imazhi i zgjedhur eshte bosh."})
+            return
+
+        if len(image_bytes) > MAX_UPLOAD_FILE_SIZE:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Imazhi nuk mund te jete me i madh se 8MB."},
+            )
+            return
+
+        form_values = {}
+        for part in message.iter_parts():
+            if part.get_content_disposition() != "form-data":
+                continue
+            field_name = part.get_param("name", header="content-disposition")
+            if not field_name or part.get_filename():
+                continue
+            form_values[field_name] = str(part.get_content() or "").strip()
+
+        category = str(form_values.get("category", "")).strip().lower() or None
+        category_group = str(form_values.get("categoryGroup", "")).strip().lower() or None
+        raw_limit = str(form_values.get("limit", "")).strip()
+        raw_offset = str(form_values.get("offset", "")).strip()
+
+        if category and category not in PRODUCT_CATEGORIES:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Kategoria e kerkuar nuk eshte valide."},
+            )
+            return
+
+        if category_group and category_group not in {"clothing", "cosmetics"}:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
+            )
+            return
+
+        try:
+            limit = int(raw_limit) if raw_limit else PRODUCTS_PAGE_DEFAULT_LIMIT
+        except ValueError:
+            limit = PRODUCTS_PAGE_DEFAULT_LIMIT
+
+        try:
+            offset = int(raw_offset) if raw_offset else 0
+        except ValueError:
+            offset = 0
+
+        limit = max(1, min(PRODUCTS_PAGE_MAX_LIMIT, limit))
+        offset = max(0, offset)
+
+        query_fingerprint = compute_image_fingerprint(image_bytes)
+        if not query_fingerprint:
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": (
+                        "Imazhi nuk u lexua dot per kerkimin vizual. "
+                        "Provo nje foto tjeter me produktin me te qarte."
+                    ),
+                },
+            )
+            return
+
+        candidates = fetch_visual_search_candidates(
+            category,
+            category_group=category_group,
+        )
+        matched_products = score_products_by_visual_similarity(query_fingerprint, candidates)
+
+        total_count = len(matched_products)
+        visible_products = matched_products[offset : offset + limit]
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "mode": "visual",
+                "products": [serialize_product(row) for row in visible_products],
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(visible_products) < total_count,
+                "message": (
+                    "U gjeten produkte te ngjashme sipas fotos."
+                    if visible_products
+                    else "Nuk u gjet asnje produkt i ngjashem sipas fotos."
+                ),
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -4789,6 +5110,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        image_fingerprint = compute_product_image_fingerprint(
+            normalized["imageGallery"],
+            fallback_image_path=normalized["imagePath"],
+        )
+
         with get_db_connection() as connection:
             product_id = execute_insert_and_get_id(
                 connection,
@@ -4799,6 +5125,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     price,
                     image_path,
                     image_gallery,
+                    image_fingerprint,
                     category,
                     product_type,
                     size,
@@ -4806,7 +5133,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     stock_quantity,
                     created_by_user_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     normalized["title"],
@@ -4814,6 +5141,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["price"],
                     normalized["imagePath"],
                     json.dumps(normalized["imageGallery"], ensure_ascii=False),
+                    image_fingerprint,
                     normalized["category"],
                     normalized["productType"],
                     normalized["size"],
@@ -4891,6 +5219,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        image_fingerprint = compute_product_image_fingerprint(
+            normalized["imageGallery"],
+            fallback_image_path=normalized["imagePath"],
+        )
+
         with get_db_connection() as connection:
             connection.execute(
                 """
@@ -4901,6 +5234,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     price = ?,
                     image_path = ?,
                     image_gallery = ?,
+                    image_fingerprint = ?,
                     category = ?,
                     product_type = ?,
                     size = ?,
@@ -4914,6 +5248,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["price"],
                     normalized["imagePath"],
                     json.dumps(normalized["imageGallery"], ensure_ascii=False),
+                    image_fingerprint,
                     normalized["category"],
                     normalized["productType"],
                     normalized["size"],

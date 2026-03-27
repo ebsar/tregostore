@@ -12,10 +12,8 @@ const openDropdownKey = ref("");
 const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
 const isMobileViewport = ref(false);
-const isScrollCompact = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
-let lastScrollY = 0;
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -101,38 +99,7 @@ function updateViewportState() {
   isMobileViewport.value = window.matchMedia("(max-width: 920px)").matches;
   if (!isMobileViewport.value) {
     mobileMenuOpen.value = false;
-    isScrollCompact.value = false;
   }
-  lastScrollY = window.scrollY;
-}
-
-function handleWindowScroll() {
-  const currentScrollY = Math.max(0, window.scrollY);
-
-  if (!isMobileViewport.value || mobileMenuOpen.value) {
-    isScrollCompact.value = false;
-    lastScrollY = currentScrollY;
-    return;
-  }
-
-  if (currentScrollY <= 10) {
-    isScrollCompact.value = false;
-    lastScrollY = currentScrollY;
-    return;
-  }
-
-  const scrollDelta = currentScrollY - lastScrollY;
-  if (Math.abs(scrollDelta) < 12) {
-    return;
-  }
-
-  if (scrollDelta > 0 && currentScrollY > 72) {
-    isScrollCompact.value = true;
-  } else if (scrollDelta < 0 || currentScrollY <= 28) {
-    isScrollCompact.value = false;
-  }
-
-  lastScrollY = currentScrollY;
 }
 
 function closeExpandedPanels() {
@@ -216,23 +183,14 @@ watch(
   () => route.fullPath,
   () => {
     mobileMenuOpen.value = false;
-    isScrollCompact.value = false;
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
   },
 );
 
-watch(mobileMenuOpen, (isOpen) => {
-  if (isOpen) {
-    isScrollCompact.value = false;
-  }
-  lastScrollY = window.scrollY;
-});
-
 onMounted(async () => {
   updateViewportState();
   window.addEventListener("resize", updateViewportState);
-  window.addEventListener("scroll", handleWindowScroll, { passive: true });
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
@@ -240,7 +198,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewportState);
-  window.removeEventListener("scroll", handleWindowScroll);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
 });
@@ -252,12 +209,11 @@ onBeforeUnmount(() => {
     class="site-nav"
     :class="{
       'mobile-menu-open': mobileMenuOpen,
-      'mobile-scroll-compact': isScrollCompact && isMobileViewport && !mobileMenuOpen,
     }"
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO" width="1536" height="1024" fetchpriority="high">
+      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGO" width="420" height="159" fetchpriority="high">
       <span class="sr-only">TREGO</span>
     </RouterLink>
 

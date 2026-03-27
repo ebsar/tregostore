@@ -196,3 +196,47 @@ export async function uploadProfilePhoto(file) {
     message: data.message || "Fotoja e profilit u ngarkua me sukses.",
   };
 }
+
+export async function searchProductsByImage(file, options = {}) {
+  const uploadData = new FormData();
+  uploadData.append("image", file);
+
+  if (options.category) {
+    uploadData.append("category", String(options.category).trim());
+  }
+
+  if (options.categoryGroup) {
+    uploadData.append("categoryGroup", String(options.categoryGroup).trim());
+  }
+
+  if (Number.isFinite(Number(options.limit))) {
+    uploadData.append("limit", String(options.limit));
+  }
+
+  if (Number.isFinite(Number(options.offset))) {
+    uploadData.append("offset", String(options.offset));
+  }
+
+  const { response, data } = await requestJson("/api/products/visual-search", {
+    method: "POST",
+    body: uploadData,
+  });
+
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      products: [],
+      total: 0,
+      hasMore: false,
+      message: resolveApiMessage(data, "Kerkimi me foto nuk u krye."),
+    };
+  }
+
+  return {
+    ok: true,
+    products: Array.isArray(data.products) ? data.products : [],
+    total: Number(data.total || 0),
+    hasMore: Boolean(data.hasMore),
+    message: data.message || "U gjeten produkte te ngjashme sipas fotos.",
+  };
+}

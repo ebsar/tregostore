@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
 import { formatCategoryGroupLabel, formatCategoryLabel } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
@@ -21,6 +21,12 @@ const totalProductsCount = ref(0);
 const hasMoreProducts = ref(false);
 const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
+const visualSearchInputElement = ref(null);
+const visualSearchFile = ref(null);
+const visualSearchPreviewUrl = ref("");
+const visualSearchFileName = ref("");
+const visualSearchActive = ref(false);
+const visualSearchBusy = ref(false);
 const filters = reactive({
   size: "",
   color: "",
@@ -72,6 +78,16 @@ const filteredProducts = computed(() => {
 });
 
 const resultsLabel = computed(() => {
+  if (visualSearchActive.value) {
+    if (!products.value.length) {
+      return "Nuk u gjet asnje produkt i ngjashem sipas fotos.";
+    }
+
+    return totalProductsCount.value > products.value.length
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte te ngjashme sipas fotos.`
+      : `Po shfaqen ${products.value.length} produkte te ngjashme sipas fotos.`;
+  }
+
   if (!products.value.length) {
     return "Nuk u gjet asnje produkt per kete kerkim.";
   }
@@ -104,6 +120,7 @@ watch(
   () => route.fullPath,
   async () => {
     draftQuery.value = activeQuery.value;
+    clearVisualSearchState();
     await bootstrap();
   },
 );
@@ -127,6 +144,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.clearTimeout(searchDebounceTimeoutId);
+  clearVisualSearchState();
 });
 
 async function bootstrap() {
@@ -210,7 +228,11 @@ async function loadMoreProducts() {
 
   loadingMoreProducts.value = true;
   try {
-    await loadProducts({ append: true });
+    if (visualSearchActive.value && visualSearchFile.value) {
+      await runVisualSearch({ append: true });
+    } else {
+      await loadProducts({ append: true });
+    }
   } finally {
     loadingMoreProducts.value = false;
   }
@@ -219,6 +241,7 @@ async function loadMoreProducts() {
 function submitSearch() {
   window.clearTimeout(searchDebounceTimeoutId);
   const normalizedQuery = String(draftQuery.value || "").trim();
+  clearVisualSearchState();
   router.replace({
     path: "/kerko",
     query: {
@@ -228,6 +251,79 @@ function submitSearch() {
       ...(normalizedQuery ? { q: normalizedQuery } : {}),
     },
   });
+}
+
+function openVisualSearchPicker() {
+  visualSearchInputElement.value?.click();
+}
+
+function clearVisualSearchState() {
+  visualSearchActive.value = false;
+  visualSearchFile.value = null;
+  visualSearchFileName.value = "";
+  if (visualSearchPreviewUrl.value) {
+    URL.revokeObjectURL(visualSearchPreviewUrl.value);
+    visualSearchPreviewUrl.value = "";
+  }
+}
+
+async function clearVisualSearchAndReload() {
+  clearVisualSearchState();
+  await loadProducts();
+}
+
+async function handleVisualSearchSelection(event) {
+  const nextFile = event.target?.files?.[0] || null;
+  if (!nextFile) {
+    return;
+  }
+
+  clearVisualSearchState();
+  visualSearchFile.value = nextFile;
+  visualSearchFileName.value = String(nextFile.name || "").trim();
+  visualSearchPreviewUrl.value = URL.createObjectURL(nextFile);
+  await runVisualSearch();
+
+  if (event.target) {
+    event.target.value = "";
+  }
+}
+
+async function runVisualSearch(options = {}) {
+  if (!visualSearchFile.value) {
+    return;
+  }
+
+  const { append = false } = options;
+  visualSearchBusy.value = true;
+
+  const result = await searchProductsByImage(visualSearchFile.value, {
+    category: categoryFilter.value,
+    categoryGroup: categoryGroupFilter.value,
+    limit: PRODUCTS_PAGE_SIZE,
+    offset: append ? products.value.length : 0,
+  });
+
+  visualSearchBusy.value = false;
+
+  if (!result.ok) {
+    if (!append) {
+      products.value = [];
+      totalProductsCount.value = 0;
+      hasMoreProducts.value = false;
+    }
+    ui.message = result.message;
+    ui.type = "error";
+    return;
+  }
+
+  visualSearchActive.value = true;
+  const nextProducts = Array.isArray(result.products) ? result.products : [];
+  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  totalProductsCount.value = Number(result.total || products.value.length || 0);
+  hasMoreProducts.value = Boolean(result.hasMore);
+  ui.message = result.message || "U gjeten produkte te ngjashme sipas fotos.";
+  ui.type = "success";
 }
 
 function resetFilters() {
@@ -310,7 +406,7 @@ async function handleCart(productId) {
       <p class="section-label">Kerko</p>
       <h1>Kerko produktet</h1>
       <p>
-        Shkruaj p.sh. `shampon` dhe do te dalin te gjitha produktet qe perputhen me kerkimin tend.
+        Shkruaj p.sh. `shampon` ose fotografo produktin me kamerë dhe do te dalin produktet me te aferta.
       </p>
     </header>
 
@@ -327,15 +423,55 @@ async function handleCart(productId) {
     </form>
 
     <div class="collection-toolbar">
-      <button
-        class="filter-toggle-button"
-        type="button"
-        :aria-expanded="filtersVisible ? 'true' : 'false'"
-        @click="filtersVisible = !filtersVisible"
-      >
-        Filtro
-      </button>
+      <div class="collection-toolbar-group">
+        <button
+          class="filter-toggle-button"
+          type="button"
+          :aria-expanded="filtersVisible ? 'true' : 'false'"
+          @click="filtersVisible = !filtersVisible"
+        >
+          Filtro
+        </button>
+
+        <button
+          class="filter-toggle-button"
+          type="button"
+          :disabled="visualSearchBusy"
+          @click="openVisualSearchPicker"
+        >
+          {{ visualSearchBusy ? "Duke analizuar..." : "Kerko me foto" }}
+        </button>
+
+        <input
+          ref="visualSearchInputElement"
+          class="sr-only"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          @change="handleVisualSearchSelection"
+        >
+      </div>
     </div>
+
+    <section v-if="visualSearchFileName" class="visual-search-panel" aria-label="Kerkimi me foto">
+      <div class="visual-search-chip">
+        <img
+          v-if="visualSearchPreviewUrl"
+          class="visual-search-chip-image"
+          :src="visualSearchPreviewUrl"
+          alt="Fotoja e zgjedhur per kerkimin vizual"
+          width="120"
+          height="120"
+        >
+        <div class="visual-search-chip-copy">
+          <strong>Po kerkohet sipas fotos</strong>
+          <span>{{ visualSearchFileName }}</span>
+        </div>
+        <button class="search-reset-button" type="button" @click="clearVisualSearchAndReload">
+          Hiqe foton
+        </button>
+      </div>
+    </section>
 
     <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet">
       <div class="search-filters-grid">
@@ -411,8 +547,8 @@ async function handleCart(productId) {
       </button>
     </div>
 
-    <div v-else class="collection-empty-state">
-      Nuk u gjet asnje produkt per kete kerkim.
+    <div v-if="products.length === 0" class="collection-empty-state">
+      {{ visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim." }}
     </div>
   </section>
 </template>

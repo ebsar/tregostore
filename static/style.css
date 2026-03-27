@@ -401,11 +401,9 @@ body[data-page="cart"] .page-shell {
 
 .brand-logo {
   display: block;
-  width: clamp(100px, 9.4vw, 156px);
+  width: clamp(96px, 9.5vw, 148px);
   height: auto;
   object-fit: contain;
-  transform: scale(1.18);
-  transform-origin: left center;
   transition: width 220ms ease, transform 220ms ease, opacity 220ms ease;
 }
 
@@ -2633,6 +2631,13 @@ body[data-page="cart"] .page-shell::before {
   justify-content: flex-start;
 }
 
+.collection-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .filter-toggle-button {
   display: inline-flex;
   align-items: center;
@@ -2742,6 +2747,52 @@ body[data-page="cart"] .page-shell::before {
   min-height: 24px;
   color: #6b574e;
   font-weight: 700;
+}
+
+.visual-search-panel {
+  display: grid;
+}
+
+.visual-search-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.22)),
+    linear-gradient(135deg, rgba(255, 244, 235, 0.18), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    0 20px 40px rgba(171, 146, 138, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.visual-search-chip-image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 12px 24px rgba(171, 146, 138, 0.14);
+}
+
+.visual-search-chip-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.visual-search-chip-copy strong {
+  color: #4b392f;
+}
+
+.visual-search-chip-copy span {
+  color: #756257;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .search-filters-panel {
@@ -5427,7 +5478,7 @@ code {
   }
 
   .site-nav.mobile-scroll-compact:not(.mobile-menu-open) .brand-logo {
-    width: 104px;
+    width: 92px;
     transform: scale(1.08);
     filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.28));
   }
@@ -5722,8 +5773,7 @@ code {
   }
 
   .brand-logo {
-    width: 110px;
-    transform: scale(1.14);
+    width: 108px;
   }
 
   .nav-link,
@@ -5894,6 +5944,19 @@ code {
 
   .collection-toolbar {
     width: 100%;
+  }
+
+  .collection-toolbar-group {
+    width: 100%;
+  }
+
+  .collection-toolbar-group > * {
+    flex: 1 1 100%;
+  }
+
+  .visual-search-chip {
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 
   .pet-products-grid {

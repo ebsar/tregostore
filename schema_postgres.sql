@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS products (
     price DOUBLE PRECISION NOT NULL,
     image_path TEXT NOT NULL,
     image_gallery TEXT NOT NULL DEFAULT '[]',
+    image_fingerprint TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL,
     product_type TEXT NOT NULL DEFAULT 'other',
     size TEXT NOT NULL DEFAULT '',
@@ -139,6 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_products_public_category_id ON products(is_public
 CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public, created_by_user_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title_lower ON products ((LOWER(title)));
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
+CREATE INDEX IF NOT EXISTS idx_products_public_image_fingerprint ON products(is_public, image_fingerprint);
 
 CREATE TABLE IF NOT EXISTS wishlist_items (
     user_id BIGINT NOT NULL,
