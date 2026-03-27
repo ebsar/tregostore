@@ -57,9 +57,11 @@ const messageHref = computed(() => {
 
 async function bootstrap() {
   try {
-    await ensureSessionLoaded();
-    await refreshCollectionState();
-    await Promise.all([loadBusiness(), loadProducts()]);
+    await Promise.all([
+      ensureSessionLoaded().then(() => refreshCollectionState()),
+      loadBusiness(),
+      loadProducts(),
+    ]);
   } finally {
     markRouteReady();
   }
@@ -91,7 +93,11 @@ async function loadBusiness() {
     return;
   }
 
-  const { response, data } = await requestJson(`/api/business/public?id=${encodeURIComponent(businessId)}`);
+  const { response, data } = await requestJson(
+    `/api/business/public?id=${encodeURIComponent(businessId)}`,
+    {},
+    { cacheTtlMs: 20000 },
+  );
   if (!response.ok || !data?.ok || !data.business) {
     business.value = null;
     ui.message = resolveApiMessage(data, "Biznesi nuk u gjet.");
@@ -111,7 +117,11 @@ async function loadProducts() {
     return;
   }
 
-  const { response, data } = await requestJson(`/api/business/public-products?id=${encodeURIComponent(businessId)}`);
+  const { response, data } = await requestJson(
+    `/api/business/public-products?id=${encodeURIComponent(businessId)}`,
+    {},
+    { cacheTtlMs: 15000 },
+  );
   if (!response.ok || !data?.ok) {
     products.value = [];
     return;

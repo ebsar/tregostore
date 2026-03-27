@@ -1,28 +1,29 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { beginRouteLoading } from "../stores/app-state";
-import HomePage from "../views/HomePage.vue";
-import SearchPage from "../views/SearchPage.vue";
-import ProductDetailPage from "../views/ProductDetailPage.vue";
-import BusinessProfilePage from "../views/BusinessProfilePage.vue";
-import LoginPage from "../views/LoginPage.vue";
-import SignupPage from "../views/SignupPage.vue";
-import VerifyEmailPage from "../views/VerifyEmailPage.vue";
-import ForgotPasswordPage from "../views/ForgotPasswordPage.vue";
-import ChangePasswordPage from "../views/ChangePasswordPage.vue";
-import WishlistPage from "../views/WishlistPage.vue";
-import CartPage from "../views/CartPage.vue";
-import AccountPage from "../views/AccountPage.vue";
-import PersonalDataPage from "../views/PersonalDataPage.vue";
-import AddressesPage from "../views/AddressesPage.vue";
-import OrdersPage from "../views/OrdersPage.vue";
-import BusinessOrdersPage from "../views/BusinessOrdersPage.vue";
-import RefundReturnsPage from "../views/RefundReturnsPage.vue";
-import AdminOrdersPage from "../views/AdminOrdersPage.vue";
-import CheckoutAddressPage from "../views/CheckoutAddressPage.vue";
-import PaymentOptionsPage from "../views/PaymentOptionsPage.vue";
-import AdminProductsPage from "../views/AdminProductsPage.vue";
-import BusinessDashboardPage from "../views/BusinessDashboardPage.vue";
-import RegisteredBusinessesPage from "../views/RegisteredBusinessesPage.vue";
+
+const HomePage = () => import("../views/HomePage.vue");
+const SearchPage = () => import("../views/SearchPage.vue");
+const ProductDetailPage = () => import("../views/ProductDetailPage.vue");
+const BusinessProfilePage = () => import("../views/BusinessProfilePage.vue");
+const LoginPage = () => import("../views/LoginPage.vue");
+const SignupPage = () => import("../views/SignupPage.vue");
+const VerifyEmailPage = () => import("../views/VerifyEmailPage.vue");
+const ForgotPasswordPage = () => import("../views/ForgotPasswordPage.vue");
+const ChangePasswordPage = () => import("../views/ChangePasswordPage.vue");
+const WishlistPage = () => import("../views/WishlistPage.vue");
+const CartPage = () => import("../views/CartPage.vue");
+const AccountPage = () => import("../views/AccountPage.vue");
+const PersonalDataPage = () => import("../views/PersonalDataPage.vue");
+const AddressesPage = () => import("../views/AddressesPage.vue");
+const OrdersPage = () => import("../views/OrdersPage.vue");
+const BusinessOrdersPage = () => import("../views/BusinessOrdersPage.vue");
+const RefundReturnsPage = () => import("../views/RefundReturnsPage.vue");
+const AdminOrdersPage = () => import("../views/AdminOrdersPage.vue");
+const CheckoutAddressPage = () => import("../views/CheckoutAddressPage.vue");
+const PaymentOptionsPage = () => import("../views/PaymentOptionsPage.vue");
+const AdminProductsPage = () => import("../views/AdminProductsPage.vue");
+const BusinessDashboardPage = () => import("../views/BusinessDashboardPage.vue");
+const RegisteredBusinessesPage = () => import("../views/RegisteredBusinessesPage.vue");
 
 const routes = [
   {

@@ -64,6 +64,8 @@ function handleSave() {
             class="registered-business-avatar-image"
             :src="business.logoPath"
             :alt="business.businessName"
+            loading="lazy"
+            decoding="async"
           >
           <span v-else class="registered-business-avatar-fallback">
             {{ getBusinessInitials(business.businessName) }}

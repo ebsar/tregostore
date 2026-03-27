@@ -66,9 +66,10 @@ onMounted(async () => {
 
 async function bootstrap() {
   try {
-    await ensureSessionLoaded();
-    await refreshCollectionState();
-    await loadProduct();
+    await Promise.all([
+      ensureSessionLoaded().then(() => refreshCollectionState()),
+      loadProduct(),
+    ]);
   } finally {
     markRouteReady();
   }
@@ -100,7 +101,11 @@ async function loadProduct() {
     return;
   }
 
-  const { response, data } = await requestJson(`/api/product?id=${encodeURIComponent(productId)}`);
+  const { response, data } = await requestJson(
+    `/api/product?id=${encodeURIComponent(productId)}`,
+    {},
+    { cacheTtlMs: 15000 },
+  );
   if (!response.ok || !data?.ok || !data.product) {
     currentProduct.value = null;
     ui.message = resolveApiMessage(data, "Produkti nuk u gjet.");
@@ -207,7 +212,13 @@ function nextImage() {
             Kthehu te produktet
           </RouterLink>
           <div class="product-detail-image-shell">
-            <img class="product-detail-image" :src="currentImagePath" :alt="currentProduct.title">
+            <img
+              class="product-detail-image"
+              :src="currentImagePath"
+              :alt="currentProduct.title"
+              decoding="async"
+              fetchpriority="high"
+            >
           </div>
 
           <div v-if="imageGallery.length > 1" class="product-gallery-controls">

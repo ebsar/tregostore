@@ -67,9 +67,10 @@ const collectionLabel = computed(() => {
 
 onMounted(async () => {
   try {
-    await ensureSessionLoaded();
-    await refreshCollectionState();
-    await loadProducts();
+    await Promise.all([
+      ensureSessionLoaded().then(() => refreshCollectionState()),
+      loadProducts(),
+    ]);
     markRouteReady();
     void loadBusinesses();
   } catch (error) {
@@ -346,6 +347,8 @@ async function handleCart(productId) {
                   class="home-business-logo"
                   :src="business.logoPath"
                   :alt="business.businessName"
+                  loading="lazy"
+                  decoding="async"
                 >
                 <span v-else class="home-business-logo-fallback">
                   {{ getBusinessInitials(business.businessName) }}

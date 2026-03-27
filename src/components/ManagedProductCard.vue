@@ -65,7 +65,13 @@ function submitRestock() {
   <article class="admin-product-item" :class="{ 'is-hidden': !product.isPublic }">
     <RouterLink class="admin-product-link" :to="detailUrl">
       <div class="admin-product-thumb-wrap">
-        <img class="admin-product-thumb" :src="product.imagePath" :alt="product.title">
+        <img
+          class="admin-product-thumb"
+          :src="product.imagePath"
+          :alt="product.title"
+          loading="lazy"
+          decoding="async"
+        >
       </div>
     </RouterLink>
 

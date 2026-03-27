@@ -51,7 +51,13 @@ const details = computed(() =>
     </div>
 
     <div class="saved-product-image-wrap">
-      <img class="saved-product-image" :src="product.imagePath" :alt="product.title">
+      <img
+        class="saved-product-image"
+        :src="product.imagePath"
+        :alt="product.title"
+        loading="lazy"
+        decoding="async"
+      >
     </div>
 
     <div class="saved-product-copy">

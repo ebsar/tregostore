@@ -44,7 +44,13 @@ const details = computed(() =>
   <article class="pet-product-card" :aria-label="product.title">
     <RouterLink class="pet-product-link" :to="detailUrl" :aria-label="`Hape produktin ${product.title}`">
       <div class="pet-product-image-wrap">
-        <img class="pet-product-image" :src="product.imagePath" :alt="product.title">
+        <img
+          class="pet-product-image"
+          :src="product.imagePath"
+          :alt="product.title"
+          loading="lazy"
+          decoding="async"
+        >
       </div>
     </RouterLink>
 

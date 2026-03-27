@@ -131,9 +131,10 @@ onBeforeUnmount(() => {
 
 async function bootstrap() {
   try {
-    await ensureSessionLoaded();
-    await refreshCollectionState();
-    await loadProducts();
+    await Promise.all([
+      ensureSessionLoaded().then(() => refreshCollectionState()),
+      loadProducts(),
+    ]);
   } catch (error) {
     ui.message = "Produktet nuk u ngarkuan. Provoje perseri.";
     ui.type = "error";

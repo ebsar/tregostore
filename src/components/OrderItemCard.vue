@@ -26,6 +26,8 @@ defineProps({
         class="order-item-image"
         :src="item.imagePath"
         :alt="item.title || 'Produkt'"
+        loading="lazy"
+        decoding="async"
       >
       <div v-else class="order-item-image-fallback">
         {{ (item.title || "P").charAt(0).toUpperCase() }}

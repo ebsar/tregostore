@@ -158,6 +158,15 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
+PUBLIC_PRODUCTS_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
+}
+PUBLIC_BUSINESSES_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=60, s-maxage=180, stale-while-revalidate=300"
+}
+PUBLIC_STATS_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
+}
 ADDRESS_SELECT_COLUMNS = """
     id,
     user_id,
@@ -3354,7 +3363,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         self.send_json(404, {"ok": False, "message": "Rruga nuk u gjet."})
 
     def handle_stats(self) -> None:
-        self.send_json(200, {"ok": True, "data": fetch_stats()})
+        self.send_json(
+            200,
+            {"ok": True, "data": fetch_stats()},
+            headers=PUBLIC_STATS_CACHE_HEADERS,
+        )
 
     def handle_me(self) -> None:
         user = self.get_current_user()
@@ -3749,6 +3762,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "total": total_count,
                 "hasMore": offset + len(products) < total_count,
             },
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
@@ -3816,6 +3830,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "total": total_count,
                 "hasMore": offset + len(products) < total_count,
             },
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
 
     def handle_product_detail(self, query_params: dict[str, list[str]]) -> None:
@@ -3915,7 +3930,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             serialize_public_business_profile(row)
             for row in fetch_public_business_profiles()
         ]
-        self.send_json(200, {"ok": True, "businesses": businesses})
+        self.send_json(
+            200,
+            {"ok": True, "businesses": businesses},
+            headers=PUBLIC_BUSINESSES_CACHE_HEADERS,
+        )
 
     def handle_public_business_detail(
         self,
@@ -3965,7 +3984,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             serialize_product(row)
             for row in fetch_public_products_for_business(business_id)
         ]
-        self.send_json(200, {"ok": True, "products": products})
+        self.send_json(
+            200,
+            {"ok": True, "products": products},
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+        )
 
     def handle_business_profile(self) -> None:
         user = self.get_current_user()

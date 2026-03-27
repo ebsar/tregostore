@@ -118,9 +118,16 @@ export async function fetchCurrentUserOptional() {
   }
 }
 
-export async function fetchProtectedCollection(url) {
+export async function fetchProtectedCollection(url, runtime = {}) {
   try {
-    const { response, data } = await requestJson(url);
+    const { response, data } = await requestJson(
+      url,
+      {},
+      {
+        cacheTtlMs: 2000,
+        ...runtime,
+      },
+    );
     if (!response.ok || !data.ok) {
       return [];
     }
