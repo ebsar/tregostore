@@ -1,8 +1,11 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useQueryClient } from "@tanstack/vue-query";
 import { useRoute, useRouter } from "vue-router";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
+import ProductListSkeleton from "../components/ProductListSkeleton.vue";
 import { requestJson, resolveApiMessage, uploadImages } from "../lib/api";
+import { fetchBusinessProductsPage, usePaginatedProductsQuery } from "../lib/paginated-products";
 import {
   PRODUCT_COLOR_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
@@ -15,8 +18,8 @@ import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-sta
 
 const router = useRouter();
 const route = useRoute();
+const queryClient = useQueryClient();
 const businessProfile = ref(null);
-const products = ref([]);
 const logoFile = ref(null);
 const logoPreviewUrl = ref("");
 const selectedFiles = ref([]);
@@ -24,6 +27,10 @@ const previewUrls = ref([]);
 const editingProduct = ref(null);
 const productFormSection = ref(null);
 const productTitleInput = ref(null);
+const productsQueryEnabled = ref(false);
+const businessProfileLoadComplete = ref(false);
+const routeReadyMarked = ref(false);
+const businessProductsQueryKey = ["business", "products"];
 
 const profileForm = reactive({
   businessName: "",
@@ -46,6 +53,15 @@ const ui = reactive({
   listType: "",
 });
 
+const productsQuery = usePaginatedProductsQuery({
+  queryKey: businessProductsQueryKey,
+  enabled: productsQueryEnabled,
+  fetchPage: ({ offset, limit }) => fetchBusinessProductsPage({ offset, limit }),
+  errorMessage: "Lista e artikujve nuk u ngarkua.",
+  loadMoreErrorMessage: "Artikujt e tjere nuk u ngarkuan.",
+});
+
+const products = productsQuery.products;
 const productTypeOptions = computed(() => SECTION_PRODUCT_TYPE_OPTIONS[productForm.category] || []);
 const clothingSection = computed(() => isClothingSection(productForm.category));
 const productPreviewItems = computed(() => {
@@ -61,6 +77,32 @@ const productPreviewItems = computed(() => {
   }));
 });
 const businessLogoPreview = computed(() => logoPreviewUrl.value || profileForm.businessLogoPath || "");
+
+watch(
+  () => route.query.view,
+  async (view) => {
+    if (view === "add-product") {
+      await handleRouteView();
+    }
+  },
+);
+
+watch(
+  () => [
+    productsQueryEnabled.value,
+    businessProfileLoadComplete.value,
+    productsQuery.isInitialLoading.value,
+  ],
+  ([queryEnabled, profileReady, isInitialLoading]) => {
+    if (!queryEnabled || !profileReady || isInitialLoading || routeReadyMarked.value) {
+      return;
+    }
+
+    routeReadyMarked.value = true;
+    markRouteReady();
+  },
+  { immediate: true },
+);
 
 onMounted(async () => {
   try {
@@ -81,21 +123,15 @@ onMounted(async () => {
     }
 
     ui.accessNote = "Je kyçur si biznes. Ketu mund ta regjistrosh biznesin dhe t'i menaxhosh vetem artikujt e tu.";
-    await Promise.all([loadBusinessProfile(), loadProducts()]);
+    productsQueryEnabled.value = true;
+    await loadBusinessProfile();
     await handleRouteView();
+  } catch (error) {
+    console.error(error);
   } finally {
-    markRouteReady();
+    businessProfileLoadComplete.value = true;
   }
 });
-
-watch(
-  () => route.query.view,
-  async (view) => {
-    if (view === "add-product") {
-      await handleRouteView();
-    }
-  },
-);
 
 onBeforeUnmount(() => {
   revokeLogoPreview();
@@ -211,27 +247,17 @@ function handleLogoChange(event) {
   }
 }
 
-async function loadProducts() {
-  const { response, data } = await requestJson("/api/business/products");
-  if (!response.ok || !data?.ok) {
-    ui.listMessage = resolveApiMessage(data, "Lista e artikujve nuk u ngarkua.");
-    ui.listType = "error";
-    products.value = [];
-    return;
-  }
-
-  products.value = Array.isArray(data.products) ? data.products : [];
-  ui.listMessage = "";
-  ui.listType = "";
-}
-
-function resetProductForm() {
+function resetProductForm(options = {}) {
+  const { preserveFeedback = false } = options;
   Object.assign(productForm, createEmptyProductState());
   editingProduct.value = null;
   selectedFiles.value = [];
   revokePreviewUrls();
-  ui.productMessage = "";
-  ui.productTypeMessage = "";
+
+  if (!preserveFeedback) {
+    ui.productMessage = "";
+    ui.productTypeMessage = "";
+  }
 }
 
 async function handleRouteView() {
@@ -275,6 +301,10 @@ function handleFilesChange(event) {
   revokePreviewUrls();
   selectedFiles.value = Array.from(event.target.files || []);
   previewUrls.value = selectedFiles.value.map((file) => URL.createObjectURL(file));
+}
+
+async function invalidateProductsList() {
+  await queryClient.invalidateQueries({ queryKey: businessProductsQueryKey });
 }
 
 async function submitProduct() {
@@ -334,8 +364,8 @@ async function submitProduct() {
 
   ui.productMessage = data.message || (editingProduct.value ? "Artikulli u perditesua me sukses." : "Artikulli u ruajt me sukses.");
   ui.productTypeMessage = "success";
-  resetProductForm();
-  await loadProducts();
+  resetProductForm({ preserveFeedback: true });
+  await invalidateProductsList();
 }
 
 async function submitProductAction(url, payload, fallbackMessage) {
@@ -361,7 +391,7 @@ async function handleDeleteProduct(product) {
   }
   const ok = await submitProductAction("/api/products/delete", { productId: product.id }, "Produkti u fshi me sukses.");
   if (ok) {
-    await loadProducts();
+    await invalidateProductsList();
   }
 }
 
@@ -372,7 +402,7 @@ async function handleToggleVisibility(product) {
     "Dukshmeria e produktit u perditesua.",
   );
   if (ok) {
-    await loadProducts();
+    await invalidateProductsList();
   }
 }
 
@@ -383,7 +413,7 @@ async function handleToggleStock(product) {
     "Shfaqja e stokut u perditesua.",
   );
   if (ok) {
-    await loadProducts();
+    await invalidateProductsList();
   }
 }
 
@@ -394,8 +424,12 @@ async function handleRestockProduct({ productId, quantity }) {
     "Stoku u perditesua me sukses.",
   );
   if (ok) {
-    await loadProducts();
+    await invalidateProductsList();
   }
+}
+
+async function loadMoreProducts() {
+  await productsQuery.loadMore();
 }
 </script>
 
@@ -617,9 +651,15 @@ async function handleRestockProduct({ productId, quantity }) {
         {{ ui.listMessage }}
       </div>
 
-      <div class="admin-products-list">
+      <ProductListSkeleton
+        v-if="productsQuery.isInitialLoading"
+        :count="10"
+        variant="managed"
+      />
+
+      <div v-else class="admin-products-list">
         <div v-if="products.length === 0" class="admin-empty-state">
-          Ende nuk ke artikuj te publikuar nga ky biznes.
+          {{ productsQuery.errorMessage || "Ende nuk ke artikuj te publikuar nga ky biznes." }}
         </div>
 
         <ManagedProductCard
@@ -632,6 +672,37 @@ async function handleRestockProduct({ productId, quantity }) {
           @toggle-stock-public="handleToggleStock"
           @restock="handleRestockProduct"
         />
+      </div>
+
+      <div v-if="products.length > 0 && productsQuery.hasMore" class="collection-load-more">
+        <button
+          class="search-reset-button collection-load-more-button"
+          type="button"
+          :disabled="productsQuery.isLoadingMore"
+          @click="loadMoreProducts"
+        >
+          <span class="collection-load-more-button-content">
+            <span
+              v-if="productsQuery.isLoadingMore"
+              class="collection-load-more-spinner"
+              aria-hidden="true"
+            ></span>
+            <span>{{ productsQuery.isLoadingMore ? "Duke ngarkuar..." : "Shfaq me shume" }}</span>
+          </span>
+        </button>
+      </div>
+
+      <p v-else-if="products.length > 0" class="collection-load-more-note">
+        Po shfaqen te gjitha produktet e disponueshme.
+      </p>
+
+      <div
+        v-if="productsQuery.loadMoreErrorMessage"
+        class="form-message error collection-inline-error"
+        role="status"
+        aria-live="polite"
+      >
+        {{ productsQuery.loadMoreErrorMessage }}
       </div>
     </section>
   </section>

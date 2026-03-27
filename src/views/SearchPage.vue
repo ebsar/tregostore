@@ -2,31 +2,35 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
+import ProductListSkeleton from "../components/ProductListSkeleton.vue";
+import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import {
+  fetchCatalogProductsPage,
+  fetchSearchProductsPage,
+  fetchVisualSearchProductsPage,
+  usePaginatedProductsQuery,
+} from "../lib/paginated-products";
 import { formatCategoryGroupLabel, formatCategoryLabel } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
-const PRODUCTS_PAGE_SIZE = 12;
 const SEARCH_INPUT_DEBOUNCE_MS = 320;
 
 const draftQuery = ref("");
-const products = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
 const busyCartIds = ref([]);
-const totalProductsCount = ref(0);
-const hasMoreProducts = ref(false);
-const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
 const visualSearchInputElement = ref(null);
 const visualSearchFile = ref(null);
 const visualSearchPreviewUrl = ref("");
 const visualSearchFileName = ref("");
 const visualSearchActive = ref(false);
-const visualSearchBusy = ref(false);
+const visualSearchQueryVersion = ref(0);
+const routeReadyMarked = ref(false);
+const sessionLoadComplete = ref(false);
 const filters = reactive({
   size: "",
   color: "",
@@ -42,6 +46,96 @@ const categoryFilter = computed(() => String(route.query.category || "").trim().
 const categoryGroupFilter = computed(() => String(route.query.categoryGroup || "").trim().toLowerCase());
 const productTypeFilter = computed(() => String(route.query.productType || "").trim().toLowerCase());
 const activeQuery = computed(() => String(route.query.q || "").trim());
+const standardSearchQueryKey = computed(() => [
+  "products",
+  "search",
+  {
+    q: activeQuery.value,
+    category: categoryFilter.value,
+    categoryGroup: categoryGroupFilter.value,
+  },
+]);
+const visualSearchQueryKey = computed(() => [
+  "products",
+  "visual-search",
+  visualSearchQueryVersion.value,
+  {
+    category: categoryFilter.value,
+    categoryGroup: categoryGroupFilter.value,
+  },
+]);
+
+const standardProductsQuery = usePaginatedProductsQuery({
+  queryKey: standardSearchQueryKey,
+  enabled: computed(() => !visualSearchActive.value),
+  fetchPage: ({ offset, limit }) =>
+    activeQuery.value
+      ? fetchSearchProductsPage({
+          query: activeQuery.value,
+          category: categoryFilter.value,
+          categoryGroup: categoryGroupFilter.value,
+          offset,
+          limit,
+        })
+      : fetchCatalogProductsPage({
+          category: categoryFilter.value,
+          categoryGroup: categoryGroupFilter.value,
+          offset,
+          limit,
+        }),
+  errorMessage: "Produktet nuk u ngarkuan.",
+  loadMoreErrorMessage: "Produktet e tjera nuk u ngarkuan.",
+});
+
+const visualProductsQuery = usePaginatedProductsQuery({
+  queryKey: visualSearchQueryKey,
+  enabled: computed(() => visualSearchActive.value && Boolean(visualSearchFile.value)),
+  fetchPage: ({ offset, limit }) =>
+    fetchVisualSearchProductsPage({
+      file: visualSearchFile.value,
+      category: categoryFilter.value,
+      categoryGroup: categoryGroupFilter.value,
+      offset,
+      limit,
+    }),
+  errorMessage: "Kerkimi me foto nuk u krye.",
+  loadMoreErrorMessage: "Produktet e tjera te ngjashme nuk u ngarkuan.",
+});
+
+const products = computed(() =>
+  visualSearchActive.value ? visualProductsQuery.products.value : standardProductsQuery.products.value,
+);
+const totalProductsCount = computed(() =>
+  visualSearchActive.value ? visualProductsQuery.total.value : standardProductsQuery.total.value,
+);
+const hasMoreProducts = computed(() =>
+  visualSearchActive.value ? visualProductsQuery.hasMore.value : standardProductsQuery.hasMore.value,
+);
+const loadingMoreProducts = computed(() =>
+  visualSearchActive.value
+    ? visualProductsQuery.isLoadingMore.value
+    : standardProductsQuery.isLoadingMore.value,
+);
+const initialProductsLoading = computed(() =>
+  visualSearchActive.value
+    ? visualProductsQuery.isInitialLoading.value
+    : standardProductsQuery.isInitialLoading.value,
+);
+const productsErrorMessage = computed(() =>
+  visualSearchActive.value
+    ? visualProductsQuery.errorMessage.value
+    : standardProductsQuery.errorMessage.value,
+);
+const loadMoreProductsErrorMessage = computed(() =>
+  visualSearchActive.value
+    ? visualProductsQuery.loadMoreErrorMessage.value
+    : standardProductsQuery.loadMoreErrorMessage.value,
+);
+const visualSearchBusy = computed(
+  () =>
+    visualSearchActive.value &&
+    (visualProductsQuery.isInitialLoading.value || visualProductsQuery.isLoadingMore.value),
+);
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
@@ -78,6 +172,12 @@ const filteredProducts = computed(() => {
 });
 
 const resultsLabel = computed(() => {
+  if (initialProductsLoading.value) {
+    return visualSearchActive.value
+      ? "Po analizohet fotoja dhe po kerkohen produktet me te ngjashme."
+      : "Po ngarkohen produktet e disponueshme.";
+  }
+
   if (visualSearchActive.value) {
     if (!products.value.length) {
       return "Nuk u gjet asnje produkt i ngjashem sipas fotos.";
@@ -118,10 +218,10 @@ const resultsLabel = computed(() => {
 
 watch(
   () => route.fullPath,
-  async () => {
+  () => {
+    routeReadyMarked.value = false;
     draftQuery.value = activeQuery.value;
     clearVisualSearchState();
-    await bootstrap();
   },
 );
 
@@ -137,30 +237,35 @@ watch(draftQuery, (nextValue) => {
   }, SEARCH_INPUT_DEBOUNCE_MS);
 });
 
+watch(
+  () => [sessionLoadComplete.value, initialProductsLoading.value],
+  ([sessionReady, isInitialLoading]) => {
+    if (!sessionReady || isInitialLoading || routeReadyMarked.value) {
+      return;
+    }
+
+    routeReadyMarked.value = true;
+    markRouteReady();
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   draftQuery.value = activeQuery.value;
-  await bootstrap();
+
+  try {
+    await ensureSessionLoaded().then(() => refreshCollectionState());
+  } catch (error) {
+    console.error(error);
+  } finally {
+    sessionLoadComplete.value = true;
+  }
 });
 
 onBeforeUnmount(() => {
   window.clearTimeout(searchDebounceTimeoutId);
   clearVisualSearchState();
 });
-
-async function bootstrap() {
-  try {
-    await Promise.all([
-      ensureSessionLoaded().then(() => refreshCollectionState()),
-      loadProducts(),
-    ]);
-  } catch (error) {
-    ui.message = "Produktet nuk u ngarkuan. Provoje perseri.";
-    ui.type = "error";
-    console.error(error);
-  } finally {
-    markRouteReady();
-  }
-}
 
 async function refreshCollectionState() {
   if (!appState.user) {
@@ -179,63 +284,13 @@ async function refreshCollectionState() {
   setCartItems(cartItems);
 }
 
-async function loadProducts(options = {}) {
-  const { append = false } = options;
-  const params = new URLSearchParams();
-  params.set("limit", String(PRODUCTS_PAGE_SIZE));
-  params.set("offset", String(append ? products.value.length : 0));
-
-  if (activeQuery.value) {
-    params.set("q", activeQuery.value);
-  }
-
-  if (categoryFilter.value) {
-    params.set("category", categoryFilter.value);
-  }
-
-  if (categoryGroupFilter.value) {
-    params.set("categoryGroup", categoryGroupFilter.value);
-  }
-
-  const requestUrl = activeQuery.value
-    ? `/api/products/search?${params.toString()}`
-    : `/api/products?${params.toString()}`;
-
-  const { response, data } = await requestJson(requestUrl, {}, { cacheTtlMs: 8000 });
-  if (!response.ok || !data?.ok) {
-    ui.message = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
-    ui.type = "error";
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-    }
-    return;
-  }
-
-  const nextProducts = Array.isArray(data.products) ? data.products : [];
-  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
-  totalProductsCount.value = Number(data.total || products.value.length || 0);
-  hasMoreProducts.value = Boolean(data.hasMore);
-  ui.message = "";
-  ui.type = "";
-}
-
 async function loadMoreProducts() {
-  if (loadingMoreProducts.value || !hasMoreProducts.value) {
+  if (visualSearchActive.value) {
+    await visualProductsQuery.loadMore();
     return;
   }
 
-  loadingMoreProducts.value = true;
-  try {
-    if (visualSearchActive.value && visualSearchFile.value) {
-      await runVisualSearch({ append: true });
-    } else {
-      await loadProducts({ append: true });
-    }
-  } finally {
-    loadingMoreProducts.value = false;
-  }
+  await standardProductsQuery.loadMore();
 }
 
 function submitSearch() {
@@ -267,12 +322,11 @@ function clearVisualSearchState() {
   }
 }
 
-async function clearVisualSearchAndReload() {
+function clearVisualSearchAndReload() {
   clearVisualSearchState();
-  await loadProducts();
 }
 
-async function handleVisualSearchSelection(event) {
+function handleVisualSearchSelection(event) {
   const nextFile = event.target?.files?.[0] || null;
   if (!nextFile) {
     return;
@@ -282,48 +336,14 @@ async function handleVisualSearchSelection(event) {
   visualSearchFile.value = nextFile;
   visualSearchFileName.value = String(nextFile.name || "").trim();
   visualSearchPreviewUrl.value = URL.createObjectURL(nextFile);
-  await runVisualSearch();
+  visualSearchQueryVersion.value += 1;
+  visualSearchActive.value = true;
+  ui.message = "";
+  ui.type = "";
 
   if (event.target) {
     event.target.value = "";
   }
-}
-
-async function runVisualSearch(options = {}) {
-  if (!visualSearchFile.value) {
-    return;
-  }
-
-  const { append = false } = options;
-  visualSearchBusy.value = true;
-
-  const result = await searchProductsByImage(visualSearchFile.value, {
-    category: categoryFilter.value,
-    categoryGroup: categoryGroupFilter.value,
-    limit: PRODUCTS_PAGE_SIZE,
-    offset: append ? products.value.length : 0,
-  });
-
-  visualSearchBusy.value = false;
-
-  if (!result.ok) {
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-    }
-    ui.message = result.message;
-    ui.type = "error";
-    return;
-  }
-
-  visualSearchActive.value = true;
-  const nextProducts = Array.isArray(result.products) ? result.products : [];
-  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
-  totalProductsCount.value = Number(result.total || products.value.length || 0);
-  hasMoreProducts.value = Boolean(result.hasMore);
-  ui.message = result.message || "U gjeten produkte te ngjashme sipas fotos.";
-  ui.type = "success";
 }
 
 function resetFilters() {
@@ -527,7 +547,13 @@ async function handleCart(productId) {
       {{ ui.message }}
     </div>
 
-    <section v-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Rezultatet e kerkimit">
+    <ProductListSkeleton
+      v-if="initialProductsLoading"
+      :count="10"
+      variant="catalog"
+    />
+
+    <section v-else-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Rezultatet e kerkimit">
       <ProductCard
         v-for="product in filteredProducts"
         :key="product.id"
@@ -542,13 +568,38 @@ async function handleCart(productId) {
     </section>
 
     <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
-      <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
-        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
+      <button
+        class="search-reset-button collection-load-more-button"
+        type="button"
+        :disabled="loadingMoreProducts"
+        @click="loadMoreProducts"
+      >
+        <span class="collection-load-more-button-content">
+          <span
+            v-if="loadingMoreProducts"
+            class="collection-load-more-spinner"
+            aria-hidden="true"
+          ></span>
+          <span>{{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}</span>
+        </span>
       </button>
     </div>
 
-    <div v-if="products.length === 0" class="collection-empty-state">
-      {{ visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim." }}
+    <p v-else-if="products.length > 0" class="collection-load-more-note">
+      Po shfaqen te gjitha produktet e disponueshme.
+    </p>
+
+    <div
+      v-if="loadMoreProductsErrorMessage"
+      class="form-message error collection-inline-error"
+      role="status"
+      aria-live="polite"
+    >
+      {{ loadMoreProductsErrorMessage }}
+    </div>
+
+    <div v-if="!initialProductsLoading && products.length === 0" class="collection-empty-state">
+      {{ productsErrorMessage || (visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim.") }}
     </div>
   </section>
 </template>

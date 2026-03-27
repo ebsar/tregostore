@@ -2573,8 +2573,36 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
-def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
+def count_public_products_for_business(business_id: int) -> int:
     with get_db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS total_count
+            FROM products p
+            INNER JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            WHERE bp.id = ?
+              AND p.is_public = 1
+            """,
+            (business_id,),
+        ).fetchone()
+
+    return int(row["total_count"] or 0)
+
+
+def fetch_public_products_for_business(
+    business_id: int,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        parameters: list[object] = [business_id]
+        limit_offset_clause = ""
+
+        if limit is not None:
+            limit_offset_clause = "\nLIMIT ?\nOFFSET ?"
+            parameters.extend([limit, max(0, int(offset))])
+
         return connection.execute(
             """
             SELECT
@@ -2598,8 +2626,9 @@ def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
             WHERE bp.id = ?
               AND p.is_public = 1
             ORDER BY p.id DESC
-            """,
-            (business_id,),
+            """
+            + limit_offset_clause,
+            parameters,
         ).fetchall()
 
 
@@ -3352,7 +3381,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.handle_business_profile()
             return
         if path == "/api/business/products":
-            self.handle_business_products_list()
+            self.handle_business_products_list(query_params)
             return
         if path == "/api/business/public":
             self.handle_public_business_detail(query_params)
@@ -3370,7 +3399,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.handle_products_list(query_params)
             return
         if path == "/api/admin/products":
-            self.handle_admin_products_list()
+            self.handle_admin_products_list(query_params)
             return
         if path == "/api/wishlist":
             self.handle_wishlist()
@@ -4175,7 +4204,10 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         self.send_json(200, {"ok": True, "product": serialize_product(product)})
 
-    def handle_admin_products_list(self) -> None:
+    def handle_admin_products_list(
+        self,
+        query_params: dict[str, list[str]],
+    ) -> None:
         user = self.get_current_user()
         if not user:
             self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
@@ -4188,10 +4220,31 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
+            return
+
+        total_count = count_products(include_hidden=True)
         products = [
-            serialize_product(row) for row in fetch_products(include_hidden=True)
+            serialize_product(row)
+            for row in fetch_products(
+                include_hidden=True,
+                limit=limit,
+                offset=offset,
+            )
         ]
-        self.send_json(200, {"ok": True, "products": products})
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "products": products,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
+        )
 
     def handle_admin_users_list(self) -> None:
         user = self.get_current_user()
@@ -4301,13 +4354,30 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
+            return
+
+        total_count = count_public_products_for_business(business_id)
         products = [
             serialize_product(row)
-            for row in fetch_public_products_for_business(business_id)
+            for row in fetch_public_products_for_business(
+                business_id,
+                limit=limit,
+                offset=offset,
+            )
         ]
         self.send_json(
             200,
-            {"ok": True, "products": products},
+            {
+                "ok": True,
+                "products": products,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
 
@@ -4340,7 +4410,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
-    def handle_business_products_list(self) -> None:
+    def handle_business_products_list(
+        self,
+        query_params: dict[str, list[str]],
+    ) -> None:
         user = self.get_current_user()
         if not user:
             self.send_json(
@@ -4356,14 +4429,35 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
+            return
+
+        total_count = count_products(
+            include_hidden=True,
+            created_by_user_id=user["id"],
+        )
         products = [
             serialize_product(row)
             for row in fetch_products(
                 include_hidden=True,
                 created_by_user_id=user["id"],
+                limit=limit,
+                offset=offset,
             )
         ]
-        self.send_json(200, {"ok": True, "products": products})
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "products": products,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
+        )
 
     def handle_business_follow_toggle(self) -> None:
         user = self.get_current_user()

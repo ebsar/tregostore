@@ -356,18 +356,6 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <div class="nav-mobile-tray">
-      <RouterLink
-        v-if="isBusinessUser"
-        class="nav-icon-button add-product-button nav-mobile-shortcut"
-        to="/biznesi-juaj?view=add-product"
-        aria-label="Shto artikull te ri"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5v14"></path>
-          <path d="M5 12h14"></path>
-        </svg>
-      </RouterLink>
-
       <button
         class="nav-icon-button search-button nav-mobile-shortcut"
         type="button"
@@ -631,6 +619,15 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
       </div>
+
+      <RouterLink
+        v-if="isBusinessUser && isMobileViewport"
+        class="nav-action nav-action-primary nav-mobile-business-action"
+        to="/biznesi-juaj?view=add-product"
+        @click="closeExpandedPanels"
+      >
+        Shto artikull
+      </RouterLink>
     </div>
   </nav>
 </template>
