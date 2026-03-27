@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
       <button
         class="nav-icon-button search-button nav-mobile-shortcut"
         type="button"
-        aria-label="Kerko"
+        aria-label="Kerko ketu"
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
-        <span class="nav-mobile-search-label">Kerko...</span>
+        <span class="nav-mobile-search-label">Kerko ketu...</span>
       </button>
 
       <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">

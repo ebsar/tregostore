@@ -5504,8 +5504,8 @@ code {
     display: flex;
     justify-content: center;
     align-items: center;
-    width: 170px;
-    max-width: 170px;
+    width: 186px;
+    max-width: 186px;
     height: 37px;
     min-height: 37px;
     max-height: 37px;
@@ -5586,8 +5586,8 @@ code {
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-shortcut.search-button .nav-icon {
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-search-label {
@@ -5596,7 +5596,7 @@ code {
     justify-content: center;
     flex: 0 0 auto;
     color: #6f5a4f;
-    font-size: 0.76rem;
+    font-size: 0.78rem;
     font-weight: 700;
     line-height: 1;
     text-align: center;
