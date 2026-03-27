@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
@@ -7,6 +7,7 @@ import SiteNav from "./components/SiteNav.vue";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
 const route = useRoute();
+let lockedScrollY = 0;
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -39,9 +40,43 @@ watch(
   },
 );
 
+watch(
+  () => appState.loaderVisible,
+  (isVisible) => {
+    if (isVisible) {
+      lockedScrollY = window.scrollY || window.pageYOffset || 0;
+      document.body.classList.add("app-loading");
+      document.body.style.top = `-${lockedScrollY}px`;
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+      document.body.style.width = "100%";
+      document.body.style.position = "fixed";
+      return;
+    }
+
+    document.body.classList.remove("app-loading");
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.left = "";
+    document.body.style.right = "";
+    document.body.style.width = "";
+    window.scrollTo(0, lockedScrollY);
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   syncGreetingToastFromSession();
   await ensureSessionLoaded();
+});
+
+onBeforeUnmount(() => {
+  document.body.classList.remove("app-loading");
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  document.body.style.width = "";
 });
 </script>
 

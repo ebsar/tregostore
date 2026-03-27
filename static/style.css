@@ -41,6 +41,16 @@ body {
   padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
 }
 
+body.app-loading {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+body.app-loading #app {
+  pointer-events: none;
+}
+
 body,
 #app {
   min-height: var(--app-vh);
