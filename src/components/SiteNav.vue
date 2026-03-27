@@ -23,7 +23,7 @@ const searchInputElement = ref(null);
 const navigationSections = ref(cloneNavigationSections(PRIMARY_NAVIGATION));
 let mobileNavMatchMedia = null;
 let mobileNavScrollTrigger = null;
-const resolveMobileNavEase = gsap.parseEase("power2.out");
+const resolveMobileNavEase = gsap.parseEase("power3.out");
 
 function cloneNavigationSections(sections = []) {
   return Array.isArray(sections)
@@ -222,8 +222,8 @@ function setupMobileNavScrollTrigger() {
 
     mobileNavScrollTrigger = ScrollTrigger.create({
       start: 0,
-      end: 180,
-      scrub: 0.55,
+      end: 220,
+      scrub: 0.8,
       fastScrollEnd: false,
       invalidateOnRefresh: true,
       onUpdate(self) {
@@ -542,17 +542,19 @@ onBeforeUnmount(() => {
             </svg>
           </button>
 
-          <div class="nav-dropdown-menu" :hidden="openDropdownKey !== section.key">
-            <RouterLink
-              v-for="item in section.items"
-              :key="item.href"
-              class="nav-dropdown-item"
-              :to="item.href"
-              @click="closeExpandedPanels"
-            >
-              {{ item.label }}
-            </RouterLink>
-          </div>
+          <Transition name="nav-dropdown-panel">
+            <div v-if="openDropdownKey === section.key" class="nav-dropdown-menu">
+              <RouterLink
+                v-for="item in section.items"
+                :key="item.href"
+                class="nav-dropdown-item"
+                :to="item.href"
+                @click="closeExpandedPanels"
+              >
+                {{ item.label }}
+              </RouterLink>
+            </div>
+          </Transition>
         </div>
 
         <RouterLink

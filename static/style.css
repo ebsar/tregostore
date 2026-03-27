@@ -16,6 +16,8 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  --motion-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 * {
@@ -282,15 +284,15 @@ body[data-page="cart"] .page-shell {
   isolation: isolate;
   touch-action: manipulation;
   transition:
-    width 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    max-width 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    min-height 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    padding 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-radius 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 240ms ease;
+    width 420ms var(--motion-smooth),
+    max-width 420ms var(--motion-smooth),
+    min-height 420ms var(--motion-smooth),
+    padding 420ms var(--motion-smooth),
+    border-radius 420ms var(--motion-smooth),
+    box-shadow 420ms var(--motion-smooth),
+    background 420ms var(--motion-smooth),
+    transform 420ms var(--motion-smooth),
+    opacity 260ms ease;
   will-change: width, max-width, padding, transform;
 }
 
@@ -332,7 +334,7 @@ body[data-page="cart"] .page-shell {
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 10px 22px rgba(213, 188, 176, 0.16);
   transition:
-    transform 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 360ms var(--motion-smooth),
     opacity 240ms ease;
 }
 
@@ -352,7 +354,7 @@ body[data-page="cart"] .page-shell {
   width: clamp(96px, 9.5vw, 148px);
   height: auto;
   object-fit: contain;
-  transition: width 220ms ease, transform 220ms ease, opacity 220ms ease;
+  transition: width 280ms var(--motion-soft), transform 280ms var(--motion-soft), opacity 220ms ease;
 }
 
 .brand-copy {
@@ -408,7 +410,7 @@ body[data-page="cart"] .page-shell {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  transition: gap 220ms ease;
+  transition: gap 260ms var(--motion-soft), transform 260ms var(--motion-soft), opacity 220ms ease;
 }
 
 .nav-mobile-toggle {
@@ -434,7 +436,7 @@ body[data-page="cart"] .page-shell {
   cursor: pointer;
   flex-shrink: 0;
   touch-action: manipulation;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  transition: transform 280ms var(--motion-soft), box-shadow 280ms var(--motion-soft), background 280ms var(--motion-soft);
 }
 
 .nav-mobile-toggle:hover {
@@ -490,7 +492,7 @@ body[data-page="cart"] .page-shell {
   backdrop-filter: blur(16px) saturate(170%);
   -webkit-backdrop-filter: blur(16px) saturate(170%);
   touch-action: manipulation;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  transition: transform 280ms var(--motion-soft), box-shadow 280ms var(--motion-soft), background 280ms var(--motion-soft);
 }
 
 .nav-user-trigger:hover {
@@ -635,6 +637,7 @@ body[data-page="cart"] .page-shell {
   backdrop-filter: blur(26px) saturate(170%);
   -webkit-backdrop-filter: blur(26px) saturate(170%);
   transform-origin: top right;
+  will-change: transform, opacity, filter;
 }
 
 .nav-search-dismiss-layer {
@@ -784,7 +787,13 @@ body[data-page="cart"] .page-shell {
   white-space: nowrap;
   text-decoration: none;
   touch-action: manipulation;
-  transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+  transition:
+    transform 280ms var(--motion-soft),
+    background 280ms var(--motion-soft),
+    color 220ms ease,
+    border-color 280ms var(--motion-soft),
+    box-shadow 280ms var(--motion-soft),
+    opacity 220ms ease;
 }
 
 .nav-link,
@@ -842,7 +851,7 @@ body[data-page="cart"] .page-shell {
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 0.22s ease;
+  transition: transform 280ms var(--motion-soft);
 }
 
 .nav-dropdown.open .nav-chevron {
@@ -873,10 +882,7 @@ body[data-page="cart"] .page-shell {
   backdrop-filter: blur(24px) saturate(170%);
   -webkit-backdrop-filter: blur(24px) saturate(170%);
   transform: translateX(-50%);
-}
-
-.nav-dropdown-menu[hidden] {
-  display: none !important;
+  will-change: transform, opacity, filter;
 }
 
 .nav-dropdown-item {
@@ -978,7 +984,13 @@ body[data-page="account"] .nav-user-trigger {
     0 8px 18px rgba(221, 197, 188, 0.1);
   text-decoration: none;
   cursor: pointer;
-  transition: transform 0.22s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, color 0.22s ease;
+  transition:
+    transform 280ms var(--motion-soft),
+    background 280ms var(--motion-soft),
+    border-color 280ms var(--motion-soft),
+    box-shadow 280ms var(--motion-soft),
+    color 220ms ease,
+    opacity 220ms ease;
 }
 
 .nav-icon-button:hover {
@@ -1084,20 +1096,39 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
 
 .nav-floating-panel-enter-active,
 .nav-floating-panel-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s ease, filter 0.24s ease;
+  transition: opacity 320ms var(--motion-smooth), transform 320ms var(--motion-smooth), filter 320ms var(--motion-smooth);
 }
 
 .nav-floating-panel-enter-from,
 .nav-floating-panel-leave-to {
   opacity: 0;
-  transform: translateY(-10px) scale(0.96);
-  filter: blur(8px);
+  transform: translateY(-12px) scale(0.965);
+  filter: blur(10px);
 }
 
 .nav-floating-panel-enter-to,
 .nav-floating-panel-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.nav-dropdown-panel-enter-active,
+.nav-dropdown-panel-leave-active {
+  transition: opacity 280ms var(--motion-smooth), transform 280ms var(--motion-smooth), filter 280ms var(--motion-smooth);
+}
+
+.nav-dropdown-panel-enter-from,
+.nav-dropdown-panel-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px) scale(0.97);
+  filter: blur(8px);
+}
+
+.nav-dropdown-panel-enter-to,
+.nav-dropdown-panel-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
   filter: blur(0);
 }
 
@@ -5620,7 +5651,7 @@ code {
     gap: 6px;
     min-width: 0;
     overflow: visible;
-    transition: none;
+    transition: gap 260ms var(--motion-soft), transform 260ms var(--motion-soft), opacity 220ms ease;
   }
 
   .nav-mobile-shortcut,
@@ -5630,10 +5661,10 @@ code {
     height: 42px;
     flex: 0 0 42px;
     transition:
-      transform 220ms ease,
-      opacity 220ms ease-out,
-      box-shadow 220ms ease,
-      background 220ms ease;
+      transform 280ms var(--motion-soft),
+      opacity 240ms ease-out,
+      box-shadow 280ms var(--motion-soft),
+      background 280ms var(--motion-soft);
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) {
@@ -5664,6 +5695,15 @@ code {
     backdrop-filter: blur(18px) saturate(165%);
     -webkit-backdrop-filter: blur(18px) saturate(165%);
     overflow: hidden;
+    transition:
+      width 320ms var(--motion-smooth),
+      max-width 320ms var(--motion-smooth),
+      height 320ms var(--motion-smooth),
+      min-height 320ms var(--motion-smooth),
+      padding 320ms var(--motion-smooth),
+      border-radius 320ms var(--motion-smooth),
+      box-shadow 320ms var(--motion-smooth),
+      background 320ms var(--motion-smooth);
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .brand {
@@ -5697,6 +5737,7 @@ code {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
+    transition: transform 260ms var(--motion-soft), opacity 220ms ease;
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-search-pill-content {
@@ -5706,6 +5747,7 @@ code {
     gap: 8px;
     width: 100%;
     min-width: 0;
+    transition: gap 260ms var(--motion-soft), transform 260ms var(--motion-soft), opacity 220ms ease;
   }
 
   .site-nav.mobile-search-only:not(.mobile-menu-open) .nav-mobile-search-pill-icon,
@@ -5732,8 +5774,18 @@ code {
   .nav-links,
   .nav-actions {
     flex: 1 0 100%;
-    display: none;
+    display: flex;
     width: 100%;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transform: translateY(-10px);
+    transition:
+      max-height 360ms var(--motion-smooth),
+      opacity 260ms ease,
+      transform 360ms var(--motion-smooth),
+      padding 260ms var(--motion-soft);
   }
 
   .nav-links {
@@ -5746,14 +5798,17 @@ code {
 
   .site-nav.mobile-menu-open .nav-links,
   .site-nav.mobile-menu-open .nav-actions {
-    display: flex;
+    max-height: 720px;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
   }
 
   .nav-links {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
-    padding-top: 8px;
+    padding-top: 0;
   }
 
   .nav-actions {
@@ -5761,7 +5816,15 @@ code {
     align-items: stretch;
     justify-content: flex-start;
     gap: 10px;
-    padding-top: 4px;
+    padding-top: 0;
+  }
+
+  .site-nav.mobile-menu-open .nav-links {
+    padding-top: 10px;
+  }
+
+  .site-nav.mobile-menu-open .nav-actions {
+    padding-top: 6px;
   }
 
   .nav-dropdown,
@@ -5813,6 +5876,16 @@ code {
     min-width: 100%;
     margin-top: 8px;
     transform: none;
+  }
+
+  .nav-dropdown-panel-enter-from,
+  .nav-dropdown-panel-leave-to {
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  .nav-dropdown-panel-enter-to,
+  .nav-dropdown-panel-leave-from {
+    transform: translateY(0) scale(1);
   }
 
   .nav-search-panel {
