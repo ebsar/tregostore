@@ -18,6 +18,7 @@ export const appState = reactive({
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
 let routeLoaderFallbackTimeoutId = 0;
+let sessionLoadPromise = null;
 const ROUTE_LOADER_MAX_DURATION_MS = 5000;
 
 function clearRouteLoaderFallbackTimeout() {
@@ -114,19 +115,35 @@ export async function ensureSessionLoaded(options = {}) {
     return appState.user;
   }
 
-  const currentUser = await fetchCurrentUserOptional();
-  const user = await enrichUserSessionData(currentUser);
-  appState.user = user;
-  appState.sessionLoaded = true;
-
-  if (!user) {
-    setCartCount(0);
-    return null;
+  if (sessionLoadPromise && !force) {
+    return sessionLoadPromise;
   }
 
-  const cartItems = await fetchProtectedCollection("/api/cart");
-  setCartItems(cartItems);
-  return user;
+  const nextPromise = (async () => {
+    const currentUser = await fetchCurrentUserOptional();
+    const user = await enrichUserSessionData(currentUser);
+    appState.user = user;
+    appState.sessionLoaded = true;
+
+    if (!user) {
+      setCartCount(0);
+      return null;
+    }
+
+    const cartItems = await fetchProtectedCollection("/api/cart", { timeoutMs: 5000 });
+    setCartItems(cartItems);
+    return user;
+  })();
+
+  sessionLoadPromise = nextPromise;
+
+  try {
+    return await nextPromise;
+  } finally {
+    if (sessionLoadPromise === nextPromise) {
+      sessionLoadPromise = null;
+    }
+  }
 }
 
 export async function refreshSession() {

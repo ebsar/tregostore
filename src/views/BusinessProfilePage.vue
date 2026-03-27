@@ -13,7 +13,6 @@ const business = ref(null);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const routeReadyMarked = ref(false);
-const sessionLoadComplete = ref(false);
 const businessLoadComplete = ref(false);
 const ui = reactive({
   message: "",
@@ -78,33 +77,25 @@ const messageHref = computed(() => {
 });
 
 async function bootstrap() {
-  sessionLoadComplete.value = false;
   businessLoadComplete.value = false;
 
   try {
-    await Promise.all([
-      ensureSessionLoaded()
-        .then(() => refreshCollectionState())
-        .finally(() => {
-          sessionLoadComplete.value = true;
-        }),
-      loadBusiness().finally(() => {
-        businessLoadComplete.value = true;
-      }),
-    ]);
+    void syncCollectionStateInBackground();
+    await loadBusiness();
   } catch (error) {
     console.error(error);
+  } finally {
+    businessLoadComplete.value = true;
   }
 }
 
 watch(
   () => [
-    sessionLoadComplete.value,
     businessLoadComplete.value,
     businessId.value > 0 ? productsQuery.isInitialLoading.value : false,
   ],
-  ([sessionReady, businessReady, isInitialLoading]) => {
-    if (!sessionReady || !businessReady || isInitialLoading || routeReadyMarked.value) {
+  ([businessReady, isInitialLoading]) => {
+    if (!businessReady || isInitialLoading || routeReadyMarked.value) {
       return;
     }
 
@@ -154,6 +145,15 @@ async function loadBusiness() {
   business.value = data.business;
   ui.message = "";
   ui.type = "";
+}
+
+async function syncCollectionStateInBackground() {
+  try {
+    await ensureSessionLoaded();
+    await refreshCollectionState();
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 async function toggleFollow() {

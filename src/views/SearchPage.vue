@@ -30,7 +30,6 @@ const visualSearchFileName = ref("");
 const visualSearchActive = ref(false);
 const visualSearchQueryVersion = ref(0);
 const routeReadyMarked = ref(false);
-const sessionLoadComplete = ref(false);
 const filters = reactive({
   size: "",
   color: "",
@@ -238,9 +237,9 @@ watch(draftQuery, (nextValue) => {
 });
 
 watch(
-  () => [sessionLoadComplete.value, initialProductsLoading.value],
-  ([sessionReady, isInitialLoading]) => {
-    if (!sessionReady || isInitialLoading || routeReadyMarked.value) {
+  () => initialProductsLoading.value,
+  (isInitialLoading) => {
+    if (isInitialLoading || routeReadyMarked.value) {
       return;
     }
 
@@ -253,13 +252,7 @@ watch(
 onMounted(async () => {
   draftQuery.value = activeQuery.value;
 
-  try {
-    await ensureSessionLoaded().then(() => refreshCollectionState());
-  } catch (error) {
-    console.error(error);
-  } finally {
-    sessionLoadComplete.value = true;
-  }
+  void syncCollectionStateInBackground();
 });
 
 onBeforeUnmount(() => {
@@ -417,6 +410,15 @@ async function handleCart(productId) {
   setCartItems(items);
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
+}
+
+async function syncCollectionStateInBackground() {
+  try {
+    await ensureSessionLoaded();
+    await refreshCollectionState();
+  } catch (error) {
+    console.error(error);
+  }
 }
 </script>
 

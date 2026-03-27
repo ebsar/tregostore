@@ -65,13 +65,23 @@ onMounted(async () => {
 });
 
 async function bootstrap() {
+  const sessionTask = syncCollectionStateInBackground();
+
   try {
-    await Promise.all([
-      ensureSessionLoaded().then(() => refreshCollectionState()),
-      loadProduct(),
-    ]);
+    await loadProduct();
   } finally {
     markRouteReady();
+  }
+
+  await sessionTask;
+}
+
+async function syncCollectionStateInBackground() {
+  try {
+    await ensureSessionLoaded();
+    await refreshCollectionState();
+  } catch (error) {
+    console.error(error);
   }
 }
 

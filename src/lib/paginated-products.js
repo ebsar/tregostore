@@ -1,5 +1,4 @@
 import { computed, ref, toValue, watch } from "vue";
-import { useInfiniteQuery } from "@tanstack/vue-query";
 import { requestJson, resolveApiMessage, searchProductsByImage } from "./api";
 
 export const PRODUCTS_PAGE_SIZE = 10;
@@ -171,91 +170,166 @@ export function usePaginatedProductsQuery(options = {}) {
   const initialErrorMessage = options.errorMessage || "Produktet nuk u ngarkuan.";
   const nextPageErrorMessage =
     options.loadMoreErrorMessage || "Produktet e tjera nuk u ngarkuan.";
+  const products = ref([]);
+  const total = ref(0);
+  const hasMore = ref(false);
+  const isInitialLoading = ref(false);
+  const isLoadingMore = ref(false);
+  const error = ref(null);
   const loadMoreErrorMessage = ref("");
+  const enabled = computed(() => Boolean(toValue(options.enabled ?? true)));
+  const queryKeySignature = computed(() => JSON.stringify(toValue(options.queryKey) || []));
+  const isEmpty = computed(() => !isInitialLoading.value && !error.value && products.value.length === 0);
+  const errorMessage = computed(() =>
+    error.value ? resolveErrorMessage(error.value, initialErrorMessage) : "",
+  );
+  let activeRequestToken = 0;
 
-  const query = useInfiniteQuery({
-    queryKey: options.queryKey,
-    enabled: options.enabled ?? true,
-    initialPageParam: 0,
-    queryFn: async ({ pageParam = 0 }) =>
-      normalizeProductsPage(
+  function resetState() {
+    products.value = [];
+    total.value = 0;
+    hasMore.value = false;
+    isInitialLoading.value = false;
+    isLoadingMore.value = false;
+    error.value = null;
+    loadMoreErrorMessage.value = "";
+  }
+
+  async function loadInitialPage() {
+    const requestToken = activeRequestToken;
+    loadMoreErrorMessage.value = "";
+    error.value = null;
+    isInitialLoading.value = true;
+    isLoadingMore.value = false;
+
+    try {
+      const page = normalizeProductsPage(
         await options.fetchPage({
-          offset: normalizePaginationNumber(pageParam, 0),
+          offset: 0,
           limit: pageSize,
         }),
-      ),
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.offset + lastPage.items.length : undefined,
-    staleTime: options.staleTime ?? 15000,
-    gcTime: options.gcTime ?? 5 * 60 * 1000,
-    retry: options.retry ?? 1,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+      );
 
-  const products = computed(() =>
-    Array.isArray(query.data.value?.pages)
-      ? query.data.value.pages.flatMap((page) => page.items)
-      : [],
-  );
+      if (requestToken !== activeRequestToken) {
+        return;
+      }
 
-  const total = computed(() => {
-    const pages = Array.isArray(query.data.value?.pages) ? query.data.value.pages : [];
-    if (!pages.length) {
-      return 0;
+      products.value = Array.isArray(page.items) ? page.items : [];
+      total.value = normalizePaginationNumber(page.total, products.value.length);
+      hasMore.value = Boolean(page.hasMore);
+    } catch (nextError) {
+      if (requestToken !== activeRequestToken) {
+        return;
+      }
+
+      products.value = [];
+      total.value = 0;
+      hasMore.value = false;
+      error.value = nextError;
+    } finally {
+      if (requestToken === activeRequestToken) {
+        isInitialLoading.value = false;
+      }
     }
-
-    return normalizePaginationNumber(pages[pages.length - 1]?.total, products.value.length);
-  });
-
-  const hasMore = computed(() => Boolean(query.hasNextPage.value));
-  const isLoadingMore = computed(() => Boolean(query.isFetchingNextPage.value));
-  const isInitialLoading = computed(() => Boolean(query.isPending.value) && products.value.length === 0);
-  const isEmpty = computed(() => !isInitialLoading.value && !query.isError.value && products.value.length === 0);
-  const errorMessage = computed(() =>
-    query.isError.value ? resolveErrorMessage(query.error.value, initialErrorMessage) : "",
-  );
+  }
 
   watch(
-    () => JSON.stringify(toValue(options.queryKey) || []),
+    queryKeySignature,
     () => {
       loadMoreErrorMessage.value = "";
     },
   );
 
   watch(
-    () => Boolean(toValue(options.enabled)),
+    enabled,
     (isEnabled) => {
       if (!isEnabled) {
-        loadMoreErrorMessage.value = "";
+        activeRequestToken += 1;
+        resetState();
       }
     },
   );
 
+  watch(
+    [queryKeySignature, enabled],
+    async ([, isEnabled]) => {
+      activeRequestToken += 1;
+
+      if (!isEnabled) {
+        resetState();
+        return;
+      }
+
+      await loadInitialPage();
+    },
+    { immediate: true },
+  );
+
   async function loadMore() {
-    if (!hasMore.value || isLoadingMore.value) {
+    if (!enabled.value || !hasMore.value || isLoadingMore.value || isInitialLoading.value) {
       return;
     }
 
     loadMoreErrorMessage.value = "";
+    const requestToken = activeRequestToken;
+    const currentOffset = products.value.length;
+    isLoadingMore.value = true;
 
     try {
-      await query.fetchNextPage();
-    } catch (error) {
-      loadMoreErrorMessage.value = resolveErrorMessage(error, nextPageErrorMessage);
+      const page = normalizeProductsPage(
+        await options.fetchPage({
+          offset: currentOffset,
+          limit: pageSize,
+        }),
+      );
+
+      if (requestToken !== activeRequestToken) {
+        return;
+      }
+
+      const existingIds = new Set(products.value.map((item) => Number(item?.id)));
+      const nextItems = Array.isArray(page.items)
+        ? page.items.filter((item) => !existingIds.has(Number(item?.id)))
+        : [];
+
+      products.value = [...products.value, ...nextItems];
+      total.value = normalizePaginationNumber(page.total, products.value.length);
+      hasMore.value = Boolean(page.hasMore);
+    } catch (nextError) {
+      if (requestToken !== activeRequestToken) {
+        return;
+      }
+
+      loadMoreErrorMessage.value = resolveErrorMessage(nextError, nextPageErrorMessage);
+    } finally {
+      if (requestToken === activeRequestToken) {
+        isLoadingMore.value = false;
+      }
     }
   }
 
+  async function refetch() {
+    if (!enabled.value) {
+      resetState();
+      return;
+    }
+
+    activeRequestToken += 1;
+    await loadInitialPage();
+  }
+
   return {
-    ...query,
     products,
     total,
     hasMore,
     isEmpty,
     isInitialLoading,
     isLoadingMore,
+    isError: computed(() => Boolean(error.value)),
+    error,
     errorMessage,
     loadMoreErrorMessage,
     loadMore,
+    refetch,
   };
 }
