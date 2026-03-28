@@ -3,13 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
+import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { formatCategoryGroupLabel, formatCategoryLabel } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
-const PRODUCTS_PAGE_SIZE = 12;
 const SEARCH_INPUT_DEBOUNCE_MS = 320;
+const SMART_SEARCH_MARKERS = new Set(["dua", "doja", "kerkoj", "kerko", "trego", "shfaq", "gjej"]);
 
 const draftQuery = ref("");
 const products = ref([]);
@@ -27,6 +28,7 @@ const visualSearchPreviewUrl = ref("");
 const visualSearchFileName = ref("");
 const visualSearchActive = ref(false);
 const visualSearchBusy = ref(false);
+const productsPageSize = ref(getProductsPageSize());
 const filters = reactive({
   size: "",
   color: "",
@@ -37,6 +39,7 @@ const ui = reactive({
   type: "",
 });
 let searchDebounceTimeoutId = 0;
+let stopProductsPageSizeSubscription = () => {};
 
 const categoryFilter = computed(() => String(route.query.category || "").trim().toLowerCase());
 const categoryGroupFilter = computed(() => String(route.query.categoryGroup || "").trim().toLowerCase());
@@ -132,18 +135,36 @@ watch(draftQuery, (nextValue) => {
     return;
   }
 
+  if (looksLikeNaturalLanguageSearch(normalizedDraft)) {
+    return;
+  }
+
   searchDebounceTimeoutId = window.setTimeout(() => {
     submitSearch();
   }, SEARCH_INPUT_DEBOUNCE_MS);
 });
 
 onMounted(async () => {
+  stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
+    if (nextPageSize === productsPageSize.value) {
+      return;
+    }
+
+    productsPageSize.value = nextPageSize;
+    if (visualSearchActive.value && visualSearchFile.value) {
+      void runVisualSearch();
+      return;
+    }
+
+    void loadProducts();
+  });
   draftQuery.value = activeQuery.value;
   await bootstrap();
 });
 
 onBeforeUnmount(() => {
   window.clearTimeout(searchDebounceTimeoutId);
+  stopProductsPageSizeSubscription();
   clearVisualSearchState();
 });
 
@@ -182,7 +203,7 @@ async function refreshCollectionState() {
 async function loadProducts(options = {}) {
   const { append = false } = options;
   const params = new URLSearchParams();
-  params.set("limit", String(PRODUCTS_PAGE_SIZE));
+  params.set("limit", String(productsPageSize.value));
   params.set("offset", String(append ? products.value.length : 0));
 
   if (activeQuery.value) {
@@ -195,6 +216,10 @@ async function loadProducts(options = {}) {
 
   if (categoryGroupFilter.value) {
     params.set("categoryGroup", categoryGroupFilter.value);
+  }
+
+  if (productTypeFilter.value) {
+    params.set("productType", productTypeFilter.value);
   }
 
   const requestUrl = activeQuery.value
@@ -253,6 +278,20 @@ function submitSearch() {
   });
 }
 
+function looksLikeNaturalLanguageSearch(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  if (!normalizedValue) {
+    return false;
+  }
+
+  const tokens = normalizedValue.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 4) {
+    return true;
+  }
+
+  return tokens.some((token) => SMART_SEARCH_MARKERS.has(token)) && tokens.length >= 2;
+}
+
 function openVisualSearchPicker() {
   visualSearchInputElement.value?.click();
 }
@@ -300,7 +339,7 @@ async function runVisualSearch(options = {}) {
   const result = await searchProductsByImage(visualSearchFile.value, {
     category: categoryFilter.value,
     categoryGroup: categoryGroupFilter.value,
-    limit: PRODUCTS_PAGE_SIZE,
+    limit: productsPageSize.value,
     offset: append ? products.value.length : 0,
   });
 
@@ -406,7 +445,7 @@ async function handleCart(productId) {
       <p class="section-label">Kerko</p>
       <h1>Kerko produktet</h1>
       <p>
-        Shkruaj p.sh. `shampon` ose fotografo produktin me kamerë dhe do te dalin produktet me te aferta.
+        Shkruaj p.sh. `me trego maica te kuqe`, `dua pantallona te gjera` ose fotografo produktin me kamerë.
       </p>
     </header>
 
@@ -416,7 +455,7 @@ async function handleCart(productId) {
         class="search-input"
         name="q"
         type="search"
-        placeholder="Kerko p.sh. shampon"
+        placeholder="p.sh. me trego maica te kuqe"
         autocomplete="off"
       >
       <button class="search-submit-button" type="submit">Kerko</button>
@@ -543,7 +582,7 @@ async function handleCart(productId) {
 
     <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
       <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
-        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
+        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
       </button>
     </div>
 

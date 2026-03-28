@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 import { getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
 
@@ -11,10 +12,15 @@ const business = ref(null);
 const products = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
+const totalProductsCount = ref(0);
+const hasMoreProducts = ref(false);
+const loadingMoreProducts = ref(false);
+const productsPageSize = ref(getProductsPageSize());
 const ui = reactive({
   message: "",
   type: "",
 });
+let stopProductsPageSizeSubscription = () => {};
 
 watch(
   () => route.fullPath,
@@ -24,7 +30,20 @@ watch(
 );
 
 onMounted(async () => {
+  stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
+    if (nextPageSize === productsPageSize.value) {
+      return;
+    }
+
+    productsPageSize.value = nextPageSize;
+    void loadProducts();
+  });
+
   await bootstrap();
+});
+
+onBeforeUnmount(() => {
+  stopProductsPageSizeSubscription();
 });
 
 const canFollow = computed(() => {
@@ -110,24 +129,48 @@ async function loadBusiness() {
   ui.type = "";
 }
 
-async function loadProducts() {
+async function loadProducts(options = {}) {
+  const { append = false } = options;
   const businessId = Number(route.query.id || "");
   if (!Number.isFinite(businessId) || businessId <= 0) {
     products.value = [];
+    totalProductsCount.value = 0;
+    hasMoreProducts.value = false;
     return;
   }
 
+  const offset = append ? products.value.length : 0;
   const { response, data } = await requestJson(
-    `/api/business/public-products?id=${encodeURIComponent(businessId)}`,
+    `/api/business/public-products?id=${encodeURIComponent(businessId)}&limit=${productsPageSize.value}&offset=${offset}`,
     {},
     { cacheTtlMs: 15000 },
   );
   if (!response.ok || !data?.ok) {
-    products.value = [];
+    if (!append) {
+      products.value = [];
+      totalProductsCount.value = 0;
+      hasMoreProducts.value = false;
+    }
     return;
   }
 
-  products.value = Array.isArray(data.products) ? data.products : [];
+  const nextProducts = Array.isArray(data.products) ? data.products : [];
+  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  totalProductsCount.value = Number(data.total || products.value.length || 0);
+  hasMoreProducts.value = Boolean(data.hasMore);
+}
+
+async function loadMoreProducts() {
+  if (loadingMoreProducts.value || !hasMoreProducts.value) {
+    return;
+  }
+
+  loadingMoreProducts.value = true;
+  try {
+    await loadProducts({ append: true });
+  } finally {
+    loadingMoreProducts.value = false;
+  }
 }
 
 async function toggleFollow() {
@@ -328,6 +371,12 @@ async function handleCart(productId) {
           @cart="handleCart"
         />
       </section>
+
+      <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
+        <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+          {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
+        </button>
+      </div>
 
       <div v-else class="pets-empty-state">
         Ky biznes ende nuk ka produkte publike.

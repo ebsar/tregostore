@@ -342,7 +342,7 @@ onBeforeUnmount(() => {
           class="nav-search-input"
           type="search"
           name="q"
-          placeholder="Shkruaj ketu"
+          placeholder="p.sh. dua pantallona te gjera"
           autocomplete="off"
         >
         <button class="nav-search-submit" type="submit">Kerko</button>

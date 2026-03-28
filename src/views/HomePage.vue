@@ -1,13 +1,13 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import PromoSlider from "../components/PromoSlider.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
-const PRODUCTS_PAGE_SIZE = 12;
 const products = ref([]);
 const businesses = ref([]);
 const wishlistIds = ref([]);
@@ -19,6 +19,7 @@ const hasMoreProducts = ref(false);
 const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
 const statusText = ref("Po ngarkohen produktet publike te TREGO.");
+const productsPageSize = ref(getProductsPageSize());
 const filters = reactive({
   size: "",
   color: "",
@@ -28,6 +29,7 @@ const ui = reactive({
   message: "",
   type: "",
 });
+let stopProductsPageSizeSubscription = () => {};
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
@@ -66,6 +68,15 @@ const collectionLabel = computed(() => {
 });
 
 onMounted(async () => {
+  stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
+    if (nextPageSize === productsPageSize.value) {
+      return;
+    }
+
+    productsPageSize.value = nextPageSize;
+    void loadProducts();
+  });
+
   try {
     await Promise.all([
       ensureSessionLoaded().then(() => refreshCollectionState()),
@@ -78,6 +89,10 @@ onMounted(async () => {
     console.error(error);
     markRouteReady();
   }
+});
+
+onBeforeUnmount(() => {
+  stopProductsPageSizeSubscription();
 });
 
 async function refreshCollectionState() {
@@ -101,7 +116,7 @@ async function loadProducts(options = {}) {
   const { append = false } = options;
   const offset = append ? products.value.length : 0;
   const { response, data } = await requestJson(
-    `/api/products?limit=${PRODUCTS_PAGE_SIZE}&offset=${offset}`,
+    `/api/products?limit=${productsPageSize.value}&offset=${offset}`,
     {},
     { cacheTtlMs: 10000 },
   );
@@ -316,7 +331,7 @@ async function handleCart(productId) {
 
     <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
       <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
-        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shfaq me shume" }}
+        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
       </button>
     </div>
 

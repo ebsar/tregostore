@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS products (
     image_path TEXT NOT NULL,
     image_gallery TEXT NOT NULL DEFAULT '[]',
     image_fingerprint TEXT NOT NULL DEFAULT '',
+    ai_image_search_text TEXT NOT NULL DEFAULT '',
+    ai_image_color_terms TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL,
     product_type TEXT NOT NULL DEFAULT 'other',
     size TEXT NOT NULL DEFAULT '',

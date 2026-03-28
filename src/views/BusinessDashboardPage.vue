@@ -2,7 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
-import { requestJson, resolveApiMessage, uploadImages } from "../lib/api";
+import {
+  downloadBusinessProductsImportTemplate,
+  importBusinessProductsFile,
+  requestJson,
+  resolveApiMessage,
+  uploadImages,
+} from "../lib/api";
 import {
   PRODUCT_COLOR_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
@@ -24,6 +30,8 @@ const previewUrls = ref([]);
 const editingProduct = ref(null);
 const productFormSection = ref(null);
 const productTitleInput = ref(null);
+const importFileInput = ref(null);
+const importFile = ref(null);
 
 const profileForm = reactive({
   businessName: "",
@@ -44,6 +52,8 @@ const ui = reactive({
   productTypeMessage: "",
   listMessage: "",
   listType: "",
+  importMessage: "",
+  importType: "",
 });
 
 const productTypeOptions = computed(() => SECTION_PRODUCT_TYPE_OPTIONS[productForm.category] || []);
@@ -275,6 +285,48 @@ function handleFilesChange(event) {
   revokePreviewUrls();
   selectedFiles.value = Array.from(event.target.files || []);
   previewUrls.value = selectedFiles.value.map((file) => URL.createObjectURL(file));
+}
+
+function handleImportFileChange(event) {
+  importFile.value = event.target.files?.[0] || null;
+  ui.importMessage = importFile.value
+    ? `U zgjodh skedari ${importFile.value.name}.`
+    : "";
+  ui.importType = importFile.value ? "success" : "";
+}
+
+async function downloadImportTemplate() {
+  const result = await downloadBusinessProductsImportTemplate();
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+}
+
+async function submitImportProducts() {
+  if (!businessProfile.value) {
+    ui.importMessage = "Regjistroje fillimisht biznesin para se te importosh artikuj.";
+    ui.importType = "error";
+    return;
+  }
+
+  if (!importFile.value) {
+    ui.importMessage = "Zgjidh nje skedar CSV per import.";
+    ui.importType = "error";
+    return;
+  }
+
+  const result = await importBusinessProductsFile(importFile.value);
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+
+  if (!result.ok) {
+    return;
+  }
+
+  importFile.value = null;
+  if (importFileInput.value) {
+    importFileInput.value.value = "";
+  }
+  await loadProducts();
 }
 
 async function submitProduct() {
@@ -604,6 +656,49 @@ async function handleRestockProduct({ productId, quantity }) {
         </div>
       </section>
     </div>
+
+    <section v-if="businessProfile" class="card admin-list-card" aria-label="Importo artikuj nga Excel">
+      <div class="admin-list-header">
+        <div>
+          <p class="section-label">Import ne Excel</p>
+          <h2>Ngarko liste artikujsh</h2>
+        </div>
+      </div>
+
+      <p class="section-text">
+        Shkarko template-n CSV, hape ne Excel, ploteso artikujt dhe pastaj ngarkoje prape ketu.
+        Kolonat e kerkuara jane te perfshira ne template, perfshire kategorine, llojin, ngjyren,
+        stokun dhe fotot. Per fotot perdor path-et ekzistuese si <code>/uploads/...</code>.
+      </p>
+
+      <div class="auth-form-actions">
+        <button type="button" @click="downloadImportTemplate">Shkarko template-in per Excel</button>
+      </div>
+
+      <form class="auth-form" @submit.prevent="submitImportProducts">
+        <label class="field">
+          <span>Skedari CSV i artikujve</span>
+          <input
+            ref="importFileInput"
+            type="file"
+            accept=".csv,text/csv,application/vnd.ms-excel"
+            @change="handleImportFileChange"
+          >
+        </label>
+
+        <p class="product-upload-help">
+          CSV hapet direkt ne Excel. Kolona <code>imageGallery</code> pranon disa foto te ndara me <code>;</code>.
+        </p>
+
+        <div class="auth-form-actions">
+          <button type="submit">Importo artikujt</button>
+        </div>
+      </form>
+
+      <div class="form-message" :class="ui.importType" role="status" aria-live="polite">
+        {{ ui.importMessage }}
+      </div>
+    </section>
 
     <section class="card admin-list-card">
       <div class="admin-list-header">

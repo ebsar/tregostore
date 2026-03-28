@@ -10,6 +10,46 @@
   --success: #2f7c5a;
   --error: #b14d4d;
   --shadow: 0 24px 80px rgba(187, 161, 151, 0.22);
+  --button-radius-soft: 18px;
+  --button-border-glass: rgba(255, 255, 255, 0.44);
+  --button-highlight-glass: rgba(255, 255, 255, 0.86);
+  --button-focus-ring: 0 0 0 4px rgba(255, 255, 255, 0.3), 0 0 0 7px rgba(198, 132, 86, 0.14);
+  --button-surface-glass:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.14)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0) 68%),
+    linear-gradient(135deg, rgba(255, 228, 208, 0.24), rgba(255, 255, 255, 0.08));
+  --button-surface-glass-hover:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.2)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.16) 42%, rgba(255, 255, 255, 0) 68%),
+    linear-gradient(135deg, rgba(255, 224, 201, 0.3), rgba(255, 255, 255, 0.12));
+  --button-surface-success:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.14)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.12) 42%, rgba(255, 255, 255, 0) 68%),
+    linear-gradient(135deg, rgba(211, 245, 220, 0.22), rgba(255, 255, 255, 0.08));
+  --button-surface-danger:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.16)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.14) 42%, rgba(255, 255, 255, 0) 68%),
+    linear-gradient(135deg, rgba(255, 215, 220, 0.24), rgba(255, 255, 255, 0.08));
+  --button-shadow-soft:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
+    0 18px 34px rgba(187, 161, 151, 0.18),
+    0 6px 16px rgba(255, 255, 255, 0.14);
+  --button-shadow-soft-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.99),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    0 24px 42px rgba(187, 161, 151, 0.22),
+    0 8px 18px rgba(255, 255, 255, 0.16);
+  --button-shadow-success:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
+    0 18px 34px rgba(114, 154, 125, 0.16),
+    0 6px 16px rgba(255, 255, 255, 0.12);
+  --button-shadow-danger:
+    inset 0 1px 0 rgba(255, 255, 255, 0.97),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.15),
+    0 18px 34px rgba(198, 140, 140, 0.17),
+    0 6px 16px rgba(255, 255, 255, 0.12);
   --app-vh: 100vh;
   --app-vh: 100dvh;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -2224,15 +2264,16 @@ body[data-page="cart"] .page-shell::before {
 .pet-product-card {
   position: relative;
   display: grid;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 28px;
+  gap: 0;
+  padding: 0;
+  border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.76);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.18)),
-    linear-gradient(135deg, rgba(227, 255, 231, 0.24), rgba(255, 255, 255, 0.08));
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.16)),
+    linear-gradient(135deg, rgba(227, 255, 231, 0.22), rgba(255, 255, 255, 0.08));
   box-shadow:
-    0 24px 44px rgba(114, 154, 125, 0.12),
+    0 28px 46px rgba(139, 121, 112, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(26px) saturate(180%);
   -webkit-backdrop-filter: blur(26px) saturate(180%);
@@ -2255,6 +2296,20 @@ body[data-page="cart"] .page-shell::before {
   pointer-events: none;
 }
 
+.pet-product-card::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -18%;
+  height: 36%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 239, 222, 0.38), rgba(255, 255, 255, 0));
+  filter: blur(20px);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
 .pet-product-card.product-scroll-reveal {
   opacity: 0;
   transform: translateY(34px) scale(0.985);
@@ -2269,80 +2324,318 @@ body[data-page="cart"] .page-shell::before {
   pointer-events: auto;
 }
 
+.pet-product-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 34px 56px rgba(139, 121, 112, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.pet-product-media {
+  position: relative;
+  min-height: 248px;
+}
+
 .pet-product-image-wrap {
+  position: relative;
   display: grid;
   place-items: center;
-  min-height: 180px;
-  padding: 14px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.66);
+  min-height: 248px;
+  height: 100%;
+  padding: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.2) 44%, rgba(255, 255, 255, 0) 78%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 247, 241, 0.62)),
+    linear-gradient(135deg, rgba(255, 231, 212, 0.22), rgba(255, 255, 255, 0.12));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 14px 24px rgba(145, 180, 152, 0.12);
+    inset 0 -14px 24px rgba(243, 228, 217, 0.18);
+  overflow: hidden;
+}
+
+.pet-product-image-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(19, 26, 18, 0.06) 55%, rgba(19, 26, 18, 0.16)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0) 34%);
+  pointer-events: none;
+}
+
+.pet-product-image-wrap::after {
+  content: none;
 }
 
 .pet-product-image {
   width: 100%;
-  max-width: 160px;
-  aspect-ratio: 1;
-  object-fit: contain;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  object-fit: cover;
   display: block;
+  position: relative;
+  z-index: 1;
+  filter: none;
+}
+
+.product-card-overlay-button {
+  position: absolute;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  color: #5e4337;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.2) 46%, rgba(255, 255, 255, 0) 76%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 245, 238, 0.56)),
+    linear-gradient(135deg, rgba(255, 227, 205, 0.22), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    0 16px 28px rgba(171, 146, 138, 0.18);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.24s ease;
+}
+
+.product-card-overlay-button .nav-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
+}
+
+.product-card-cart-button {
+  left: 12px;
+}
+
+.product-card-wishlist-button {
+  right: 12px;
+}
+
+.product-card-overlay-button:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.22),
+    0 20px 32px rgba(171, 146, 138, 0.22);
+}
+
+.product-card-overlay-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  transform: none;
+}
+
+.pet-product-link:hover .pet-product-image {
+  transform: scale(1.03);
+}
+
+.pet-product-link .pet-product-image {
+  transition: transform 0.35s ease;
 }
 
 .pet-product-title-link {
   color: inherit;
+  text-decoration: none;
 }
 
 .admin-product-title-link {
   color: inherit;
 }
 
-.pet-product-more {
-  color: #547c5d;
-  font-weight: 800;
+.pet-product-content {
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
-.pet-product-content {
+.pet-product-content-shell {
+  position: relative;
+  z-index: 1;
+  padding: 14px 14px 16px;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.26)),
+    linear-gradient(135deg, rgba(255, 242, 234, 0.22), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(18px) saturate(165%);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+.pet-product-business-name {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a7468;
+}
+
+.pet-product-title {
+  margin: 0;
+  min-height: 0;
+  font-size: 1.02rem;
+  color: #2f241c;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.pet-product-title-link {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.pet-product-title-link:hover {
+  color: #3f6a4e;
+}
+
+.pet-product-availability-list {
   display: grid;
   gap: 8px;
 }
 
-.pet-product-label {
+.pet-product-availability-row {
   margin: 0;
-  font-size: 0.76rem;
-  letter-spacing: 0.16em;
+  display: grid;
+  gap: 4px;
+}
+
+.pet-product-availability-label {
+  color: #8d776a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #5f8a67;
 }
 
-.pet-product-content h3 {
-  font-size: 1.05rem;
-  color: #28412e;
+.pet-product-availability-value {
+  color: #3a2c24;
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
-.pet-product-description {
-  margin: 0;
-  color: #5a7660;
-  line-height: 1.6;
-}
-
-.pet-product-footer {
+.pet-product-price-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  margin-top: 6px;
+  gap: 12px;
+  padding-top: 4px;
 }
 
 .pet-product-price {
-  font-size: 1.1rem;
+  display: inline-block;
+  margin-top: 0;
+  font-size: 1.24rem;
   color: #1f6b34;
+  text-shadow: 0 10px 18px rgba(215, 255, 221, 0.26);
 }
 
-.product-card-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.pet-product-price-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  text-align: right;
+}
+
+.pet-product-price-compare {
+  color: #9c877c;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: rgba(156, 135, 124, 0.8);
+}
+
+.pet-product-discount-chip,
+.pet-product-discount-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+}
+
+.pet-product-discount-chip {
+  color: #a3482f;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 242, 0.94), rgba(255, 234, 225, 0.7)),
+    linear-gradient(135deg, rgba(255, 192, 160, 0.2), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 10px 18px rgba(209, 125, 90, 0.12);
+}
+
+.pet-product-discount-empty {
+  color: #7f6c61;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 248, 243, 0.6)),
+    linear-gradient(135deg, rgba(255, 230, 214, 0.12), rgba(255, 255, 255, 0.08));
+}
+
+.pet-product-rating-row {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  margin-top: 6px;
+  min-height: 24px;
+  padding-top: 2px;
+  color: #7c695d;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pet-product-rating-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: rgba(180, 156, 145, 0.58);
+}
+
+.pet-product-rating-star {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.pet-product-rating-star.is-filled {
+  color: #f0a437;
+}
+
+.pet-product-rating-summary {
+  color: #7d685d;
+}
+
+.pet-product-rating-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(126, 109, 98, 0.26);
+  flex-shrink: 0;
+}
+
+.pet-product-buyers-count {
+  color: #6f5b50;
+  white-space: nowrap;
 }
 
 .product-detail-tags {
@@ -2547,7 +2840,8 @@ body[data-page="cart"] .page-shell::before {
     linear-gradient(135deg, rgba(255, 187, 198, 0.18), rgba(255, 255, 255, 0.08));
 }
 
-.wishlist-action.active .product-action-icon {
+.wishlist-action.active .product-action-icon,
+.wishlist-action.active .nav-icon {
   fill: currentColor;
   stroke: currentColor;
 }
@@ -2558,6 +2852,65 @@ body[data-page="cart"] .page-shell::before {
   background:
     linear-gradient(180deg, rgba(244, 255, 246, 0.88), rgba(232, 255, 237, 0.44)),
     linear-gradient(135deg, rgba(183, 244, 177, 0.18), rgba(255, 255, 255, 0.08));
+}
+
+.cart-action.active .nav-icon {
+  stroke: currentColor;
+}
+
+@media (max-width: 640px) {
+  .pet-product-card {
+    border-radius: 20px;
+    padding: 0;
+  }
+
+  .pet-product-image-wrap {
+    min-height: 214px;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .product-card-overlay-button {
+    width: 40px;
+    height: 40px;
+    bottom: 10px;
+  }
+
+  .product-card-cart-button {
+    left: 10px;
+  }
+
+  .product-card-wishlist-button {
+    right: 10px;
+  }
+
+  .pet-product-content-shell {
+    padding: 12px;
+    border-radius: 0;
+  }
+
+  .pet-product-title {
+    font-size: 0.96rem;
+  }
+
+  .pet-product-price-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pet-product-price-meta {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .pet-product-rating-row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .pet-product-price {
+    font-size: 1.14rem;
+  }
 }
 
 .collection-page {
@@ -5067,6 +5420,10 @@ h3 {
 
 button {
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 #submit-button,
@@ -5198,6 +5555,324 @@ button {
   background: rgba(255, 255, 255, 0.34);
   border: 1px solid rgba(255, 255, 255, 0.62);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.hero-cta,
+.nav-user-panel-link,
+.nav-user-panel-logout,
+.nav-dropdown-item,
+.nav-action,
+.nav-icon-button,
+.nav-search-submit,
+.profile-photo-upload-button,
+.profile-save-button,
+.profile-cancel-button,
+.profile-delete-button,
+.product-action-button,
+.filter-toggle-button,
+.search-submit-button,
+.search-reset-button,
+.cart-checkout-button,
+.cart-quantity-button,
+.payment-option-button,
+.checkout-choice-card,
+.button-secondary,
+.ghost-button,
+.account-nav-link,
+.registered-business-edit-toggle,
+.registered-business-logo-upload,
+.admin-password-toggle {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--button-border-glass);
+  color: #5e4135;
+  background: var(--button-surface-glass);
+  box-shadow: var(--button-shadow-soft);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease;
+}
+
+.hero-cta::before,
+.nav-user-panel-link::before,
+.nav-user-panel-logout::before,
+.nav-dropdown-item::before,
+.nav-action::before,
+.nav-icon-button::before,
+.nav-search-submit::before,
+.profile-photo-upload-button::before,
+.profile-save-button::before,
+.profile-cancel-button::before,
+.profile-delete-button::before,
+.product-action-button::before,
+.filter-toggle-button::before,
+.search-submit-button::before,
+.search-reset-button::before,
+.cart-checkout-button::before,
+.cart-quantity-button::before,
+.payment-option-button::before,
+.checkout-choice-card::before,
+.button-secondary::before,
+.ghost-button::before,
+.account-nav-link::before,
+.registered-business-edit-toggle::before,
+.registered-business-logo-upload::before,
+.admin-password-toggle::before {
+  content: "";
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 62%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0));
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.hero-cta::after,
+.nav-user-panel-link::after,
+.nav-user-panel-logout::after,
+.nav-dropdown-item::after,
+.nav-action::after,
+.nav-icon-button::after,
+.nav-search-submit::after,
+.profile-photo-upload-button::after,
+.profile-save-button::after,
+.profile-cancel-button::after,
+.profile-delete-button::after,
+.product-action-button::after,
+.filter-toggle-button::after,
+.search-submit-button::after,
+.search-reset-button::after,
+.cart-checkout-button::after,
+.cart-quantity-button::after,
+.payment-option-button::after,
+.checkout-choice-card::after,
+.button-secondary::after,
+.ghost-button::after,
+.account-nav-link::after,
+.registered-business-edit-toggle::after,
+.registered-business-logo-upload::after,
+.admin-password-toggle::after {
+  content: "";
+  position: absolute;
+  inset: auto -12% -68% 42%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+#submit-button,
+#login-submit-button,
+#verify-email-submit-button,
+#verify-email-resend-button,
+#forgot-password-submit-button,
+#signup-submit-button,
+#change-password-submit,
+#product-submit-button,
+#product-cancel-button,
+#business-profile-submit,
+#business-product-submit,
+#business-product-cancel,
+.profile-photo-upload-button,
+.profile-save-button,
+.profile-cancel-button,
+.profile-delete-button,
+.product-action-button,
+.search-submit-button,
+.search-reset-button,
+.nav-search-submit,
+.cart-checkout-button,
+.button-secondary,
+.ghost-button,
+.account-nav-link,
+.registered-business-edit-toggle,
+.registered-business-logo-upload,
+.nav-user-panel-link,
+.nav-user-panel-logout,
+.nav-dropdown-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: var(--button-radius-soft);
+  font-weight: 800;
+}
+
+#submit-button,
+#login-submit-button,
+#verify-email-submit-button,
+#verify-email-resend-button,
+#forgot-password-submit-button,
+#signup-submit-button,
+#change-password-submit,
+#product-submit-button,
+#business-profile-submit,
+#business-product-submit,
+.profile-photo-upload-button,
+.profile-save-button,
+.search-submit-button,
+.nav-search-submit,
+.cart-checkout-button,
+.hero-cta,
+.registered-business-edit-toggle,
+.registered-business-logo-upload {
+  color: #6b4535;
+  background: var(--button-surface-glass-hover);
+  box-shadow: var(--button-shadow-soft);
+}
+
+.product-action-button,
+.payment-option-button,
+.checkout-choice-card,
+.admin-password-toggle,
+.cart-quantity-button {
+  color: #355542;
+  background: var(--button-surface-success);
+  box-shadow: var(--button-shadow-success);
+}
+
+.profile-delete-button,
+.nav-user-panel-logout,
+.account-nav-link-danger,
+.admin-action-danger {
+  color: #8c3d44;
+  background: var(--button-surface-danger);
+  box-shadow: var(--button-shadow-danger);
+}
+
+.filter-toggle-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: #654536;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.hero-cta:hover,
+.nav-user-panel-link:hover,
+.nav-user-panel-logout:hover,
+.nav-dropdown-item:hover,
+.nav-action:hover,
+.nav-icon-button:hover,
+.nav-search-submit:hover,
+.profile-photo-upload-button:hover,
+.profile-save-button:hover,
+.profile-cancel-button:hover,
+.profile-delete-button:hover,
+.product-action-button:hover,
+.filter-toggle-button:hover,
+.search-submit-button:hover,
+.search-reset-button:hover,
+.cart-checkout-button:hover,
+.cart-quantity-button:hover,
+.payment-option-button:hover,
+.checkout-choice-card:hover,
+.button-secondary:hover,
+.ghost-button:hover,
+.account-nav-link:hover,
+.registered-business-edit-toggle:hover,
+.registered-business-logo-upload:hover,
+.admin-password-toggle:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: rgba(255, 255, 255, 0.68);
+}
+
+.hero-cta:hover,
+.profile-photo-upload-button:hover,
+.profile-save-button:hover,
+.search-submit-button:hover,
+.nav-search-submit:hover,
+.cart-checkout-button:hover,
+.registered-business-edit-toggle:hover,
+.registered-business-logo-upload:hover {
+  background: var(--button-surface-glass-hover);
+  box-shadow: var(--button-shadow-soft-hover);
+}
+
+.hero-cta:active,
+.nav-user-panel-link:active,
+.nav-user-panel-logout:active,
+.nav-dropdown-item:active,
+.nav-action:active,
+.nav-icon-button:active,
+.nav-search-submit:active,
+.profile-photo-upload-button:active,
+.profile-save-button:active,
+.profile-cancel-button:active,
+.profile-delete-button:active,
+.product-action-button:active,
+.filter-toggle-button:active,
+.search-submit-button:active,
+.search-reset-button:active,
+.cart-checkout-button:active,
+.cart-quantity-button:active,
+.payment-option-button:active,
+.checkout-choice-card:active,
+.button-secondary:active,
+.ghost-button:active,
+.account-nav-link:active,
+.registered-business-edit-toggle:active,
+.registered-business-logo-upload:active,
+.admin-password-toggle:active {
+  transform: translateY(0) scale(0.985);
+}
+
+#submit-button:focus-visible,
+#login-submit-button:focus-visible,
+#verify-email-submit-button:focus-visible,
+#verify-email-resend-button:focus-visible,
+#forgot-password-submit-button:focus-visible,
+#signup-submit-button:focus-visible,
+#change-password-submit:focus-visible,
+#product-submit-button:focus-visible,
+#product-cancel-button:focus-visible,
+#business-profile-submit:focus-visible,
+#business-product-submit:focus-visible,
+#business-product-cancel:focus-visible,
+.hero-cta:focus-visible,
+.nav-user-panel-link:focus-visible,
+.nav-user-panel-logout:focus-visible,
+.nav-dropdown-item:focus-visible,
+.nav-action:focus-visible,
+.nav-icon-button:focus-visible,
+.nav-search-submit:focus-visible,
+.profile-photo-upload-button:focus-visible,
+.profile-save-button:focus-visible,
+.profile-cancel-button:focus-visible,
+.profile-delete-button:focus-visible,
+.product-action-button:focus-visible,
+.filter-toggle-button:focus-visible,
+.search-submit-button:focus-visible,
+.search-reset-button:focus-visible,
+.cart-checkout-button:focus-visible,
+.cart-quantity-button:focus-visible,
+.payment-option-button:focus-visible,
+.checkout-choice-card:focus-visible,
+.button-secondary:focus-visible,
+.ghost-button:focus-visible,
+.account-nav-link:focus-visible,
+.registered-business-edit-toggle:focus-visible,
+.registered-business-logo-upload:focus-visible,
+.admin-password-toggle:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--button-focus-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    0 20px 38px rgba(171, 146, 138, 0.2);
 }
 
 .hero-logout {

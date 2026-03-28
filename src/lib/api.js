@@ -240,3 +240,63 @@ export async function searchProductsByImage(file, options = {}) {
     message: data.message || "U gjeten produkte te ngjashme sipas fotos.",
   };
 }
+
+export async function downloadBusinessProductsImportTemplate() {
+  const response = await fetch("/api/business/products/import-template");
+  if (!response.ok) {
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (error) {
+      console.error(error);
+    }
+    return {
+      ok: false,
+      message: resolveApiMessage(data, "Template-i nuk u shkarkua."),
+    };
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "trego-products-template.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+
+  return {
+    ok: true,
+    message: "Template-i u shkarkua me sukses.",
+  };
+}
+
+export async function importBusinessProductsFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { response, data } = await requestJson("/api/business/products/import", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      count: 0,
+      products: [],
+      message: resolveApiMessage(data, "Importi i artikujve nuk u krye."),
+    };
+  }
+
+  return {
+    ok: true,
+    count: Number(data.count || 0),
+    products: Array.isArray(data.products) ? data.products : [],
+    message: data.message || "Artikujt u importuan me sukses.",
+  };
+}

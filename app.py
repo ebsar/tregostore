@@ -1,21 +1,27 @@
 import argparse
+import base64
+import csv
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
 import hashlib
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
+import mimetypes
 import os
 import re
 import secrets
 import sqlite3
 import smtplib
+import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
+from urllib.request import Request, urlopen
 
 try:
     from PIL import Image, ImageOps, UnidentifiedImageError
@@ -38,6 +44,18 @@ DB_PATH = DATA_DIR / "accounts.db"
 SCHEMA_PATH = BASE_DIR / "schema.sql"
 POSTGRES_SCHEMA_PATH = BASE_DIR / "schema_postgres.sql"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+OPENAI_API_KEY = str(os.environ.get("OPENAI_API_KEY", "")).strip()
+OPENAI_SEARCH_MODEL = str(os.environ.get("OPENAI_SEARCH_MODEL", "")).strip() or "gpt-5-mini"
+OPENAI_PRODUCT_IMAGE_MODEL = (
+    str(os.environ.get("OPENAI_PRODUCT_IMAGE_MODEL", "")).strip() or "gpt-4.1-mini"
+)
+OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
+OPENAI_SEARCH_TIMEOUT_SECONDS = 8
+OPENAI_PRODUCT_IMAGE_TIMEOUT_SECONDS = 12
+SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
+SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS = 6 * 60 * 60
+PRODUCT_IMAGE_METADATA_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
@@ -141,6 +159,50 @@ PRODUCT_COLORS = {
     "portokalli",
     "shume-ngjyra",
 }
+SEARCH_INTENT_MARKERS = {
+    "dua",
+    "doja",
+    "kerkoj",
+    "kerko",
+    "trego",
+    "shfaq",
+    "gjej",
+}
+SEARCH_INTENT_CATEGORY_KEYWORDS = {
+    "clothing": {"veshje", "rroba", "maic", "pantallon", "duks", "jakn", "rollke"},
+    "cosmetics": {"kozmetik", "parfum", "higjien", "krem", "makup", "thonj", "floke"},
+    "sport": {"sport", "patika", "atlete", "fitnes", "stervit", "sportive"},
+    "technology": {"telefon", "iphone", "android", "adapter", "degjues", "kufje", "teknologj"},
+    "home": {"shtepi", "dhome", "banjo", "dekor", "gjum"},
+}
+SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS = {
+    "tshirt": {"maic", "bluz", "t-shirt"},
+    "undershirt": {"maic e brendshme"},
+    "pants": {"pantallon", "xhinse", "jeans", "trenerk"},
+    "hoodie": {"duks", "hoodie"},
+    "turtleneck": {"rollke"},
+    "jacket": {"jakn"},
+    "underwear": {"te brendshme", "breke"},
+    "pajamas": {"pixham"},
+    "perfumes": {"parfum"},
+    "hygiene": {"higjien", "sapun", "shampon"},
+    "creams": {"krem"},
+    "makeup": {"makup", "makeup"},
+    "nails": {"thonj"},
+    "hair-colors": {"ngjyre flokesh", "boj flokesh"},
+    "kids-care": {"kujdes per femije"},
+    "room-decor": {"dekor", "dekorim"},
+    "bathroom-items": {"banjo"},
+    "bedroom-items": {"dhome gjumi", "gjum"},
+    "kids-room-items": {"dhoma femij"},
+    "sports-equipment": {"pajisje sportive"},
+    "sportswear": {"veshje sportive", "patika", "atlete"},
+    "sports-accessories": {"aksesor sportiv"},
+    "phone-cases": {"case", "maske telefoni", "mbrojtese telefoni"},
+    "headphones": {"degjues", "kufje", "headphones"},
+    "phone-parts": {"pjese telefoni"},
+    "phone-accessories": {"aksesor telefoni"},
+}
 USER_ROLES = {"client", "admin", "business"}
 GENDER_OPTIONS = {"mashkull", "femer"}
 PAYMENT_METHODS = {"cash", "card-online"}
@@ -163,6 +225,19 @@ EXTENSION_CONTENT_TYPES = {
 MAX_UPLOAD_FILES = 8
 MAX_UPLOAD_FILE_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_FILES * MAX_UPLOAD_FILE_SIZE + (1024 * 1024)
+PRODUCT_IMPORT_MAX_ROWS = 100
+PRODUCT_IMPORT_FIELDNAMES = [
+    "title",
+    "description",
+    "price",
+    "category",
+    "productType",
+    "size",
+    "color",
+    "stockQuantity",
+    "imagePath",
+    "imageGallery",
+]
 VISUAL_SEARCH_HASH_SIZE = 8
 EMAIL_VERIFICATION_CODE_LENGTH = 6
 EMAIL_VERIFICATION_TTL_MINUTES = 30
@@ -227,6 +302,8 @@ PRODUCT_SELECT_COLUMNS = """
     image_path,
     image_gallery,
     image_fingerprint,
+    ai_image_search_text,
+    ai_image_color_terms,
     category,
     product_type,
     size,
@@ -235,7 +312,18 @@ PRODUCT_SELECT_COLUMNS = """
     is_public,
     show_stock_public,
     created_by_user_id,
-    created_at
+    created_at,
+    COALESCE((
+        SELECT COUNT(DISTINCT oi.order_id)
+        FROM order_items oi
+        WHERE oi.product_id = products.id
+    ), 0) AS buyers_count,
+    COALESCE((
+        SELECT bp.business_name
+        FROM business_profiles bp
+        WHERE bp.user_id = products.created_by_user_id
+        LIMIT 1
+    ), '') AS business_name
 """
 ORDER_SELECT_COLUMNS = """
     id,
@@ -621,23 +709,48 @@ def extract_stored_upload_name_from_path(image_path: object) -> str:
     return normalized_path.removeprefix("/uploads/").strip()
 
 
-def fetch_uploaded_asset_bytes_by_path(image_path: object) -> bytes:
+def guess_image_content_type_from_path(image_path: object) -> str:
+    normalized_path = normalize_image_path(image_path)
+    extension = Path(normalized_path).suffix.lower()
+    if extension in EXTENSION_CONTENT_TYPES:
+        return EXTENSION_CONTENT_TYPES[extension]
+
+    guessed_type, _ = mimetypes.guess_type(normalized_path)
+    if guessed_type and guessed_type.startswith("image/"):
+        return guessed_type
+
+    return "image/jpeg"
+
+
+def fetch_uploaded_asset_payload_by_path(image_path: object) -> tuple[bytes, str]:
     stored_name = extract_stored_upload_name_from_path(image_path)
     if not stored_name:
-        return b""
+        return b"", guess_image_content_type_from_path(image_path)
 
     if should_store_uploads_in_database():
         asset_row = fetch_uploaded_asset_by_stored_name(stored_name)
-        return bytes(asset_row["file_bytes"]) if asset_row and asset_row["file_bytes"] else b""
+        if not asset_row:
+            return b"", guess_image_content_type_from_path(image_path)
+
+        file_bytes = bytes(asset_row["file_bytes"]) if asset_row["file_bytes"] else b""
+        content_type = str(asset_row["content_type"] or "").strip()
+        if not content_type.startswith("image/"):
+            content_type = guess_image_content_type_from_path(image_path)
+        return file_bytes, content_type
 
     file_path = UPLOADS_DIR / stored_name
     if not file_path.exists():
-        return b""
+        return b"", guess_image_content_type_from_path(image_path)
 
     try:
-        return file_path.read_bytes()
+        return file_path.read_bytes(), guess_image_content_type_from_path(file_path.name)
     except OSError:
-        return b""
+        return b"", guess_image_content_type_from_path(image_path)
+
+
+def fetch_uploaded_asset_bytes_by_path(image_path: object) -> bytes:
+    file_bytes, _ = fetch_uploaded_asset_payload_by_path(image_path)
+    return file_bytes
 
 
 def compute_image_fingerprint(file_bytes: bytes) -> str:
@@ -985,6 +1098,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE products ADD COLUMN image_fingerprint TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "products", "ai_image_search_text"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN ai_image_search_text TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "ai_image_color_terms"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN ai_image_color_terms TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE products
@@ -997,13 +1120,25 @@ def migrate_database(connection: DatabaseConnection) -> None:
             show_stock_public = CASE
                 WHEN COALESCE(show_stock_public, 0) = 1 THEN 1
                 ELSE 0
-            END
+            END,
+            ai_image_search_text = COALESCE(ai_image_search_text, ''),
+            ai_image_color_terms = COALESCE(ai_image_color_terms, '')
         """
     )
 
     product_rows = connection.execute(
         """
-        SELECT id, image_path, image_gallery
+        SELECT
+            id,
+            title,
+            description,
+            image_path,
+            image_gallery,
+            category,
+            product_type,
+            color,
+            ai_image_search_text,
+            ai_image_color_terms
         FROM products
         """
     ).fetchall()
@@ -1033,6 +1168,38 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 WHERE id = ?
                 """,
                 (primary_image_path, serialized_gallery, product["id"]),
+            )
+
+        heuristic_metadata = heuristic_product_image_search_metadata(
+            title=product["title"],
+            description=product["description"],
+            category=product["category"],
+            product_type=product["product_type"],
+            color=product["color"],
+        )
+        stored_ai_search_text = normalize_search_intent_text(product["ai_image_search_text"])
+        stored_ai_color_terms = merge_normalized_search_terms(
+            product["ai_image_color_terms"],
+            allowed_terms=PRODUCT_COLORS,
+            max_terms=6,
+        )
+        if (
+            not stored_ai_search_text
+            or (heuristic_metadata["colorTerms"] and not stored_ai_color_terms)
+        ):
+            connection.execute(
+                """
+                UPDATE products
+                SET
+                    ai_image_search_text = ?,
+                    ai_image_color_terms = ?
+                WHERE id = ?
+                """,
+                (
+                    heuristic_metadata["searchText"],
+                    heuristic_metadata["colorTerms"],
+                    product["id"],
+                ),
             )
 
     connection.execute(
@@ -1633,6 +1800,104 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
     }
 
 
+def build_product_import_template_csv() -> str:
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=PRODUCT_IMPORT_FIELDNAMES)
+    writer.writeheader()
+    writer.writerow(
+        {
+            "title": "Maica e kuqe per meshkuj",
+            "description": "Maice pambuku per perdorim te perditshëm.",
+            "price": "19.90",
+            "category": "clothing-men",
+            "productType": "tshirt",
+            "size": "L",
+            "color": "kuqe",
+            "stockQuantity": "12",
+            "imagePath": "/uploads/shembull-maice-kuqe.jpg",
+            "imageGallery": "/uploads/shembull-maice-kuqe.jpg;/uploads/shembull-maice-kuqe-2.jpg",
+        }
+    )
+    writer.writerow(
+        {
+            "title": "Krem per duar",
+            "description": "Krem hidratues per duar me perdorim ditor.",
+            "price": "6.50",
+            "category": "cosmetics-women",
+            "productType": "creams",
+            "size": "",
+            "color": "",
+            "stockQuantity": "30",
+            "imagePath": "/uploads/shembull-krem-duar.jpg",
+            "imageGallery": "/uploads/shembull-krem-duar.jpg",
+        }
+    )
+    return output.getvalue()
+
+
+def parse_product_import_csv(file_bytes: bytes) -> tuple[list[str], list[dict[str, object]]]:
+    if not file_bytes:
+        return ["Skedari i importit eshte bosh."], []
+
+    try:
+        raw_text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return ["Skedari duhet te jete CSV ne UTF-8 qe hapet ne Excel."], []
+
+    if not raw_text.strip():
+        return ["Skedari i importit eshte bosh."], []
+
+    reader = csv.DictReader(StringIO(raw_text))
+    if not reader.fieldnames:
+        return ["Skedari CSV nuk ka header."], []
+
+    normalized_headers = [str(field or "").strip() for field in reader.fieldnames]
+    missing_headers = [field for field in PRODUCT_IMPORT_FIELDNAMES if field not in normalized_headers]
+    if missing_headers:
+        return [f"Mungojne kolonat: {', '.join(missing_headers)}."], []
+
+    parsed_rows: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    for index, row in enumerate(reader, start=2):
+        normalized_row = {field: str((row or {}).get(field, "") or "").strip() for field in PRODUCT_IMPORT_FIELDNAMES}
+        if not any(normalized_row.values()):
+            continue
+
+        image_gallery_values = [
+            normalize_image_path(value)
+            for value in re.split(r"[;\n\r|]+", normalized_row["imageGallery"])
+            if normalize_image_path(value)
+        ]
+        image_path = normalize_image_path(normalized_row["imagePath"])
+        payload = {
+            "title": normalized_row["title"],
+            "description": normalized_row["description"],
+            "price": normalized_row["price"],
+            "category": normalized_row["category"],
+            "productType": normalized_row["productType"],
+            "size": normalized_row["size"],
+            "color": normalized_row["color"],
+            "stockQuantity": normalized_row["stockQuantity"],
+            "imagePath": image_path,
+            "imageGallery": image_gallery_values or ([image_path] if image_path else []),
+        }
+        row_errors, normalized_product = validate_product_payload(payload)
+        if row_errors:
+            errors.append(f"Rreshti {index}: {' '.join(row_errors)}")
+            continue
+
+        parsed_rows.append(normalized_product)
+        if len(parsed_rows) > PRODUCT_IMPORT_MAX_ROWS:
+            errors.append(f"Mund te importosh deri ne {PRODUCT_IMPORT_MAX_ROWS} produkte njeheresh.")
+            break
+
+    if not parsed_rows and not errors:
+        errors.append("CSV nuk permban asnje produkt valid.")
+
+    return errors, parsed_rows
+
+
 def parse_product_id(data: dict[str, object]) -> tuple[list[str], int | None]:
     errors: list[str] = []
     raw_product_id = str(data.get("productId", "")).strip()
@@ -1763,6 +2028,756 @@ def parse_products_pagination_query(
             errors.append("Offset-i i produkteve nuk eshte valid.")
 
     return errors, limit, offset
+
+
+def parse_catalog_filters_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], str | None, str | None, str | None]:
+    errors: list[str] = []
+    product_type = str(query_params.get("productType", [""])[0]).strip().lower() or None
+    size = str(query_params.get("size", [""])[0]).strip().upper() or None
+    color = str(query_params.get("color", [""])[0]).strip().lower() or None
+
+    if product_type and product_type not in PRODUCT_TYPES:
+        errors.append("Lloji i produktit nuk eshte valid.")
+
+    if size and size not in CLOTHING_SIZES:
+        errors.append("Madhesia nuk eshte valide.")
+
+    if color and color not in PRODUCT_COLORS:
+        errors.append("Ngjyra nuk eshte valide.")
+
+    return errors, product_type, size, color
+
+
+def normalize_search_intent_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def tokenize_search_intent_text(value: str) -> list[str]:
+    return [token for token in re.split(r"[^a-zA-Z0-9\-]+", normalize_search_intent_text(value)) if token]
+
+
+def derive_category_group_from_category(category: str | None) -> str | None:
+    if not category:
+        return None
+    if category.startswith("clothing-"):
+        return "clothing"
+    if category.startswith("cosmetics-"):
+        return "cosmetics"
+    return None
+
+
+def infer_category_from_product_type(product_type: str | None) -> str | None:
+    if not product_type:
+        return None
+
+    for category, product_types in SHOP_SECTION_PRODUCT_TYPES.items():
+        if product_type in product_types and category in {"home", "sport", "technology"}:
+            return category
+
+    return None
+
+
+def infer_category_group_from_product_type(product_type: str | None) -> str | None:
+    if not product_type:
+        return None
+
+    for category, product_types in SHOP_SECTION_PRODUCT_TYPES.items():
+        if product_type not in product_types:
+            continue
+
+        inferred_group = derive_category_group_from_category(category)
+        if inferred_group:
+            return inferred_group
+
+    return None
+
+
+def sanitize_search_intent(raw_intent: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(raw_intent, dict):
+        return {
+            "searchText": "",
+            "categoryGroup": None,
+            "category": None,
+            "productType": None,
+            "size": None,
+            "color": None,
+            "businessName": None,
+        }
+
+    search_text = re.sub(r"\s+", " ", str(raw_intent.get("searchText", "") or "").strip())
+    category_group = str(raw_intent.get("categoryGroup", "") or "").strip().lower() or None
+    category = str(raw_intent.get("category", "") or "").strip().lower() or None
+    product_type = str(raw_intent.get("productType", "") or "").strip().lower() or None
+    size = str(raw_intent.get("size", "") or "").strip().upper() or None
+    color = str(raw_intent.get("color", "") or "").strip().lower() or None
+    business_name = re.sub(r"\s+", " ", str(raw_intent.get("businessName", "") or "").strip()) or None
+
+    if category_group not in {"clothing", "cosmetics"}:
+        category_group = None
+
+    if category not in PRODUCT_CATEGORIES:
+        category = None
+
+    if product_type not in PRODUCT_TYPES:
+        product_type = None
+
+    if size not in CLOTHING_SIZES:
+        size = None
+
+    if color not in PRODUCT_COLORS:
+        color = None
+
+    if category and derive_category_group_from_category(category):
+        category_group = derive_category_group_from_category(category)
+    elif not category and product_type:
+        category = infer_category_from_product_type(product_type)
+        if not category_group:
+            category_group = infer_category_group_from_product_type(product_type)
+
+    return {
+        "searchText": search_text[:80],
+        "categoryGroup": category_group,
+        "category": category,
+        "productType": product_type,
+        "size": size,
+        "color": color,
+        "businessName": business_name[:80] if business_name else None,
+    }
+
+
+def should_use_openai_search_interpreter(query_text: str) -> bool:
+    normalized_query = normalize_search_intent_text(query_text)
+    if not normalized_query or not OPENAI_API_KEY:
+        return False
+
+    tokens = tokenize_search_intent_text(normalized_query)
+    token_count = len(tokens)
+    if token_count >= 4:
+        return True
+
+    if any(marker in tokens for marker in SEARCH_INTENT_MARKERS):
+        return token_count >= 2
+
+    return token_count >= 3
+
+
+def heuristic_search_intent(query_text: str) -> dict[str, object]:
+    normalized_query = normalize_search_intent_text(query_text)
+    intent = {
+        "searchText": "",
+        "categoryGroup": None,
+        "category": None,
+        "productType": None,
+        "size": None,
+        "color": None,
+        "businessName": None,
+    }
+
+    if not normalized_query:
+        return intent
+
+    if "meshkuj" in normalized_query or "meshkujve" in normalized_query:
+        if any(keyword in normalized_query for keyword in SEARCH_INTENT_CATEGORY_KEYWORDS["cosmetics"]):
+            intent["category"] = "cosmetics-men"
+            intent["categoryGroup"] = "cosmetics"
+        else:
+            intent["category"] = "clothing-men"
+            intent["categoryGroup"] = "clothing"
+    elif "femra" in normalized_query or "grave" in normalized_query:
+        if any(keyword in normalized_query for keyword in SEARCH_INTENT_CATEGORY_KEYWORDS["cosmetics"]):
+            intent["category"] = "cosmetics-women"
+            intent["categoryGroup"] = "cosmetics"
+        else:
+            intent["category"] = "clothing-women"
+            intent["categoryGroup"] = "clothing"
+    elif "femij" in normalized_query or "bebe" in normalized_query:
+        if any(keyword in normalized_query for keyword in SEARCH_INTENT_CATEGORY_KEYWORDS["cosmetics"]):
+            intent["category"] = "cosmetics-kids"
+            intent["categoryGroup"] = "cosmetics"
+        else:
+            intent["category"] = "clothing-kids"
+            intent["categoryGroup"] = "clothing"
+
+    for next_color in PRODUCT_COLORS:
+        if next_color in normalized_query:
+            intent["color"] = next_color
+            break
+
+    for next_size in CLOTHING_SIZES:
+        if re.search(rf"(?<![A-Z0-9]){re.escape(next_size.lower())}(?![A-Z0-9])", normalized_query):
+            intent["size"] = next_size
+            break
+
+    canonical_search_terms: list[str] = []
+    canonical_type_terms = {
+        "tshirt": "maica",
+        "undershirt": "maica e brendshme",
+        "pants": "pantallona",
+        "hoodie": "duks",
+        "turtleneck": "rollke",
+        "jacket": "jakne",
+        "underwear": "te brendshme",
+        "pajamas": "pixhama",
+        "perfumes": "parfume",
+        "hygiene": "higjiene",
+        "creams": "krem",
+        "makeup": "makup",
+        "nails": "thonje",
+        "hair-colors": "ngjyre flokesh",
+        "kids-care": "kujdes per femije",
+        "room-decor": "dekor",
+        "bathroom-items": "banjo",
+        "bedroom-items": "dhome gjumi",
+        "kids-room-items": "dhome femijesh",
+        "sports-equipment": "pajisje sportive",
+        "sportswear": "patika",
+        "sports-accessories": "aksesor sportiv",
+        "phone-cases": "mbrojtese telefoni",
+        "headphones": "degjues",
+        "phone-parts": "pjese telefoni",
+        "phone-accessories": "aksesor telefoni",
+    }
+
+    for next_product_type, keywords in SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS.items():
+        if any(keyword in normalized_query for keyword in keywords):
+            intent["productType"] = next_product_type
+            canonical_search_terms.append(canonical_type_terms.get(next_product_type, ""))
+            break
+
+    if not intent["category"] and not intent["categoryGroup"]:
+        for next_category, keywords in SEARCH_INTENT_CATEGORY_KEYWORDS.items():
+            if any(keyword in normalized_query for keyword in keywords):
+                if next_category in {"clothing", "cosmetics"}:
+                    intent["categoryGroup"] = next_category
+                else:
+                    intent["category"] = next_category
+                break
+
+    if not intent["category"] and intent["productType"]:
+        inferred_category = infer_category_from_product_type(intent["productType"])
+        if inferred_category:
+            intent["category"] = inferred_category
+
+    if not intent["categoryGroup"] and intent["productType"]:
+        intent["categoryGroup"] = infer_category_group_from_product_type(intent["productType"])
+
+    business_name_match = re.search(
+        r"\bnga\s+(?:butiku|biznesi|dyqani|shopi)?\s*([a-zA-Z0-9][a-zA-Z0-9\s\-]{1,60})$",
+        normalized_query,
+    )
+    if business_name_match:
+        captured_business_name = re.sub(r"\s+", " ", business_name_match.group(1).strip())
+        if captured_business_name:
+            intent["businessName"] = captured_business_name
+
+    if not canonical_search_terms and normalized_query:
+        cleaned_query = normalized_query
+        for marker in SEARCH_INTENT_MARKERS:
+            cleaned_query = re.sub(rf"\b{re.escape(marker)}\b", " ", cleaned_query)
+        cleaned_query = re.sub(r"\b(te|nje|nje pale|dua|do|me|ma|per|vera|veres|gjerë|gjera)\b", " ", cleaned_query)
+        if intent["color"]:
+            cleaned_query = re.sub(r"\b(ngjyr|ngjyre|tone|nuance)\b", " ", cleaned_query)
+            cleaned_query = re.sub(rf"\b{re.escape(str(intent['color']))}\b", " ", cleaned_query)
+        if intent["businessName"]:
+            cleaned_query = re.sub(
+                r"\bnga\s+(?:butiku|biznesi|dyqani|shopi)?\s*"
+                + re.escape(str(intent["businessName"])),
+                " ",
+                cleaned_query,
+            )
+        cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
+        if cleaned_query:
+            canonical_search_terms.append(cleaned_query)
+
+    intent["searchText"] = canonical_search_terms[0] if canonical_search_terms else ""
+    return sanitize_search_intent(intent)
+
+
+def extract_openai_output_text(payload: dict[str, object]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    output_items = payload.get("output")
+    if not isinstance(output_items, list):
+        return ""
+
+    for item in output_items:
+        if not isinstance(item, dict):
+            continue
+        content_items = item.get("content")
+        if not isinstance(content_items, list):
+            continue
+        for content in content_items:
+            if not isinstance(content, dict):
+                continue
+            text_value = content.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                return text_value.strip()
+            json_value = content.get("json")
+            if isinstance(json_value, dict):
+                return json.dumps(json_value, ensure_ascii=False)
+
+    return ""
+
+
+def request_openai_search_intent(query_text: str) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "searchText": {"type": "string"},
+            "categoryGroup": {
+                "anyOf": [
+                    {"type": "string", "enum": ["clothing", "cosmetics"]},
+                    {"type": "null"},
+                ]
+            },
+            "category": {
+                "anyOf": [
+                    {"type": "string", "enum": sorted(PRODUCT_CATEGORIES)},
+                    {"type": "null"},
+                ]
+            },
+            "productType": {
+                "anyOf": [
+                    {"type": "string", "enum": sorted(PRODUCT_TYPES)},
+                    {"type": "null"},
+                ]
+            },
+            "size": {
+                "anyOf": [
+                    {"type": "string", "enum": sorted(CLOTHING_SIZES)},
+                    {"type": "null"},
+                ]
+            },
+            "businessName": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "null"},
+                ]
+            },
+            "color": {
+                "anyOf": [
+                    {"type": "string", "enum": sorted(PRODUCT_COLORS)},
+                    {"type": "null"},
+                ]
+            },
+        },
+        "required": [
+            "searchText",
+            "categoryGroup",
+            "category",
+            "productType",
+            "size",
+            "color",
+            "businessName",
+        ],
+    }
+
+    instructions = (
+        "Ti je motor interpretimi per kerkimin e produkteve ne nje marketplace shqiptar. "
+        "Nxirr nje JSON te thjeshte qe e shnderron pyetjen natyrale ne filtra katalogu. "
+        "searchText duhet te jete version i shkurter dhe praktik per kerkimin ne databaze, jo fjalia e plote. "
+        "Per shembull, nga 'me trego maica te kuqe' kthe searchText='maica', productType='tshirt', color='kuqe'. "
+        "Nga 'dua pantallona te gjera' kthe searchText='pantallona', productType='pants'. "
+        "Nga pyetje si 'ngjyre kuqe' ose 'dua dicka te kuqe', kthe searchText bosh dhe perdor vetem color='kuqe'. "
+        "Nese perdoruesi permend nje butik ose biznes, p.sh. 'pantallona nga Sheilla', kthe businessName='Sheilla'. "
+        "Nga 'patika te veres' kthe searchText='patika' dhe category='sport' ose productType='sportswear' kur eshte e arsyeshme. "
+        "Nese nje fushe nuk dihet, kthe null. Mos shpik kategori qe nuk ekzistojne."
+    )
+
+    payload = {
+        "model": OPENAI_SEARCH_MODEL,
+        "instructions": instructions,
+        "input": query_text,
+        "max_output_tokens": 200,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "trego_search_intent",
+                "strict": True,
+                "schema": schema,
+            }
+        },
+    }
+
+    request = Request(
+        OPENAI_RESPONSES_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=OPENAI_SEARCH_TIMEOUT_SECONDS) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"OpenAI search intent failed: {error}")
+        return None
+
+    response_text = extract_openai_output_text(response_payload)
+    if not response_text:
+        return None
+
+    try:
+        return sanitize_search_intent(json.loads(response_text))
+    except json.JSONDecodeError as error:
+        print(f"OpenAI search intent parse failed: {error}")
+        return None
+
+
+def interpret_search_query(query_text: str) -> dict[str, object]:
+    normalized_query = normalize_search_intent_text(query_text)
+    if not normalized_query:
+        return sanitize_search_intent({})
+
+    cached_entry = SEARCH_INTENT_CACHE.get(normalized_query)
+    if cached_entry and cached_entry[0] > time.time():
+        return sanitize_search_intent(cached_entry[1])
+
+    interpreted_intent = heuristic_search_intent(query_text)
+
+    if should_use_openai_search_interpreter(query_text):
+        openai_intent = request_openai_search_intent(query_text)
+        if openai_intent:
+            interpreted_intent = openai_intent
+
+    SEARCH_INTENT_CACHE[normalized_query] = (
+        time.time() + SEARCH_INTENT_CACHE_TTL_SECONDS,
+        interpreted_intent,
+    )
+    return sanitize_search_intent(interpreted_intent)
+
+
+def merge_normalized_search_terms(
+    *values: object,
+    allowed_terms: set[str] | None = None,
+    max_terms: int = 24,
+) -> str:
+    merged_terms: list[str] = []
+    seen_terms: set[str] = set()
+
+    for value in values:
+        if isinstance(value, str):
+            raw_terms = tokenize_search_intent_text(value)
+        elif isinstance(value, (list, tuple, set)):
+            raw_terms = []
+            for item in value:
+                raw_terms.extend(tokenize_search_intent_text(str(item or "")))
+        else:
+            raw_terms = tokenize_search_intent_text(str(value or ""))
+
+        for raw_term in raw_terms:
+            normalized_term = normalize_search_intent_text(raw_term)
+            if not normalized_term:
+                continue
+            if allowed_terms is not None and normalized_term not in allowed_terms:
+                continue
+            if normalized_term in seen_terms:
+                continue
+            seen_terms.add(normalized_term)
+            merged_terms.append(normalized_term)
+            if len(merged_terms) >= max_terms:
+                return " ".join(merged_terms)
+
+    return " ".join(merged_terms)
+
+
+def sanitize_product_image_search_metadata(raw_metadata: dict[str, object] | None) -> dict[str, str]:
+    if not isinstance(raw_metadata, dict):
+        return {"searchText": "", "colorTerms": ""}
+
+    search_text = merge_normalized_search_terms(raw_metadata.get("searchText", ""), max_terms=24)
+    color_terms = merge_normalized_search_terms(
+        raw_metadata.get("colorTerms", []),
+        allowed_terms=PRODUCT_COLORS,
+        max_terms=6,
+    )
+    return {
+        "searchText": search_text[:240],
+        "colorTerms": color_terms,
+    }
+
+
+def merge_product_image_search_metadata(*metadata_items: dict[str, object] | None) -> dict[str, str]:
+    return sanitize_product_image_search_metadata(
+        {
+            "searchText": merge_normalized_search_terms(
+                *(item.get("searchText", "") if isinstance(item, dict) else "" for item in metadata_items),
+                max_terms=24,
+            ),
+            "colorTerms": merge_normalized_search_terms(
+                *(item.get("colorTerms", "") if isinstance(item, dict) else "" for item in metadata_items),
+                allowed_terms=PRODUCT_COLORS,
+                max_terms=6,
+            ),
+        }
+    )
+
+
+def heuristic_product_image_search_metadata(
+    *,
+    title: object,
+    description: object,
+    category: object,
+    product_type: object,
+    color: object,
+) -> dict[str, str]:
+    product_type_aliases = {
+        "tshirt": "maica bluze",
+        "undershirt": "maica brendshme",
+        "pants": "pantallona",
+        "hoodie": "duks",
+        "turtleneck": "rollke",
+        "jacket": "jakne",
+        "underwear": "brendshme",
+        "pajamas": "pixhama",
+        "perfumes": "parfum",
+        "hygiene": "higjiene",
+        "creams": "krem",
+        "makeup": "makup",
+        "nails": "thonje",
+        "hair-colors": "ngjyre flokesh",
+        "kids-care": "kujdes femije",
+        "room-decor": "dekor shtepie",
+        "bathroom-items": "banjo",
+        "bedroom-items": "dhome gjumi",
+        "kids-room-items": "dhome femijesh",
+        "sports-equipment": "pajisje sportive",
+        "sportswear": "sportive",
+        "sports-accessories": "aksesor sportiv",
+        "phone-cases": "mbrojtese telefoni",
+        "headphones": "degjues kufje",
+        "phone-parts": "pjese telefoni",
+        "phone-accessories": "aksesor telefoni",
+    }
+
+    category_aliases = {
+        "clothing-men": "veshje meshkuj",
+        "clothing-women": "veshje femra",
+        "clothing-kids": "veshje femije",
+        "cosmetics-men": "kozmetike meshkuj",
+        "cosmetics-women": "kozmetike femra",
+        "cosmetics-kids": "kozmetike femije",
+        "home": "shtepi",
+        "sport": "sport",
+        "technology": "teknologji",
+    }
+
+    return sanitize_product_image_search_metadata(
+        {
+            "searchText": merge_normalized_search_terms(
+                title,
+                description,
+                product_type_aliases.get(str(product_type or "").strip().lower(), ""),
+                category_aliases.get(str(category or "").strip().lower(), ""),
+                max_terms=24,
+            ),
+            "colorTerms": merge_normalized_search_terms(
+                color,
+                allowed_terms=PRODUCT_COLORS,
+                max_terms=6,
+            ),
+        }
+    )
+
+
+def build_openai_input_image_urls(
+    image_gallery: object,
+    *,
+    fallback_image_path: object = "",
+    max_images: int = 3,
+) -> list[str]:
+    data_urls: list[str] = []
+    gallery_paths = normalize_image_gallery_value(
+        image_gallery,
+        fallback_image_path=fallback_image_path,
+    )
+
+    for image_path in gallery_paths[:max_images]:
+        file_bytes, content_type = fetch_uploaded_asset_payload_by_path(image_path)
+        if not file_bytes:
+            continue
+        encoded_bytes = base64.b64encode(file_bytes).decode("ascii")
+        data_urls.append(f"data:{content_type};base64,{encoded_bytes}")
+
+    return data_urls
+
+
+def request_openai_product_image_search_metadata(
+    *,
+    title: object,
+    description: object,
+    category: object,
+    product_type: object,
+    color: object,
+    image_gallery: object,
+    fallback_image_path: object = "",
+) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    image_urls = build_openai_input_image_urls(
+        image_gallery,
+        fallback_image_path=fallback_image_path,
+    )
+    if not image_urls:
+        return None
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "searchText": {"type": "string"},
+            "colorTerms": {
+                "type": "array",
+                "items": {"type": "string", "enum": sorted(PRODUCT_COLORS)},
+            },
+        },
+        "required": ["searchText", "colorTerms"],
+    }
+
+    product_context = {
+        "title": str(title or "").strip(),
+        "description": str(description or "").strip(),
+        "category": str(category or "").strip().lower(),
+        "productType": str(product_type or "").strip().lower(),
+        "color": str(color or "").strip().lower(),
+    }
+
+    instructions = (
+        "Ti analizon foto produktesh per nje marketplace shqiptar. "
+        "Kthe JSON per kerkimin e katalogut. "
+        "searchText duhet te jete i shkurter, praktik, ne shqip, me fjale kyce qe nje bleres real do te perdorte. "
+        "Per shembull: 'maica e kuqe', 'krem per duar', 'tepih', 'patika vere', 'adapter iphone'. "
+        "Perdor foton si burim kryesor, por shfrytezo edhe kontekstin e produktit kur ndihmon. "
+        "Mos pershkruaj sfondin, duart e modelit ose elemente qe nuk jane produkti. "
+        "Nese ngjyra duket qarte, ktheje vetem nga lista e lejuar. "
+        "Nese fotoja eshte e paqarte, searchText le te mbetet i shkurter dhe konservativ."
+    )
+
+    content: list[dict[str, object]] = [
+        {
+            "type": "input_text",
+            "text": (
+                "Analizo fotot e produktit dhe nxirr fjale kyce kerkimi ne shqip.\n"
+                f"Konteksti i produktit: {json.dumps(product_context, ensure_ascii=False)}"
+            ),
+        }
+    ]
+    content.extend(
+        {"type": "input_image", "image_url": image_url}
+        for image_url in image_urls
+    )
+
+    payload = {
+        "model": OPENAI_PRODUCT_IMAGE_MODEL,
+        "instructions": instructions,
+        "input": [{"role": "user", "content": content}],
+        "max_output_tokens": 250,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "trego_product_image_search_metadata",
+                "strict": True,
+                "schema": schema,
+            }
+        },
+    }
+
+    request = Request(
+        OPENAI_RESPONSES_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=OPENAI_PRODUCT_IMAGE_TIMEOUT_SECONDS) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"OpenAI product image metadata failed: {error}")
+        return None
+
+    response_text = extract_openai_output_text(response_payload)
+    if not response_text:
+        return None
+
+    try:
+        return sanitize_product_image_search_metadata(json.loads(response_text))
+    except json.JSONDecodeError as error:
+        print(f"OpenAI product image metadata parse failed: {error}")
+        return None
+
+
+def generate_product_image_search_metadata(
+    *,
+    title: object,
+    description: object,
+    category: object,
+    product_type: object,
+    color: object,
+    image_gallery: object,
+    fallback_image_path: object = "",
+    image_fingerprint: object = "",
+    existing_metadata: dict[str, object] | None = None,
+) -> dict[str, str]:
+    heuristic_metadata = heuristic_product_image_search_metadata(
+        title=title,
+        description=description,
+        category=category,
+        product_type=product_type,
+        color=color,
+    )
+
+    normalized_existing_metadata = sanitize_product_image_search_metadata(existing_metadata)
+    fingerprint_key = str(image_fingerprint or "").strip()
+    if fingerprint_key:
+        cached_metadata = PRODUCT_IMAGE_METADATA_CACHE.get(fingerprint_key)
+        if cached_metadata and cached_metadata[0] > time.time():
+            return merge_product_image_search_metadata(
+                cached_metadata[1],
+                normalized_existing_metadata,
+                heuristic_metadata,
+            )
+
+    if not OPENAI_API_KEY:
+        return merge_product_image_search_metadata(normalized_existing_metadata, heuristic_metadata)
+
+    openai_metadata = request_openai_product_image_search_metadata(
+        title=title,
+        description=description,
+        category=category,
+        product_type=product_type,
+        color=color,
+        image_gallery=image_gallery,
+        fallback_image_path=fallback_image_path,
+    )
+    merged_metadata = merge_product_image_search_metadata(
+        openai_metadata,
+        normalized_existing_metadata,
+        heuristic_metadata,
+    )
+
+    if fingerprint_key and (merged_metadata["searchText"] or merged_metadata["colorTerms"]):
+        PRODUCT_IMAGE_METADATA_CACHE[fingerprint_key] = (
+            time.time() + PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS,
+            merged_metadata,
+        )
+
+    return merged_metadata
 
 
 def parse_positive_quantity(
@@ -1938,6 +2953,15 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         fallback_image_path=row["image_path"],
     )
     image_path = image_gallery[0] if image_gallery else normalize_image_path(row["image_path"])
+    business_name = None
+    if "business_name" in row.keys():
+        business_name = str(row["business_name"] or "").strip() or None
+    buyers_count = 0
+    if "buyers_count" in row.keys():
+        try:
+            buyers_count = max(0, int(row["buyers_count"] or 0))
+        except (TypeError, ValueError):
+            buyers_count = 0
 
     return {
         "id": row["id"],
@@ -1955,6 +2979,8 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "showStockPublic": bool(row["show_stock_public"]),
         "createdByUserId": row["created_by_user_id"],
         "createdAt": row["created_at"],
+        "businessName": business_name,
+        "buyersCount": buyers_count,
     }
 
 
@@ -2573,10 +3599,29 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
-def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
+def count_public_products_for_business(business_id: int) -> int:
     with get_db_connection() as connection:
-        return connection.execute(
+        row = connection.execute(
             """
+            SELECT COUNT(*)
+            FROM products p
+            INNER JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            WHERE bp.id = ?
+              AND p.is_public = 1
+            """,
+            (business_id,),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def fetch_public_products_for_business(
+    business_id: int,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        query = """
             SELECT
                 p.id,
                 p.title,
@@ -2598,9 +3643,14 @@ def fetch_public_products_for_business(business_id: int) -> list[sqlite3.Row]:
             WHERE bp.id = ?
               AND p.is_public = 1
             ORDER BY p.id DESC
-            """,
-            (business_id,),
-        ).fetchall()
+        """
+        params: list[object] = [business_id]
+
+        if limit is not None:
+            query += "\n            LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+        return connection.execute(query, params).fetchall()
 
 
 def is_business_followed_by_user(business_id: int, user_id: int) -> bool:
@@ -2621,6 +3671,10 @@ def fetch_products(
     category: str | None = None,
     *,
     category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
@@ -2638,14 +3692,42 @@ def fetch_products(
             conditions.append("category LIKE ?")
             parameters.append(f"{category_group}-%")
 
+        if product_type:
+            conditions.append("product_type = ?")
+            parameters.append(product_type)
+
+        if size:
+            conditions.append("size = ?")
+            parameters.append(size)
+
+        if color:
+            conditions.append("(color = ? OR LOWER(ai_image_color_terms) LIKE ?)")
+            parameters.extend([color, f"%{color.lower()}%"])
+
         if created_by_user_id is not None:
             conditions.append("created_by_user_id = ?")
             parameters.append(created_by_user_id)
 
+        if business_name_search:
+            conditions.append(
+                "EXISTS ("
+                "SELECT 1 FROM business_profiles bp "
+                "WHERE bp.user_id = products.created_by_user_id "
+                "AND LOWER(bp.business_name) LIKE ?"
+                ")"
+            )
+            parameters.append(f"%{business_name_search.lower()}%")
+
         if search_text:
-            conditions.append("(LOWER(title) LIKE ? OR LOWER(description) LIKE ?)")
+            conditions.append(
+                "("
+                "LOWER(title) LIKE ? "
+                "OR LOWER(description) LIKE ? "
+                "OR LOWER(ai_image_search_text) LIKE ?"
+                ")"
+            )
             search_pattern = f"%{search_text.lower()}%"
-            parameters.extend([search_pattern, search_pattern])
+            parameters.extend([search_pattern, search_pattern, search_pattern])
 
         if not include_hidden:
             conditions.append("is_public = 1")
@@ -2682,6 +3764,10 @@ def count_products(
     category: str | None = None,
     *,
     category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
@@ -2697,14 +3783,42 @@ def count_products(
             conditions.append("category LIKE ?")
             parameters.append(f"{category_group}-%")
 
+        if product_type:
+            conditions.append("product_type = ?")
+            parameters.append(product_type)
+
+        if size:
+            conditions.append("size = ?")
+            parameters.append(size)
+
+        if color:
+            conditions.append("(color = ? OR LOWER(ai_image_color_terms) LIKE ?)")
+            parameters.extend([color, f"%{color.lower()}%"])
+
         if created_by_user_id is not None:
             conditions.append("created_by_user_id = ?")
             parameters.append(created_by_user_id)
 
+        if business_name_search:
+            conditions.append(
+                "EXISTS ("
+                "SELECT 1 FROM business_profiles bp "
+                "WHERE bp.user_id = products.created_by_user_id "
+                "AND LOWER(bp.business_name) LIKE ?"
+                ")"
+            )
+            parameters.append(f"%{business_name_search.lower()}%")
+
         if search_text:
-            conditions.append("(LOWER(title) LIKE ? OR LOWER(description) LIKE ?)")
+            conditions.append(
+                "("
+                "LOWER(title) LIKE ? "
+                "OR LOWER(description) LIKE ? "
+                "OR LOWER(ai_image_search_text) LIKE ?"
+                ")"
+            )
             search_pattern = f"%{search_text.lower()}%"
-            parameters.extend([search_pattern, search_pattern])
+            parameters.extend([search_pattern, search_pattern, search_pattern])
 
         if not include_hidden:
             conditions.append("is_public = 1")
@@ -2822,6 +3936,67 @@ def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def insert_product_for_owner(
+    connection: DatabaseConnection,
+    *,
+    normalized_product: dict[str, object],
+    owner_user_id: int,
+) -> int:
+    image_fingerprint = compute_product_image_fingerprint(
+        normalized_product["imageGallery"],
+        fallback_image_path=normalized_product["imagePath"],
+    )
+    image_search_metadata = generate_product_image_search_metadata(
+        title=normalized_product["title"],
+        description=normalized_product["description"],
+        category=normalized_product["category"],
+        product_type=normalized_product["productType"],
+        color=normalized_product["color"],
+        image_gallery=normalized_product["imageGallery"],
+        fallback_image_path=normalized_product["imagePath"],
+        image_fingerprint=image_fingerprint,
+    )
+
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO products (
+            title,
+            description,
+            price,
+            image_path,
+            image_gallery,
+            image_fingerprint,
+            ai_image_search_text,
+            ai_image_color_terms,
+            category,
+            product_type,
+            size,
+            color,
+            stock_quantity,
+            created_by_user_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            normalized_product["title"],
+            normalized_product["description"],
+            normalized_product["price"],
+            normalized_product["imagePath"],
+            json.dumps(normalized_product["imageGallery"], ensure_ascii=False),
+            image_fingerprint,
+            image_search_metadata["searchText"],
+            image_search_metadata["colorTerms"],
+            normalized_product["category"],
+            normalized_product["productType"],
+            normalized_product["size"],
+            normalized_product["color"],
+            normalized_product["stockQuantity"],
+            owner_user_id,
+        ),
+    )
+
+
 def fetch_wishlist_products(user_id: int) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         return connection.execute(
@@ -2841,9 +4016,11 @@ def fetch_wishlist_products(user_id: int) -> list[sqlite3.Row]:
                 p.is_public,
                 p.show_stock_public,
                 p.created_by_user_id,
-                wi.created_at
+                wi.created_at,
+                COALESCE(bp.business_name, '') AS business_name
             FROM wishlist_items wi
             INNER JOIN products p ON p.id = wi.product_id
+            LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
             WHERE wi.user_id = ?
               AND p.is_public = 1
             ORDER BY wi.created_at DESC
@@ -2872,9 +4049,11 @@ def fetch_cart_items(user_id: int) -> list[sqlite3.Row]:
                 p.show_stock_public,
                 p.created_by_user_id,
                 ci.created_at,
-                ci.quantity
+                ci.quantity,
+                COALESCE(bp.business_name, '') AS business_name
             FROM cart_items ci
             INNER JOIN products p ON p.id = ci.product_id
+            LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
             WHERE ci.user_id = ?
               AND p.is_public = 1
             ORDER BY ci.updated_at DESC
@@ -3354,6 +4533,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/business/products":
             self.handle_business_products_list()
             return
+        if path == "/api/business/products/import-template":
+            self.handle_business_products_import_template()
+            return
         if path == "/api/business/public":
             self.handle_public_business_detail(query_params)
             return
@@ -3530,6 +4712,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/products/restock":
             self.handle_restock_product()
+            return
+        if path == "/api/business/products/import":
+            self.handle_business_products_import()
             return
         if path == "/api/wishlist/toggle":
             self.handle_toggle_wishlist()
@@ -3913,6 +5098,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         category = query_params.get("category", [""])[0].strip().lower() or None
         category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+        filter_errors, product_type, size, color = parse_catalog_filters_query(query_params)
 
         if category and category not in PRODUCT_CATEGORIES:
             self.send_json(
@@ -3928,16 +5114,25 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if pagination_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors})
+        if pagination_errors or filter_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors})
             return
 
-        total_count = count_products(category, category_group=category_group)
+        total_count = count_products(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+        )
         products = [
             serialize_product(row)
             for row in fetch_products(
                 category,
                 category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
                 limit=limit,
                 offset=offset,
             )
@@ -3956,36 +5151,47 @@ class AppHandler(SimpleHTTPRequestHandler):
         )
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
-        search_text = query_params.get("q", [""])[0].strip()
-        category = query_params.get("category", [""])[0].strip().lower() or None
-        category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
+        raw_search_text = query_params.get("q", [""])[0].strip()
+        explicit_category = query_params.get("category", [""])[0].strip().lower() or None
+        explicit_category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
+        filter_errors, explicit_product_type, explicit_size, explicit_color = parse_catalog_filters_query(query_params)
 
-        if pagination_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors})
+        if pagination_errors or filter_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors})
             return
 
-        if category and category not in PRODUCT_CATEGORIES:
+        if explicit_category and explicit_category not in PRODUCT_CATEGORIES:
             self.send_json(
                 400,
                 {"ok": False, "message": "Kategoria e kerkuar nuk eshte valide."},
             )
             return
 
-        if category_group and category_group not in {"clothing", "cosmetics"}:
+        if explicit_category_group and explicit_category_group not in {"clothing", "cosmetics"}:
             self.send_json(
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
             )
             return
 
-        if not search_text:
+        interpreted_intent = interpret_search_query(raw_search_text) if raw_search_text else sanitize_search_intent({})
+        category = explicit_category or interpreted_intent.get("category")
+        category_group = explicit_category_group or interpreted_intent.get("categoryGroup")
+        product_type = explicit_product_type or interpreted_intent.get("productType")
+        size = explicit_size or interpreted_intent.get("size")
+        color = explicit_color or interpreted_intent.get("color")
+        business_name = str(interpreted_intent.get("businessName") or "").strip() or None
+        search_text = str(interpreted_intent.get("searchText", "") or raw_search_text).strip()
+
+        if not raw_search_text and not any([category, category_group, product_type, size, color, business_name]):
             self.send_json(
                 200,
                 {
                     "ok": True,
                     "products": [],
                     "query": "",
+                    "interpretedQuery": "",
                     "limit": limit,
                     "offset": offset,
                     "total": 0,
@@ -3997,6 +5203,10 @@ class AppHandler(SimpleHTTPRequestHandler):
         total_count = count_products(
             category,
             category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name,
             search_text=search_text,
         )
         products = [
@@ -4004,6 +5214,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             for row in fetch_products(
                 category,
                 category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+                business_name_search=business_name,
                 search_text=search_text,
                 limit=limit,
                 offset=offset,
@@ -4014,7 +5228,16 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "products": products,
-                "query": search_text,
+                "query": raw_search_text,
+                "interpretedQuery": search_text,
+                "searchIntent": {
+                    "category": category,
+                    "categoryGroup": category_group,
+                    "productType": product_type,
+                    "size": size,
+                    "color": color,
+                    "businessName": business_name,
+                },
                 "limit": limit,
                 "offset": offset,
                 "total": total_count,
@@ -4292,8 +5515,12 @@ class AppHandler(SimpleHTTPRequestHandler):
         query_params: dict[str, list[str]],
     ) -> None:
         errors, business_id = parse_business_id_query(query_params)
+        pagination_errors, limit, offset = parse_products_pagination_query(query_params)
         if errors or business_id is None:
             self.send_json(400, {"ok": False, "errors": errors})
+            return
+        if pagination_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors})
             return
 
         business_profile = fetch_public_business_profile_by_id(business_id)
@@ -4301,13 +5528,25 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
+        total_count = count_public_products_for_business(business_id)
         products = [
             serialize_product(row)
-            for row in fetch_public_products_for_business(business_id)
+            for row in fetch_public_products_for_business(
+                business_id,
+                limit=limit,
+                offset=offset,
+            )
         ]
         self.send_json(
             200,
-            {"ok": True, "products": products},
+            {
+                "ok": True,
+                "products": products,
+                "limit": limit,
+                "offset": offset,
+                "total": total_count,
+                "hasMore": offset + len(products) < total_count,
+            },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
 
@@ -4364,6 +5603,118 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
         ]
         self.send_json(200, {"ok": True, "products": products})
+
+    def handle_business_products_import_template(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se ta shkarkosh template-n."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem bizneset mund ta perdorin importin e artikujve."},
+            )
+            return
+
+        payload = build_product_import_template_csv().encode("utf-8-sig")
+        self.send_bytes(
+            200,
+            payload,
+            content_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="trego-products-template.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    def handle_business_products_import(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te importosh artikuj."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem bizneset mund te importojne artikuj."},
+            )
+            return
+
+        if not fetch_business_profile_for_user(user["id"]):
+            self.send_json(
+                400,
+                {"ok": False, "message": "Regjistroje fillimisht biznesin para se te importosh artikuj."},
+            )
+            return
+
+        try:
+            message = self.read_multipart_message()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        file_parts = [
+            part
+            for part in message.iter_parts()
+            if part.get_content_disposition() == "form-data"
+            and part.get_param("name", header="content-disposition") == "file"
+            and part.get_filename()
+        ]
+
+        if not file_parts:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Zgjidh nje skedar CSV per import."},
+            )
+            return
+
+        import_part = file_parts[0]
+        original_filename = str(import_part.get_filename() or "").strip()
+        if not original_filename.lower().endswith(".csv"):
+            self.send_json(
+                400,
+                {"ok": False, "message": "Per momentin supportohet vetem formati CSV qe hapet ne Excel."},
+            )
+            return
+
+        file_bytes = import_part.get_payload(decode=True) or b""
+        errors, parsed_rows = parse_product_import_csv(file_bytes)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        created_products: list[dict[str, object]] = []
+        with get_db_connection() as connection:
+            for normalized_product in parsed_rows:
+                product_id = insert_product_for_owner(
+                    connection,
+                    normalized_product=normalized_product,
+                    owner_user_id=int(user["id"]),
+                )
+                product_row = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + PRODUCT_SELECT_COLUMNS
+                    + """
+                    FROM products
+                    WHERE id = ?
+                    """,
+                    (product_id,),
+                ).fetchone()
+                if product_row:
+                    created_products.append(serialize_product(product_row))
+
+        self.send_json(
+            201,
+            {
+                "ok": True,
+                "message": f"U importuan me sukses {len(created_products)} artikuj.",
+                "products": created_products,
+                "count": len(created_products),
+            },
+        )
 
     def handle_business_follow_toggle(self) -> None:
         user = self.get_current_user()
@@ -5110,45 +6461,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
-        image_fingerprint = compute_product_image_fingerprint(
-            normalized["imageGallery"],
-            fallback_image_path=normalized["imagePath"],
-        )
-
         with get_db_connection() as connection:
-            product_id = execute_insert_and_get_id(
+            product_id = insert_product_for_owner(
                 connection,
-                """
-                INSERT INTO products (
-                    title,
-                    description,
-                    price,
-                    image_path,
-                    image_gallery,
-                    image_fingerprint,
-                    category,
-                    product_type,
-                    size,
-                    color,
-                    stock_quantity,
-                    created_by_user_id
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    normalized["title"],
-                    normalized["description"],
-                    normalized["price"],
-                    normalized["imagePath"],
-                    json.dumps(normalized["imageGallery"], ensure_ascii=False),
-                    image_fingerprint,
-                    normalized["category"],
-                    normalized["productType"],
-                    normalized["size"],
-                    normalized["color"],
-                    normalized["stockQuantity"],
-                    user["id"],
-                ),
+                normalized_product=normalized,
+                owner_user_id=int(user["id"]),
             )
 
             product_row = connection.execute(
@@ -5223,6 +6540,24 @@ class AppHandler(SimpleHTTPRequestHandler):
             normalized["imageGallery"],
             fallback_image_path=normalized["imagePath"],
         )
+        image_search_metadata = generate_product_image_search_metadata(
+            title=normalized["title"],
+            description=normalized["description"],
+            category=normalized["category"],
+            product_type=normalized["productType"],
+            color=normalized["color"],
+            image_gallery=normalized["imageGallery"],
+            fallback_image_path=normalized["imagePath"],
+            image_fingerprint=image_fingerprint,
+            existing_metadata=(
+                {
+                    "searchText": product["ai_image_search_text"],
+                    "colorTerms": product["ai_image_color_terms"],
+                }
+                if image_fingerprint and image_fingerprint == str(product["image_fingerprint"] or "").strip()
+                else None
+            ),
+        )
 
         with get_db_connection() as connection:
             connection.execute(
@@ -5235,6 +6570,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     image_path = ?,
                     image_gallery = ?,
                     image_fingerprint = ?,
+                    ai_image_search_text = ?,
+                    ai_image_color_terms = ?,
                     category = ?,
                     product_type = ?,
                     size = ?,
@@ -5249,6 +6586,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["imagePath"],
                     json.dumps(normalized["imageGallery"], ensure_ascii=False),
                     image_fingerprint,
+                    image_search_metadata["searchText"],
+                    image_search_metadata["colorTerms"],
                     normalized["category"],
                     normalized["productType"],
                     normalized["size"],
@@ -6861,6 +8200,22 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.send_header(header_name, header_value)
         self.end_headers()
         self.wfile.write(response)
+
+    def send_bytes(
+        self,
+        status_code: int,
+        payload: bytes,
+        *,
+        content_type: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.send_response(status_code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        for header_name, header_value in (headers or {}).items():
+            self.send_header(header_name, header_value)
+        self.end_headers()
+        self.wfile.write(payload)
 
 
 class AppServer(ThreadingHTTPServer):
