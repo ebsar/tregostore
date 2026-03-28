@@ -3,7 +3,6 @@ import base64
 import csv
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default
 import hashlib
@@ -15,7 +14,6 @@ import os
 import re
 import secrets
 import sqlite3
-import smtplib
 import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -590,41 +588,12 @@ def is_postgres_connection(connection: DatabaseConnection) -> bool:
     return getattr(connection, "backend", "sqlite") == "postgres"
 
 
-def get_smtp_settings() -> dict[str, object]:
-    host = str(os.environ.get("TREGO_SMTP_HOST", "")).strip()
-    username = str(os.environ.get("TREGO_SMTP_USERNAME", "")).strip()
-    password = str(os.environ.get("TREGO_SMTP_PASSWORD", ""))
-    from_email = str(os.environ.get("TREGO_SMTP_FROM", username or "")).strip()
-    port_text = str(os.environ.get("TREGO_SMTP_PORT", "587")).strip()
-
-    try:
-        port = int(port_text)
-    except ValueError:
-        port = 587
-
-    return {
-        "host": host,
-        "port": port,
-        "username": username,
-        "password": password,
-        "from_email": from_email,
-        "use_tls": read_bool_env("TREGO_SMTP_USE_TLS", True),
-    }
-
-
 def get_bootstrap_admin_settings() -> dict[str, str]:
     return {
         "full_name": read_text_env("TREGO_BOOTSTRAP_ADMIN_NAME"),
         "email": read_text_env("TREGO_BOOTSTRAP_ADMIN_EMAIL").lower(),
         "password": str(os.environ.get("TREGO_BOOTSTRAP_ADMIN_PASSWORD", "")),
     }
-
-
-def is_smtp_configured(settings: dict[str, object]) -> bool:
-    return all(
-        str(settings.get(key, "")).strip()
-        for key in ("host", "username", "password", "from_email")
-    )
 
 
 def split_full_name(full_name: str) -> tuple[str, str]:
@@ -5612,39 +5581,6 @@ def is_brevo_configured() -> bool:
     return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL)
 
 
-def send_email_messages_via_smtp(
-    messages: list[dict[str, str]],
-    smtp_settings: dict[str, object],
-) -> list[str]:
-    warnings: list[str] = []
-    try:
-        with smtplib.SMTP(
-            str(smtp_settings["host"]),
-            int(smtp_settings["port"]),
-            timeout=20,
-        ) as server:
-            server.ehlo()
-            if bool(smtp_settings["use_tls"]):
-                server.starttls()
-                server.ehlo()
-            server.login(
-                str(smtp_settings["username"]),
-                str(smtp_settings["password"]),
-            )
-
-            for message_payload in messages:
-                email_message = EmailMessage()
-                email_message["Subject"] = message_payload["subject"]
-                email_message["From"] = str(smtp_settings["from_email"])
-                email_message["To"] = message_payload["to_email"]
-                email_message.set_content(message_payload["body"])
-                server.send_message(email_message)
-    except Exception as error:
-        warnings.append(f"Njoftimi me email nuk u dergua: {error}")
-
-    return warnings
-
-
 def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
     warnings: list[str] = []
     headers = {
@@ -5695,16 +5631,12 @@ def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
     if not messages:
         return []
 
-    smtp_settings = get_smtp_settings()
-    if is_smtp_configured(smtp_settings):
-        return send_email_messages_via_smtp(messages, smtp_settings)
+    if not is_brevo_configured():
+        return [
+            "Brevo API key dhe sender email nuk jane te vendosura. Vendos BREVO_API_KEY dhe BREVO_SENDER_EMAIL per te dërguar kodet."
+        ]
 
-    if is_brevo_configured():
-        return send_email_messages_via_brevo(messages)
-
-    return [
-        "SMTP nuk eshte konfiguruar dhe Brevo nuk ka API key. Shto njeren prej tyre (TREGO_SMTP_* ose BREVO_API_KEY + BREVO_SENDER_EMAIL) per te dërguar emaile."
-    ]
+    return send_email_messages_via_brevo(messages)
 
 
 def send_email_notifications(messages: list[dict[str, str]]) -> list[str]:
