@@ -66,9 +66,9 @@ watch(
   { immediate: true },
 );
 
-onMounted(async () => {
+onMounted(() => {
   syncGreetingToastFromSession();
-  await ensureSessionLoaded();
+  void ensureSessionLoaded();
 });
 
 onBeforeUnmount(() => {

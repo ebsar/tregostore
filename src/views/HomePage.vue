@@ -126,18 +126,20 @@ onMounted(async () => {
   });
 
   try {
-    const user = await ensureSessionLoaded();
+    const sessionPromise = ensureSessionLoaded();
+    const publicProductsPromise = loadProducts();
+    const user = await sessionPromise;
     if (user?.role === "business") {
       await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
       markRouteReady();
       return;
     }
 
-    await Promise.all([
-      refreshCollectionState(),
-      loadProducts(),
-    ]);
+    await publicProductsPromise;
     markRouteReady();
+    void refreshCollectionState().catch((error) => {
+      console.error(error);
+    });
     void loadBusinesses();
   } catch (error) {
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
@@ -205,7 +207,11 @@ async function loadProducts(options = {}) {
     params.set("color", filters.color);
   }
 
-  const { response, data } = await requestJson(`/api/products?${params.toString()}`, {});
+  const { response, data } = await requestJson(
+    `/api/products?${params.toString()}`,
+    {},
+    { cacheTtlMs: append ? 0 : 15000 },
+  );
   if (!response.ok || !data?.ok) {
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     if (!append) {

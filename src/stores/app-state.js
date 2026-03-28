@@ -18,6 +18,7 @@ export const appState = reactive({
 
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
+let sessionLoadPromise = null;
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
@@ -93,19 +94,35 @@ export async function ensureSessionLoaded(options = {}) {
     return appState.user;
   }
 
-  const currentUser = await fetchCurrentUserOptional();
-  const user = await enrichUserSessionData(currentUser);
-  appState.user = user;
-  appState.sessionLoaded = true;
-
-  if (!user) {
-    setCartCount(0);
-    return null;
+  if (sessionLoadPromise && !force) {
+    return sessionLoadPromise;
   }
 
-  const cartItems = await fetchProtectedCollection("/api/cart");
-  setCartItems(cartItems);
-  return user;
+  const nextSessionLoadPromise = (async () => {
+    const currentUser = await fetchCurrentUserOptional();
+    const user = await enrichUserSessionData(currentUser);
+    appState.user = user;
+    appState.sessionLoaded = true;
+
+    if (!user) {
+      setCartCount(0);
+      return null;
+    }
+
+    const cartItems = await fetchProtectedCollection("/api/cart");
+    setCartItems(cartItems);
+    return user;
+  })();
+
+  sessionLoadPromise = nextSessionLoadPromise;
+
+  try {
+    return await nextSessionLoadPromise;
+  } finally {
+    if (sessionLoadPromise === nextSessionLoadPromise) {
+      sessionLoadPromise = null;
+    }
+  }
 }
 
 export async function refreshSession() {

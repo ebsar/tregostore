@@ -310,6 +310,7 @@ PUBLIC_BUSINESSES_CACHE_HEADERS = {
 PUBLIC_STATS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
 }
+POSTGRES_MIGRATION_LOCK_ID = 90422117
 ADDRESS_SELECT_COLUMNS = """
     id,
     user_id,
@@ -655,10 +656,25 @@ def initialize_database() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as connection:
-        schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
-        connection.executescript(schema_path.read_text(encoding="utf-8"))
-        migrate_database(connection)
-        ensure_bootstrap_admin(connection)
+        acquired_postgres_lock = False
+        if is_postgres_connection(connection):
+            connection.execute(
+                "SELECT pg_advisory_lock(?)",
+                (POSTGRES_MIGRATION_LOCK_ID,),
+            )
+            acquired_postgres_lock = True
+
+        try:
+            schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
+            connection.executescript(schema_path.read_text(encoding="utf-8"))
+            migrate_database(connection)
+            ensure_bootstrap_admin(connection)
+        finally:
+            if acquired_postgres_lock:
+                connection.execute(
+                    "SELECT pg_advisory_unlock(?)",
+                    (POSTGRES_MIGRATION_LOCK_ID,),
+                )
 
 
 def should_store_uploads_in_database() -> bool:
@@ -8836,7 +8852,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
-        self.send_json(200, {"ok": True, "product": serialize_product(product)})
+        self.send_json(
+            200,
+            {"ok": True, "product": serialize_product(product)},
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS if bool(product["is_public"]) else None,
+        )
 
     def handle_admin_products_list(self) -> None:
         user = self.get_current_user()

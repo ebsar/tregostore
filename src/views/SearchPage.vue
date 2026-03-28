@@ -223,20 +223,27 @@ watch(
 
 async function bootstrap() {
   try {
-    const sessionPromise = ensureSessionLoaded().then(() => refreshCollectionState());
+    const sessionPromise = ensureSessionLoaded()
+      .then(() => refreshCollectionState())
+      .catch((error) => {
+        console.error(error);
+      });
     const didApplyPendingVisualSearch = await applyPendingVisualSearch();
 
     if (!didApplyPendingVisualSearch) {
       await loadProducts();
     }
 
-    await sessionPromise;
+    markRouteReady();
+    void sessionPromise;
   } catch (error) {
     ui.message = "Produktet nuk u ngarkuan. Provoje perseri.";
     ui.type = "error";
     console.error(error);
   } finally {
-    markRouteReady();
+    if (!products.value.length) {
+      markRouteReady();
+    }
   }
 }
 
@@ -410,7 +417,11 @@ async function loadProducts(options = {}) {
     ? `/api/products/search?${params.toString()}`
     : `/api/products?${params.toString()}`;
 
-  const { response, data } = await requestJson(requestUrl);
+  const { response, data } = await requestJson(
+    requestUrl,
+    {},
+    { cacheTtlMs: append ? 0 : 10000 },
+  );
   if (!response.ok || !data?.ok) {
     ui.message = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     ui.type = "error";

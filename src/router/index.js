@@ -35,7 +35,6 @@ const routes = [
       title: "TREGO | Home",
       shellClass: "page-shell page-shell-home-full",
       mainClass: "page-main page-main-collection",
-      routeLoader: true,
     },
   },
   {
@@ -46,7 +45,6 @@ const routes = [
       title: "TREGO | Kerko produkte",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
-      routeLoader: true,
     },
   },
   {
@@ -61,7 +59,6 @@ const routes = [
       title: "TREGO | Produkti",
       shellClass: "page-shell",
       mainClass: "page-main page-main-product",
-      routeLoader: true,
     },
   },
   {
@@ -72,7 +69,6 @@ const routes = [
       title: "TREGO | Profili i biznesit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
-      routeLoader: true,
     },
   },
   {

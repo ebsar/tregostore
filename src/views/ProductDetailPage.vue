@@ -140,12 +140,17 @@ watch(
 
 async function bootstrap() {
   try {
-    await Promise.all([
-      ensureSessionLoaded().then(() => refreshCollectionState()),
-      loadProduct(),
-    ]);
-  } finally {
+    await loadProduct();
     markRouteReady();
+    void ensureSessionLoaded()
+      .then(() => refreshCollectionState())
+      .catch((error) => {
+        console.error(error);
+      });
+  } finally {
+    if (!currentProduct.value) {
+      markRouteReady();
+    }
   }
 }
 
@@ -178,6 +183,7 @@ async function loadProduct() {
   const { response, data } = await requestJson(
     `/api/product?id=${encodeURIComponent(productId)}`,
     {},
+    { cacheTtlMs: 20000 },
   );
   if (!response.ok || !data?.ok || !data.product) {
     currentProduct.value = null;
