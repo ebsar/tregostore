@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
+import { getProductDetailUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
@@ -117,6 +118,12 @@ async function removeItem(productId) {
 }
 
 async function addToCart(productId) {
+  const product = items.value.find((item) => Number(item.id) === Number(productId));
+  if (product?.requiresVariantSelection) {
+    router.push(getProductDetailUrl(productId, "/wishlist"));
+    return;
+  }
+
   const { response, data } = await requestJson("/api/cart/add", {
     method: "POST",
     body: JSON.stringify({ productId }),
@@ -144,6 +151,12 @@ async function bulkAddToCart() {
   let lastItems = [];
 
   for (const item of selectedItems.value) {
+    if (item?.requiresVariantSelection) {
+      ui.message = "Per produktet me variante, zgjidhe ngjyren ose madhesine nga faqja e produktit.";
+      ui.type = "error";
+      return;
+    }
+
     const { response, data } = await requestJson("/api/cart/add", {
       method: "POST",
       body: JSON.stringify({ productId: item.id }),

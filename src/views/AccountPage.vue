@@ -28,12 +28,14 @@ const accountLinks = computed(() => {
   if (appState.user.role === "business") {
     return [
       { href: "/biznesi-juaj", label: "Biznesi i imi" },
+      { href: "/mesazhet", label: "Mesazhet" },
       { href: "/porosite-e-biznesit", label: "Porosite e bera" },
       { href: "/te-dhenat-personale", label: "Te dhenat personale" },
     ];
   }
 
   return [
+    { href: "/mesazhet", label: "Mesazhet" },
     { href: "/porosite", label: "Porosite" },
     { href: "/refund-returne", label: "Refund / Returne" },
     { href: "/adresat", label: "Adresat" },

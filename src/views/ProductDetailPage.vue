@@ -17,9 +17,69 @@ const currentProduct = ref(null);
 const currentImageIndex = ref(0);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
+const selectedColor = ref("");
+const selectedSize = ref("");
 const ui = reactive({
   message: "",
   type: "",
+});
+
+const variantInventory = computed(() => {
+  if (!Array.isArray(currentProduct.value?.variantInventory)) {
+    return [];
+  }
+
+  return currentProduct.value.variantInventory;
+});
+
+const colorOptions = computed(() =>
+  [...new Set(variantInventory.value.map((entry) => String(entry.color || "").trim().toLowerCase()).filter(Boolean))]
+    .map((value) => ({
+      value,
+      label: formatProductColorLabel(value),
+      inStock: variantInventory.value.some((entry) => entry.color === value && Number(entry.quantity || 0) > 0),
+    })),
+);
+
+const sizeOptions = computed(() => {
+  const activeEntries = variantInventory.value.filter((entry) => {
+    if (!selectedColor.value) {
+      return true;
+    }
+
+    return String(entry.color || "").trim().toLowerCase() === selectedColor.value;
+  });
+
+  return [...new Set(activeEntries.map((entry) => String(entry.size || "").trim().toUpperCase()).filter(Boolean))]
+    .map((value) => ({
+      value,
+      inStock: activeEntries.some((entry) => entry.size === value && Number(entry.quantity || 0) > 0),
+    }));
+});
+
+const selectedVariant = computed(() => {
+  if (!variantInventory.value.length) {
+    return null;
+  }
+
+  if (variantInventory.value.length === 1) {
+    return variantInventory.value[0];
+  }
+
+  return variantInventory.value.find((entry) => {
+    const colorMatches = !selectedColor.value || String(entry.color || "").trim().toLowerCase() === selectedColor.value;
+    const sizeMatches = !selectedSize.value || String(entry.size || "").trim().toUpperCase() === selectedSize.value;
+    if (selectedColor.value && selectedSize.value) {
+      return colorMatches && sizeMatches;
+    }
+    if (selectedColor.value && !sizeOptions.value.length) {
+      return colorMatches;
+    }
+    if (!selectedColor.value && selectedSize.value) {
+      return sizeMatches;
+    }
+    return false;
+  }) || null;
 });
 
 const details = computed(() => {
@@ -33,6 +93,9 @@ const details = computed(() => {
     currentProduct.value.size ? `Madhesia: ${currentProduct.value.size}` : "",
     currentProduct.value.color
       ? `Ngjyra: ${formatProductColorLabel(currentProduct.value.color)}`
+      : "",
+    currentProduct.value.packageAmountValue && currentProduct.value.packageAmountUnit
+      ? `Permbajtja: ${currentProduct.value.packageAmountValue}${currentProduct.value.packageAmountUnit}`
       : "",
     currentProduct.value.showStockPublic && Number(currentProduct.value.stockQuantity) > 0
       ? "Ne stok"
@@ -64,6 +127,17 @@ onMounted(async () => {
   await bootstrap();
 });
 
+watch(
+  () => appState.catalogRevision,
+  async (nextRevision, previousRevision) => {
+    if (nextRevision === previousRevision) {
+      return;
+    }
+
+    await loadProduct();
+  },
+);
+
 async function bootstrap() {
   try {
     await Promise.all([
@@ -88,7 +162,7 @@ async function refreshCollectionState() {
   ]);
 
   wishlistIds.value = wishlistItems.map((item) => item.id);
-  cartIds.value = cartItems.map((item) => item.id);
+  cartIds.value = cartItems.map((item) => item.productId || item.id);
   setCartItems(cartItems);
 }
 
@@ -104,7 +178,6 @@ async function loadProduct() {
   const { response, data } = await requestJson(
     `/api/product?id=${encodeURIComponent(productId)}`,
     {},
-    { cacheTtlMs: 15000 },
   );
   if (!response.ok || !data?.ok || !data.product) {
     currentProduct.value = null;
@@ -115,8 +188,51 @@ async function loadProduct() {
 
   currentProduct.value = data.product;
   currentImageIndex.value = 0;
+  initializeVariantSelection();
   ui.message = "";
   ui.type = "";
+}
+
+function initializeVariantSelection() {
+  selectedColor.value = "";
+  selectedSize.value = "";
+
+  if (!variantInventory.value.length) {
+    return;
+  }
+
+  if (variantInventory.value.length === 1) {
+    selectedColor.value = String(variantInventory.value[0].color || "").trim().toLowerCase();
+    selectedSize.value = String(variantInventory.value[0].size || "").trim().toUpperCase();
+    return;
+  }
+
+  if (colorOptions.value.length === 1) {
+    selectedColor.value = colorOptions.value[0].value;
+  }
+
+  if (sizeOptions.value.length === 1) {
+    selectedSize.value = sizeOptions.value[0].value;
+  }
+}
+
+function chooseColor(colorValue) {
+  selectedColor.value = colorValue;
+
+  if (
+    selectedSize.value
+    && !variantInventory.value.some(
+      (entry) =>
+        String(entry.color || "").trim().toLowerCase() === colorValue
+        && String(entry.size || "").trim().toUpperCase() === selectedSize.value,
+    )
+  ) {
+    selectedSize.value = "";
+  }
+}
+
+function chooseSize(sizeValue) {
+  selectedSize.value = sizeValue;
 }
 
 async function handleWishlist() {
@@ -167,13 +283,24 @@ async function handleCart() {
   }
 
   const productId = currentProduct.value.id;
+  if (currentProduct.value.requiresVariantSelection && !selectedVariant.value) {
+    ui.message = "Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne cart.";
+    ui.type = "error";
+    return;
+  }
+
   if (!cartIds.value.includes(productId)) {
     cartIds.value = [...cartIds.value, productId];
   }
 
   const { response, data } = await requestJson("/api/cart/add", {
     method: "POST",
-    body: JSON.stringify({ productId }),
+    body: JSON.stringify({
+      productId,
+      variantKey: selectedVariant.value?.key || "",
+      selectedSize: selectedVariant.value?.size || selectedSize.value,
+      selectedColor: selectedVariant.value?.color || selectedColor.value,
+    }),
   });
 
   if (!response.ok || !data?.ok) {
@@ -184,7 +311,7 @@ async function handleCart() {
   }
 
   const items = Array.isArray(data.items) ? data.items : [];
-  cartIds.value = items.map((item) => item.id);
+  cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
@@ -240,6 +367,40 @@ function nextImage() {
             <span v-for="detail in details" :key="detail" class="product-detail-tag">
               {{ detail }}
             </span>
+          </div>
+
+          <div v-if="colorOptions.length > 0" class="product-detail-variant-group">
+            <p class="product-detail-variant-label">Ngjyra</p>
+            <div class="product-detail-variant-options">
+              <button
+                v-for="option in colorOptions"
+                :key="option.value"
+                class="product-detail-variant-option"
+                :class="{ active: selectedColor === option.value, 'is-unavailable': !option.inStock }"
+                type="button"
+                :disabled="!option.inStock"
+                @click="chooseColor(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="sizeOptions.length > 0" class="product-detail-variant-group">
+            <p class="product-detail-variant-label">Madhesia</p>
+            <div class="product-detail-variant-options">
+              <button
+                v-for="option in sizeOptions"
+                :key="option.value"
+                class="product-detail-variant-option"
+                :class="{ active: selectedSize === option.value, 'is-unavailable': !option.inStock }"
+                type="button"
+                :disabled="!option.inStock"
+                @click="chooseSize(option.value)"
+              >
+                {{ option.value }}
+              </button>
+            </div>
           </div>
 
           <strong class="product-detail-price">{{ formatPrice(currentProduct.price) }}</strong>

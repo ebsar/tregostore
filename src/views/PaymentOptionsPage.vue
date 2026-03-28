@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   clearCheckoutFlowState,
@@ -10,10 +10,12 @@ import {
   readCheckoutPaymentMethod,
   readCheckoutSelectedCartIds,
 } from "../lib/shop";
-import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
+import { bumpCatalogRevision, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
+const route = useRoute();
 const router = useRouter();
 const selectedMethod = ref(readCheckoutPaymentMethod());
+const submitting = ref(false);
 const ui = reactive({
   message: "",
   type: "",
@@ -27,6 +29,22 @@ onMounted(async () => {
       return;
     }
 
+    const stripeStatus = String(route.query.stripeStatus || "").trim().toLowerCase();
+    const stripeSessionId = String(route.query.session_id || "").trim();
+    if (stripeStatus === "cancelled") {
+      ui.message = "Pagesa online u anulua. Mund te provosh perseri kur te jesh gati.";
+      ui.type = "error";
+      await router.replace({ path: route.path, query: {} });
+      return;
+    }
+
+    if (stripeStatus === "success" && stripeSessionId) {
+      selectedMethod.value = "card-online";
+      persistCheckoutPaymentMethod("card-online");
+      await confirmStripePayment(stripeSessionId);
+      return;
+    }
+
     const checkoutAddress = readCheckoutAddressDraft();
     if (!checkoutAddress?.addressLine) {
       router.replace("/adresa-e-porosise");
@@ -37,12 +55,17 @@ onMounted(async () => {
       router.replace("/cart");
       return;
     }
+
   } finally {
     markRouteReady();
   }
 });
 
 async function handleConfirm() {
+  if (submitting.value) {
+    return;
+  }
+
   ui.message = "";
   if (!selectedMethod.value) {
     ui.message = "Zgjedhe nje menyre pagese para se te vazhdosh.";
@@ -50,35 +73,113 @@ async function handleConfirm() {
     return;
   }
 
+  if (selectedMethod.value === "card-online") {
+    await startStripeCheckout();
+    return;
+  }
+
+  await submitCashOrder();
+}
+
+async function submitCashOrder() {
   const checkoutAddress = readCheckoutAddressDraft();
   const selectedCartIds = readCheckoutSelectedCartIds();
   const payload = {
-    productIds: selectedCartIds,
+    cartItemIds: selectedCartIds,
     paymentMethod: selectedMethod.value,
     ...checkoutAddress,
   };
 
-  const { response, data } = await requestJson("/api/orders/create", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  submitting.value = true;
+  try {
+    const { response, data } = await requestJson("/api/orders/create", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok || !data?.ok) {
-    ui.message = resolveApiMessage(data, "Porosia nuk u konfirmua.");
-    ui.type = "error";
-    return;
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Porosia nuk u konfirmua.");
+      ui.type = "error";
+      return;
+    }
+
+    persistCheckoutPaymentMethod(selectedMethod.value);
+    bumpCatalogRevision();
+    const notificationWarnings = Array.isArray(data.notificationWarnings)
+      ? data.notificationWarnings.filter(Boolean)
+      : [];
+    const confirmationMessage = notificationWarnings.length > 0
+      ? `${data.message || "Porosia u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
+      : (data.message || "Porosia u konfirmua me sukses.");
+    persistOrderConfirmationMessage(confirmationMessage);
+    clearCheckoutFlowState();
+    router.push("/porosite");
+  } finally {
+    submitting.value = false;
   }
+}
 
-  persistCheckoutPaymentMethod(selectedMethod.value);
-  const notificationWarnings = Array.isArray(data.notificationWarnings)
-    ? data.notificationWarnings.filter(Boolean)
-    : [];
-  const confirmationMessage = notificationWarnings.length > 0
-    ? `${data.message || "Porosia u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
-    : (data.message || "Porosia u konfirmua me sukses.");
-  persistOrderConfirmationMessage(confirmationMessage);
-  clearCheckoutFlowState();
-  router.push("/porosite");
+async function startStripeCheckout() {
+  const checkoutAddress = readCheckoutAddressDraft();
+  const selectedCartIds = readCheckoutSelectedCartIds();
+  const payload = {
+    cartItemIds: selectedCartIds,
+    paymentMethod: "card-online",
+    ...checkoutAddress,
+  };
+
+  submitting.value = true;
+  ui.message = "";
+  try {
+    const { response, data } = await requestJson("/api/payments/stripe/checkout", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok || !data?.ok || !data.checkoutUrl) {
+      ui.message = resolveApiMessage(data, "Stripe test checkout nuk u hap.");
+      ui.type = "error";
+      return;
+    }
+
+    persistCheckoutPaymentMethod("card-online");
+    window.location.href = String(data.checkoutUrl).trim();
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function confirmStripePayment(stripeSessionId) {
+  submitting.value = true;
+  ui.message = "Po verifikohet pagesa me Stripe...";
+  ui.type = "";
+  try {
+    const { response, data } = await requestJson("/api/payments/stripe/confirm", {
+      method: "POST",
+      body: JSON.stringify({ stripeSessionId }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Pagesa nuk u konfirmua nga Stripe.");
+      ui.type = "error";
+      return;
+    }
+
+    persistCheckoutPaymentMethod("card-online");
+    bumpCatalogRevision();
+    const notificationWarnings = Array.isArray(data.notificationWarnings)
+      ? data.notificationWarnings.filter(Boolean)
+      : [];
+    const confirmationMessage = notificationWarnings.length > 0
+      ? `${data.message || "Pagesa u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
+      : (data.message || "Pagesa u konfirmua me sukses.");
+    persistOrderConfirmationMessage(confirmationMessage);
+    clearCheckoutFlowState();
+    await router.replace({ path: route.path, query: {} });
+    await router.push(data.redirectTo || "/porosite");
+  } finally {
+    submitting.value = false;
+  }
 }
 </script>
 
@@ -122,13 +223,17 @@ async function handleConfirm() {
           type="button"
           @click="selectedMethod = 'card-online'"
         >
-          Pages me kartel Online
+          Pages me kartel Online (Stripe test)
         </button>
       </div>
 
       <div class="profile-form-actions">
-        <button class="profile-save-button" type="button" @click="handleConfirm">
-          Konfirmo menyren e pageses
+        <button class="profile-save-button" type="button" :disabled="submitting" @click="handleConfirm">
+          {{
+            submitting
+              ? (selectedMethod === "card-online" ? "Po vazhdohet me Stripe..." : "Duke konfirmuar porosine...")
+              : "Konfirmo menyren e pageses"
+          }}
         </button>
         <button class="ghost-button profile-cancel-button" type="button" @click="router.push('/adresa-e-porosise')">
           Cancel

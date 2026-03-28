@@ -3,17 +3,21 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
+import { deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
-import { formatCategoryGroupLabel, formatCategoryLabel } from "../lib/shop";
+import { formatCategoryLabel, getProductDetailUrl } from "../lib/shop";
+import { consumePendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
 const SEARCH_INPUT_DEBOUNCE_MS = 320;
 const SMART_SEARCH_MARKERS = new Set(["dua", "doja", "kerkoj", "kerko", "trego", "shfaq", "gjej"]);
+const GROUPED_PAGE_SECTIONS = new Set(["clothing", "cosmetics"]);
 
 const draftQuery = ref("");
 const products = ref([]);
+const availableFilters = ref(createEmptyProductFacets());
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
@@ -30,6 +34,9 @@ const visualSearchActive = ref(false);
 const visualSearchBusy = ref(false);
 const productsPageSize = ref(getProductsPageSize());
 const filters = reactive({
+  pageSection: "",
+  category: "",
+  productType: "",
   size: "",
   color: "",
   sort: "",
@@ -41,35 +48,27 @@ const ui = reactive({
 let searchDebounceTimeoutId = 0;
 let stopProductsPageSizeSubscription = () => {};
 
-const categoryFilter = computed(() => String(route.query.category || "").trim().toLowerCase());
-const categoryGroupFilter = computed(() => String(route.query.categoryGroup || "").trim().toLowerCase());
-const productTypeFilter = computed(() => String(route.query.productType || "").trim().toLowerCase());
 const activeQuery = computed(() => String(route.query.q || "").trim());
+const availablePageSectionOptions = computed(() => availableFilters.value.pageSections);
+const availableCategoryOptions = computed(() =>
+  availableFilters.value.categories.filter((option) =>
+    !filters.pageSection || String(option.pageSection || "") === filters.pageSection,
+  ),
+);
+const availableProductTypeOptions = computed(() =>
+  availableFilters.value.productTypes.filter((option) =>
+    (!filters.pageSection || String(option.pageSection || "") === filters.pageSection)
+    && (!filters.category || String(option.category || "") === filters.category),
+  ),
+);
+const availableSizeOptions = computed(() => availableFilters.value.sizes);
+const availableColorOptions = computed(() => availableFilters.value.colors);
+const hasActiveCatalogFilters = computed(() =>
+  Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
+);
 
 const filteredProducts = computed(() => {
-  let nextProducts = [...products.value];
-
-  if (categoryGroupFilter.value) {
-    nextProducts = nextProducts.filter((product) =>
-      String(product.category || "").startsWith(`${categoryGroupFilter.value}-`),
-    );
-  }
-
-  if (categoryFilter.value) {
-    nextProducts = nextProducts.filter((product) => String(product.category || "") === categoryFilter.value);
-  }
-
-  if (productTypeFilter.value) {
-    nextProducts = nextProducts.filter((product) => product.productType === productTypeFilter.value);
-  }
-
-  if (filters.size) {
-    nextProducts = nextProducts.filter((product) => String(product.size || "") === filters.size);
-  }
-
-  if (filters.color) {
-    nextProducts = nextProducts.filter((product) => String(product.color || "") === filters.color);
-  }
+  const nextProducts = [...products.value];
 
   if (filters.sort === "price-asc") {
     nextProducts.sort((left, right) => Number(left.price || 0) - Number(right.price || 0));
@@ -99,16 +98,52 @@ const resultsLabel = computed(() => {
   if (activeQuery.value) {
     scopeParts.push(`kerkimin "${activeQuery.value}"`);
   }
-  if (categoryFilter.value) {
-    scopeParts.push(formatCategoryLabel(categoryFilter.value));
+
+  if (filters.category) {
+    scopeParts.push(
+      getFacetOptionLabel(
+        availableCategoryOptions.value,
+        filters.category,
+        formatCategoryLabel(filters.category),
+      ),
+    );
+  } else if (filters.pageSection) {
+    scopeParts.push(
+      getFacetOptionLabel(
+        availablePageSectionOptions.value,
+        filters.pageSection,
+        filters.pageSection,
+      ),
+    );
   }
-  if (categoryGroupFilter.value) {
-    scopeParts.push(formatCategoryGroupLabel(categoryGroupFilter.value));
+
+  if (filters.productType) {
+    scopeParts.push(
+      getFacetOptionLabel(
+        availableProductTypeOptions.value,
+        filters.productType,
+        filters.productType,
+      ),
+    );
+  }
+
+  if (filters.size) {
+    scopeParts.push(`madhesia ${filters.size}`);
+  }
+
+  if (filters.color) {
+    scopeParts.push(
+      getFacetOptionLabel(
+        availableColorOptions.value,
+        filters.color,
+        filters.color,
+      ),
+    );
   }
 
   const scopeLabel = scopeParts.length ? ` per ${scopeParts.join(" • ")}` : "";
 
-  if (!filters.size && !filters.color && !filters.sort) {
+  if (!hasActiveCatalogFilters.value && !filters.sort) {
     return totalProductsCount.value > products.value.length
       ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte${scopeLabel}.`
       : `Po shfaqen ${products.value.length} produkte${scopeLabel}.`;
@@ -123,6 +158,7 @@ watch(
   () => route.fullPath,
   async () => {
     draftQuery.value = activeQuery.value;
+    syncFiltersFromRoute();
     clearVisualSearchState();
     await bootstrap();
   },
@@ -159,6 +195,7 @@ onMounted(async () => {
     void loadProducts();
   });
   draftQuery.value = activeQuery.value;
+  syncFiltersFromRoute();
   await bootstrap();
 });
 
@@ -168,12 +205,32 @@ onBeforeUnmount(() => {
   clearVisualSearchState();
 });
 
+watch(
+  () => appState.catalogRevision,
+  async (nextRevision, previousRevision) => {
+    if (nextRevision === previousRevision) {
+      return;
+    }
+
+    if (visualSearchActive.value && visualSearchFile.value) {
+      await runVisualSearch();
+      return;
+    }
+
+    await loadProducts();
+  },
+);
+
 async function bootstrap() {
   try {
-    await Promise.all([
-      ensureSessionLoaded().then(() => refreshCollectionState()),
-      loadProducts(),
-    ]);
+    const sessionPromise = ensureSessionLoaded().then(() => refreshCollectionState());
+    const didApplyPendingVisualSearch = await applyPendingVisualSearch();
+
+    if (!didApplyPendingVisualSearch) {
+      await loadProducts();
+    }
+
+    await sessionPromise;
   } catch (error) {
     ui.message = "Produktet nuk u ngarkuan. Provoje perseri.";
     ui.type = "error";
@@ -196,8 +253,127 @@ async function refreshCollectionState() {
   ]);
 
   wishlistIds.value = wishlistItems.map((item) => item.id);
-  cartIds.value = cartItems.map((item) => item.id);
+  cartIds.value = cartItems.map((item) => item.productId || item.id);
   setCartItems(cartItems);
+}
+
+function createEmptyProductFacets() {
+  return {
+    pageSections: [],
+    categories: [],
+    productTypes: [],
+    sizes: [],
+    colors: [],
+  };
+}
+
+function normalizeProductFacets(rawFacets) {
+  return {
+    pageSections: Array.isArray(rawFacets?.pageSections) ? rawFacets.pageSections : [],
+    categories: Array.isArray(rawFacets?.categories) ? rawFacets.categories : [],
+    productTypes: Array.isArray(rawFacets?.productTypes) ? rawFacets.productTypes : [],
+    sizes: Array.isArray(rawFacets?.sizes) ? rawFacets.sizes : [],
+    colors: Array.isArray(rawFacets?.colors) ? rawFacets.colors : [],
+  };
+}
+
+function getFacetOptionLabel(options, value, fallback = "") {
+  return options.find((option) => option.value === value)?.label || fallback || value;
+}
+
+function syncFiltersFromRoute() {
+  const pageSectionFromRoute = String(route.query.pageSection || "").trim().toLowerCase();
+  const categoryFromRoute = String(route.query.category || "").trim().toLowerCase();
+  const categoryGroupFromRoute = String(route.query.categoryGroup || "").trim().toLowerCase();
+  const productTypeFromRoute = String(route.query.productType || "").trim().toLowerCase();
+
+  if (categoryFromRoute) {
+    filters.pageSection = deriveSectionFromCategory(categoryFromRoute);
+    filters.category = categoryFromRoute;
+  } else if (pageSectionFromRoute) {
+    filters.pageSection = pageSectionFromRoute;
+    filters.category = "";
+  } else if (categoryGroupFromRoute) {
+    filters.pageSection = categoryGroupFromRoute;
+    filters.category = "";
+  } else {
+    filters.pageSection = "";
+    filters.category = "";
+  }
+
+  filters.productType = productTypeFromRoute;
+}
+
+function applyServerActiveFilters(activeFilters = {}) {
+  filters.pageSection = String(activeFilters.pageSection || filters.pageSection || "").trim().toLowerCase();
+  filters.category = String(activeFilters.category || "").trim().toLowerCase();
+  filters.productType = String(activeFilters.productType || "").trim().toLowerCase();
+  filters.size = String(activeFilters.size || "").trim().toUpperCase();
+  filters.color = String(activeFilters.color || "").trim().toLowerCase();
+}
+
+function buildSearchRouteQuery(nextQueryValue = draftQuery.value) {
+  const normalizedQuery = String(nextQueryValue || "").trim();
+  const nextQuery = {};
+
+  if (normalizedQuery) {
+    nextQuery.q = normalizedQuery;
+  }
+
+  if (filters.pageSection) {
+    nextQuery.pageSection = filters.pageSection;
+  }
+
+  if (filters.category) {
+    nextQuery.category = filters.category;
+  }
+
+  if (filters.productType) {
+    nextQuery.productType = filters.productType;
+  }
+
+  return nextQuery;
+}
+
+function routeQueryMatches(nextQuery) {
+  const currentQuery = {
+    q: String(route.query.q || "").trim(),
+    pageSection: String(route.query.pageSection || "").trim().toLowerCase(),
+    category: String(route.query.category || "").trim().toLowerCase(),
+    productType: String(route.query.productType || "").trim().toLowerCase(),
+  };
+  const normalizedNextQuery = {
+    q: String(nextQuery.q || "").trim(),
+    pageSection: String(nextQuery.pageSection || "").trim().toLowerCase(),
+    category: String(nextQuery.category || "").trim().toLowerCase(),
+    productType: String(nextQuery.productType || "").trim().toLowerCase(),
+  };
+
+  return JSON.stringify(currentQuery) === JSON.stringify(normalizedNextQuery);
+}
+
+function updateSearchRouteFromFilters(nextQueryValue = draftQuery.value) {
+  const nextQuery = buildSearchRouteQuery(nextQueryValue);
+  if (routeQueryMatches(nextQuery)) {
+    void loadProducts();
+    return;
+  }
+
+  router.replace({
+    path: "/kerko",
+    query: nextQuery,
+  });
+}
+
+function buildVisualSearchScope() {
+  const nextPageSection = String(filters.pageSection || "").trim().toLowerCase();
+  const nextCategory = String(filters.category || "").trim().toLowerCase();
+
+  return {
+    pageSection: nextPageSection,
+    category: nextCategory,
+    categoryGroup: !nextCategory && GROUPED_PAGE_SECTIONS.has(nextPageSection) ? nextPageSection : "",
+  };
 }
 
 async function loadProducts(options = {}) {
@@ -210,23 +386,31 @@ async function loadProducts(options = {}) {
     params.set("q", activeQuery.value);
   }
 
-  if (categoryFilter.value) {
-    params.set("category", categoryFilter.value);
+  if (filters.pageSection) {
+    params.set("pageSection", filters.pageSection);
   }
 
-  if (categoryGroupFilter.value) {
-    params.set("categoryGroup", categoryGroupFilter.value);
+  if (filters.category) {
+    params.set("category", filters.category);
   }
 
-  if (productTypeFilter.value) {
-    params.set("productType", productTypeFilter.value);
+  if (filters.productType) {
+    params.set("productType", filters.productType);
+  }
+
+  if (filters.size) {
+    params.set("size", filters.size);
+  }
+
+  if (filters.color) {
+    params.set("color", filters.color);
   }
 
   const requestUrl = activeQuery.value
     ? `/api/products/search?${params.toString()}`
     : `/api/products?${params.toString()}`;
 
-  const { response, data } = await requestJson(requestUrl, {}, { cacheTtlMs: 8000 });
+  const { response, data } = await requestJson(requestUrl);
   if (!response.ok || !data?.ok) {
     ui.message = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     ui.type = "error";
@@ -234,6 +418,7 @@ async function loadProducts(options = {}) {
       products.value = [];
       totalProductsCount.value = 0;
       hasMoreProducts.value = false;
+      availableFilters.value = createEmptyProductFacets();
     }
     return;
   }
@@ -242,6 +427,10 @@ async function loadProducts(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
+  availableFilters.value = normalizeProductFacets(data.facets);
+  if (!append) {
+    applyServerActiveFilters(data.activeFilters);
+  }
   ui.message = "";
   ui.type = "";
 }
@@ -265,17 +454,8 @@ async function loadMoreProducts() {
 
 function submitSearch() {
   window.clearTimeout(searchDebounceTimeoutId);
-  const normalizedQuery = String(draftQuery.value || "").trim();
   clearVisualSearchState();
-  router.replace({
-    path: "/kerko",
-    query: {
-      ...(categoryGroupFilter.value ? { categoryGroup: categoryGroupFilter.value } : {}),
-      ...(categoryFilter.value ? { category: categoryFilter.value } : {}),
-      ...(productTypeFilter.value ? { productType: productTypeFilter.value } : {}),
-      ...(normalizedQuery ? { q: normalizedQuery } : {}),
-    },
-  });
+  updateSearchRouteFromFilters(draftQuery.value);
 }
 
 function looksLikeNaturalLanguageSearch(value) {
@@ -335,10 +515,15 @@ async function runVisualSearch(options = {}) {
 
   const { append = false } = options;
   visualSearchBusy.value = true;
+  const visualScope = buildVisualSearchScope();
 
   const result = await searchProductsByImage(visualSearchFile.value, {
-    category: categoryFilter.value,
-    categoryGroup: categoryGroupFilter.value,
+    pageSection: visualScope.pageSection,
+    category: visualScope.category,
+    categoryGroup: visualScope.categoryGroup,
+    productType: filters.productType,
+    size: filters.size,
+    color: filters.color,
     limit: productsPageSize.value,
     offset: append ? products.value.length : 0,
   });
@@ -350,6 +535,7 @@ async function runVisualSearch(options = {}) {
       products.value = [];
       totalProductsCount.value = 0;
       hasMoreProducts.value = false;
+      availableFilters.value = createEmptyProductFacets();
     }
     ui.message = result.message;
     ui.type = "error";
@@ -361,14 +547,88 @@ async function runVisualSearch(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(result.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(result.hasMore);
+  availableFilters.value = normalizeProductFacets(result.facets);
+  if (!append) {
+    applyServerActiveFilters(result.activeFilters);
+  }
   ui.message = result.message || "U gjeten produkte te ngjashme sipas fotos.";
   ui.type = "success";
 }
 
+async function applyPendingVisualSearch() {
+  const pendingVisualSearch = consumePendingVisualSearchFile();
+  if (!pendingVisualSearch?.file) {
+    return false;
+  }
+
+  clearVisualSearchState();
+  visualSearchFile.value = pendingVisualSearch.file;
+  visualSearchFileName.value = String(
+    pendingVisualSearch.name || pendingVisualSearch.file.name || "",
+  ).trim();
+  visualSearchPreviewUrl.value = URL.createObjectURL(pendingVisualSearch.file);
+  await runVisualSearch();
+  return true;
+}
+
+function handlePageSectionChange() {
+  filters.category = "";
+  filters.productType = "";
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch();
+    return;
+  }
+  updateSearchRouteFromFilters();
+}
+
+function handleCategoryChange() {
+  filters.productType = "";
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch();
+    return;
+  }
+  updateSearchRouteFromFilters();
+}
+
+function handleProductTypeChange() {
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch();
+    return;
+  }
+  updateSearchRouteFromFilters();
+}
+
+function handleCatalogFilterChange() {
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch();
+    return;
+  }
+  void loadProducts();
+}
+
 function resetFilters() {
+  filters.pageSection = "";
+  filters.category = "";
+  filters.productType = "";
   filters.size = "";
   filters.color = "";
   filters.sort = "";
+
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch();
+    return;
+  }
+
+  const nextQuery = activeQuery.value ? { q: activeQuery.value } : {};
+  if (routeQueryMatches(nextQuery)) {
+    void loadProducts();
+    return;
+  }
+
+  router.replace({
+    path: "/kerko",
+    query: nextQuery,
+  });
 }
 
 async function handleWishlist(productId) {
@@ -412,6 +672,12 @@ async function handleCart(productId) {
     return;
   }
 
+  const product = products.value.find((entry) => Number(entry.id) === Number(productId));
+  if (product?.requiresVariantSelection) {
+    router.push(getProductDetailUrl(productId, route.fullPath));
+    return;
+  }
+
   busyCartIds.value = [...busyCartIds.value, productId];
   if (!cartIds.value.includes(productId)) {
     cartIds.value = [...cartIds.value, productId];
@@ -432,7 +698,7 @@ async function handleCart(productId) {
   }
 
   const items = Array.isArray(data.items) ? data.items : [];
-  cartIds.value = items.map((item) => item.id);
+  cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
@@ -514,35 +780,73 @@ async function handleCart(productId) {
 
     <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet">
       <div class="search-filters-grid">
-        <label class="field">
-          <span>Madhesia</span>
-          <select v-model="filters.size" class="search-filter-select">
-            <option value="">Te gjitha madhesite</option>
-            <option value="XS">XS</option>
-            <option value="S">S</option>
-            <option value="M">M</option>
-            <option value="L">L</option>
-            <option value="XL">XL</option>
+        <label v-if="availablePageSectionOptions.length > 0" class="field">
+          <span>Kategoria e faqes</span>
+          <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
+            <option value="">Te gjitha kategorite</option>
+            <option
+              v-for="option in availablePageSectionOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
         </label>
 
-        <label class="field">
+        <label v-if="availableCategoryOptions.length > 0" class="field">
+          <span>Nenkategoria</span>
+          <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
+            <option value="">Te gjitha nenkategorite</option>
+            <option
+              v-for="option in availableCategoryOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableProductTypeOptions.length > 0" class="field">
+          <span>Lloji i produktit</span>
+          <select v-model="filters.productType" class="search-filter-select" @change="handleProductTypeChange">
+            <option value="">Te gjitha llojet</option>
+            <option
+              v-for="option in availableProductTypeOptions"
+              :key="`${option.category}-${option.value}`"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableSizeOptions.length > 0" class="field">
+          <span>Madhesia</span>
+          <select v-model="filters.size" class="search-filter-select" @change="handleCatalogFilterChange">
+            <option value="">Te gjitha madhesite</option>
+            <option
+              v-for="option in availableSizeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableColorOptions.length > 0" class="field">
           <span>Ngjyra</span>
-          <select v-model="filters.color" class="search-filter-select">
+          <select v-model="filters.color" class="search-filter-select" @change="handleCatalogFilterChange">
             <option value="">Te gjitha ngjyrat</option>
-            <option value="bardhe">Bardhe</option>
-            <option value="zeze">Zeze</option>
-            <option value="gri">Gri</option>
-            <option value="beige">Beige</option>
-            <option value="kafe">Kafe</option>
-            <option value="kuqe">Kuqe</option>
-            <option value="roze">Roze</option>
-            <option value="vjollce">Vjollce</option>
-            <option value="blu">Blu</option>
-            <option value="gjelber">Gjelber</option>
-            <option value="verdhe">Verdhe</option>
-            <option value="portokalli">Portokalli</option>
-            <option value="shume-ngjyra">Shume ngjyra</option>
+            <option
+              v-for="option in availableColorOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
         </label>
 

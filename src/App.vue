@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
 import SiteNav from "./components/SiteNav.vue";
+import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
 const route = useRoute();
@@ -83,6 +84,7 @@ onBeforeUnmount(() => {
 <template>
   <LoaderOverlay v-if="appState.loaderVisible" />
   <LoginGreetingToast v-if="appState.loginGreeting" :message="appState.loginGreeting" />
+  <VoiceAssistantWidget />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>

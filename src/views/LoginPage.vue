@@ -1,10 +1,11 @@
 <script setup>
 import { reactive } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { persistLoginGreeting } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
+const route = useRoute();
 const router = useRouter();
 const form = reactive({
   email: "",
@@ -51,7 +52,8 @@ async function submitForm() {
     persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
     await ensureSessionLoaded({ force: true });
     window.setTimeout(() => {
-      router.push(data.redirectTo || "/");
+      const redirectPath = String(route.query.redirect || "").trim();
+      router.push(data.redirectTo || redirectPath || "/");
     }, 700);
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";

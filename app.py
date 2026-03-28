@@ -19,9 +19,11 @@ import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from xml.etree import ElementTree as ET
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
+import zipfile
 
 try:
     from PIL import Image, ImageOps, UnidentifiedImageError
@@ -43,15 +45,27 @@ DATA_DIR = RUNTIME_ROOT_DIR / "data" if IS_VERCEL else BASE_DIR / "data"
 DB_PATH = DATA_DIR / "accounts.db"
 SCHEMA_PATH = BASE_DIR / "schema.sql"
 POSTGRES_SCHEMA_PATH = BASE_DIR / "schema_postgres.sql"
+PRODUCT_CATALOG_PATH = BASE_DIR / "src" / "data" / "product-catalog.json"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 OPENAI_API_KEY = str(os.environ.get("OPENAI_API_KEY", "")).strip()
 OPENAI_SEARCH_MODEL = str(os.environ.get("OPENAI_SEARCH_MODEL", "")).strip() or "gpt-5-mini"
+OPENAI_CHAT_MODEL = str(os.environ.get("OPENAI_CHAT_MODEL", "")).strip() or "gpt-5-mini"
+OPENAI_PRODUCT_DRAFT_MODEL = (
+    str(os.environ.get("OPENAI_PRODUCT_DRAFT_MODEL", "")).strip() or "gpt-5-mini"
+)
 OPENAI_PRODUCT_IMAGE_MODEL = (
     str(os.environ.get("OPENAI_PRODUCT_IMAGE_MODEL", "")).strip() or "gpt-4.1-mini"
 )
 OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses"
 OPENAI_SEARCH_TIMEOUT_SECONDS = 8
+OPENAI_CHAT_TIMEOUT_SECONDS = 10
+OPENAI_PRODUCT_DRAFT_TIMEOUT_SECONDS = 12
 OPENAI_PRODUCT_IMAGE_TIMEOUT_SECONDS = 12
+STRIPE_SECRET_KEY = str(os.environ.get("STRIPE_SECRET_KEY", "")).strip()
+STRIPE_PUBLIC_APP_URL = str(os.environ.get("TREGO_PUBLIC_APP_URL", "")).strip().rstrip("/")
+STRIPE_API_BASE_URL = "https://api.stripe.com/v1"
+STRIPE_TIMEOUT_SECONDS = 15
+STRIPE_CURRENCY = str(os.environ.get("STRIPE_CURRENCY", "eur")).strip().lower() or "eur"
 SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -65,11 +79,12 @@ PAGE_ROUTES = {
     "/about": "/about.html",
     "/kerko": "/search.html",
     "/profili-biznesit": "/business-profile-public.html",
+    "/mesazhet": "/messages.html",
     "/login": "/login.html",
     "/forgot-password": "/forgot-password.html",
     "/signup": "/signup.html",
     "/verifiko-email": "/verify-email.html",
-    "/biznesi-juaj": "/business-dashboard.html",
+    "/biznesi-juaj": "/index.html",
     "/llogaria": "/account.html",
     "/te-dhenat-personale": "/personal-data.html",
     "/adresat": "/addresses.html",
@@ -82,59 +97,90 @@ PAGE_ROUTES = {
     "/adresa-e-porosise": "/checkout-address.html",
     "/menyra-e-pageses": "/payment-options.html",
     "/kafshet-shtepiake": "/pets.html",
-    "/admin-products": "/admin-products.html",
+    "/admin-products": "/index.html",
     "/bizneset-e-regjistruara": "/registered-businesses.html",
 }
-LEGACY_PRODUCT_CATEGORIES = {"pets", "agriculture", "medicine", "home"}
+
+
+def load_product_catalog() -> dict[str, object]:
+    try:
+        return json.loads(PRODUCT_CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "sections": [],
+            "productTypes": {},
+            "colorOptions": [],
+            "clothingSizes": ["XS", "S", "M", "L", "XL", "XXL", "XXXL"],
+            "amountUnits": [{"value": "ml", "label": "ml"}, {"value": "l", "label": "L"}],
+        }
+
+
+PRODUCT_CATALOG = load_product_catalog()
+PRODUCT_SECTION_DEFINITIONS = list(PRODUCT_CATALOG.get("sections") or [])
+PRODUCT_TYPE_OPTIONS_BY_CATEGORY = dict(PRODUCT_CATALOG.get("productTypes") or {})
+PRODUCT_COLOR_DEFINITIONS = list(PRODUCT_CATALOG.get("colorOptions") or [])
+PRODUCT_AMOUNT_UNIT_DEFINITIONS = list(PRODUCT_CATALOG.get("amountUnits") or [])
+PRODUCT_CATEGORY_LABELS: dict[str, str] = {}
+PRODUCT_TYPE_LABELS: dict[str, str] = {}
+PRODUCT_COLOR_LABELS: dict[str, str] = {}
+SECTION_AUDIENCE_CATEGORY_MAP: dict[str, dict[str, str]] = {}
+CATEGORY_SECTION_MAP: dict[str, str] = {}
+CATEGORY_AUDIENCE_MAP: dict[str, str] = {}
+
+for color_option in PRODUCT_COLOR_DEFINITIONS:
+    color_value = str(color_option.get("value") or "").strip().lower()
+    if color_value:
+        PRODUCT_COLOR_LABELS[color_value] = str(color_option.get("label") or color_value).strip()
+
+for section_definition in PRODUCT_SECTION_DEFINITIONS:
+    section_value = str(section_definition.get("value") or "").strip().lower()
+    if not section_value:
+        continue
+
+    PRODUCT_CATEGORY_LABELS[section_value] = str(
+        section_definition.get("label") or section_value
+    ).strip()
+    SECTION_AUDIENCE_CATEGORY_MAP[section_value] = {}
+
+    for audience_definition in list(section_definition.get("audiences") or []):
+        audience_value = str(audience_definition.get("value") or "").strip().lower()
+        category_value = str(audience_definition.get("category") or "").strip().lower()
+        audience_label = str(
+            audience_definition.get("label") or category_value or audience_value
+        ).strip()
+        if not audience_value or not category_value:
+            continue
+
+        SECTION_AUDIENCE_CATEGORY_MAP[section_value][audience_value] = category_value
+        PRODUCT_CATEGORY_LABELS[category_value] = audience_label
+        CATEGORY_SECTION_MAP[category_value] = section_value
+        CATEGORY_AUDIENCE_MAP[category_value] = audience_value
+
+    if section_value not in CATEGORY_SECTION_MAP:
+        CATEGORY_SECTION_MAP[section_value] = section_value
+        CATEGORY_AUDIENCE_MAP[section_value] = ""
+
+for category_value, product_type_options in PRODUCT_TYPE_OPTIONS_BY_CATEGORY.items():
+    normalized_category = str(category_value or "").strip().lower()
+    for option in list(product_type_options or []):
+        product_type_value = str(option.get("value") or "").strip().lower()
+        if not product_type_value:
+            continue
+        PRODUCT_TYPE_LABELS[product_type_value] = str(
+            option.get("label") or product_type_value
+        ).strip()
+        if normalized_category and normalized_category not in CATEGORY_SECTION_MAP:
+            CATEGORY_SECTION_MAP[normalized_category] = normalized_category
+            CATEGORY_AUDIENCE_MAP[normalized_category] = ""
+
+LEGACY_PRODUCT_CATEGORIES = {"pets", "agriculture", "medicine", "cosmetics-kids"}
 SHOP_SECTION_PRODUCT_TYPES = {
-    "clothing-men": {
-        "tshirt",
-        "undershirt",
-        "pants",
-        "hoodie",
-        "turtleneck",
-        "jacket",
-        "underwear",
-        "pajamas",
-    },
-    "clothing-women": {
-        "tshirt",
-        "undershirt",
-        "pants",
-        "hoodie",
-        "turtleneck",
-        "jacket",
-        "underwear",
-        "pajamas",
-    },
-    "clothing-kids": {
-        "tshirt",
-        "undershirt",
-        "pants",
-        "hoodie",
-        "turtleneck",
-        "jacket",
-        "underwear",
-        "pajamas",
-    },
-    "cosmetics-men": {"perfumes", "hygiene", "creams"},
-    "cosmetics-women": {
-        "perfumes",
-        "hygiene",
-        "creams",
-        "makeup",
-        "nails",
-        "hair-colors",
-    },
-    "cosmetics-kids": {"hygiene", "creams", "kids-care"},
-    "home": {"room-decor", "bathroom-items", "bedroom-items", "kids-room-items"},
-    "sport": {"sports-equipment", "sportswear", "sports-accessories"},
-    "technology": {
-        "phone-cases",
-        "headphones",
-        "phone-parts",
-        "phone-accessories",
-    },
+    str(category or "").strip().lower(): {
+        str(option.get("value") or "").strip().lower()
+        for option in list(product_type_options or [])
+        if str(option.get("value") or "").strip()
+    }
+    for category, product_type_options in PRODUCT_TYPE_OPTIONS_BY_CATEGORY.items()
 }
 LEGACY_PRODUCT_TYPES = {"clothing", "cream", "food", "tools", "other"}
 PRODUCT_CATEGORIES = LEGACY_PRODUCT_CATEGORIES | set(SHOP_SECTION_PRODUCT_TYPES.keys())
@@ -143,21 +189,21 @@ PRODUCT_TYPES = LEGACY_PRODUCT_TYPES | {
     for product_types in SHOP_SECTION_PRODUCT_TYPES.values()
     for product_type in product_types
 }
-CLOTHING_SIZES = {"XS", "S", "M", "L", "XL"}
-PRODUCT_COLORS = {
-    "bardhe",
-    "zeze",
-    "gri",
-    "beige",
-    "kafe",
-    "kuqe",
-    "roze",
-    "vjollce",
-    "blu",
-    "gjelber",
-    "verdhe",
-    "portokalli",
-    "shume-ngjyra",
+CLOTHING_SIZES = {
+    str(size or "").strip().upper()
+    for size in list(PRODUCT_CATALOG.get("clothingSizes") or [])
+    if str(size or "").strip()
+}
+CLOTHING_SIZE_ORDER = {
+    str(size or "").strip().upper(): index
+    for index, size in enumerate(list(PRODUCT_CATALOG.get("clothingSizes") or []))
+    if str(size or "").strip()
+}
+PRODUCT_COLORS = set(PRODUCT_COLOR_LABELS.keys())
+PRODUCT_AMOUNT_UNITS = {
+    str(option.get("value") or "").strip().lower()
+    for option in PRODUCT_AMOUNT_UNIT_DEFINITIONS
+    if str(option.get("value") or "").strip()
 }
 SEARCH_INTENT_MARKERS = {
     "dua",
@@ -204,6 +250,8 @@ SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS = {
     "phone-accessories": {"aksesor telefoni"},
 }
 USER_ROLES = {"client", "admin", "business"}
+CHAT_PARTICIPANT_ROLES = {"client", "business"}
+CHAT_MESSAGE_MAX_LENGTH = 1500
 GENDER_OPTIONS = {"mashkull", "femer"}
 PAYMENT_METHODS = {"cash", "card-online"}
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
@@ -227,13 +275,18 @@ MAX_UPLOAD_FILE_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_REQUEST_SIZE = MAX_UPLOAD_FILES * MAX_UPLOAD_FILE_SIZE + (1024 * 1024)
 PRODUCT_IMPORT_MAX_ROWS = 100
 PRODUCT_IMPORT_FIELDNAMES = [
+    "articleNumber",
     "title",
     "description",
     "price",
+    "pageSection",
+    "audience",
     "category",
     "productType",
     "size",
     "color",
+    "packageAmountValue",
+    "packageAmountUnit",
     "stockQuantity",
     "imagePath",
     "imageGallery",
@@ -296,6 +349,7 @@ USER_SELECT_COLUMNS = (
 USER_AUTH_SELECT_COLUMNS = USER_SELECT_COLUMNS + ", password_hash"
 PRODUCT_SELECT_COLUMNS = """
     id,
+    article_number,
     title,
     description,
     price,
@@ -308,6 +362,9 @@ PRODUCT_SELECT_COLUMNS = """
     product_type,
     size,
     color,
+    variant_inventory,
+    package_amount_value,
+    package_amount_unit,
     stock_quantity,
     is_public,
     show_stock_public,
@@ -352,6 +409,11 @@ ORDER_ITEM_SELECT_COLUMNS = """
     product_type,
     product_size,
     product_color,
+    product_variant_key,
+    product_variant_label,
+    product_variant_snapshot,
+    product_package_amount_value,
+    product_package_amount_unit,
     unit_price,
     quantity,
     created_at
@@ -510,6 +572,13 @@ class DatabaseConnection:
 
         self.close()
         return False
+
+
+class CheckoutProcessError(Exception):
+    def __init__(self, errors: list[str] | None = None, message: str = ""):
+        self.errors = list(errors or [])
+        self.message = str(message or "").strip()
+        super().__init__(self.message or "Checkout process failed.")
 
 
 def is_postgres_connection(connection: DatabaseConnection) -> bool:
@@ -1058,9 +1127,155 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    if not table_exists(connection, "chat_conversations"):
+        if is_postgres_connection(connection):
+            connection.execute(
+                """
+                CREATE TABLE chat_conversations (
+                    id BIGSERIAL PRIMARY KEY,
+                    client_user_id BIGINT NOT NULL,
+                    business_user_id BIGINT NOT NULL,
+                    business_profile_id BIGINT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    FOREIGN KEY (client_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (business_profile_id) REFERENCES business_profiles(id) ON DELETE SET NULL
+                )
+                """
+            )
+        else:
+            connection.execute(
+                """
+                CREATE TABLE chat_conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_user_id INTEGER NOT NULL,
+                    business_user_id INTEGER NOT NULL,
+                    business_profile_id INTEGER,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (client_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (business_profile_id) REFERENCES business_profiles(id) ON DELETE SET NULL
+                )
+                """
+            )
+
+    if not column_exists(connection, "chat_conversations", "business_profile_id"):
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN business_profile_id INTEGER"
+        )
+
+    if not column_exists(connection, "chat_conversations", "updated_at"):
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_conversations", "last_message_at"):
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE chat_conversations
+        SET
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), created_at, ?),
+            last_message_at = COALESCE(NULLIF(TRIM(last_message_at), ''), updated_at, created_at, ?)
+        """,
+        (now_text_value, now_text_value),
+    )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversations_client_business
+        ON chat_conversations(client_user_id, business_user_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_conversations_client_last_message
+        ON chat_conversations(client_user_id, last_message_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_conversations_business_last_message
+        ON chat_conversations(business_user_id, last_message_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "chat_messages"):
+        if is_postgres_connection(connection):
+            connection.execute(
+                """
+                CREATE TABLE chat_messages (
+                    id BIGSERIAL PRIMARY KEY,
+                    conversation_id BIGINT NOT NULL,
+                    sender_user_id BIGINT NOT NULL,
+                    recipient_user_id BIGINT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    read_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+        else:
+            connection.execute(
+                """
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL,
+                    sender_user_id INTEGER NOT NULL,
+                    recipient_user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    read_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+
+    if not column_exists(connection, "chat_messages", "read_at"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN read_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE chat_messages
+        SET read_at = COALESCE(read_at, '')
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_created
+        ON chat_messages(conversation_id, created_at ASC, id ASC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient_read
+        ON chat_messages(recipient_user_id, read_at, created_at DESC)
+        """
+    )
+
     if not column_exists(connection, "products", "product_type"):
         connection.execute(
             "ALTER TABLE products ADD COLUMN product_type TEXT NOT NULL DEFAULT 'other'"
+        )
+
+    if not column_exists(connection, "products", "article_number"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN article_number TEXT NOT NULL DEFAULT ''"
         )
 
     if not column_exists(connection, "products", "size"):
@@ -1071,6 +1286,21 @@ def migrate_database(connection: DatabaseConnection) -> None:
     if not column_exists(connection, "products", "color"):
         connection.execute(
             "ALTER TABLE products ADD COLUMN color TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "variant_inventory"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN variant_inventory TEXT NOT NULL DEFAULT '[]'"
+        )
+
+    if not column_exists(connection, "products", "package_amount_value"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN package_amount_value REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "products", "package_amount_unit"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN package_amount_unit TEXT NOT NULL DEFAULT ''"
         )
 
     if not column_exists(connection, "products", "stock_quantity"):
@@ -1112,9 +1342,13 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         UPDATE products
         SET
+            article_number = COALESCE(NULLIF(TRIM(article_number), ''), ''),
             product_type = COALESCE(NULLIF(TRIM(product_type), ''), 'other'),
             size = COALESCE(size, ''),
             color = COALESCE(NULLIF(TRIM(color), ''), ''),
+            variant_inventory = COALESCE(variant_inventory, '[]'),
+            package_amount_value = COALESCE(package_amount_value, 0),
+            package_amount_unit = COALESCE(NULLIF(TRIM(package_amount_unit), ''), ''),
             stock_quantity = COALESCE(stock_quantity, 0),
             is_public = CASE WHEN COALESCE(is_public, 1) = 0 THEN 0 ELSE 1 END,
             show_stock_public = CASE
@@ -1136,9 +1370,14 @@ def migrate_database(connection: DatabaseConnection) -> None:
             image_gallery,
             category,
             product_type,
+            size,
             color,
+            variant_inventory,
+            stock_quantity,
             ai_image_search_text,
-            ai_image_color_terms
+            ai_image_color_terms,
+            package_amount_value,
+            package_amount_unit
         FROM products
         """
     ).fetchall()
@@ -1198,6 +1437,64 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 (
                     heuristic_metadata["searchText"],
                     heuristic_metadata["colorTerms"],
+                    product["id"],
+                ),
+            )
+
+        _, normalized_inventory = normalize_variant_inventory_value(
+            product["variant_inventory"],
+            category=str(product["category"] or "").strip().lower(),
+            fallback_size=str(product["size"] or "").strip().upper(),
+            fallback_color=str(product["color"] or "").strip().lower(),
+            fallback_stock_quantity=int(product["stock_quantity"] or 0),
+        )
+        serialized_inventory = json.dumps(normalized_inventory, ensure_ascii=False)
+        inventory_stock_quantity = sum(
+            max(0, int(entry["quantity"])) for entry in normalized_inventory
+        )
+        inventory_sizes = sorted(
+            {
+                str(entry.get("size", "")).strip().upper()
+                for entry in normalized_inventory
+                if str(entry.get("size", "")).strip()
+            }
+        )
+        inventory_colors = sorted(
+            {
+                str(entry.get("color", "")).strip().lower()
+                for entry in normalized_inventory
+                if str(entry.get("color", "")).strip()
+            }
+        )
+        normalized_size = inventory_sizes[0] if len(inventory_sizes) == 1 else ""
+        if len(inventory_colors) == 1:
+            normalized_color = inventory_colors[0]
+        elif len(inventory_colors) > 1 and "shume-ngjyra" in PRODUCT_COLORS:
+            normalized_color = "shume-ngjyra"
+        else:
+            normalized_color = ""
+
+        if (
+            serialized_inventory != str(product["variant_inventory"] or "").strip()
+            or inventory_stock_quantity != int(product["stock_quantity"] or 0)
+            or normalized_size != str(product["size"] or "").strip().upper()
+            or normalized_color != str(product["color"] or "").strip().lower()
+        ):
+            connection.execute(
+                """
+                UPDATE products
+                SET
+                    variant_inventory = ?,
+                    stock_quantity = ?,
+                    size = ?,
+                    color = ?
+                WHERE id = ?
+                """,
+                (
+                    serialized_inventory,
+                    inventory_stock_quantity,
+                    normalized_size,
+                    normalized_color,
                     product["id"],
                 ),
             )
@@ -1270,6 +1567,207 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    if not table_exists(connection, "cart_lines"):
+        connection.execute(
+            """
+            CREATE TABLE cart_lines (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                product_id BIGINT NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT 'default',
+                variant_label TEXT NOT NULL DEFAULT 'Standard',
+                selected_size TEXT NOT NULL DEFAULT '',
+                selected_color TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE cart_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT 'default',
+                variant_label TEXT NOT NULL DEFAULT 'Standard',
+                selected_size TEXT NOT NULL DEFAULT '',
+                selected_color TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_lines_user_product_variant
+        ON cart_lines(user_id, product_id, variant_key)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_cart_lines_user_updated_at
+        ON cart_lines(user_id, updated_at DESC)
+        """
+    )
+
+    connection.execute(
+        """
+        UPDATE cart_lines
+        SET
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), ?),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), COALESCE(NULLIF(TRIM(created_at), ''), ?)),
+            selected_size = COALESCE(selected_size, ''),
+            selected_color = COALESCE(selected_color, ''),
+            variant_key = COALESCE(NULLIF(TRIM(variant_key), ''), 'default'),
+            variant_label = COALESCE(NULLIF(TRIM(variant_label), ''), 'Standard')
+        """,
+        (now_text_value, now_text_value),
+    )
+
+    legacy_cart_rows = connection.execute(
+        """
+        SELECT
+            ci.user_id,
+            ci.product_id,
+            ci.quantity,
+            ci.created_at,
+            ci.updated_at,
+            p.size,
+            p.color
+        FROM cart_items ci
+        INNER JOIN products p ON p.id = ci.product_id
+        """
+    ).fetchall()
+    for cart_row in legacy_cart_rows:
+        variant_key = build_product_variant_key(
+            size=str(cart_row["size"] or "").strip().upper(),
+            color=str(cart_row["color"] or "").strip().lower(),
+        )
+        connection.execute(
+            """
+            INSERT INTO cart_lines (
+                user_id,
+                product_id,
+                variant_key,
+                variant_label,
+                selected_size,
+                selected_color,
+                quantity,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, product_id, variant_key)
+            DO NOTHING
+            """,
+            (
+                cart_row["user_id"],
+                cart_row["product_id"],
+                variant_key,
+                build_product_variant_label(
+                    size=str(cart_row["size"] or "").strip().upper(),
+                    color=str(cart_row["color"] or "").strip().lower(),
+                ),
+                str(cart_row["size"] or "").strip().upper(),
+                str(cart_row["color"] or "").strip().lower(),
+                max(1, int(cart_row["quantity"] or 1)),
+                str(cart_row["created_at"] or "").strip() or now_text_value,
+                str(cart_row["updated_at"] or "").strip() or now_text_value,
+            ),
+        )
+
+    if not column_exists(connection, "order_items", "product_variant_key"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN product_variant_key TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "product_variant_label"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN product_variant_label TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "product_variant_snapshot"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN product_variant_snapshot TEXT NOT NULL DEFAULT '[]'"
+        )
+
+    if not column_exists(connection, "order_items", "product_package_amount_value"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN product_package_amount_value REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "order_items", "product_package_amount_unit"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN product_package_amount_unit TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not table_exists(connection, "stripe_payment_sessions"):
+        connection.execute(
+            """
+            CREATE TABLE stripe_payment_sessions (
+                id BIGSERIAL PRIMARY KEY,
+                stripe_session_id TEXT NOT NULL UNIQUE,
+                user_id BIGINT NOT NULL,
+                checkout_signature TEXT NOT NULL DEFAULT '',
+                cart_line_ids TEXT NOT NULL DEFAULT '[]',
+                checkout_address TEXT NOT NULL DEFAULT '{}',
+                checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
+                amount_total INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'eur',
+                payment_status TEXT NOT NULL DEFAULT '',
+                stripe_status TEXT NOT NULL DEFAULT '',
+                order_id BIGINT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                confirmed_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE stripe_payment_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stripe_session_id TEXT NOT NULL UNIQUE,
+                user_id INTEGER NOT NULL,
+                checkout_signature TEXT NOT NULL DEFAULT '',
+                cart_line_ids TEXT NOT NULL DEFAULT '[]',
+                checkout_address TEXT NOT NULL DEFAULT '{}',
+                checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
+                amount_total INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'eur',
+                payment_status TEXT NOT NULL DEFAULT '',
+                stripe_status TEXT NOT NULL DEFAULT '',
+                order_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                confirmed_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_stripe_payment_sessions_user_created
+        ON stripe_payment_sessions(user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_stripe_payment_sessions_order_id
+        ON stripe_payment_sessions(order_id)
+        """
+    )
+
 
 def column_exists(
     connection: DatabaseConnection,
@@ -1292,6 +1790,32 @@ def column_exists(
 
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return any(row["name"] == column_name for row in rows)
+
+
+def table_exists(connection: DatabaseConnection, table_name: str) -> bool:
+    if is_postgres_connection(connection):
+        row = connection.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            LIMIT 1
+            """,
+            (table_name,),
+        ).fetchone()
+        return bool(row)
+
+    row = connection.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+        LIMIT 1
+        """,
+        (table_name,),
+    ).fetchone()
+    return bool(row)
 
 
 def hash_password(password: str) -> str:
@@ -1725,12 +2249,314 @@ def normalize_image_gallery_value(
     return image_paths
 
 
+def derive_section_from_category(category: str | None) -> str | None:
+    normalized_category = str(category or "").strip().lower()
+    if not normalized_category:
+        return None
+    if normalized_category == "cosmetics-kids":
+        return "cosmetics"
+
+    return CATEGORY_SECTION_MAP.get(normalized_category)
+
+
+def derive_audience_from_category(category: str | None) -> str | None:
+    normalized_category = str(category or "").strip().lower()
+    if not normalized_category:
+        return None
+    if normalized_category == "cosmetics-kids":
+        return "women"
+
+    audience = CATEGORY_AUDIENCE_MAP.get(normalized_category, "")
+    return audience or None
+
+
+def build_category_from_section_selection(
+    page_section: str | None,
+    audience: str | None,
+) -> str:
+    normalized_section = str(page_section or "").strip().lower()
+    normalized_audience = str(audience or "").strip().lower()
+    audience_categories = SECTION_AUDIENCE_CATEGORY_MAP.get(normalized_section, {})
+    if audience_categories:
+        return (
+            audience_categories.get(normalized_audience)
+            or next(iter(audience_categories.values()), "")
+            or normalized_section
+        )
+
+    return normalized_section
+
+
+def normalize_legacy_category(category: str | None) -> str:
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category == "cosmetics-kids":
+      return "cosmetics-women"
+    return normalized_category
+
+
+def category_requires_size_variants(category: str | None) -> bool:
+    return str(category or "").strip().lower().startswith("clothing-")
+
+
+def section_supports_color_inventory(section: str | None) -> bool:
+    normalized_section = str(section or "").strip().lower()
+    return normalized_section in {"clothing", "home", "sport", "technology"}
+
+
+def section_supports_package_amount(section: str | None) -> bool:
+    return str(section or "").strip().lower() == "cosmetics"
+
+
+def format_product_color_label(color: str | None) -> str:
+    normalized_color = str(color or "").strip().lower()
+    return PRODUCT_COLOR_LABELS.get(normalized_color, normalized_color)
+
+
+def build_product_variant_key(
+    *,
+    size: str = "",
+    color: str = "",
+) -> str:
+    parts: list[str] = []
+    normalized_color = str(color or "").strip().lower()
+    normalized_size = str(size or "").strip().upper()
+    if normalized_color:
+        parts.append(f"color:{normalized_color}")
+    if normalized_size:
+        parts.append(f"size:{normalized_size}")
+
+    return "|".join(parts) or "default"
+
+
+LEGACY_PRODUCT_TYPE_ALIASES_BY_SECTION = {
+    "clothing": {
+        "undershirt": "tshirt",
+        "turtleneck": "sweater",
+    },
+    "cosmetics": {
+        "perfumes": "perfume",
+        "hygiene": "hand-soap",
+        "creams": "face-cream",
+        "nails": "nail-care",
+        "hair-colors": "hair-cream",
+        "kids-care": "body-cream",
+    },
+    "home": {
+        "room-decor": "lamp",
+        "bathroom-items": "mirror",
+        "bedroom-items": "bed",
+        "kids-room-items": "shelf",
+    },
+    "sport": {
+        "sports-equipment": "ball",
+        "sportswear": "tracksuit",
+        "sports-accessories": "sports-bag",
+    },
+    "technology": {
+        "phone-cases": "phone",
+        "phone-parts": "cable",
+        "phone-accessories": "charger",
+    },
+}
+
+
+def normalize_product_type_for_category(category: str | None, product_type: str | None) -> str:
+    normalized_category = normalize_legacy_category(category)
+    normalized_product_type = str(product_type or "").strip().lower()
+    if not normalized_product_type:
+        return ""
+
+    available_types = SHOP_SECTION_PRODUCT_TYPES.get(normalized_category, set())
+    if normalized_product_type in available_types:
+        return normalized_product_type
+
+    section = derive_section_from_category(normalized_category) or normalized_category
+    alias = LEGACY_PRODUCT_TYPE_ALIASES_BY_SECTION.get(section, {}).get(normalized_product_type, "")
+    if alias and alias in available_types:
+        return alias
+
+    if normalized_category.startswith("clothing-") and normalized_product_type in {"clothing", "other"}:
+        return next(iter(available_types), "")
+
+    return normalized_product_type
+
+
+def build_product_variant_label(
+    *,
+    size: str = "",
+    color: str = "",
+) -> str:
+    parts: list[str] = []
+    normalized_color = str(color or "").strip().lower()
+    normalized_size = str(size or "").strip().upper()
+    if normalized_color:
+        parts.append(format_product_color_label(normalized_color))
+    if normalized_size:
+        parts.append(normalized_size)
+
+    return " / ".join(parts) or "Standard"
+
+
+def normalize_variant_inventory_value(
+    raw_value: object,
+    *,
+    category: str,
+    fallback_size: str = "",
+    fallback_color: str = "",
+    fallback_stock_quantity: int = 0,
+) -> tuple[list[str], list[dict[str, object]]]:
+    errors: list[str] = []
+    if isinstance(raw_value, list):
+        candidates = list(raw_value)
+    elif isinstance(raw_value, str) and raw_value.strip():
+        try:
+            parsed_value = json.loads(raw_value)
+        except json.JSONDecodeError:
+            candidates = []
+        else:
+            candidates = parsed_value if isinstance(parsed_value, list) else []
+    else:
+        candidates = []
+
+    requires_size = category_requires_size_variants(category)
+    allows_color = section_supports_color_inventory(derive_section_from_category(category) or "")
+    normalized_entries: list[dict[str, object]] = []
+    seen_keys: set[str] = set()
+
+    for index, candidate in enumerate(candidates, start=1):
+        if not isinstance(candidate, dict):
+            errors.append(f"Varianti #{index} nuk eshte valid.")
+            continue
+
+        size = str(candidate.get("size", "")).strip().upper()
+        color = str(candidate.get("color", "")).strip().lower()
+        raw_quantity = str(candidate.get("quantity", "")).strip()
+
+        if requires_size and size and size not in CLOTHING_SIZES:
+            errors.append(f"Madhesia `{size}` nuk eshte valide te varianti #{index}.")
+            continue
+        if not requires_size:
+            size = ""
+
+        if color and color not in PRODUCT_COLORS:
+            errors.append(f"Ngjyra `{color}` nuk eshte valide te varianti #{index}.")
+            continue
+        if not allows_color:
+            color = ""
+
+        try:
+            quantity = int(raw_quantity)
+        except ValueError:
+            errors.append(f"Sasia e variantit #{index} duhet te jete numer i plote.")
+            continue
+
+        if quantity < 0:
+            errors.append(f"Sasia e variantit #{index} nuk mund te jete negative.")
+            continue
+
+        variant_key = build_product_variant_key(size=size, color=color)
+        if variant_key in seen_keys:
+            errors.append(f"Varianti `{build_product_variant_label(size=size, color=color)}` eshte perseritur.")
+            continue
+
+        seen_keys.add(variant_key)
+        normalized_entries.append(
+            {
+                "key": variant_key,
+                "size": size,
+                "color": color,
+                "quantity": quantity,
+                "label": build_product_variant_label(size=size, color=color),
+            }
+        )
+
+    if normalized_entries:
+        return errors, normalized_entries
+
+    normalized_fallback_size = str(fallback_size or "").strip().upper()
+    normalized_fallback_color = str(fallback_color or "").strip().lower()
+    if requires_size and normalized_fallback_size and normalized_fallback_size not in CLOTHING_SIZES:
+        normalized_fallback_size = ""
+    if normalized_fallback_color and normalized_fallback_color not in PRODUCT_COLORS:
+        normalized_fallback_color = ""
+    if not requires_size:
+        normalized_fallback_size = ""
+    if not allows_color:
+        normalized_fallback_color = ""
+
+    fallback_quantity = max(0, int(fallback_stock_quantity or 0))
+    if fallback_quantity <= 0:
+        return errors, []
+
+    return errors, [
+        {
+            "key": build_product_variant_key(
+                size=normalized_fallback_size,
+                color=normalized_fallback_color,
+            ),
+            "size": normalized_fallback_size,
+            "color": normalized_fallback_color,
+            "quantity": fallback_quantity,
+            "label": build_product_variant_label(
+                size=normalized_fallback_size,
+                color=normalized_fallback_color,
+            ),
+        }
+    ]
+
+
+def parse_package_amount_payload(
+    data: dict[str, object],
+    *,
+    page_section: str,
+) -> tuple[list[str], float, str]:
+    errors: list[str] = []
+    raw_value = str(data.get("packageAmountValue", "")).strip()
+    amount_unit = str(data.get("packageAmountUnit", "")).strip().lower()
+
+    if not section_supports_package_amount(page_section):
+        return errors, 0.0, ""
+
+    if not raw_value and not amount_unit:
+        errors.append("Vendose sasine e produktit ne ml ose L.")
+        return errors, 0.0, ""
+
+    if amount_unit not in PRODUCT_AMOUNT_UNITS:
+        errors.append("Njesia e sasise duhet te jete ml ose L.")
+        return errors, 0.0, ""
+
+    try:
+        amount_value = round(float(raw_value), 2)
+    except ValueError:
+        errors.append("Sasia e produktit duhet te jete numer valid.")
+        return errors, 0.0, amount_unit
+
+    if amount_value <= 0:
+        errors.append("Sasia e produktit duhet te jete me e madhe se zero.")
+
+    return errors, amount_value, amount_unit
+
+
 def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[str, object]]:
     errors: list[str] = []
+    article_number = str(data.get("articleNumber", "")).strip()
     title = str(data.get("title", "")).strip()
     description = str(data.get("description", "")).strip()
+    page_section = str(data.get("pageSection", "")).strip().lower()
+    audience = str(data.get("audience", "")).strip().lower()
     category = str(data.get("category", "")).strip().lower()
-    product_type = str(data.get("productType", "")).strip().lower()
+    if page_section:
+        category = build_category_from_section_selection(page_section, audience)
+    elif category:
+        page_section = derive_section_from_category(category) or ""
+        audience = derive_audience_from_category(category) or ""
+        category = normalize_legacy_category(category) or build_category_from_section_selection(page_section, audience)
+    else:
+        category = build_category_from_section_selection("clothing", "men")
+        page_section = derive_section_from_category(category) or "clothing"
+        audience = derive_audience_from_category(category) or "men"
+    category = normalize_legacy_category(category)
+    product_type = normalize_product_type_for_category(category, data.get("productType", ""))
     size = str(data.get("size", "")).strip().upper()
     color = str(data.get("color", "")).strip().lower()
     image_gallery = normalize_image_gallery_value(
@@ -1758,9 +2584,6 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
     elif product_type not in PRODUCT_TYPES:
         errors.append("Zgjidh nje kategori valide te produktit.")
 
-    if color and color not in PRODUCT_COLORS:
-        errors.append("Zgjidh nje ngjyre valide te produktit.")
-
     if not image_path:
         errors.append("Ngarko te pakten nje foto te produktit.")
 
@@ -1778,61 +2601,323 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
     except ValueError:
         errors.append("Sasia ne stok duhet te jete numer i plote.")
 
-    requires_size = category.startswith("clothing-") or product_type == "clothing"
-
-    if requires_size:
-        if size not in CLOTHING_SIZES:
-            errors.append("Per veshje zgjidh nje madhesi nga XS deri ne XL.")
-    else:
+    requires_size = category_requires_size_variants(category)
+    if requires_size and size and size not in CLOTHING_SIZES:
+        errors.append("Per veshje zgjidh nje madhesi valide nga XS deri ne XXXL.")
         size = ""
 
+    if color and color not in PRODUCT_COLORS:
+        errors.append("Zgjidh nje ngjyre valide te produktit.")
+        color = ""
+
+    package_amount_errors, package_amount_value, package_amount_unit = parse_package_amount_payload(
+        data,
+        page_section=page_section,
+    )
+    errors.extend(package_amount_errors)
+
+    variant_errors, variant_inventory = normalize_variant_inventory_value(
+        data.get("variantInventory"),
+        category=category,
+        fallback_size=size,
+        fallback_color=color,
+        fallback_stock_quantity=stock_quantity,
+    )
+    errors.extend(variant_errors)
+
+    if requires_size and not any(str(entry.get("size", "")).strip() for entry in variant_inventory):
+        errors.append("Per veshje zgjidh te pakten nje madhesi dhe sasin e saj ne stok.")
+
+    if requires_size and not any(
+        str(entry.get("color", "")).strip() for entry in variant_inventory
+    ):
+        errors.append("Zgjidh te pakten nje ngjyre dhe cakto stokun e saj.")
+
+    stock_quantity = sum(max(0, int(entry["quantity"])) for entry in variant_inventory)
+
+    unique_sizes = sorted(
+        {
+            str(entry.get("size", "")).strip().upper()
+            for entry in variant_inventory
+            if str(entry.get("size", "")).strip()
+        }
+    )
+    unique_colors = sorted(
+        {
+            str(entry.get("color", "")).strip().lower()
+            for entry in variant_inventory
+            if str(entry.get("color", "")).strip()
+        }
+    )
+
+    size = unique_sizes[0] if len(unique_sizes) == 1 else ""
+    if len(unique_colors) == 1:
+        color = unique_colors[0]
+    elif len(unique_colors) > 1:
+        color = "shume-ngjyra" if "shume-ngjyra" in PRODUCT_COLORS else ""
+    else:
+        color = ""
+
     return errors, {
+        "articleNumber": article_number,
         "title": title,
         "description": description,
+        "pageSection": page_section,
+        "audience": audience,
         "category": category,
         "productType": product_type,
         "size": size,
         "color": color,
+        "variantInventory": variant_inventory,
         "imagePath": image_path,
         "imageGallery": image_gallery,
         "price": price,
+        "packageAmountValue": package_amount_value,
+        "packageAmountUnit": package_amount_unit,
         "stockQuantity": stock_quantity,
     }
+
+
+PRODUCT_IMPORT_TEMPLATE_ROWS = [
+    {
+        "articleNumber": "10025",
+        "title": "Maica e kuqe per meshkuj",
+        "description": "Maice pambuku per perdorim te perditshem.",
+        "price": "19.90",
+        "pageSection": "clothing",
+        "audience": "men",
+        "category": "clothing-men",
+        "productType": "tshirt",
+        "size": "L",
+        "color": "kuqe",
+        "packageAmountValue": "",
+        "packageAmountUnit": "",
+        "stockQuantity": "12",
+        "imagePath": "/uploads/shembull-maice-kuqe.jpg",
+        "imageGallery": "/uploads/shembull-maice-kuqe.jpg;/uploads/shembull-maice-kuqe-2.jpg",
+    },
+    {
+        "articleNumber": "20014",
+        "title": "Krem per duar",
+        "description": "Krem hidratues per duar me perdorim ditor.",
+        "price": "6.50",
+        "pageSection": "cosmetics",
+        "audience": "women",
+        "category": "cosmetics-women",
+        "productType": "hand-cream",
+        "size": "",
+        "color": "",
+        "packageAmountValue": "250",
+        "packageAmountUnit": "ml",
+        "stockQuantity": "30",
+        "imagePath": "/uploads/shembull-krem-duar.jpg",
+        "imageGallery": "/uploads/shembull-krem-duar.jpg",
+    },
+    {
+        "articleNumber": "30008",
+        "title": "Tavoline per sallon",
+        "description": "Tavoline moderne per sallon me siperfaqe druri.",
+        "price": "129.00",
+        "pageSection": "home",
+        "audience": "",
+        "category": "home",
+        "productType": "table",
+        "size": "",
+        "color": "kafe",
+        "packageAmountValue": "",
+        "packageAmountUnit": "",
+        "stockQuantity": "4",
+        "imagePath": "/uploads/shembull-tavoline.jpg",
+        "imageGallery": "/uploads/shembull-tavoline.jpg;/uploads/shembull-tavoline-2.jpg",
+    },
+    {
+        "articleNumber": "50003",
+        "title": "Ndegjues wireless",
+        "description": "Ndegjues pa kabllo me bateri te gjate.",
+        "price": "39.90",
+        "pageSection": "technology",
+        "audience": "",
+        "category": "technology",
+        "productType": "headphones",
+        "size": "",
+        "color": "zeze",
+        "packageAmountValue": "",
+        "packageAmountUnit": "",
+        "stockQuantity": "15",
+        "imagePath": "/uploads/shembull-ndegjues.jpg",
+        "imageGallery": "/uploads/shembull-ndegjues.jpg",
+    },
+]
+OOXML_SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+OOXML_PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+OOXML_DOCUMENT_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
 def build_product_import_template_csv() -> str:
     output = StringIO()
     writer = csv.DictWriter(output, fieldnames=PRODUCT_IMPORT_FIELDNAMES)
     writer.writeheader()
-    writer.writerow(
-        {
-            "title": "Maica e kuqe per meshkuj",
-            "description": "Maice pambuku per perdorim te perditshëm.",
-            "price": "19.90",
-            "category": "clothing-men",
-            "productType": "tshirt",
-            "size": "L",
-            "color": "kuqe",
-            "stockQuantity": "12",
-            "imagePath": "/uploads/shembull-maice-kuqe.jpg",
-            "imageGallery": "/uploads/shembull-maice-kuqe.jpg;/uploads/shembull-maice-kuqe-2.jpg",
-        }
-    )
-    writer.writerow(
-        {
-            "title": "Krem per duar",
-            "description": "Krem hidratues per duar me perdorim ditor.",
-            "price": "6.50",
-            "category": "cosmetics-women",
-            "productType": "creams",
-            "size": "",
-            "color": "",
-            "stockQuantity": "30",
-            "imagePath": "/uploads/shembull-krem-duar.jpg",
-            "imageGallery": "/uploads/shembull-krem-duar.jpg",
-        }
-    )
+    for row in PRODUCT_IMPORT_TEMPLATE_ROWS:
+        writer.writerow(row)
     return output.getvalue()
+
+
+def _spreadsheet_column_name(column_number: int) -> str:
+    letters: list[str] = []
+    current = max(1, int(column_number))
+    while current > 0:
+        current, remainder = divmod(current - 1, 26)
+        letters.append(chr(65 + remainder))
+    return "".join(reversed(letters))
+
+
+def _build_xlsx_worksheet_xml(rows: list[list[str]]) -> bytes:
+    ET.register_namespace("", OOXML_SPREADSHEET_NS)
+    worksheet = ET.Element(f"{{{OOXML_SPREADSHEET_NS}}}worksheet")
+    sheet_data = ET.SubElement(worksheet, f"{{{OOXML_SPREADSHEET_NS}}}sheetData")
+
+    for row_index, row_values in enumerate(rows, start=1):
+        row_element = ET.SubElement(
+            sheet_data,
+            f"{{{OOXML_SPREADSHEET_NS}}}row",
+            {"r": str(row_index)},
+        )
+        for column_index, raw_value in enumerate(row_values, start=1):
+            value = str(raw_value or "")
+            cell = ET.SubElement(
+                row_element,
+                f"{{{OOXML_SPREADSHEET_NS}}}c",
+                {
+                    "r": f"{_spreadsheet_column_name(column_index)}{row_index}",
+                    "t": "inlineStr",
+                },
+            )
+            inline_string = ET.SubElement(cell, f"{{{OOXML_SPREADSHEET_NS}}}is")
+            text_node = ET.SubElement(inline_string, f"{{{OOXML_SPREADSHEET_NS}}}t")
+            if value.strip() != value:
+                text_node.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            text_node.text = value
+
+    return ET.tostring(worksheet, encoding="utf-8", xml_declaration=True)
+
+
+def build_product_import_template_xlsx() -> bytes:
+    sheet_rows = [
+        PRODUCT_IMPORT_FIELDNAMES,
+        *[
+            [str(row.get(field, "") or "") for field in PRODUCT_IMPORT_FIELDNAMES]
+            for row in PRODUCT_IMPORT_TEMPLATE_ROWS
+        ],
+    ]
+
+    workbook_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Produkte" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>
+"""
+    workbook_rels_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+"""
+    root_rels_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>
+"""
+    content_types_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>
+"""
+    app_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>TREGO</Application>
+</Properties>
+"""
+    current_timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    core_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>TREGO Product Import Template</dc:title>
+  <dc:creator>TREGO</dc:creator>
+  <cp:lastModifiedBy>TREGO</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">{current_timestamp}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">{current_timestamp}</dcterms:modified>
+</cp:coreProperties>
+"""
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types_xml)
+        archive.writestr("_rels/.rels", root_rels_xml)
+        archive.writestr("docProps/app.xml", app_xml)
+        archive.writestr("docProps/core.xml", core_xml)
+        archive.writestr("xl/workbook.xml", workbook_xml)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml)
+        archive.writestr("xl/worksheets/sheet1.xml", _build_xlsx_worksheet_xml(sheet_rows))
+    return output.getvalue()
+
+
+def _normalize_product_import_records(
+    raw_rows: list[dict[str, object]],
+) -> tuple[list[str], list[dict[str, object]]]:
+    parsed_rows: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    for index, raw_row in enumerate(raw_rows, start=2):
+        normalized_row = {
+            field: str((raw_row or {}).get(field, "") or "").strip()
+            for field in PRODUCT_IMPORT_FIELDNAMES
+        }
+        if not any(normalized_row.values()):
+            continue
+
+        image_gallery_values = [
+            normalize_image_path(value)
+            for value in re.split(r"[;\n\r|]+", normalized_row["imageGallery"])
+            if normalize_image_path(value)
+        ]
+        image_path = normalize_image_path(normalized_row["imagePath"])
+        payload = {
+            "articleNumber": normalized_row["articleNumber"],
+            "title": normalized_row["title"],
+            "description": normalized_row["description"],
+            "pageSection": normalized_row["pageSection"],
+            "audience": normalized_row["audience"],
+            "price": normalized_row["price"],
+            "category": normalized_row["category"],
+            "productType": normalized_row["productType"],
+            "size": normalized_row["size"],
+            "color": normalized_row["color"],
+            "packageAmountValue": normalized_row["packageAmountValue"],
+            "packageAmountUnit": normalized_row["packageAmountUnit"],
+            "stockQuantity": normalized_row["stockQuantity"],
+            "imagePath": image_path,
+            "imageGallery": image_gallery_values or ([image_path] if image_path else []),
+        }
+        row_errors, normalized_product = validate_product_payload(payload)
+        if row_errors:
+            errors.append(f"Rreshti {index}: {' '.join(row_errors)}")
+            continue
+
+        parsed_rows.append(normalized_product)
+        if len(parsed_rows) > PRODUCT_IMPORT_MAX_ROWS:
+            errors.append(f"Mund te importosh deri ne {PRODUCT_IMPORT_MAX_ROWS} produkte njeheresh.")
+            break
+
+    if not parsed_rows and not errors:
+        errors.append("Skedari nuk permban asnje produkt valid.")
+
+    return errors, parsed_rows
 
 
 def parse_product_import_csv(file_bytes: bytes) -> tuple[list[str], list[dict[str, object]]]:
@@ -1856,46 +2941,98 @@ def parse_product_import_csv(file_bytes: bytes) -> tuple[list[str], list[dict[st
     if missing_headers:
         return [f"Mungojne kolonat: {', '.join(missing_headers)}."], []
 
-    parsed_rows: list[dict[str, object]] = []
-    errors: list[str] = []
+    return _normalize_product_import_records(list(reader))
 
-    for index, row in enumerate(reader, start=2):
-        normalized_row = {field: str((row or {}).get(field, "") or "").strip() for field in PRODUCT_IMPORT_FIELDNAMES}
-        if not any(normalized_row.values()):
+
+def _spreadsheet_column_index(cell_reference: str) -> int:
+    letters = "".join(character for character in str(cell_reference or "") if character.isalpha()).upper()
+    index = 0
+    for character in letters:
+        index = (index * 26) + (ord(character) - 64)
+    return max(1, index)
+
+
+def _read_xlsx_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
+    cell_type = str(cell.attrib.get("t", "") or "").strip()
+    if cell_type == "inlineStr":
+        return "".join(text for text in cell.itertext()).strip()
+
+    if cell_type == "s":
+        value_node = cell.find(f"{{{OOXML_SPREADSHEET_NS}}}v")
+        if value_node is None or value_node.text is None:
+            return ""
+        try:
+            shared_index = int(str(value_node.text).strip())
+        except ValueError:
+            return ""
+        return shared_strings[shared_index] if 0 <= shared_index < len(shared_strings) else ""
+
+    value_node = cell.find(f"{{{OOXML_SPREADSHEET_NS}}}v")
+    if value_node is None or value_node.text is None:
+        return ""
+    return str(value_node.text).strip()
+
+
+def parse_product_import_xlsx(file_bytes: bytes) -> tuple[list[str], list[dict[str, object]]]:
+    if not file_bytes:
+        return ["Skedari i importit eshte bosh."], []
+
+    try:
+        workbook_archive = zipfile.ZipFile(BytesIO(file_bytes))
+    except zipfile.BadZipFile:
+        return ["Skedari XLSX nuk u lexua dot. Provo nje skedar valid te Excel-it."], []
+
+    with workbook_archive:
+        try:
+            worksheet_xml = workbook_archive.read("xl/worksheets/sheet1.xml")
+        except KeyError:
+            return ["Skedari XLSX nuk ka nje worksheet te vlefshem."], []
+
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in workbook_archive.namelist():
+            shared_root = ET.fromstring(workbook_archive.read("xl/sharedStrings.xml"))
+            for node in shared_root.findall(f".//{{{OOXML_SPREADSHEET_NS}}}si"):
+                shared_strings.append("".join(text for text in node.itertext()).strip())
+
+    worksheet_root = ET.fromstring(worksheet_xml)
+    row_nodes = worksheet_root.findall(f".//{{{OOXML_SPREADSHEET_NS}}}sheetData/{{{OOXML_SPREADSHEET_NS}}}row")
+    if not row_nodes:
+        return ["Skedari XLSX eshte bosh."], []
+
+    extracted_rows: list[list[str]] = []
+    for row_node in row_nodes:
+        cells_by_index: dict[int, str] = {}
+        max_column_index = 0
+        for cell in row_node.findall(f"{{{OOXML_SPREADSHEET_NS}}}c"):
+            column_index = _spreadsheet_column_index(cell.attrib.get("r", ""))
+            max_column_index = max(max_column_index, column_index)
+            cells_by_index[column_index] = _read_xlsx_cell_value(cell, shared_strings)
+
+        if max_column_index <= 0:
             continue
 
-        image_gallery_values = [
-            normalize_image_path(value)
-            for value in re.split(r"[;\n\r|]+", normalized_row["imageGallery"])
-            if normalize_image_path(value)
-        ]
-        image_path = normalize_image_path(normalized_row["imagePath"])
-        payload = {
-            "title": normalized_row["title"],
-            "description": normalized_row["description"],
-            "price": normalized_row["price"],
-            "category": normalized_row["category"],
-            "productType": normalized_row["productType"],
-            "size": normalized_row["size"],
-            "color": normalized_row["color"],
-            "stockQuantity": normalized_row["stockQuantity"],
-            "imagePath": image_path,
-            "imageGallery": image_gallery_values or ([image_path] if image_path else []),
-        }
-        row_errors, normalized_product = validate_product_payload(payload)
-        if row_errors:
-            errors.append(f"Rreshti {index}: {' '.join(row_errors)}")
-            continue
+        extracted_rows.append(
+            [cells_by_index.get(column_index, "") for column_index in range(1, max_column_index + 1)]
+        )
 
-        parsed_rows.append(normalized_product)
-        if len(parsed_rows) > PRODUCT_IMPORT_MAX_ROWS:
-            errors.append(f"Mund te importosh deri ne {PRODUCT_IMPORT_MAX_ROWS} produkte njeheresh.")
-            break
+    if not extracted_rows:
+        return ["Skedari XLSX eshte bosh."], []
 
-    if not parsed_rows and not errors:
-        errors.append("CSV nuk permban asnje produkt valid.")
+    headers = [str(value or "").strip() for value in extracted_rows[0]]
+    missing_headers = [field for field in PRODUCT_IMPORT_FIELDNAMES if field not in headers]
+    if missing_headers:
+        return [f"Mungojne kolonat: {', '.join(missing_headers)}."], []
 
-    return errors, parsed_rows
+    records: list[dict[str, object]] = []
+    for row_values in extracted_rows[1:]:
+        record = {}
+        for header_index, header in enumerate(headers):
+            if not header:
+                continue
+            record[header] = row_values[header_index] if header_index < len(row_values) else ""
+        records.append(record)
+
+    return _normalize_product_import_records(records)
 
 
 def parse_product_id(data: dict[str, object]) -> tuple[list[str], int | None]:
@@ -1911,6 +3048,25 @@ def parse_product_id(data: dict[str, object]) -> tuple[list[str], int | None]:
         errors.append("Produkti i zgjedhur nuk eshte valid.")
 
     return errors, product_id
+
+
+def parse_cart_line_id(data: dict[str, object]) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_cart_line_id = str(
+        data.get("cartLineId", "")
+        or data.get("cartItemId", "")
+        or data.get("productId", "")
+    ).strip()
+
+    try:
+        cart_line_id = int(raw_cart_line_id)
+        if cart_line_id <= 0:
+            errors.append("Artikulli i shportes nuk eshte valid.")
+    except ValueError:
+        cart_line_id = None
+        errors.append("Artikulli i shportes nuk eshte valid.")
+
+    return errors, cart_line_id
 
 
 def parse_product_id_query(
@@ -1962,6 +3118,52 @@ def parse_business_id_query(
     )
 
 
+def parse_conversation_id(
+    data: dict[str, object],
+) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_conversation_id = str(data.get("conversationId", "")).strip()
+
+    try:
+        conversation_id = int(raw_conversation_id)
+        if conversation_id <= 0:
+            errors.append("Biseda e zgjedhur nuk eshte valide.")
+    except ValueError:
+        conversation_id = None
+        errors.append("Biseda e zgjedhur nuk eshte valide.")
+
+    return errors, conversation_id
+
+
+def parse_conversation_id_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], int | None]:
+    return parse_conversation_id(
+        {
+            "conversationId": query_params.get("conversationId", [""])[0]
+            or query_params.get("id", [""])[0]
+        }
+    )
+
+
+def parse_chat_message_body(
+    data: dict[str, object],
+) -> tuple[list[str], str]:
+    message_body = str(data.get("body", "") or "").strip()
+    errors: list[str] = []
+
+    if not message_body:
+        errors.append("Shkruaje mesazhin para se ta dergosh.")
+        return errors, ""
+
+    if len(message_body) > CHAT_MESSAGE_MAX_LENGTH:
+        errors.append(
+            f"Mesazhi nuk duhet te kete me shume se {CHAT_MESSAGE_MAX_LENGTH} karaktere."
+        )
+
+    return errors, message_body
+
+
 def parse_product_ids(
     data: dict[str, object],
     field_name: str = "productIds",
@@ -1995,6 +3197,43 @@ def parse_product_ids(
         errors.append("Zgjidh te pakten nje produkt per te vazhduar me porosi.")
 
     return errors, product_ids
+
+
+def parse_cart_line_ids(
+    data: dict[str, object],
+    field_name: str = "cartItemIds",
+) -> tuple[list[str], list[int]]:
+    raw_value = data.get(field_name)
+    if raw_value is None and field_name != "productIds":
+        raw_value = data.get("productIds")
+
+    if isinstance(raw_value, list):
+        raw_candidates = raw_value
+    elif raw_value is None or raw_value == "":
+        raw_candidates = []
+    else:
+        raw_candidates = [raw_value]
+
+    cart_line_ids: list[int] = []
+    errors: list[str] = []
+    for raw_candidate in raw_candidates:
+        try:
+            cart_line_id = int(str(raw_candidate).strip())
+        except ValueError:
+            errors.append("Lista e artikujve te shportes nuk eshte valide.")
+            continue
+
+        if cart_line_id <= 0:
+            errors.append("Lista e artikujve te shportes nuk eshte valide.")
+            continue
+
+        if cart_line_id not in cart_line_ids:
+            cart_line_ids.append(cart_line_id)
+
+    if not cart_line_ids:
+        errors.append("Zgjidh te pakten nje artikull ne shporte per te vazhduar me porosi.")
+
+    return errors, cart_line_ids
 
 
 def parse_products_pagination_query(
@@ -2048,6 +3287,45 @@ def parse_catalog_filters_query(
         errors.append("Ngjyra nuk eshte valide.")
 
     return errors, product_type, size, color
+
+
+def parse_catalog_scope_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], str | None, str | None, str | None, str | None]:
+    errors: list[str] = []
+    page_section = str(query_params.get("pageSection", [""])[0]).strip().lower() or None
+    audience = str(query_params.get("audience", [""])[0]).strip().lower() or None
+    category: str | None = None
+    category_group: str | None = None
+
+    known_sections = {
+        str(section.get("value") or "").strip().lower()
+        for section in PRODUCT_SECTION_DEFINITIONS
+        if str(section.get("value") or "").strip()
+    }
+
+    if page_section and page_section not in known_sections:
+        errors.append("Kategoria e faqes nuk eshte valide.")
+        return errors, None, None, None, None
+
+    if not page_section:
+        return errors, None, None, None, None
+
+    audience_categories = SECTION_AUDIENCE_CATEGORY_MAP.get(page_section, {})
+    if audience_categories:
+        if audience:
+            if audience not in audience_categories:
+                errors.append("Nenkategoria e zgjedhur nuk eshte valide.")
+            else:
+                category = build_category_from_section_selection(page_section, audience)
+        else:
+            category_group = page_section
+    else:
+        if audience:
+            errors.append("Kjo kategori e faqes nuk ka nenkategori.")
+        category = page_section
+
+    return errors, page_section, audience, category, category_group
 
 
 def normalize_search_intent_text(value: str) -> str:
@@ -2321,6 +3599,64 @@ def extract_openai_output_text(payload: dict[str, object]) -> str:
                 return json.dumps(json_value, ensure_ascii=False)
 
     return ""
+
+
+def request_openai_structured_output(
+    *,
+    model: str,
+    instructions: str,
+    input_payload: object,
+    schema_name: str,
+    schema: dict[str, object],
+    max_output_tokens: int,
+    timeout_seconds: int,
+) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    payload = {
+        "model": model,
+        "instructions": instructions,
+        "input": input_payload,
+        "max_output_tokens": max_output_tokens,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": schema_name,
+                "strict": True,
+                "schema": schema,
+            }
+        },
+    }
+
+    request = Request(
+        OPENAI_RESPONSES_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"OpenAI structured output failed: {error}")
+        return None
+
+    response_text = extract_openai_output_text(response_payload)
+    if not response_text:
+        return None
+
+    try:
+        parsed_output = json.loads(response_text)
+    except json.JSONDecodeError as error:
+        print(f"OpenAI structured output parse failed: {error}")
+        return None
+
+    return parsed_output if isinstance(parsed_output, dict) else None
 
 
 def request_openai_search_intent(query_text: str) -> dict[str, object] | None:
@@ -2780,6 +4116,490 @@ def generate_product_image_search_metadata(
     return merged_metadata
 
 
+def build_openai_input_image_urls_from_upload_payloads(
+    image_payloads: list[dict[str, object]] | None,
+    *,
+    max_images: int = 3,
+) -> list[str]:
+    data_urls: list[str] = []
+    for payload in list(image_payloads or [])[:max_images]:
+        if not isinstance(payload, dict):
+            continue
+        file_bytes = payload.get("file_bytes")
+        content_type = str(payload.get("content_type") or "").strip().lower() or "image/jpeg"
+        if not isinstance(file_bytes, (bytes, bytearray)) or not file_bytes:
+            continue
+        encoded_bytes = base64.b64encode(bytes(file_bytes)).decode("ascii")
+        data_urls.append(f"data:{content_type};base64,{encoded_bytes}")
+
+    return data_urls
+
+
+def heuristic_chat_reply_suggestions(
+    *,
+    viewer_role: str,
+    viewer_user_id: int,
+    conversation: sqlite3.Row | None,
+    messages: list[sqlite3.Row],
+) -> list[str]:
+    last_message_body = ""
+    for message in reversed(messages):
+        if int(message["sender_user_id"] or 0) != int(viewer_user_id):
+            last_message_body = str(message["body"] or "").strip().lower()
+            break
+
+    if viewer_role == "business":
+        if any(keyword in last_message_body for keyword in {"stok", "gjendje", "disponim"}):
+            return [
+                "Pershendetje! Po e kontrolloj stokun dhe ju konfirmoj menjehere.",
+                "Po, mund ta verifikoj stokun per ju. Me tregoni ngjyren ose madhesine qe doni.",
+                "Nese doni, ju tregoj cilat variante jane ende ne dispozicion.",
+            ]
+        if any(keyword in last_message_body for keyword in {"cmim", "kushton", "sa ben"}):
+            return [
+                "Pershendetje! Cmimi aktual eshte ai qe shfaqet ne platforme.",
+                "Mund t'ju ndihmoj me detajet e produktit dhe opsionet qe kemi ne dispozicion.",
+                "Nese doni, ju tregoj edhe variantet ose produktet e ngjashme qe kemi.",
+            ]
+        return [
+            "Pershendetje! Po, me kenaqesi ju ndihmoj. Me tregoni pak me sakte cfare po kerkoni.",
+            "Faleminderit per interesimin. Mund t'ju ndihmoj me stokun, madhesite dhe detajet e produktit.",
+            "Nese doni, ju tregoj menjehere cilat variante i kemi aktualisht ne dispozicion.",
+        ]
+
+    if any(keyword in last_message_body for keyword in {"pershendetje", "hello", "hi"}):
+        return [
+            "Pershendetje! A eshte ende ne stok ky produkt?",
+            "Pershendetje! A mund te me tregoni cilat madhesi ose ngjyra jane ne dispozicion?",
+            "Pershendetje! Dua pak me shume informata per kete produkt.",
+        ]
+
+    return [
+        "A eshte ende ne stok ky produkt?",
+        "Cilat madhesi ose ngjyra keni aktualisht ne dispozicion?",
+        "A mund te me tregoni pak me shume per kete produkt?",
+    ]
+
+
+def request_openai_chat_reply_suggestions(
+    *,
+    viewer_role: str,
+    viewer_user_id: int,
+    conversation: sqlite3.Row | None,
+    messages: list[sqlite3.Row],
+) -> list[str] | None:
+    if not OPENAI_API_KEY or not conversation or not messages:
+        return None
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "suggestions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {"type": "string"},
+            }
+        },
+        "required": ["suggestions"],
+    }
+
+    chat_history = [
+        {
+            "sender": "Ti" if int(message["sender_user_id"] or 0) == int(viewer_user_id) else str(message["sender_name"] or "").strip() or "Tjetri",
+            "body": str(message["body"] or "").strip(),
+        }
+        for message in messages[-10:]
+    ]
+    counterpart_role = "klient" if viewer_role == "business" else "biznes"
+    counterpart_name = str(conversation["counterpart_name"] or "").strip() or counterpart_role.title()
+
+    instructions = (
+        "Ti gjeneron 3 pergjigje te shkurtra, natyrale dhe profesionale per nje chat marketplace ne shqip. "
+        "Pergjigjet duhet te jene gati per t'u derguar, jo shpjegime. "
+        "Ruaj tonin e sjellshem dhe praktik. "
+        "Nese perdoruesi qe po merr sugjerimet eshte biznes, pergjigjet duhet te ndihmojne klientin dhe te shtyjne qartesine per stokun, madhesite, ngjyrat ose porosine. "
+        "Nese eshte klient, pergjigjet duhet te jene pyetje te qarta ose kerkesa per sqarim. "
+        "Mos shpik cmime, stok ose detaje qe nuk shihen ne biseden ekzistuese."
+    )
+
+    input_payload = [{
+        "role": "user",
+        "content": [
+            {
+                "type": "input_text",
+                "text": (
+                    f"Roli i shikuesit: {viewer_role}\n"
+                    f"Po flet me: {counterpart_name} ({counterpart_role})\n"
+                    f"Historia e fundit e bisedes: {json.dumps(chat_history, ensure_ascii=False)}"
+                ),
+            }
+        ],
+    }]
+
+    parsed_output = request_openai_structured_output(
+        model=OPENAI_CHAT_MODEL,
+        instructions=instructions,
+        input_payload=input_payload,
+        schema_name="trego_chat_reply_suggestions",
+        schema=schema,
+        max_output_tokens=220,
+        timeout_seconds=OPENAI_CHAT_TIMEOUT_SECONDS,
+    )
+    if not parsed_output:
+        return None
+
+    suggestions = [
+        re.sub(r"\s+", " ", str(item or "").strip())
+        for item in list(parsed_output.get("suggestions") or [])
+        if str(item or "").strip()
+    ]
+    unique_suggestions: list[str] = []
+    seen_suggestions: set[str] = set()
+    for suggestion in suggestions:
+        normalized_suggestion = suggestion.lower()
+        if normalized_suggestion in seen_suggestions:
+            continue
+        seen_suggestions.add(normalized_suggestion)
+        unique_suggestions.append(suggestion[:220])
+        if len(unique_suggestions) >= 3:
+            break
+
+    return unique_suggestions or None
+
+
+def infer_package_amount_from_text(*values: object) -> tuple[str, str]:
+    combined_text = " ".join(str(value or "").strip() for value in values if str(value or "").strip())
+    if not combined_text:
+        return "", ""
+
+    amount_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(ml|l)\b", combined_text, re.IGNORECASE)
+    if not amount_match:
+        return "", ""
+
+    amount_value = str(amount_match.group(1) or "").replace(",", ".").strip()
+    amount_unit = str(amount_match.group(2) or "").strip().lower()
+    return amount_value, amount_unit if amount_unit in PRODUCT_AMOUNT_UNITS else ""
+
+
+def heuristic_product_draft_suggestion(
+    *,
+    title: str,
+    description: str,
+    page_section: str,
+    audience: str,
+    product_type: str,
+    image_search_text: str,
+    image_color_terms: str,
+) -> dict[str, object]:
+    combined_text = " ".join(
+        value
+        for value in [
+            str(title or "").strip(),
+            str(description or "").strip(),
+            str(image_search_text or "").strip(),
+        ]
+        if value
+    )
+    interpreted_intent = interpret_search_query(combined_text)
+
+    next_page_section = str(page_section or "").strip().lower()
+    if next_page_section not in SECTION_AUDIENCE_CATEGORY_MAP and next_page_section not in {
+        str(section.get("value") or "").strip().lower() for section in PRODUCT_SECTION_DEFINITIONS
+    }:
+        next_page_section = derive_section_from_category(
+            str(interpreted_intent.get("category") or "").strip().lower()
+        ) or "clothing"
+
+    audience_options = SECTION_AUDIENCE_CATEGORY_MAP.get(next_page_section, {})
+    next_audience = str(audience or "").strip().lower()
+    if audience_options:
+      if next_audience not in audience_options:
+          next_audience = derive_audience_from_category(
+              str(interpreted_intent.get("category") or "").strip().lower()
+          ) or next(iter(audience_options.keys()), "")
+    else:
+      next_audience = ""
+
+    next_category = build_category_from_section_selection(next_page_section, next_audience)
+    available_product_types = SHOP_SECTION_PRODUCT_TYPES.get(next_category, set())
+    suggested_product_type = normalize_product_type_for_category(
+        next_category,
+        str(product_type or "").strip().lower() or str(interpreted_intent.get("productType") or "").strip().lower(),
+    )
+    if suggested_product_type not in available_product_types:
+        suggested_product_type = next(iter(available_product_types), "")
+
+    inferred_colors = [
+        color
+        for color in tokenize_search_intent_text(image_color_terms)
+        if color in PRODUCT_COLORS
+    ]
+    if str(interpreted_intent.get("color") or "").strip().lower() in PRODUCT_COLORS:
+        inferred_colors.insert(0, str(interpreted_intent.get("color") or "").strip().lower())
+    selected_colors: list[str] = []
+    for color in inferred_colors:
+        if color not in selected_colors:
+            selected_colors.append(color)
+        if len(selected_colors) >= 4:
+            break
+
+    if not section_supports_color_inventory(next_page_section):
+        selected_colors = []
+
+    amount_value, amount_unit = infer_package_amount_from_text(title, description, image_search_text)
+
+    normalized_title = re.sub(r"\s+", " ", str(title or "").strip())
+    if not normalized_title:
+        title_parts = [PRODUCT_TYPE_LABELS.get(suggested_product_type, "Produkt")]
+        if selected_colors:
+            title_parts.append(format_product_color_label(selected_colors[0]).capitalize())
+        normalized_title = " ".join(part for part in title_parts if part).strip()
+
+    normalized_description = re.sub(r"\s+", " ", str(description or "").strip())
+    if not normalized_description:
+        category_label = PRODUCT_CATEGORY_LABELS.get(next_category, PRODUCT_CATEGORY_LABELS.get(next_page_section, "kategorine"))
+        normalized_description = (
+            f"{PRODUCT_TYPE_LABELS.get(suggested_product_type, 'Produkti')} per {category_label.lower()}."
+        )
+
+    return {
+        "title": normalized_title[:120],
+        "description": normalized_description[:600],
+        "pageSection": next_page_section,
+        "audience": next_audience,
+        "productType": suggested_product_type,
+        "selectedColors": selected_colors,
+        "packageAmountValue": amount_value,
+        "packageAmountUnit": amount_unit,
+    }
+
+
+def sanitize_ai_product_draft_suggestion(
+    raw_draft: dict[str, object] | None,
+    *,
+    current_title: str,
+    current_description: str,
+    current_page_section: str,
+    current_audience: str,
+    current_product_type: str,
+    image_search_text: str,
+    image_color_terms: str,
+) -> dict[str, object]:
+    heuristic_draft = heuristic_product_draft_suggestion(
+        title=current_title,
+        description=current_description,
+        page_section=current_page_section,
+        audience=current_audience,
+        product_type=current_product_type,
+        image_search_text=image_search_text,
+        image_color_terms=image_color_terms,
+    )
+    if not isinstance(raw_draft, dict):
+        return heuristic_draft
+
+    known_sections = {
+        str(section.get("value") or "").strip().lower()
+        for section in PRODUCT_SECTION_DEFINITIONS
+        if str(section.get("value") or "").strip()
+    }
+    next_page_section = str(raw_draft.get("pageSection") or "").strip().lower()
+    if next_page_section not in known_sections:
+        next_page_section = str(heuristic_draft["pageSection"] or "clothing")
+
+    audience_options = SECTION_AUDIENCE_CATEGORY_MAP.get(next_page_section, {})
+    next_audience = str(raw_draft.get("audience") or "").strip().lower()
+    if audience_options:
+        if next_audience not in audience_options:
+            next_audience = str(heuristic_draft["audience"] or next(iter(audience_options.keys()), ""))
+    else:
+        next_audience = ""
+
+    next_category = build_category_from_section_selection(next_page_section, next_audience)
+    available_product_types = SHOP_SECTION_PRODUCT_TYPES.get(next_category, set())
+    next_product_type = normalize_product_type_for_category(
+        next_category,
+        raw_draft.get("productType") or heuristic_draft["productType"],
+    )
+    if next_product_type not in available_product_types:
+        next_product_type = str(heuristic_draft["productType"] or next(iter(available_product_types), ""))
+
+    next_title = re.sub(r"\s+", " ", str(raw_draft.get("title") or "").strip()) or str(heuristic_draft["title"])
+    next_description = (
+        re.sub(r"\s+", " ", str(raw_draft.get("description") or "").strip())
+        or str(heuristic_draft["description"])
+    )
+
+    next_colors: list[str] = []
+    for color in list(raw_draft.get("selectedColors") or []):
+        normalized_color = str(color or "").strip().lower()
+        if normalized_color in PRODUCT_COLORS and normalized_color not in next_colors:
+            next_colors.append(normalized_color)
+        if len(next_colors) >= 4:
+            break
+
+    if not next_colors:
+        next_colors = list(heuristic_draft["selectedColors"] or [])
+
+    if not section_supports_color_inventory(next_page_section):
+        next_colors = []
+
+    amount_value = str(raw_draft.get("packageAmountValue") or "").replace(",", ".").strip()
+    amount_unit = str(raw_draft.get("packageAmountUnit") or "").strip().lower()
+    if not section_supports_package_amount(next_page_section):
+        amount_value = ""
+        amount_unit = ""
+    else:
+        if not amount_value:
+            amount_value = str(heuristic_draft["packageAmountValue"] or "")
+        if amount_unit not in PRODUCT_AMOUNT_UNITS:
+            amount_unit = str(heuristic_draft["packageAmountUnit"] or "")
+
+    return {
+        "title": next_title[:120],
+        "description": next_description[:600],
+        "pageSection": next_page_section,
+        "audience": next_audience,
+        "productType": next_product_type,
+        "selectedColors": next_colors,
+        "packageAmountValue": amount_value[:16],
+        "packageAmountUnit": amount_unit[:8],
+    }
+
+
+def request_openai_product_draft_suggestion(
+    *,
+    title: str,
+    description: str,
+    page_section: str,
+    audience: str,
+    product_type: str,
+    image_urls: list[str],
+    image_search_text: str,
+    image_color_terms: str,
+) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "pageSection": {
+                "type": "string",
+                "enum": sorted(
+                    {
+                        str(section.get("value") or "").strip().lower()
+                        for section in PRODUCT_SECTION_DEFINITIONS
+                        if str(section.get("value") or "").strip()
+                    }
+                ),
+            },
+            "audience": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "enum": sorted(
+                            {
+                                audience_key
+                                for audience_map in SECTION_AUDIENCE_CATEGORY_MAP.values()
+                                for audience_key in audience_map.keys()
+                            }
+                        ),
+                    },
+                    {"type": "null"},
+                ]
+            },
+            "productType": {
+                "type": "string",
+                "enum": sorted(PRODUCT_TYPES),
+            },
+            "selectedColors": {
+                "type": "array",
+                "items": {"type": "string", "enum": sorted(PRODUCT_COLORS)},
+            },
+            "packageAmountValue": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+            },
+            "packageAmountUnit": {
+                "anyOf": [
+                    {"type": "string", "enum": sorted(PRODUCT_AMOUNT_UNITS)},
+                    {"type": "null"},
+                ]
+            },
+        },
+        "required": [
+            "title",
+            "description",
+            "pageSection",
+            "audience",
+            "productType",
+            "selectedColors",
+            "packageAmountValue",
+            "packageAmountUnit",
+        ],
+    }
+
+    catalog_context = {
+        "sections": [
+            {
+                "pageSection": str(section.get("value") or "").strip().lower(),
+                "audiences": sorted(SECTION_AUDIENCE_CATEGORY_MAP.get(str(section.get("value") or "").strip().lower(), {}).keys()),
+            }
+            for section in PRODUCT_SECTION_DEFINITIONS
+        ],
+        "productTypeLabels": PRODUCT_TYPE_LABELS,
+        "colorLabels": PRODUCT_COLOR_LABELS,
+    }
+
+    instructions = (
+        "Ti je asistenti AI per krijimin e produkteve ne nje marketplace shqiptar. "
+        "Bazohu ne fotot dhe tekstin ekzistues per te sugjeruar nje titull te qarte, pershkrim te shkurter, kategori te faqes, audience, llojin e produktit dhe ngjyrat e dukshme. "
+        "Mos shpik specifika teknike qe nuk duken. "
+        "Per kozmetike, nese teksti tregon qarte ml ose L, ktheje packageAmountValue dhe packageAmountUnit. "
+        "Per audience perdor null kur kategoria nuk ka audience. "
+        "Kthe vetem vlera qe pershtaten me katalogun e lejuar."
+    )
+
+    context_payload = json.dumps(
+        {
+            "title": title,
+            "description": description,
+            "pageSection": page_section,
+            "audience": audience,
+            "productType": product_type,
+            "imageSearchText": image_search_text,
+            "imageColorTerms": image_color_terms,
+            "catalog": catalog_context,
+        },
+        ensure_ascii=False,
+    )
+
+    content: list[dict[str, object]] = [
+        {
+            "type": "input_text",
+            "text": (
+                "Konteksti aktual i formes:\n"
+                f"{context_payload}"
+            ),
+        }
+    ]
+    content.extend({"type": "input_image", "image_url": image_url} for image_url in image_urls[:3])
+
+    return request_openai_structured_output(
+        model=OPENAI_PRODUCT_DRAFT_MODEL,
+        instructions=instructions,
+        input_payload=[{"role": "user", "content": content}],
+        schema_name="trego_product_draft_assistant",
+        schema=schema,
+        max_output_tokens=500,
+        timeout_seconds=OPENAI_PRODUCT_DRAFT_TIMEOUT_SECONDS,
+    )
+
+
 def parse_positive_quantity(
     data: dict[str, object],
     field_name: str = "quantity",
@@ -2829,6 +4649,51 @@ def parse_payment_method(data: dict[str, object]) -> tuple[list[str], str | None
     return [], payment_method
 
 
+def parse_stripe_session_id(
+    data: dict[str, object],
+    field_name: str = "stripeSessionId",
+) -> tuple[list[str], str | None]:
+    session_id = str(data.get(field_name, "")).strip()
+    if not session_id:
+        return [f"Sesionit te Stripe i mungon fusha `{field_name}`."], None
+
+    if not session_id.startswith("cs_"):
+        return ["Sesioni i Stripe nuk eshte valid."], None
+
+    return [], session_id
+
+
+def deserialize_product_variant_inventory(
+    raw_value: object,
+    *,
+    category: object = "",
+    size: object = "",
+    color: object = "",
+    stock_quantity: object = 0,
+) -> list[dict[str, object]]:
+    normalized_category = str(category or "").strip().lower()
+    _, normalized_entries = normalize_variant_inventory_value(
+        raw_value,
+        category=normalized_category,
+        fallback_size=str(size or ""),
+        fallback_color=str(color or ""),
+        fallback_stock_quantity=int(stock_quantity or 0),
+    )
+    return normalized_entries
+
+
+def derive_product_variant_mode(variant_inventory: list[dict[str, object]]) -> str:
+    has_size = any(str(entry.get("size", "")).strip() for entry in variant_inventory)
+    has_color = any(str(entry.get("color", "")).strip() for entry in variant_inventory)
+    if has_size and has_color:
+        return "color-size"
+    if has_size:
+        return "size"
+    if has_color:
+        return "color"
+    return "simple"
+
+
 def serialize_user(row: sqlite3.Row) -> dict[str, object]:
     full_name = (row["full_name"] or "").strip() or build_full_name(
         row["first_name"] or "",
@@ -2866,7 +4731,7 @@ def serialize_address(row: sqlite3.Row) -> dict[str, object]:
 
 
 def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
-    return {
+    payload = {
         "id": row["id"],
         "userId": row["user_id"],
         "businessName": row["business_name"],
@@ -2879,6 +4744,16 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
+    if "owner_email" in row.keys():
+        payload["ownerEmail"] = row["owner_email"]
+    if "followers_count" in row.keys():
+        payload["followersCount"] = row["followers_count"]
+    if "products_count" in row.keys():
+        payload["productsCount"] = row["products_count"]
+    if "orders_count" in row.keys():
+        payload["ordersCount"] = row["orders_count"]
+    payload["publicProfileUrl"] = f"/profili-biznesit?id={row['id']}"
+    return payload
 
 
 def serialize_public_business_profile(row: sqlite3.Row) -> dict[str, object]:
@@ -2962,9 +4837,51 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
             buyers_count = max(0, int(row["buyers_count"] or 0))
         except (TypeError, ValueError):
             buyers_count = 0
+    variant_inventory = deserialize_product_variant_inventory(
+        row["variant_inventory"] if "variant_inventory" in row.keys() else [],
+        category=row["category"] if "category" in row.keys() else "",
+        size=row["size"] if "size" in row.keys() else "",
+        color=row["color"] if "color" in row.keys() else "",
+        stock_quantity=row["stock_quantity"] if "stock_quantity" in row.keys() else 0,
+    )
+    available_sizes = sorted(
+        {
+            str(entry.get("size", "")).strip().upper()
+            for entry in variant_inventory
+            if str(entry.get("size", "")).strip()
+        },
+        key=lambda next_size: CLOTHING_SIZE_ORDER.get(next_size, 999),
+    )
+    available_colors = sorted(
+        {
+            str(entry.get("color", "")).strip().lower()
+            for entry in variant_inventory
+            if str(entry.get("color", "")).strip()
+        }
+    )
+    package_amount_value = 0.0
+    if "package_amount_value" in row.keys():
+        try:
+            package_amount_value = round(float(row["package_amount_value"] or 0), 2)
+        except (TypeError, ValueError):
+            package_amount_value = 0.0
+    package_amount_unit = (
+        str(row["package_amount_unit"] or "").strip().lower()
+        if "package_amount_unit" in row.keys()
+        else ""
+    )
+    requires_variant_selection = len(variant_inventory) > 1 and any(
+        str(entry.get("size", "")).strip() or str(entry.get("color", "")).strip()
+        for entry in variant_inventory
+    )
 
     return {
         "id": row["id"],
+        "articleNumber": (
+            str(row["article_number"] or "").strip()
+            if "article_number" in row.keys()
+            else ""
+        ),
         "title": row["title"],
         "description": row["description"],
         "price": row["price"],
@@ -2974,6 +4891,13 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "productType": row["product_type"],
         "size": row["size"],
         "color": row["color"],
+        "variantInventory": variant_inventory,
+        "variantMode": derive_product_variant_mode(variant_inventory),
+        "requiresVariantSelection": requires_variant_selection,
+        "availableSizes": available_sizes,
+        "availableColors": available_colors,
+        "packageAmountValue": package_amount_value,
+        "packageAmountUnit": package_amount_unit,
         "stockQuantity": row["stock_quantity"],
         "isPublic": bool(row["is_public"]),
         "showStockPublic": bool(row["show_stock_public"]),
@@ -2986,6 +4910,33 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
 
 def serialize_cart_item(row: sqlite3.Row) -> dict[str, object]:
     payload = serialize_product(row)
+    payload["productId"] = payload["id"]
+    if "cart_line_id" in row.keys():
+        payload["id"] = row["cart_line_id"]
+        payload["cartLineId"] = row["cart_line_id"]
+    payload["variantKey"] = (
+        str(row["variant_key"] or "").strip() if "variant_key" in row.keys() else ""
+    )
+    payload["selectedSize"] = (
+        str(row["selected_size"] or "").strip().upper()
+        if "selected_size" in row.keys()
+        else str(payload.get("size") or "").strip().upper()
+    )
+    payload["selectedColor"] = (
+        str(row["selected_color"] or "").strip().lower()
+        if "selected_color" in row.keys()
+        else str(payload.get("color") or "").strip().lower()
+    )
+    payload["size"] = payload["selectedSize"]
+    payload["color"] = payload["selectedColor"]
+    payload["variantLabel"] = (
+        str(row["variant_label"] or "").strip()
+        if "variant_label" in row.keys()
+        else build_product_variant_label(
+            size=payload["selectedSize"],
+            color=payload["selectedColor"],
+        )
+    )
     payload["quantity"] = row["quantity"]
     return payload
 
@@ -2993,6 +4944,14 @@ def serialize_cart_item(row: sqlite3.Row) -> dict[str, object]:
 def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
     quantity = max(1, int(row["quantity"] or 1))
     unit_price = round(float(row["unit_price"] or 0), 2)
+    variant_snapshot: list[dict[str, object]] = []
+    if "product_variant_snapshot" in row.keys():
+        try:
+            parsed_variant_snapshot = json.loads(str(row["product_variant_snapshot"] or "[]"))
+        except json.JSONDecodeError:
+            parsed_variant_snapshot = []
+        if isinstance(parsed_variant_snapshot, list):
+            variant_snapshot = parsed_variant_snapshot
 
     return {
         "id": row["id"],
@@ -3007,6 +4966,19 @@ def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
         "productType": row["product_type"],
         "size": row["product_size"],
         "color": row["product_color"],
+        "variantKey": str(row["product_variant_key"] or "").strip()
+        if "product_variant_key" in row.keys()
+        else "",
+        "variantLabel": str(row["product_variant_label"] or "").strip()
+        if "product_variant_label" in row.keys()
+        else "",
+        "variantSnapshot": variant_snapshot,
+        "packageAmountValue": round(float(row["product_package_amount_value"] or 0), 2)
+        if "product_package_amount_value" in row.keys()
+        else 0,
+        "packageAmountUnit": str(row["product_package_amount_unit"] or "").strip().lower()
+        if "product_package_amount_unit" in row.keys()
+        else "",
         "unitPrice": unit_price,
         "quantity": quantity,
         "totalPrice": round(unit_price * quantity, 2),
@@ -3042,6 +5014,342 @@ def serialize_order(
         "totalPrice": total_price,
         "items": normalized_items,
     }
+
+
+def can_use_chat(user: sqlite3.Row | None) -> bool:
+    return bool(user and str(user["role"] or "").strip() in CHAT_PARTICIPANT_ROLES)
+
+
+def serialize_chat_conversation(
+    row: sqlite3.Row,
+    *,
+    viewer_user_id: int,
+) -> dict[str, object]:
+    business_profile_id = 0
+    for key in ("resolved_business_profile_id", "business_profile_id"):
+        if key in row.keys():
+            try:
+                business_profile_id = max(0, int(row[key] or 0))
+            except (TypeError, ValueError):
+                business_profile_id = 0
+            if business_profile_id > 0:
+                break
+
+    client_name = str(row["client_full_name"] or "").strip() or "Klient"
+    business_name = str(row["business_name"] or "").strip() or "Biznes"
+    is_business_view = int(row["business_user_id"]) == int(viewer_user_id)
+    counterpart_name = client_name if is_business_view else business_name
+    counterpart_image_path = normalize_image_path(
+        row["client_profile_image_path"] if is_business_view else row["business_logo_path"]
+    )
+    unread_count = 0
+    messages_count = 0
+
+    if "unread_count" in row.keys():
+        try:
+            unread_count = max(0, int(row["unread_count"] or 0))
+        except (TypeError, ValueError):
+            unread_count = 0
+
+    if "messages_count" in row.keys():
+        try:
+            messages_count = max(0, int(row["messages_count"] or 0))
+        except (TypeError, ValueError):
+            messages_count = 0
+
+    return {
+        "id": int(row["id"]),
+        "clientUserId": int(row["client_user_id"]),
+        "businessUserId": int(row["business_user_id"]),
+        "businessProfileId": business_profile_id,
+        "businessName": business_name,
+        "clientName": client_name,
+        "counterpartName": counterpart_name,
+        "counterpartRole": "client" if is_business_view else "business",
+        "counterpartImagePath": counterpart_image_path,
+        "profileUrl": f"/profili-biznesit?id={business_profile_id}" if business_profile_id > 0 else "",
+        "lastMessagePreview": str(row["last_message_body"] or "").strip(),
+        "messagesCount": messages_count,
+        "unreadCount": unread_count,
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+        "lastMessageAt": str(row["last_message_at"] or row["updated_at"] or row["created_at"] or "").strip(),
+    }
+
+
+def serialize_chat_message(
+    row: sqlite3.Row,
+    *,
+    viewer_user_id: int,
+) -> dict[str, object]:
+    sender_name = str(row["sender_business_name"] or "").strip() or str(
+        row["sender_full_name"] or ""
+    ).strip() or "Perdorues"
+    sender_role = str(row["sender_role"] or "").strip() or "client"
+
+    return {
+        "id": int(row["id"]),
+        "conversationId": int(row["conversation_id"]),
+        "senderUserId": int(row["sender_user_id"]),
+        "recipientUserId": int(row["recipient_user_id"]),
+        "body": str(row["body"] or "").strip(),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "readAt": str(row["read_at"] or "").strip(),
+        "senderName": sender_name,
+        "senderRole": sender_role,
+        "isOwn": int(row["sender_user_id"]) == int(viewer_user_id),
+    }
+
+
+def fetch_chat_conversations_for_user(user_id: int) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                c.id,
+                c.client_user_id,
+                c.business_user_id,
+                c.business_profile_id,
+                c.created_at,
+                c.updated_at,
+                c.last_message_at,
+                COALESCE(bp.id, c.business_profile_id, 0) AS resolved_business_profile_id,
+                COALESCE(bp.business_name, '') AS business_name,
+                COALESCE(bp.business_logo_path, '') AS business_logo_path,
+                COALESCE(client.full_name, 'Klient') AS client_full_name,
+                COALESCE(client.profile_image_path, '') AS client_profile_image_path,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                ), 0) AS messages_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                      AND cm.recipient_user_id = ?
+                      AND COALESCE(TRIM(cm.read_at), '') = ''
+                ), 0) AS unread_count,
+                COALESCE((
+                    SELECT cm.body
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                    ORDER BY cm.id DESC
+                    LIMIT 1
+                ), '') AS last_message_body
+            FROM chat_conversations c
+            LEFT JOIN business_profiles bp ON bp.user_id = c.business_user_id
+            LEFT JOIN users client ON client.id = c.client_user_id
+            WHERE c.client_user_id = ?
+               OR c.business_user_id = ?
+            ORDER BY c.last_message_at DESC, c.id DESC
+            """,
+            (user_id, user_id, user_id),
+        ).fetchall()
+
+
+def fetch_chat_conversation_for_user(
+    conversation_id: int,
+    user_id: int,
+) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                c.id,
+                c.client_user_id,
+                c.business_user_id,
+                c.business_profile_id,
+                c.created_at,
+                c.updated_at,
+                c.last_message_at,
+                COALESCE(bp.id, c.business_profile_id, 0) AS resolved_business_profile_id,
+                COALESCE(bp.business_name, '') AS business_name,
+                COALESCE(bp.business_logo_path, '') AS business_logo_path,
+                COALESCE(client.full_name, 'Klient') AS client_full_name,
+                COALESCE(client.profile_image_path, '') AS client_profile_image_path,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                ), 0) AS messages_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                      AND cm.recipient_user_id = ?
+                      AND COALESCE(TRIM(cm.read_at), '') = ''
+                ), 0) AS unread_count,
+                COALESCE((
+                    SELECT cm.body
+                    FROM chat_messages cm
+                    WHERE cm.conversation_id = c.id
+                    ORDER BY cm.id DESC
+                    LIMIT 1
+                ), '') AS last_message_body
+            FROM chat_conversations c
+            LEFT JOIN business_profiles bp ON bp.user_id = c.business_user_id
+            LEFT JOIN users client ON client.id = c.client_user_id
+            WHERE c.id = ?
+              AND (c.client_user_id = ? OR c.business_user_id = ?)
+            LIMIT 1
+            """,
+            (user_id, conversation_id, user_id, user_id),
+        ).fetchone()
+
+
+def fetch_chat_messages_for_conversation(conversation_id: int) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                m.id,
+                m.conversation_id,
+                m.sender_user_id,
+                m.recipient_user_id,
+                m.body,
+                m.created_at,
+                m.read_at,
+                COALESCE(sender.full_name, 'Perdorues') AS sender_full_name,
+                COALESCE(sender.role, 'client') AS sender_role,
+                COALESCE(sender_business.business_name, '') AS sender_business_name
+            FROM chat_messages m
+            LEFT JOIN users sender ON sender.id = m.sender_user_id
+            LEFT JOIN business_profiles sender_business ON sender_business.user_id = m.sender_user_id
+            WHERE m.conversation_id = ?
+            ORDER BY m.id ASC
+            """,
+            (conversation_id,),
+        ).fetchall()
+
+
+def mark_chat_messages_as_read(
+    conversation_id: int,
+    recipient_user_id: int,
+) -> None:
+    read_at_value = datetime_to_storage_text(utc_now())
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE chat_messages
+            SET read_at = ?
+            WHERE conversation_id = ?
+              AND recipient_user_id = ?
+              AND COALESCE(TRIM(read_at), '') = ''
+            """,
+            (read_at_value, conversation_id, recipient_user_id),
+        )
+
+
+def ensure_chat_conversation_for_client(
+    client_user_id: int,
+    business_user_id: int,
+    business_profile_id: int | None = None,
+) -> int:
+    with get_db_connection() as connection:
+        existing_row = connection.execute(
+            """
+            SELECT id
+            FROM chat_conversations
+            WHERE client_user_id = ?
+              AND business_user_id = ?
+            LIMIT 1
+            """,
+            (client_user_id, business_user_id),
+        ).fetchone()
+        if existing_row:
+            return int(existing_row["id"])
+
+        timestamp = datetime_to_storage_text(utc_now())
+        return execute_insert_and_get_id(
+            connection,
+            """
+            INSERT INTO chat_conversations (
+                client_user_id,
+                business_user_id,
+                business_profile_id,
+                created_at,
+                updated_at,
+                last_message_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                client_user_id,
+                business_user_id,
+                business_profile_id,
+                timestamp,
+                timestamp,
+                timestamp,
+            ),
+        )
+
+
+def insert_chat_message(
+    conversation_id: int,
+    sender_user_id: int,
+    recipient_user_id: int,
+    body: str,
+) -> int:
+    timestamp = datetime_to_storage_text(utc_now())
+    with get_db_connection() as connection:
+        message_id = execute_insert_and_get_id(
+            connection,
+            """
+            INSERT INTO chat_messages (
+                conversation_id,
+                sender_user_id,
+                recipient_user_id,
+                body,
+                created_at,
+                read_at
+            )
+            VALUES (?, ?, ?, ?, ?, '')
+            """,
+            (
+                conversation_id,
+                sender_user_id,
+                recipient_user_id,
+                body,
+                timestamp,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE chat_conversations
+            SET
+                updated_at = ?,
+                last_message_at = ?
+            WHERE id = ?
+            """,
+            (timestamp, timestamp, conversation_id),
+        )
+        return message_id
+
+
+def fetch_chat_message_by_id(message_id: int) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                m.id,
+                m.conversation_id,
+                m.sender_user_id,
+                m.recipient_user_id,
+                m.body,
+                m.created_at,
+                m.read_at,
+                COALESCE(sender.full_name, 'Perdorues') AS sender_full_name,
+                COALESCE(sender.role, 'client') AS sender_role,
+                COALESCE(sender_business.business_name, '') AS sender_business_name
+            FROM chat_messages m
+            LEFT JOIN users sender ON sender.id = m.sender_user_id
+            LEFT JOIN business_profiles sender_business ON sender_business.user_id = m.sender_user_id
+            WHERE m.id = ?
+            LIMIT 1
+            """,
+            (message_id,),
+        ).fetchone()
 
 
 def fetch_user_by_email(email: str) -> sqlite3.Row | None:
@@ -3415,11 +5723,47 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
         return connection.execute(
             """
             SELECT
-            """
-            + BUSINESS_PROFILE_SELECT_COLUMNS
-            + """
-            FROM business_profiles
-            WHERE user_id = ?
+                bp.id,
+                bp.user_id,
+                bp.business_name,
+                bp.business_description,
+                bp.business_number,
+                bp.business_logo_path,
+                bp.phone_number,
+                bp.city,
+                bp.address_line,
+                bp.created_at,
+                bp.updated_at,
+                u.email AS owner_email,
+                COALESCE(follower_totals.total_followers, 0) AS followers_count,
+                COALESCE(product_totals.total_products, 0) AS products_count,
+                COALESCE(order_totals.total_orders, 0) AS orders_count
+            FROM business_profiles bp
+            INNER JOIN users u ON u.id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_id,
+                    COUNT(*) AS total_followers
+                FROM business_followers
+                GROUP BY business_id
+            ) follower_totals ON follower_totals.business_id = bp.id
+            LEFT JOIN (
+                SELECT
+                    created_by_user_id,
+                    COUNT(*) AS total_products
+                FROM products
+                WHERE created_by_user_id IS NOT NULL
+                GROUP BY created_by_user_id
+            ) product_totals ON product_totals.created_by_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    COUNT(DISTINCT order_id) AS total_orders
+                FROM order_items
+                WHERE business_user_id IS NOT NULL
+                GROUP BY business_user_id
+            ) order_totals ON order_totals.business_user_id = bp.user_id
+            WHERE bp.user_id = ?
             LIMIT 1
             """,
             (user_id,),
@@ -3633,6 +5977,9 @@ def fetch_public_products_for_business(
                 p.product_type,
                 p.size,
                 p.color,
+                p.variant_inventory,
+                p.package_amount_value,
+                p.package_amount_unit,
                 p.stock_quantity,
                 p.is_public,
                 p.show_stock_public,
@@ -3682,64 +6029,22 @@ def fetch_products(
     offset: int = 0,
 ) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
-        conditions: list[str] = []
-        parameters: list[object] = []
-
-        if category:
-            conditions.append("category = ?")
-            parameters.append(category)
-        elif category_group:
-            conditions.append("category LIKE ?")
-            parameters.append(f"{category_group}-%")
-
-        if product_type:
-            conditions.append("product_type = ?")
-            parameters.append(product_type)
-
-        if size:
-            conditions.append("size = ?")
-            parameters.append(size)
-
-        if color:
-            conditions.append("(color = ? OR LOWER(ai_image_color_terms) LIKE ?)")
-            parameters.extend([color, f"%{color.lower()}%"])
-
-        if created_by_user_id is not None:
-            conditions.append("created_by_user_id = ?")
-            parameters.append(created_by_user_id)
-
-        if business_name_search:
-            conditions.append(
-                "EXISTS ("
-                "SELECT 1 FROM business_profiles bp "
-                "WHERE bp.user_id = products.created_by_user_id "
-                "AND LOWER(bp.business_name) LIKE ?"
-                ")"
-            )
-            parameters.append(f"%{business_name_search.lower()}%")
-
-        if search_text:
-            conditions.append(
-                "("
-                "LOWER(title) LIKE ? "
-                "OR LOWER(description) LIKE ? "
-                "OR LOWER(ai_image_search_text) LIKE ?"
-                ")"
-            )
-            search_pattern = f"%{search_text.lower()}%"
-            parameters.extend([search_pattern, search_pattern, search_pattern])
-
-        if not include_hidden:
-            conditions.append("is_public = 1")
-
-        where_clause = ""
-        if conditions:
-            where_clause = "WHERE " + " AND ".join(conditions)
+        where_clause, parameters = build_product_query_filters(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name_search,
+            include_hidden=include_hidden,
+            created_by_user_id=created_by_user_id,
+            search_text=search_text,
+        )
 
         limit_offset_clause = ""
         if limit is not None:
             limit_offset_clause = "\nLIMIT ?\nOFFSET ?"
-            parameters.extend([limit, max(0, int(offset))])
+            parameters = [*parameters, limit, max(0, int(offset))]
 
         return connection.execute(
             """
@@ -3760,6 +6065,239 @@ def fetch_products(
         ).fetchall()
 
 
+def build_product_query_filters(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
+    include_hidden: bool = False,
+    created_by_user_id: int | None = None,
+    search_text: str | None = None,
+) -> tuple[str, list[object]]:
+    conditions: list[str] = []
+    parameters: list[object] = []
+
+    if category:
+        conditions.append("category = ?")
+        parameters.append(category)
+    elif category_group:
+        if category_group in {"home", "sport", "technology"}:
+            conditions.append("category = ?")
+            parameters.append(category_group)
+        else:
+            conditions.append("category LIKE ?")
+            parameters.append(f"{category_group}-%")
+
+    if product_type:
+        conditions.append("product_type = ?")
+        parameters.append(product_type)
+
+    if size:
+        conditions.append("(size = ? OR variant_inventory LIKE ?)")
+        parameters.extend([size, f'%\"size\": \"{size}\"%'])
+
+    if color:
+        conditions.append("(color = ? OR LOWER(ai_image_color_terms) LIKE ? OR variant_inventory LIKE ?)")
+        parameters.extend([color, f"%{color.lower()}%", f'%\"color\": \"{color}\"%'])
+
+    if created_by_user_id is not None:
+        conditions.append("created_by_user_id = ?")
+        parameters.append(created_by_user_id)
+
+    if business_name_search:
+        conditions.append(
+            "EXISTS ("
+            "SELECT 1 FROM business_profiles bp "
+            "WHERE bp.user_id = products.created_by_user_id "
+            "AND LOWER(bp.business_name) LIKE ?"
+            ")"
+        )
+        parameters.append(f"%{business_name_search.lower()}%")
+
+    if search_text:
+        conditions.append(
+            "("
+            "LOWER(title) LIKE ? "
+            "OR LOWER(description) LIKE ? "
+            "OR LOWER(ai_image_search_text) LIKE ?"
+            ")"
+        )
+        search_pattern = f"%{search_text.lower()}%"
+        parameters.extend([search_pattern, search_pattern, search_pattern])
+
+    if not include_hidden:
+        conditions.append("is_public = 1")
+
+    where_clause = ""
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    return where_clause, parameters
+
+
+def build_product_catalog_facets(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
+    include_hidden: bool = False,
+    created_by_user_id: int | None = None,
+    search_text: str | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    with get_db_connection() as connection:
+        where_clause, parameters = build_product_query_filters(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name_search,
+            include_hidden=include_hidden,
+            created_by_user_id=created_by_user_id,
+            search_text=search_text,
+        )
+        rows = connection.execute(
+            """
+            SELECT
+                category,
+                product_type,
+                size,
+                color,
+                stock_quantity,
+                variant_inventory,
+                ai_image_color_terms
+            FROM products
+            """
+            + where_clause
+            + """
+            ORDER BY id DESC
+            """,
+            parameters,
+        ).fetchall()
+
+    page_sections: dict[str, dict[str, object]] = {}
+    categories: dict[str, dict[str, object]] = {}
+    product_types: dict[tuple[str, str], dict[str, object]] = {}
+    sizes: set[str] = set()
+    colors: set[str] = set()
+
+    section_order = {
+        str(section.get("value") or "").strip().lower(): index
+        for index, section in enumerate(PRODUCT_SECTION_DEFINITIONS)
+        if str(section.get("value") or "").strip()
+    }
+    color_order = {
+        str(color_definition.get("value") or "").strip().lower(): index
+        for index, color_definition in enumerate(PRODUCT_COLOR_DEFINITIONS)
+        if str(color_definition.get("value") or "").strip()
+    }
+
+    for row in rows:
+        row_category = str(row["category"] or "").strip().lower()
+        if not row_category:
+            continue
+
+        row_section = derive_section_from_category(row_category) or row_category
+        row_audience = derive_audience_from_category(row_category) or ""
+
+        if row_section:
+            page_sections[row_section] = {
+                "value": row_section,
+                "label": PRODUCT_CATEGORY_LABELS.get(row_section, row_section),
+            }
+
+        categories[row_category] = {
+            "value": row_category,
+            "label": PRODUCT_CATEGORY_LABELS.get(row_category, row_category),
+            "pageSection": row_section,
+            "audience": row_audience,
+        }
+
+        row_product_type = str(row["product_type"] or "").strip().lower()
+        if row_product_type:
+            product_types[(row_category, row_product_type)] = {
+                "value": row_product_type,
+                "label": PRODUCT_TYPE_LABELS.get(row_product_type, row_product_type),
+                "category": row_category,
+                "pageSection": row_section,
+            }
+
+        variant_inventory = deserialize_product_variant_inventory(
+            row["variant_inventory"],
+            category=row_category,
+            size=row["size"],
+            color=row["color"],
+            stock_quantity=row["stock_quantity"],
+        )
+        if variant_inventory:
+            for entry in variant_inventory:
+                normalized_size = str(entry.get("size") or "").strip().upper()
+                normalized_color = str(entry.get("color") or "").strip().lower()
+                if normalized_size in CLOTHING_SIZES:
+                    sizes.add(normalized_size)
+                if normalized_color in PRODUCT_COLORS:
+                    colors.add(normalized_color)
+        else:
+            normalized_size = str(row["size"] or "").strip().upper()
+            normalized_color = str(row["color"] or "").strip().lower()
+            if normalized_size in CLOTHING_SIZES:
+                sizes.add(normalized_size)
+            if normalized_color in PRODUCT_COLORS:
+                colors.add(normalized_color)
+
+        for color_term in tokenize_search_intent_text(str(row["ai_image_color_terms"] or "")):
+            if color_term in PRODUCT_COLORS:
+                colors.add(color_term)
+
+    sorted_page_sections = sorted(
+        page_sections.values(),
+        key=lambda item: (section_order.get(str(item["value"]), 999), str(item["label"])),
+    )
+    sorted_categories = sorted(
+        categories.values(),
+        key=lambda item: (
+            section_order.get(str(item["pageSection"]), 999),
+            str(item["label"]),
+        ),
+    )
+    sorted_product_types = sorted(
+        product_types.values(),
+        key=lambda item: (
+            section_order.get(str(item["pageSection"]), 999),
+            str(item["category"]),
+            str(item["label"]),
+        ),
+    )
+    sorted_sizes = sorted(
+        [{"value": size_value, "label": size_value} for size_value in sizes],
+        key=lambda item: CLOTHING_SIZE_ORDER.get(str(item["value"]), 999),
+    )
+    sorted_colors = sorted(
+        [
+            {
+                "value": color_value,
+                "label": PRODUCT_COLOR_LABELS.get(color_value, color_value),
+            }
+            for color_value in colors
+        ],
+        key=lambda item: (color_order.get(str(item["value"]), 999), str(item["label"])),
+    )
+
+    return {
+        "pageSections": sorted_page_sections,
+        "categories": sorted_categories,
+        "productTypes": sorted_product_types,
+        "sizes": sorted_sizes,
+        "colors": sorted_colors,
+    }
+
+
 def count_products(
     category: str | None = None,
     *,
@@ -3773,59 +6311,17 @@ def count_products(
     search_text: str | None = None,
 ) -> int:
     with get_db_connection() as connection:
-        conditions: list[str] = []
-        parameters: list[object] = []
-
-        if category:
-            conditions.append("category = ?")
-            parameters.append(category)
-        elif category_group:
-            conditions.append("category LIKE ?")
-            parameters.append(f"{category_group}-%")
-
-        if product_type:
-            conditions.append("product_type = ?")
-            parameters.append(product_type)
-
-        if size:
-            conditions.append("size = ?")
-            parameters.append(size)
-
-        if color:
-            conditions.append("(color = ? OR LOWER(ai_image_color_terms) LIKE ?)")
-            parameters.extend([color, f"%{color.lower()}%"])
-
-        if created_by_user_id is not None:
-            conditions.append("created_by_user_id = ?")
-            parameters.append(created_by_user_id)
-
-        if business_name_search:
-            conditions.append(
-                "EXISTS ("
-                "SELECT 1 FROM business_profiles bp "
-                "WHERE bp.user_id = products.created_by_user_id "
-                "AND LOWER(bp.business_name) LIKE ?"
-                ")"
-            )
-            parameters.append(f"%{business_name_search.lower()}%")
-
-        if search_text:
-            conditions.append(
-                "("
-                "LOWER(title) LIKE ? "
-                "OR LOWER(description) LIKE ? "
-                "OR LOWER(ai_image_search_text) LIKE ?"
-                ")"
-            )
-            search_pattern = f"%{search_text.lower()}%"
-            parameters.extend([search_pattern, search_pattern, search_pattern])
-
-        if not include_hidden:
-            conditions.append("is_public = 1")
-
-        where_clause = ""
-        if conditions:
-            where_clause = "WHERE " + " AND ".join(conditions)
+        where_clause, parameters = build_product_query_filters(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name_search,
+            include_hidden=include_hidden,
+            created_by_user_id=created_by_user_id,
+            search_text=search_text,
+        )
 
         row = connection.execute(
             """
@@ -3858,19 +6354,18 @@ def fetch_visual_search_candidates(
     category: str | None = None,
     *,
     category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
 ) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
-        conditions = ["is_public = 1"]
-        parameters: list[object] = []
-
-        if category:
-            conditions.append("category = ?")
-            parameters.append(category)
-        elif category_group:
-            conditions.append("category LIKE ?")
-            parameters.append(f"{category_group}-%")
-
-        where_clause = "WHERE " + " AND ".join(conditions)
+        where_clause, parameters = build_product_query_filters(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+        )
 
         return connection.execute(
             """
@@ -3961,6 +6456,7 @@ def insert_product_for_owner(
         connection,
         """
         INSERT INTO products (
+            article_number,
             title,
             description,
             price,
@@ -3973,12 +6469,16 @@ def insert_product_for_owner(
             product_type,
             size,
             color,
+            variant_inventory,
+            package_amount_value,
+            package_amount_unit,
             stock_quantity,
             created_by_user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            normalized_product["articleNumber"],
             normalized_product["title"],
             normalized_product["description"],
             normalized_product["price"],
@@ -3991,6 +6491,9 @@ def insert_product_for_owner(
             normalized_product["productType"],
             normalized_product["size"],
             normalized_product["color"],
+            json.dumps(normalized_product["variantInventory"], ensure_ascii=False),
+            normalized_product["packageAmountValue"],
+            normalized_product["packageAmountUnit"],
             normalized_product["stockQuantity"],
             owner_user_id,
         ),
@@ -4012,6 +6515,9 @@ def fetch_wishlist_products(user_id: int) -> list[sqlite3.Row]:
                 p.product_type,
                 p.size,
                 p.color,
+                p.variant_inventory,
+                p.package_amount_value,
+                p.package_amount_unit,
                 p.stock_quantity,
                 p.is_public,
                 p.show_stock_public,
@@ -4034,6 +6540,7 @@ def fetch_cart_items(user_id: int) -> list[sqlite3.Row]:
         return connection.execute(
             """
             SELECT
+                cl.id AS cart_line_id,
                 p.id,
                 p.title,
                 p.description,
@@ -4044,38 +6551,46 @@ def fetch_cart_items(user_id: int) -> list[sqlite3.Row]:
                 p.product_type,
                 p.size,
                 p.color,
+                p.variant_inventory,
+                p.package_amount_value,
+                p.package_amount_unit,
                 p.stock_quantity,
                 p.is_public,
                 p.show_stock_public,
                 p.created_by_user_id,
-                ci.created_at,
-                ci.quantity,
+                cl.created_at,
+                cl.quantity,
+                cl.variant_key,
+                cl.variant_label,
+                cl.selected_size,
+                cl.selected_color,
                 COALESCE(bp.business_name, '') AS business_name
-            FROM cart_items ci
-            INNER JOIN products p ON p.id = ci.product_id
+            FROM cart_lines cl
+            INNER JOIN products p ON p.id = cl.product_id
             LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
-            WHERE ci.user_id = ?
+            WHERE cl.user_id = ?
               AND p.is_public = 1
-            ORDER BY ci.updated_at DESC
+            ORDER BY cl.updated_at DESC
             """,
             (user_id,),
         ).fetchall()
 
 
 def fetch_cart_items_for_checkout(
-    connection: sqlite3.Connection,
+    connection: DatabaseConnection,
     user_id: int,
-    product_ids: list[int],
+    cart_line_ids: list[int],
 ) -> list[sqlite3.Row]:
-    if not product_ids:
+    if not cart_line_ids:
         return []
 
-    placeholders = ", ".join("?" for _ in product_ids)
-    parameters: list[object] = [user_id, *product_ids]
+    placeholders = ", ".join("?" for _ in cart_line_ids)
+    parameters: list[object] = [user_id, *cart_line_ids]
 
     return connection.execute(
         """
         SELECT
+            cl.id AS cart_line_id,
             p.id,
             p.title,
             p.description,
@@ -4086,25 +6601,812 @@ def fetch_cart_items_for_checkout(
             p.product_type,
             p.size,
             p.color,
+            p.variant_inventory,
+            p.package_amount_value,
+            p.package_amount_unit,
             p.stock_quantity,
             p.is_public,
             p.show_stock_public,
             p.created_by_user_id,
-            ci.created_at,
-            ci.quantity,
+            cl.created_at,
+            cl.quantity,
+            cl.variant_key,
+            cl.variant_label,
+            cl.selected_size,
+            cl.selected_color,
             COALESCE(bp.business_name, '') AS business_name
-        FROM cart_items ci
-        INNER JOIN products p ON p.id = ci.product_id
+        FROM cart_lines cl
+        INNER JOIN products p ON p.id = cl.product_id
         LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
-        WHERE ci.user_id = ?
-          AND p.id IN ("""
+        WHERE cl.user_id = ?
+          AND cl.id IN ("""
         + placeholders
         + """)
           AND p.is_public = 1
-        ORDER BY ci.updated_at DESC, p.id DESC
+        ORDER BY cl.updated_at DESC, cl.id DESC
         """,
         parameters,
     ).fetchall()
+
+
+def normalize_checkout_item_record(raw_item: object) -> dict[str, object]:
+    if hasattr(raw_item, "keys"):
+        mapping = {key: raw_item[key] for key in raw_item.keys()}
+    elif isinstance(raw_item, dict):
+        mapping = dict(raw_item)
+    else:
+        mapping = {}
+
+    return {
+        "cartLineId": int(mapping.get("cart_line_id") or mapping.get("cartLineId") or 0),
+        "productId": int(mapping.get("id") or mapping.get("productId") or 0),
+        "title": str(mapping.get("title") or "").strip(),
+        "description": str(mapping.get("description") or "").strip(),
+        "price": round(float(mapping.get("price") or 0), 2),
+        "imagePath": normalize_image_path(mapping.get("image_path") or mapping.get("imagePath") or ""),
+        "category": str(mapping.get("category") or "").strip().lower(),
+        "productType": str(mapping.get("product_type") or mapping.get("productType") or "").strip().lower(),
+        "size": str(mapping.get("size") or "").strip().upper(),
+        "color": str(mapping.get("color") or "").strip().lower(),
+        "variantKey": str(mapping.get("variant_key") or mapping.get("variantKey") or "").strip() or "default",
+        "variantLabel": str(mapping.get("variant_label") or mapping.get("variantLabel") or "").strip(),
+        "selectedSize": str(mapping.get("selected_size") or mapping.get("selectedSize") or "").strip().upper(),
+        "selectedColor": str(mapping.get("selected_color") or mapping.get("selectedColor") or "").strip().lower(),
+        "businessUserId": (
+            int(mapping.get("business_user_id") or mapping.get("created_by_user_id") or mapping.get("businessUserId") or 0)
+            or None
+        ),
+        "businessName": str(mapping.get("business_name") or mapping.get("businessName") or "").strip(),
+        "packageAmountValue": round(
+            float(mapping.get("package_amount_value") or mapping.get("packageAmountValue") or 0),
+            2,
+        ),
+        "packageAmountUnit": str(
+            mapping.get("package_amount_unit") or mapping.get("packageAmountUnit") or ""
+        ).strip().lower(),
+        "quantity": max(1, int(mapping.get("quantity") or 1)),
+    }
+
+
+def load_checkout_items_for_order_or_raise(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    cart_line_ids: list[int],
+) -> list[dict[str, object]]:
+    checkout_rows = fetch_cart_items_for_checkout(connection, user_id, cart_line_ids)
+    if not checkout_rows:
+        raise CheckoutProcessError(
+            message="Produktet e zgjedhura nuk u gjeten ne shporte."
+        )
+
+    available_cart_line_ids = {int(item["cart_line_id"]) for item in checkout_rows}
+    missing_cart_line_ids = [
+        cart_line_id
+        for cart_line_id in cart_line_ids
+        if cart_line_id not in available_cart_line_ids
+    ]
+    if missing_cart_line_ids:
+        raise CheckoutProcessError(
+            message="Disa produkte nuk jane me te disponueshme per kete porosi."
+        )
+
+    checkout_items = [normalize_checkout_item_record(item) for item in checkout_rows]
+    validate_checkout_stock_or_raise(connection, checkout_items)
+    return checkout_items
+
+
+def serialize_checkout_items_snapshot(checkout_items: list[object]) -> str:
+    normalized_items = [
+        normalize_checkout_item_record(item)
+        for item in checkout_items
+    ]
+    return json.dumps(normalized_items, ensure_ascii=False)
+
+
+def deserialize_checkout_items_snapshot(raw_value: object) -> list[dict[str, object]]:
+    try:
+        parsed_value = json.loads(str(raw_value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed_value = []
+
+    if not isinstance(parsed_value, list):
+        return []
+
+    return [normalize_checkout_item_record(item) for item in parsed_value]
+
+
+def fetch_products_for_checkout_records(
+    connection: DatabaseConnection,
+    checkout_items: list[dict[str, object]],
+) -> dict[int, sqlite3.Row]:
+    product_ids = sorted(
+        {
+            int(item["productId"])
+            for item in checkout_items
+            if int(item.get("productId") or 0) > 0
+        }
+    )
+    if not product_ids:
+        return {}
+
+    placeholders = ", ".join("?" for _ in product_ids)
+    rows = connection.execute(
+        """
+        SELECT
+        """
+        + PRODUCT_SELECT_COLUMNS
+        + """
+        FROM products
+        WHERE id IN ("""
+        + placeholders
+        + """)
+        """,
+        product_ids,
+    ).fetchall()
+    return {int(row["id"]): row for row in rows}
+
+
+def build_checkout_signature(
+    user_id: int,
+    cleaned_address: dict[str, str],
+    checkout_items: list[dict[str, object]],
+) -> str:
+    normalized_items = sorted(
+        [
+            {
+                "cartLineId": int(item.get("cartLineId") or 0),
+                "productId": int(item.get("productId") or 0),
+                "variantKey": str(item.get("variantKey") or "").strip(),
+                "quantity": max(1, int(item.get("quantity") or 1)),
+                "price": round(float(item.get("price") or 0), 2),
+            }
+            for item in checkout_items
+        ],
+        key=lambda item: (
+            int(item["cartLineId"]),
+            int(item["productId"]),
+            str(item["variantKey"]),
+        ),
+    )
+
+    signature_payload = {
+        "userId": int(user_id),
+        "currency": STRIPE_CURRENCY,
+        "address": {
+            "addressLine": str(cleaned_address.get("address_line") or "").strip(),
+            "city": str(cleaned_address.get("city") or "").strip(),
+            "country": str(cleaned_address.get("country") or "").strip(),
+            "zipCode": str(cleaned_address.get("zip_code") or "").strip(),
+            "phoneNumber": str(cleaned_address.get("phone_number") or "").strip(),
+        },
+        "items": normalized_items,
+    }
+    payload_text = json.dumps(
+        signature_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload_text.encode("utf-8")).hexdigest()
+
+
+def validate_checkout_stock_or_raise(
+    connection: DatabaseConnection,
+    checkout_items: list[dict[str, object]],
+) -> None:
+    product_rows_by_id = fetch_products_for_checkout_records(connection, checkout_items)
+    stock_errors: list[str] = []
+
+    for item in checkout_items:
+        product_row = product_rows_by_id.get(int(item["productId"]))
+        if not product_row:
+            stock_errors.append(
+                f"Produkti `{item['title']}` nuk eshte me i disponueshem."
+            )
+            continue
+
+        variant_inventory = deserialize_product_variant_inventory(
+            product_row["variant_inventory"],
+            category=product_row["category"],
+            size=product_row["size"],
+            color=product_row["color"],
+            stock_quantity=product_row["stock_quantity"],
+        )
+        selected_variant = next(
+            (
+                entry
+                for entry in variant_inventory
+                if str(entry.get("key", "")).strip() == str(item["variantKey"]).strip()
+            ),
+            None,
+        )
+        variant_label = (
+            str(item["variantLabel"] or "").strip()
+            or build_product_variant_label(
+                size=str(item["selectedSize"] or "").strip().upper(),
+                color=str(item["selectedColor"] or "").strip().lower(),
+            )
+        )
+        if not selected_variant:
+            stock_errors.append(
+                f"Produkti `{item['title']}` nuk e ka me variantin `{variant_label}`."
+            )
+            continue
+
+        stock_quantity = max(0, int(selected_variant.get("quantity") or 0))
+        if stock_quantity < max(1, int(item["quantity"] or 1)):
+            stock_errors.append(
+                f"Produkti `{item['title']}` nuk ka stok te mjaftueshem per variantin `{variant_label}`."
+            )
+
+    if stock_errors:
+        raise CheckoutProcessError(errors=stock_errors)
+
+
+def create_order_from_checkout_items(
+    connection: DatabaseConnection,
+    *,
+    user: sqlite3.Row | dict[str, object],
+    payment_method: str,
+    cleaned_address: dict[str, str],
+    checkout_items: list[dict[str, object]],
+    cart_line_ids: list[int] | None = None,
+) -> tuple[int, sqlite3.Row | None, list[sqlite3.Row]]:
+    validate_checkout_stock_or_raise(connection, checkout_items)
+    product_rows_by_id = fetch_products_for_checkout_records(connection, checkout_items)
+
+    customer_full_name = (
+        str(user["full_name"] or "").strip()
+        or build_full_name(
+            str(user["first_name"] or ""),
+            str(user["last_name"] or ""),
+        )
+        or str(user["email"] or "").strip()
+    )
+
+    order_id = execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO orders (
+            user_id,
+            customer_full_name,
+            customer_email,
+            payment_method,
+            status,
+            address_line,
+            city,
+            country,
+            zip_code,
+            phone_number
+        )
+        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
+        """,
+        (
+            user["id"],
+            customer_full_name,
+            str(user["email"] or "").strip(),
+            payment_method,
+            cleaned_address["address_line"],
+            cleaned_address["city"],
+            cleaned_address["country"],
+            cleaned_address["zip_code"],
+            cleaned_address["phone_number"],
+        ),
+    )
+
+    for item in checkout_items:
+        product_row = product_rows_by_id.get(int(item["productId"]))
+        product_id = int(item["productId"]) if product_row else None
+        business_user_id = item["businessUserId"] or (
+            int(product_row["created_by_user_id"]) if product_row and product_row["created_by_user_id"] else None
+        )
+        variant_label = (
+            str(item["variantLabel"] or "").strip()
+            or build_product_variant_label(
+                size=str(item["selectedSize"] or "").strip().upper(),
+                color=str(item["selectedColor"] or "").strip().lower(),
+            )
+        )
+
+        connection.execute(
+            """
+            INSERT INTO order_items (
+                order_id,
+                product_id,
+                business_user_id,
+                business_name_snapshot,
+                product_title,
+                product_description,
+                product_image_path,
+                product_category,
+                product_type,
+                product_size,
+                product_color,
+                product_variant_key,
+                product_variant_label,
+                product_variant_snapshot,
+                product_package_amount_value,
+                product_package_amount_unit,
+                unit_price,
+                quantity
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_id,
+                product_id,
+                business_user_id,
+                str(item["businessName"] or "").strip(),
+                str(item["title"] or "").strip(),
+                str(item["description"] or "").strip(),
+                normalize_image_path(item["imagePath"]),
+                str(item["category"] or "").strip(),
+                str(item["productType"] or "").strip(),
+                str(item["selectedSize"] or item["size"] or "").strip(),
+                str(item["selectedColor"] or item["color"] or "").strip(),
+                str(item["variantKey"] or "").strip(),
+                variant_label,
+                json.dumps(
+                    [
+                        {
+                            "key": str(item["variantKey"] or "").strip(),
+                            "size": str(item["selectedSize"] or "").strip().upper(),
+                            "color": str(item["selectedColor"] or "").strip().lower(),
+                            "quantity": max(1, int(item["quantity"] or 1)),
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                round(float(item["packageAmountValue"] or 0), 2),
+                str(item["packageAmountUnit"] or "").strip().lower(),
+                round(float(item["price"] or 0), 2),
+                max(1, int(item["quantity"] or 1)),
+            ),
+        )
+
+        if product_row:
+            stock_errors, _ = decrement_product_variant_stock(
+                connection,
+                product_row,
+                variant_key=str(item["variantKey"] or "").strip(),
+                quantity=max(1, int(item["quantity"] or 1)),
+            )
+            if stock_errors:
+                raise CheckoutProcessError(errors=stock_errors)
+
+    if cart_line_ids:
+        placeholders = ", ".join("?" for _ in cart_line_ids)
+        connection.execute(
+            """
+            DELETE FROM cart_lines
+            WHERE user_id = ?
+              AND id IN ("""
+            + placeholders
+            + """)
+            """,
+            [user["id"], *cart_line_ids],
+        )
+
+    saved_order = connection.execute(
+        """
+        SELECT
+        """
+        + ORDER_SELECT_COLUMNS
+        + """
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (order_id,),
+    ).fetchone()
+    saved_items = connection.execute(
+        """
+        SELECT
+        """
+        + ORDER_ITEM_SELECT_COLUMNS
+        + """
+        FROM order_items
+        WHERE order_id = ?
+        ORDER BY id DESC
+        """,
+        (order_id,),
+    ).fetchall()
+    return order_id, saved_order, saved_items
+
+
+def build_stripe_api_auth_header() -> str:
+    raw_token = f"{STRIPE_SECRET_KEY}:".encode("utf-8")
+    return f"Basic {base64.b64encode(raw_token).decode('ascii')}"
+
+
+def is_stripe_configured() -> bool:
+    return bool(STRIPE_SECRET_KEY)
+
+
+def request_stripe_api(
+    path: str,
+    *,
+    method: str = "GET",
+    form_fields: list[tuple[str, str]] | None = None,
+) -> tuple[bool, dict[str, object]]:
+    if not is_stripe_configured():
+        return False, {
+            "error": {
+                "message": "Stripe test nuk eshte konfiguruar ende ne server.",
+            }
+        }
+
+    headers = {
+        "Authorization": build_stripe_api_auth_header(),
+    }
+    body: bytes | None = None
+    if form_fields is not None:
+        body = urlencode(form_fields).encode("utf-8")
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    request = Request(
+        f"{STRIPE_API_BASE_URL}{path}",
+        data=body,
+        headers=headers,
+        method=method.upper(),
+    )
+
+    try:
+        with urlopen(request, timeout=STRIPE_TIMEOUT_SECONDS) as response:
+            return True, json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        try:
+            payload = json.loads(error.read().decode("utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            payload = {
+                "error": {
+                    "message": str(error),
+                }
+            }
+        return False, payload
+    except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        return False, {
+            "error": {
+                "message": f"Stripe nuk po pergjigjet: {error}",
+            }
+        }
+
+
+def resolve_stripe_error_message(payload: dict[str, object], fallback_message: str) -> str:
+    error_payload = payload.get("error")
+    if isinstance(error_payload, dict):
+        message = str(error_payload.get("message") or "").strip()
+        if message:
+            return message
+    return fallback_message
+
+
+def build_stripe_checkout_line_items(
+    checkout_items: list[dict[str, object]],
+) -> tuple[list[tuple[str, str]], int]:
+    form_fields: list[tuple[str, str]] = []
+    total_amount = 0
+
+    for index, item in enumerate(checkout_items):
+        quantity = max(1, int(item["quantity"] or 1))
+        unit_amount = max(1, int(round(float(item["price"] or 0) * 100)))
+        total_amount += unit_amount * quantity
+        variant_label = str(item["variantLabel"] or "").strip()
+        product_name = str(item["title"] or "").strip() or "Produkt"
+        if variant_label and variant_label.lower() != "standard":
+            product_name = f"{product_name} ({variant_label})"
+
+        form_fields.extend(
+            [
+                (f"line_items[{index}][price_data][currency]", STRIPE_CURRENCY),
+                (f"line_items[{index}][price_data][unit_amount]", str(unit_amount)),
+                (f"line_items[{index}][price_data][product_data][name]", product_name[:120]),
+                (f"line_items[{index}][quantity]", str(quantity)),
+            ]
+        )
+
+    return form_fields, total_amount
+
+
+def persist_stripe_payment_session(
+    connection: DatabaseConnection,
+    *,
+    stripe_session_id: str,
+    user_id: int,
+    checkout_signature: str,
+    cart_line_ids: list[int],
+    cleaned_address: dict[str, str],
+    checkout_items: list[dict[str, object]],
+    amount_total: int,
+    currency: str,
+    payment_status: str = "",
+    stripe_status: str = "",
+) -> None:
+    now_text = datetime_to_storage_text(utc_now())
+    connection.execute(
+        """
+        INSERT INTO stripe_payment_sessions (
+            stripe_session_id,
+            user_id,
+            checkout_signature,
+            cart_line_ids,
+            checkout_address,
+            checkout_items_snapshot,
+            amount_total,
+            currency,
+            payment_status,
+            stripe_status,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(stripe_session_id)
+        DO UPDATE SET
+            user_id = excluded.user_id,
+            checkout_signature = excluded.checkout_signature,
+            cart_line_ids = excluded.cart_line_ids,
+            checkout_address = excluded.checkout_address,
+            checkout_items_snapshot = excluded.checkout_items_snapshot,
+            amount_total = excluded.amount_total,
+            currency = excluded.currency,
+            payment_status = excluded.payment_status,
+            stripe_status = excluded.stripe_status,
+            updated_at = excluded.updated_at
+        """,
+        (
+            stripe_session_id,
+            user_id,
+            checkout_signature,
+            json.dumps(cart_line_ids, ensure_ascii=False),
+            json.dumps(cleaned_address, ensure_ascii=False),
+            json.dumps(checkout_items, ensure_ascii=False),
+            amount_total,
+            str(currency or STRIPE_CURRENCY).strip().lower() or STRIPE_CURRENCY,
+            str(payment_status or "").strip().lower(),
+            str(stripe_status or "").strip().lower(),
+            now_text,
+            now_text,
+        ),
+    )
+
+
+def fetch_stripe_payment_session(
+    connection: DatabaseConnection,
+    stripe_session_id: str,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+            id,
+            stripe_session_id,
+            user_id,
+            checkout_signature,
+            cart_line_ids,
+            checkout_address,
+            checkout_items_snapshot,
+            amount_total,
+            currency,
+            payment_status,
+            stripe_status,
+            order_id,
+            created_at,
+            updated_at,
+            confirmed_at
+        FROM stripe_payment_sessions
+        WHERE stripe_session_id = ?
+        LIMIT 1
+        """,
+        (stripe_session_id,),
+    ).fetchone()
+
+
+def update_stripe_payment_session_state(
+    connection: DatabaseConnection,
+    stripe_session_id: str,
+    *,
+    payment_status: str,
+    stripe_status: str,
+    order_id: int | None = None,
+) -> None:
+    now_text = datetime_to_storage_text(utc_now())
+    if order_id is None:
+        connection.execute(
+            """
+            UPDATE stripe_payment_sessions
+            SET
+                payment_status = ?,
+                stripe_status = ?,
+                updated_at = ?
+            WHERE stripe_session_id = ?
+            """,
+            (
+                str(payment_status or "").strip().lower(),
+                str(stripe_status or "").strip().lower(),
+                now_text,
+                stripe_session_id,
+            ),
+        )
+        return
+
+    connection.execute(
+        """
+        UPDATE stripe_payment_sessions
+        SET
+            payment_status = ?,
+            stripe_status = ?,
+            order_id = ?,
+            confirmed_at = ?,
+            updated_at = ?
+        WHERE stripe_session_id = ?
+        """,
+        (
+            str(payment_status or "").strip().lower(),
+            str(stripe_status or "").strip().lower(),
+            order_id,
+            now_text,
+            now_text,
+            stripe_session_id,
+        ),
+    )
+
+
+def fetch_cart_line_for_user(
+    connection: DatabaseConnection,
+    user_id: int,
+    cart_line_id: int,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+            id,
+            user_id,
+            product_id,
+            variant_key,
+            variant_label,
+            selected_size,
+            selected_color,
+            quantity,
+            created_at,
+            updated_at
+        FROM cart_lines
+        WHERE user_id = ? AND id = ?
+        LIMIT 1
+        """,
+        (user_id, cart_line_id),
+    ).fetchone()
+
+
+def resolve_requested_product_variant(
+    product: sqlite3.Row,
+    payload: dict[str, object],
+) -> tuple[list[str], dict[str, object] | None]:
+    variant_inventory = deserialize_product_variant_inventory(
+        product["variant_inventory"] if "variant_inventory" in product.keys() else [],
+        category=product["category"] if "category" in product.keys() else "",
+        size=product["size"] if "size" in product.keys() else "",
+        color=product["color"] if "color" in product.keys() else "",
+        stock_quantity=product["stock_quantity"] if "stock_quantity" in product.keys() else 0,
+    )
+    if not variant_inventory:
+        return ["Produkti nuk ka stok te disponueshem."], None
+
+    requested_variant_key = str(payload.get("variantKey", "")).strip()
+    requested_size = str(payload.get("size", "") or payload.get("selectedSize", "")).strip().upper()
+    requested_color = str(payload.get("color", "") or payload.get("selectedColor", "")).strip().lower()
+    requested_key = requested_variant_key or build_product_variant_key(
+        size=requested_size,
+        color=requested_color,
+    )
+
+    selected_variant = None
+    if requested_variant_key or requested_size or requested_color:
+        selected_variant = next(
+            (entry for entry in variant_inventory if str(entry.get("key", "")).strip() == requested_key),
+            None,
+        )
+        if not selected_variant:
+            return ["Varianti i zgjedhur nuk ekziston me."], None
+    elif len(variant_inventory) == 1:
+        selected_variant = variant_inventory[0]
+    else:
+        return ["Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne shporte."], None
+
+    if max(0, int(selected_variant.get("quantity") or 0)) <= 0:
+        return [f"Varianti `{selected_variant['label']}` nuk ka stok."], None
+
+    return [], selected_variant
+
+
+def summarize_variant_inventory_for_storage(
+    variant_inventory: list[dict[str, object]],
+) -> tuple[str, str, int, str]:
+    total_stock_quantity = sum(max(0, int(entry.get("quantity") or 0)) for entry in variant_inventory)
+    unique_sizes = sorted(
+        {
+            str(entry.get("size", "")).strip().upper()
+            for entry in variant_inventory
+            if str(entry.get("size", "")).strip()
+        }
+    )
+    unique_colors = sorted(
+        {
+            str(entry.get("color", "")).strip().lower()
+            for entry in variant_inventory
+            if str(entry.get("color", "")).strip()
+        }
+    )
+    normalized_size = unique_sizes[0] if len(unique_sizes) == 1 else ""
+    if len(unique_colors) == 1:
+        normalized_color = unique_colors[0]
+    elif len(unique_colors) > 1 and "shume-ngjyra" in PRODUCT_COLORS:
+        normalized_color = "shume-ngjyra"
+    else:
+        normalized_color = ""
+
+    return (
+        normalized_size,
+        normalized_color,
+        total_stock_quantity,
+        json.dumps(variant_inventory, ensure_ascii=False),
+    )
+
+
+def decrement_product_variant_stock(
+    connection: DatabaseConnection,
+    product_row: sqlite3.Row,
+    *,
+    variant_key: str,
+    quantity: int,
+) -> tuple[list[str], list[dict[str, object]]]:
+    variant_inventory = deserialize_product_variant_inventory(
+        product_row["variant_inventory"] if "variant_inventory" in product_row.keys() else [],
+        category=product_row["category"] if "category" in product_row.keys() else "",
+        size=product_row["size"] if "size" in product_row.keys() else "",
+        color=product_row["color"] if "color" in product_row.keys() else "",
+        stock_quantity=product_row["stock_quantity"] if "stock_quantity" in product_row.keys() else 0,
+    )
+    selected_variant = next(
+        (entry for entry in variant_inventory if str(entry.get("key", "")).strip() == variant_key),
+        None,
+    )
+    if not selected_variant:
+        return ["Varianti i produktit nuk u gjet gjate porosise."], variant_inventory
+
+    available_quantity = max(0, int(selected_variant.get("quantity") or 0))
+    if available_quantity < quantity:
+        return [
+            f"Produkti `{product_row['title']}` nuk ka stok te mjaftueshem per variantin `{selected_variant['label']}`."
+        ], variant_inventory
+
+    selected_variant["quantity"] = max(0, available_quantity - quantity)
+    normalized_size, normalized_color, total_stock_quantity, serialized_inventory = summarize_variant_inventory_for_storage(
+        variant_inventory
+    )
+    connection.execute(
+        """
+        UPDATE products
+        SET
+            variant_inventory = ?,
+            size = ?,
+            color = ?,
+            stock_quantity = ?,
+            show_stock_public = CASE
+                WHEN ? <= 0 THEN 0
+                ELSE show_stock_public
+            END
+        WHERE id = ?
+        """,
+        (
+            serialized_inventory,
+            normalized_size,
+            normalized_color,
+            total_stock_quantity,
+            total_stock_quantity,
+            product_row["id"],
+        ),
+    )
+    return [], variant_inventory
 
 
 def fetch_orders_for_user(user_id: int) -> list[sqlite3.Row]:
@@ -4542,6 +7844,15 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/business/public-products":
             self.handle_public_business_products(query_params)
             return
+        if path == "/api/chat/conversations":
+            self.handle_chat_conversations()
+            return
+        if path == "/api/chat/messages":
+            self.handle_chat_messages(query_params)
+            return
+        if path == "/api/chat/reply-suggestions":
+            self.handle_chat_reply_suggestions(query_params)
+            return
         if path == "/api/products/search":
             self.handle_products_search(query_params)
             return
@@ -4603,6 +7914,16 @@ class AppHandler(SimpleHTTPRequestHandler):
 
             if user["role"] != "business":
                 self.send_redirect("/")
+                return
+
+        if path == "/mesazhet":
+            user = self.get_current_user()
+            if not user:
+                self.send_redirect("/login")
+                return
+
+            if not can_use_chat(user):
+                self.send_redirect("/admin-products" if user["role"] == "admin" else "/")
                 return
 
         if path in {
@@ -4695,6 +8016,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/products/visual-search":
             self.handle_products_visual_search()
             return
+        if path == "/api/products/ai-draft":
+            self.handle_product_ai_draft()
+            return
         if path == "/api/products":
             self.handle_create_product()
             return
@@ -4713,8 +8037,23 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/products/restock":
             self.handle_restock_product()
             return
+        if path == "/api/products/reduce-stock":
+            self.handle_reduce_stock_product()
+            return
         if path == "/api/business/products/import":
             self.handle_business_products_import()
+            return
+        if path == "/api/chat/open":
+            self.handle_chat_open()
+            return
+        if path == "/api/chat/messages":
+            self.handle_chat_send_message()
+            return
+        if path == "/api/payments/stripe/checkout":
+            self.handle_create_stripe_checkout_session()
+            return
+        if path == "/api/payments/stripe/confirm":
+            self.handle_confirm_stripe_checkout_session()
             return
         if path == "/api/wishlist/toggle":
             self.handle_toggle_wishlist()
@@ -5095,10 +8434,15 @@ class AppHandler(SimpleHTTPRequestHandler):
         )
 
     def handle_products_list(self, query_params: dict[str, list[str]]) -> None:
+        scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
+            query_params
+        )
         category = query_params.get("category", [""])[0].strip().lower() or None
         category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
         filter_errors, product_type, size, color = parse_catalog_filters_query(query_params)
+        category = category or scoped_category
+        category_group = category_group or scoped_category_group
 
         if category and category not in PRODUCT_CATEGORIES:
             self.send_json(
@@ -5114,8 +8458,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if pagination_errors or filter_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors})
+        if pagination_errors or filter_errors or scope_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
             return
 
         total_count = count_products(
@@ -5137,11 +8481,28 @@ class AppHandler(SimpleHTTPRequestHandler):
                 offset=offset,
             )
         ]
+        facets = build_product_catalog_facets(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+        )
         self.send_json(
             200,
             {
                 "ok": True,
                 "products": products,
+                "facets": facets,
+                "activeFilters": {
+                    "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
+                    "audience": scoped_audience or derive_audience_from_category(category) or "",
+                    "category": category or "",
+                    "categoryGroup": category_group or "",
+                    "productType": product_type or "",
+                    "size": size or "",
+                    "color": color or "",
+                },
                 "limit": limit,
                 "offset": offset,
                 "total": total_count,
@@ -5152,13 +8513,16 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
         raw_search_text = query_params.get("q", [""])[0].strip()
+        scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
+            query_params
+        )
         explicit_category = query_params.get("category", [""])[0].strip().lower() or None
         explicit_category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
         filter_errors, explicit_product_type, explicit_size, explicit_color = parse_catalog_filters_query(query_params)
 
-        if pagination_errors or filter_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors})
+        if pagination_errors or filter_errors or scope_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
             return
 
         if explicit_category and explicit_category not in PRODUCT_CATEGORIES:
@@ -5176,8 +8540,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         interpreted_intent = interpret_search_query(raw_search_text) if raw_search_text else sanitize_search_intent({})
-        category = explicit_category or interpreted_intent.get("category")
-        category_group = explicit_category_group or interpreted_intent.get("categoryGroup")
+        category = explicit_category or scoped_category or interpreted_intent.get("category")
+        category_group = explicit_category_group or scoped_category_group or interpreted_intent.get("categoryGroup")
         product_type = explicit_product_type or interpreted_intent.get("productType")
         size = explicit_size or interpreted_intent.get("size")
         color = explicit_color or interpreted_intent.get("color")
@@ -5192,6 +8556,22 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "products": [],
                     "query": "",
                     "interpretedQuery": "",
+                    "facets": {
+                        "pageSections": [],
+                        "categories": [],
+                        "productTypes": [],
+                        "sizes": [],
+                        "colors": [],
+                    },
+                    "activeFilters": {
+                        "pageSection": scoped_page_section or "",
+                        "audience": scoped_audience or "",
+                        "category": "",
+                        "categoryGroup": scoped_category_group or "",
+                        "productType": "",
+                        "size": "",
+                        "color": "",
+                    },
                     "limit": limit,
                     "offset": offset,
                     "total": 0,
@@ -5223,6 +8603,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                 offset=offset,
             )
         ]
+        facets = build_product_catalog_facets(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name,
+            search_text=search_text,
+        )
         self.send_json(
             200,
             {
@@ -5237,6 +8626,16 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "size": size,
                     "color": color,
                     "businessName": business_name,
+                },
+                "facets": facets,
+                "activeFilters": {
+                    "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
+                    "audience": scoped_audience or derive_audience_from_category(category) or "",
+                    "category": category or "",
+                    "categoryGroup": category_group or "",
+                    "productType": product_type or "",
+                    "size": size or "",
+                    "color": color or "",
                 },
                 "limit": limit,
                 "offset": offset,
@@ -5303,8 +8702,25 @@ class AppHandler(SimpleHTTPRequestHandler):
                 continue
             form_values[field_name] = str(part.get_content() or "").strip()
 
+        query_params = {
+            key: [value]
+            for key, value in {
+                "pageSection": str(form_values.get("pageSection", "")).strip(),
+                "audience": str(form_values.get("audience", "")).strip(),
+                "productType": str(form_values.get("productType", "")).strip(),
+                "size": str(form_values.get("size", "")).strip(),
+                "color": str(form_values.get("color", "")).strip(),
+            }.items()
+            if value
+        }
+        scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
+            query_params
+        )
+        filter_errors, product_type, size, color = parse_catalog_filters_query(query_params)
         category = str(form_values.get("category", "")).strip().lower() or None
         category_group = str(form_values.get("categoryGroup", "")).strip().lower() or None
+        category = category or scoped_category
+        category_group = category_group or scoped_category_group
         raw_limit = str(form_values.get("limit", "")).strip()
         raw_offset = str(form_values.get("offset", "")).strip()
 
@@ -5320,6 +8736,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 400,
                 {"ok": False, "message": "Grupi i kategorise nuk eshte valid."},
             )
+            return
+
+        if scope_errors or filter_errors:
+            self.send_json(400, {"ok": False, "errors": scope_errors + filter_errors})
             return
 
         try:
@@ -5352,11 +8772,21 @@ class AppHandler(SimpleHTTPRequestHandler):
         candidates = fetch_visual_search_candidates(
             category,
             category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
         )
         matched_products = score_products_by_visual_similarity(query_fingerprint, candidates)
 
         total_count = len(matched_products)
         visible_products = matched_products[offset : offset + limit]
+        facets = build_product_catalog_facets(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+        )
 
         self.send_json(
             200,
@@ -5364,6 +8794,16 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "mode": "visual",
                 "products": [serialize_product(row) for row in visible_products],
+                "facets": facets,
+                "activeFilters": {
+                    "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
+                    "audience": scoped_audience or derive_audience_from_category(category) or "",
+                    "category": category or "",
+                    "categoryGroup": category_group or "",
+                    "productType": product_type or "",
+                    "size": size or "",
+                    "color": color or "",
+                },
                 "limit": limit,
                 "offset": offset,
                 "total": total_count,
@@ -5617,13 +9057,13 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        payload = build_product_import_template_csv().encode("utf-8-sig")
+        payload = build_product_import_template_xlsx()
         self.send_bytes(
             200,
             payload,
-            content_type="text/csv; charset=utf-8",
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
-                "Content-Disposition": 'attachment; filename="trego-products-template.csv"',
+                "Content-Disposition": 'attachment; filename="trego-products-template.xlsx"',
                 "Cache-Control": "no-store",
             },
         )
@@ -5671,15 +9111,21 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         import_part = file_parts[0]
         original_filename = str(import_part.get_filename() or "").strip()
-        if not original_filename.lower().endswith(".csv"):
+        if not (
+            original_filename.lower().endswith(".csv")
+            or original_filename.lower().endswith(".xlsx")
+        ):
             self.send_json(
                 400,
-                {"ok": False, "message": "Per momentin supportohet vetem formati CSV qe hapet ne Excel."},
+                {"ok": False, "message": "Per momentin supportohen vetem formatet CSV dhe XLSX te Excel-it."},
             )
             return
 
         file_bytes = import_part.get_payload(decode=True) or b""
-        errors, parsed_rows = parse_product_import_csv(file_bytes)
+        if original_filename.lower().endswith(".xlsx"):
+            errors, parsed_rows = parse_product_import_xlsx(file_bytes)
+        else:
+            errors, parsed_rows = parse_product_import_csv(file_bytes)
         if errors:
             self.send_json(400, {"ok": False, "errors": errors})
             return
@@ -5788,6 +9234,265 @@ class AppHandler(SimpleHTTPRequestHandler):
                         is_followed=action == "followed",
                     )
                     if updated_business
+                    else None
+                ),
+            },
+        )
+
+    def handle_chat_conversations(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per t'i hapur mesazhet."},
+            )
+            return
+
+        if not can_use_chat(user):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem klientet dhe bizneset kane inbox mesazhesh."},
+            )
+            return
+
+        conversations = [
+            serialize_chat_conversation(row, viewer_user_id=int(user["id"]))
+            for row in fetch_chat_conversations_for_user(int(user["id"]))
+        ]
+        unread_count = sum(max(0, int(item.get("unreadCount", 0) or 0)) for item in conversations)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "conversations": conversations,
+                "total": len(conversations),
+                "unreadCount": unread_count,
+            },
+        )
+
+    def handle_chat_messages(
+        self,
+        query_params: dict[str, list[str]],
+    ) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per ta hapur biseden."},
+            )
+            return
+
+        if not can_use_chat(user):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem klientet dhe bizneset kane qasje ne mesazhe."},
+            )
+            return
+
+        errors, conversation_id = parse_conversation_id_query(query_params)
+        if errors or conversation_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        mark_chat_messages_as_read(conversation_id, int(user["id"]))
+        updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        message_rows = fetch_chat_messages_for_conversation(conversation_id)
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "conversation": (
+                    serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
+                    if updated_conversation_row
+                    else None
+                ),
+                "messages": [
+                    serialize_chat_message(row, viewer_user_id=int(user["id"]))
+                    for row in message_rows
+                ],
+            },
+        )
+
+    def handle_chat_reply_suggestions(
+        self,
+        query_params: dict[str, list[str]],
+    ) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per t'i marre sugjerimet e bisedes."},
+            )
+            return
+
+        if not can_use_chat(user):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem klientet dhe bizneset kane sugjerime te bisedes."},
+            )
+            return
+
+        errors, conversation_id = parse_conversation_id_query(query_params)
+        if errors or conversation_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        message_rows = fetch_chat_messages_for_conversation(conversation_id)
+        viewer_role = str(user["role"] or "").strip()
+        suggestions = request_openai_chat_reply_suggestions(
+            viewer_role=viewer_role,
+            viewer_user_id=int(user["id"]),
+            conversation=conversation_row,
+            messages=message_rows,
+        )
+        if not suggestions:
+            suggestions = heuristic_chat_reply_suggestions(
+                viewer_role=viewer_role,
+                viewer_user_id=int(user["id"]),
+                conversation=conversation_row,
+                messages=message_rows,
+            )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "conversationId": conversation_id,
+                "suggestions": suggestions[:3],
+                "message": "Sugjerimet e bisedes u pergatiten.",
+            },
+        )
+
+    def handle_chat_open(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per t'i derguar mesazh biznesit."},
+            )
+            return
+
+        if str(user["role"] or "").strip() != "client":
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem klientet mund te nisin bisede te re me biznesin."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors, business_id = parse_business_id(payload)
+        if errors or business_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        business_profile = fetch_public_business_profile_by_id(business_id)
+        if not business_profile:
+            self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
+            return
+
+        if int(business_profile["user_id"]) == int(user["id"]):
+            self.send_json(
+                400,
+                {"ok": False, "message": "Nuk mund t'i dergosh mesazh biznesit tend."},
+            )
+            return
+
+        conversation_id = ensure_chat_conversation_for_client(
+            int(user["id"]),
+            int(business_profile["user_id"]),
+            int(business_profile["id"]),
+        )
+        conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Biseda u hap me sukses.",
+                "conversation": (
+                    serialize_chat_conversation(conversation_row, viewer_user_id=int(user["id"]))
+                    if conversation_row
+                    else None
+                ),
+                "redirectTo": f"/mesazhet?conversationId={conversation_id}",
+            },
+        )
+
+    def handle_chat_send_message(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per te derguar mesazh."},
+            )
+            return
+
+        if not can_use_chat(user):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem klientet dhe bizneset mund te dergojne mesazhe."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        conversation_errors, conversation_id = parse_conversation_id(payload)
+        message_errors, message_body = parse_chat_message_body(payload)
+        if conversation_errors or message_errors or conversation_id is None:
+            self.send_json(400, {"ok": False, "errors": conversation_errors + message_errors})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        if int(conversation_row["client_user_id"]) == int(user["id"]):
+            recipient_user_id = int(conversation_row["business_user_id"])
+        else:
+            recipient_user_id = int(conversation_row["client_user_id"])
+
+        message_id = insert_chat_message(
+            conversation_id,
+            int(user["id"]),
+            recipient_user_id,
+            message_body,
+        )
+        message_row = fetch_chat_message_by_id(message_id)
+        updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+
+        self.send_json(
+            201,
+            {
+                "ok": True,
+                "message": (
+                    serialize_chat_message(message_row, viewer_user_id=int(user["id"]))
+                    if message_row
+                    else None
+                ),
+                "conversation": (
+                    serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
+                    if updated_conversation_row
                     else None
                 ),
             },
@@ -6424,6 +10129,148 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def handle_product_ai_draft(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te perdorur AI draft."})
+            return
+
+        if not can_create_products(user):
+            self.send_json(
+                403,
+                {
+                    "ok": False,
+                    "message": "Vetem admin ose biznes mund ta perdorin AI draft per produkte.",
+                },
+            )
+            return
+
+        if user["role"] == "business" and not fetch_business_profile_for_user(user["id"]):
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": "Regjistroje fillimisht biznesin para se te perdoresh AI draft.",
+                },
+            )
+            return
+
+        try:
+            message = self.read_multipart_message()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        form_values: dict[str, str] = {}
+        uploaded_images: list[dict[str, object]] = []
+
+        for part in message.iter_parts():
+            if part.get_content_disposition() != "form-data":
+                continue
+
+            field_name = part.get_param("name", header="content-disposition")
+            if not field_name:
+                continue
+
+            if part.get_filename():
+                if field_name != "images":
+                    continue
+
+                file_bytes = part.get_payload(decode=True) or b""
+                if not file_bytes:
+                    continue
+
+                if len(file_bytes) > MAX_UPLOAD_FILE_SIZE:
+                    self.send_json(
+                        400,
+                        {"ok": False, "message": "Secila foto per AI draft duhet te jete nen 8MB."},
+                    )
+                    return
+
+                content_type = str(part.get_content_type() or "").strip().lower() or "image/jpeg"
+                if not content_type.startswith("image/"):
+                    self.send_json(
+                        400,
+                        {"ok": False, "message": "Per AI draft lejohen vetem foto produktesh."},
+                    )
+                    return
+
+                uploaded_images.append(
+                    {
+                        "file_bytes": file_bytes,
+                        "content_type": content_type,
+                    }
+                )
+                continue
+
+            form_values[field_name] = str(part.get_content() or "").strip()
+
+        title = str(form_values.get("title", "")).strip()
+        description = str(form_values.get("description", "")).strip()
+        page_section = str(form_values.get("pageSection", "")).strip().lower()
+        audience = str(form_values.get("audience", "")).strip().lower()
+        product_type = str(form_values.get("productType", "")).strip().lower()
+        fallback_image_path = str(form_values.get("imagePath", "")).strip()
+        image_gallery = normalize_image_gallery_value(
+            form_values.get("imageGallery", ""),
+            fallback_image_path=fallback_image_path,
+        )
+
+        image_urls = build_openai_input_image_urls_from_upload_payloads(uploaded_images)
+        image_search_text = ""
+        image_color_terms = ""
+
+        if not image_urls and image_gallery:
+            image_urls = build_openai_input_image_urls(
+                image_gallery,
+                fallback_image_path=fallback_image_path,
+            )
+            image_metadata = generate_product_image_search_metadata(
+                title=title,
+                description=description,
+                category=build_category_from_section_selection(page_section, audience),
+                product_type=product_type,
+                color="",
+                image_gallery=image_gallery,
+                fallback_image_path=fallback_image_path,
+            )
+            image_search_text = str(image_metadata.get("searchText") or "").strip()
+            image_color_terms = str(image_metadata.get("colorTerms") or "").strip()
+
+        raw_draft = request_openai_product_draft_suggestion(
+            title=title,
+            description=description,
+            page_section=page_section,
+            audience=audience,
+            product_type=product_type,
+            image_urls=image_urls,
+            image_search_text=image_search_text,
+            image_color_terms=image_color_terms,
+        )
+        draft = sanitize_ai_product_draft_suggestion(
+            raw_draft,
+            current_title=title,
+            current_description=description,
+            current_page_section=page_section,
+            current_audience=audience,
+            current_product_type=product_type,
+            image_search_text=image_search_text,
+            image_color_terms=image_color_terms,
+        )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "draft": draft,
+                "message": (
+                    "AI pergatiti nje draft te produktit."
+                    if raw_draft
+                    else "Drafti u pergatit me sugjerime automatike."
+                ),
+            },
+        )
+
     def handle_create_product(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -6564,6 +10411,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """
                 UPDATE products
                 SET
+                    article_number = ?,
                     title = ?,
                     description = ?,
                     price = ?,
@@ -6576,10 +10424,14 @@ class AppHandler(SimpleHTTPRequestHandler):
                     product_type = ?,
                     size = ?,
                     color = ?,
+                    variant_inventory = ?,
+                    package_amount_value = ?,
+                    package_amount_unit = ?,
                     stock_quantity = ?
                 WHERE id = ?
                 """,
                 (
+                    normalized["articleNumber"],
                     normalized["title"],
                     normalized["description"],
                     normalized["price"],
@@ -6592,6 +10444,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["productType"],
                     normalized["size"],
                     normalized["color"],
+                    json.dumps(normalized["variantInventory"], ensure_ascii=False),
+                    normalized["packageAmountValue"],
+                    normalized["packageAmountUnit"],
                     normalized["stockQuantity"],
                     product_id,
                 ),
@@ -6647,6 +10502,342 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
         self.send_json(200, {"ok": True, "items": items})
+
+    def handle_create_stripe_checkout_session(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh para se te vazhdosh me pagesen online."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
+        address_errors, cleaned_address = validate_address_payload(payload)
+        combined_errors = cart_line_ids_errors + address_errors
+        if combined_errors:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        try:
+            with get_db_connection() as connection:
+                checkout_items = load_checkout_items_for_order_or_raise(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
+                )
+        except CheckoutProcessError as error:
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "errors": error.errors,
+                    "message": error.message or "Checkout-i nuk u validua.",
+                },
+            )
+            return
+
+        checkout_signature = build_checkout_signature(
+            int(user["id"]),
+            cleaned_address,
+            checkout_items,
+        )
+        line_item_fields, fallback_total_amount = build_stripe_checkout_line_items(checkout_items)
+        form_fields = list(line_item_fields)
+        form_fields.extend(
+            [
+                ("mode", "payment"),
+                ("payment_method_types[0]", "card"),
+                (
+                    "success_url",
+                    self.build_public_url("/menyra-e-pageses?stripeStatus=success&session_id={CHECKOUT_SESSION_ID}"),
+                ),
+                (
+                    "cancel_url",
+                    self.build_public_url("/menyra-e-pageses?stripeStatus=cancelled"),
+                ),
+                ("client_reference_id", str(user["id"])),
+                ("customer_email", str(user["email"] or "").strip()),
+                ("locale", "auto"),
+                ("metadata[trego_user_id]", str(user["id"])),
+                ("metadata[trego_checkout_signature]", checkout_signature),
+            ]
+        )
+
+        ok, stripe_payload = request_stripe_api(
+            "/checkout/sessions",
+            method="POST",
+            form_fields=form_fields,
+        )
+        if not ok or not stripe_payload.get("id") or not stripe_payload.get("url"):
+            self.send_json(
+                502,
+                {
+                    "ok": False,
+                    "message": resolve_stripe_error_message(
+                        stripe_payload,
+                        "Stripe test checkout nuk u hap.",
+                    ),
+                },
+            )
+            return
+
+        with get_db_connection() as connection:
+            persist_stripe_payment_session(
+                connection,
+                stripe_session_id=str(stripe_payload.get("id") or "").strip(),
+                user_id=int(user["id"]),
+                checkout_signature=checkout_signature,
+                cart_line_ids=cart_line_ids,
+                cleaned_address=cleaned_address,
+                checkout_items=checkout_items,
+                amount_total=int(stripe_payload.get("amount_total") or fallback_total_amount),
+                currency=str(stripe_payload.get("currency") or STRIPE_CURRENCY).strip().lower(),
+                payment_status=str(stripe_payload.get("payment_status") or "").strip().lower(),
+                stripe_status=str(stripe_payload.get("status") or "").strip().lower(),
+            )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Po hapet Stripe test checkout.",
+                "sessionId": str(stripe_payload.get("id") or "").strip(),
+                "checkoutUrl": str(stripe_payload.get("url") or "").strip(),
+            },
+        )
+
+    def handle_confirm_stripe_checkout_session(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh para se te konfirmosh pagesen."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        session_errors, stripe_session_id = parse_stripe_session_id(payload)
+        if session_errors or not stripe_session_id:
+            self.send_json(400, {"ok": False, "errors": session_errors})
+            return
+
+        with get_db_connection() as connection:
+            stored_session = fetch_stripe_payment_session(connection, stripe_session_id)
+
+        if not stored_session:
+            self.send_json(
+                404,
+                {"ok": False, "message": "Sesioni i pageses nuk u gjet ne sistem."},
+            )
+            return
+
+        if int(stored_session["user_id"] or 0) != int(user["id"]):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Ky sesion i pageses nuk i perket llogarise tende."},
+            )
+            return
+
+        ok, stripe_payload = request_stripe_api(
+            f"/checkout/sessions/{quote(stripe_session_id)}",
+            method="GET",
+        )
+        if not ok:
+            self.send_json(
+                502,
+                {
+                    "ok": False,
+                    "message": resolve_stripe_error_message(
+                        stripe_payload,
+                        "Verifikimi i pageses me Stripe nuk funksionoi.",
+                    ),
+                },
+            )
+            return
+
+        payment_status = str(stripe_payload.get("payment_status") or "").strip().lower()
+        stripe_status = str(stripe_payload.get("status") or "").strip().lower()
+        stripe_metadata = stripe_payload.get("metadata") if isinstance(stripe_payload.get("metadata"), dict) else {}
+        metadata_user_id = str(stripe_metadata.get("trego_user_id") or "").strip()
+        metadata_signature = str(stripe_metadata.get("trego_checkout_signature") or "").strip()
+        expected_signature = str(stored_session["checkout_signature"] or "").strip()
+        stored_amount_total = int(stored_session["amount_total"] or 0)
+        stripe_amount_total = int(stripe_payload.get("amount_total") or 0)
+        stripe_currency = str(stripe_payload.get("currency") or STRIPE_CURRENCY).strip().lower() or STRIPE_CURRENCY
+
+        with get_db_connection() as connection:
+            update_stripe_payment_session_state(
+                connection,
+                stripe_session_id,
+                payment_status=payment_status,
+                stripe_status=stripe_status,
+            )
+
+        if metadata_user_id != str(user["id"]) or metadata_signature != expected_signature:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Ky sesion Stripe nuk perputhet me checkout-in tend."},
+            )
+            return
+
+        if stored_amount_total > 0 and stripe_amount_total > 0 and stored_amount_total != stripe_amount_total:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Shuma e pageses nuk perputhet me checkout-in e ruajtur."},
+            )
+            return
+
+        if payment_status != "paid" or stripe_status != "complete":
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": "Pagesa nuk eshte konfirmuar ende nga Stripe.",
+                    "paymentStatus": payment_status,
+                    "stripeStatus": stripe_status,
+                },
+            )
+            return
+
+        existing_order_id = int(stored_session["order_id"] or 0)
+        if existing_order_id > 0:
+            with get_db_connection() as connection:
+                saved_order = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + ORDER_SELECT_COLUMNS
+                    + """
+                    FROM orders
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (existing_order_id,),
+                ).fetchone()
+                saved_items = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + ORDER_ITEM_SELECT_COLUMNS
+                    + """
+                    FROM order_items
+                    WHERE order_id = ?
+                    ORDER BY id DESC
+                    """,
+                    (existing_order_id,),
+                ).fetchall()
+
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "message": "Pagesa ishte konfirmuar tashme dhe porosia ekziston.",
+                    "order": (
+                        serialize_order(
+                            saved_order,
+                            [serialize_order_item(item) for item in saved_items],
+                        )
+                        if saved_order
+                        else None
+                    ),
+                    "redirectTo": "/porosite",
+                },
+            )
+            return
+
+        try:
+            checkout_address = json.loads(str(stored_session["checkout_address"] or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            checkout_address = {}
+        try:
+            parsed_cart_line_ids = json.loads(str(stored_session["cart_line_ids"] or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed_cart_line_ids = []
+        cart_line_ids = [
+            int(cart_line_id)
+            for cart_line_id in parsed_cart_line_ids
+            if str(cart_line_id).strip().isdigit() and int(cart_line_id) > 0
+        ]
+        checkout_items_snapshot = deserialize_checkout_items_snapshot(stored_session["checkout_items_snapshot"])
+
+        if not checkout_items_snapshot:
+            self.send_json(
+                400,
+                {"ok": False, "message": "Sesionit te pageses i mungon lista e produkteve."},
+            )
+            return
+
+        try:
+            with get_db_connection() as connection:
+                order_id, saved_order, saved_items = create_order_from_checkout_items(
+                    connection,
+                    user=user,
+                    payment_method="card-online",
+                    cleaned_address={
+                        "address_line": str(checkout_address.get("address_line") or "").strip(),
+                        "city": str(checkout_address.get("city") or "").strip(),
+                        "country": str(checkout_address.get("country") or "").strip(),
+                        "zip_code": str(checkout_address.get("zip_code") or "").strip(),
+                        "phone_number": str(checkout_address.get("phone_number") or "").strip(),
+                    },
+                    checkout_items=checkout_items_snapshot,
+                    cart_line_ids=cart_line_ids,
+                )
+                update_stripe_payment_session_state(
+                    connection,
+                    stripe_session_id,
+                    payment_status=payment_status,
+                    stripe_status=stripe_status,
+                    order_id=order_id,
+                )
+        except CheckoutProcessError as error:
+            self.send_json(
+                409,
+                {
+                    "ok": False,
+                    "errors": error.errors,
+                    "message": error.message or "Porosia nuk u krijua pas pageses.",
+                },
+            )
+            return
+
+        notification_messages, notification_warnings = build_business_notification_messages(
+            fetch_order_notification_rows(order_id)
+        )
+        notification_warnings.extend(send_email_notifications(notification_messages))
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Pagesa u konfirmua me sukses dhe porosia u krijua.",
+                "order": (
+                    serialize_order(
+                        saved_order,
+                        [serialize_order_item(item) for item in saved_items],
+                    )
+                    if saved_order
+                    else None
+                ),
+                "notificationWarnings": notification_warnings,
+                "paymentStatus": payment_status,
+                "stripeStatus": stripe_status,
+                "currency": stripe_currency,
+                "redirectTo": "/porosite",
+            },
+        )
 
     def handle_orders_list(self) -> None:
         user = self.get_current_user()
@@ -6781,18 +10972,64 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
+        variant_errors, selected_variant = resolve_requested_product_variant(product, payload)
+        if variant_errors or not selected_variant:
+            self.send_json(400, {"ok": False, "errors": variant_errors})
+            return
+
         updated_at_value = datetime_to_storage_text(utc_now())
         with get_db_connection() as connection:
+            existing_row = connection.execute(
+                """
+                SELECT quantity
+                FROM cart_lines
+                WHERE user_id = ? AND product_id = ? AND variant_key = ?
+                LIMIT 1
+                """,
+                (user["id"], product_id, selected_variant["key"]),
+            ).fetchone()
+            existing_quantity = max(0, int(existing_row["quantity"] or 0)) if existing_row else 0
+            available_quantity = max(0, int(selected_variant.get("quantity") or 0))
+            if existing_quantity + 1 > available_quantity:
+                self.send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "message": f"Varianti `{selected_variant['label']}` nuk ka me shume stok te lire.",
+                    },
+                )
+                return
+
             connection.execute(
                 """
-                INSERT INTO cart_items (user_id, product_id, quantity)
-                VALUES (?, ?, 1)
-                ON CONFLICT(user_id, product_id)
+                INSERT INTO cart_lines (
+                    user_id,
+                    product_id,
+                    variant_key,
+                    variant_label,
+                    selected_size,
+                    selected_color,
+                    quantity,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(user_id, product_id, variant_key)
                 DO UPDATE SET
-                    quantity = cart_items.quantity + EXCLUDED.quantity,
+                    quantity = cart_lines.quantity + EXCLUDED.quantity,
                     updated_at = ?
                 """,
-                (user["id"], product_id, updated_at_value),
+                (
+                    user["id"],
+                    product_id,
+                    selected_variant["key"],
+                    selected_variant["label"],
+                    selected_variant["size"],
+                    selected_variant["color"],
+                    updated_at_value,
+                    updated_at_value,
+                    updated_at_value,
+                ),
             )
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
@@ -6823,18 +11060,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "message": str(error)})
             return
 
-        errors, product_id = parse_product_id(payload)
-        if errors or product_id is None:
+        errors, cart_line_id = parse_cart_line_id(payload)
+        if errors or cart_line_id is None:
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
         with get_db_connection() as connection:
             connection.execute(
                 """
-                DELETE FROM cart_items
-                WHERE user_id = ? AND product_id = ?
+                DELETE FROM cart_lines
+                WHERE user_id = ? AND id = ?
                 """,
-                (user["id"], product_id),
+                (user["id"], cart_line_id),
             )
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
@@ -6865,10 +11102,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "message": str(error)})
             return
 
-        errors, product_id = parse_product_id(payload)
+        errors, cart_line_id = parse_cart_line_id(payload)
         quantity_errors, quantity = parse_positive_quantity(payload, "quantity")
         combined_errors = errors + quantity_errors
-        if combined_errors or product_id is None or quantity is None:
+        if combined_errors or cart_line_id is None or quantity is None:
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
 
@@ -6876,11 +11113,21 @@ class AppHandler(SimpleHTTPRequestHandler):
         with get_db_connection() as connection:
             existing_row = connection.execute(
                 """
-                SELECT 1
-                FROM cart_items
-                WHERE user_id = ? AND product_id = ?
+                SELECT
+                    cl.id,
+                    cl.product_id,
+                    cl.variant_key,
+                    p.variant_inventory,
+                    p.category,
+                    p.size,
+                    p.color,
+                    p.stock_quantity
+                FROM cart_lines cl
+                INNER JOIN products p ON p.id = cl.product_id
+                WHERE cl.user_id = ? AND cl.id = ?
+                LIMIT 1
                 """,
-                (user["id"], product_id),
+                (user["id"], cart_line_id),
             ).fetchone()
 
             if not existing_row:
@@ -6890,13 +11137,39 @@ class AppHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
+            variant_inventory = deserialize_product_variant_inventory(
+                existing_row["variant_inventory"],
+                category=existing_row["category"],
+                size=existing_row["size"],
+                color=existing_row["color"],
+                stock_quantity=existing_row["stock_quantity"],
+            )
+            selected_variant = next(
+                (
+                    entry
+                    for entry in variant_inventory
+                    if str(entry.get("key", "")).strip() == str(existing_row["variant_key"] or "").strip()
+                ),
+                None,
+            )
+            available_quantity = max(0, int(selected_variant.get("quantity") or 0)) if selected_variant else 0
+            if quantity > available_quantity:
+                self.send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "message": "Nuk ka stok te mjaftueshem per sasine e zgjedhur.",
+                    },
+                )
+                return
+
             connection.execute(
                 """
-                UPDATE cart_items
+                UPDATE cart_lines
                 SET quantity = ?, updated_at = ?
-                WHERE user_id = ? AND product_id = ?
+                WHERE user_id = ? AND id = ?
                 """,
-                (quantity, updated_at_value, user["id"], product_id),
+                (quantity, updated_at_value, user["id"], cart_line_id),
             )
 
         items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
@@ -6924,170 +11197,50 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "message": str(error)})
             return
 
-        product_ids_errors, product_ids = parse_product_ids(payload)
+        cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
         payment_method_errors, payment_method = parse_payment_method(payload)
         address_errors, cleaned_address = validate_address_payload(payload)
-        combined_errors = product_ids_errors + payment_method_errors + address_errors
+        combined_errors = cart_line_ids_errors + payment_method_errors + address_errors
 
         if combined_errors or payment_method is None:
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
 
-        with get_db_connection() as connection:
-            checkout_items = fetch_cart_items_for_checkout(connection, user["id"], product_ids)
-            if not checkout_items:
-                self.send_json(
-                    404,
-                    {"ok": False, "message": "Produktet e zgjedhura nuk u gjeten ne shporte."},
-                )
-                return
-
-            available_product_ids = {int(item["id"]) for item in checkout_items}
-            missing_product_ids = [product_id for product_id in product_ids if product_id not in available_product_ids]
-            if missing_product_ids:
-                self.send_json(
-                    400,
-                    {
-                        "ok": False,
-                        "message": "Disa produkte nuk jane me te disponueshme per kete porosi.",
-                    },
-                )
-                return
-
-            stock_errors: list[str] = []
-            for item in checkout_items:
-                stock_quantity = max(0, int(item["stock_quantity"] or 0))
-                quantity = max(1, int(item["quantity"] or 1))
-                if stock_quantity < quantity:
-                    stock_errors.append(
-                        f"Produkti `{item['title']}` nuk ka stok te mjaftueshem per kete porosi."
-                    )
-
-            if stock_errors:
-                self.send_json(400, {"ok": False, "errors": stock_errors})
-                return
-
-            customer_full_name = (str(user["full_name"] or "").strip() or build_full_name(
-                str(user["first_name"] or ""),
-                str(user["last_name"] or ""),
-            ) or str(user["email"] or "").strip())
-
-            order_id = execute_insert_and_get_id(
-                connection,
-                """
-                INSERT INTO orders (
-                    user_id,
-                    customer_full_name,
-                    customer_email,
-                    payment_method,
-                    status,
-                    address_line,
-                    city,
-                    country,
-                    zip_code,
-                    phone_number
-                )
-                VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
-                """,
-                (
-                    user["id"],
-                    customer_full_name,
-                    str(user["email"] or "").strip(),
-                    payment_method,
-                    cleaned_address["address_line"],
-                    cleaned_address["city"],
-                    cleaned_address["country"],
-                    cleaned_address["zip_code"],
-                    cleaned_address["phone_number"],
-                ),
+        if payment_method == "card-online":
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": "Per pagesen online vazhdo me Stripe test checkout.",
+                },
             )
+            return
 
-            for item in checkout_items:
-                quantity = max(1, int(item["quantity"] or 1))
-                business_user_id = item["created_by_user_id"]
-                connection.execute(
-                    """
-                    INSERT INTO order_items (
-                        order_id,
-                        product_id,
-                        business_user_id,
-                        business_name_snapshot,
-                        product_title,
-                        product_description,
-                        product_image_path,
-                        product_category,
-                        product_type,
-                        product_size,
-                        product_color,
-                        unit_price,
-                        quantity
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        order_id,
-                        item["id"],
-                        business_user_id,
-                        str(item["business_name"] or "").strip(),
-                        str(item["title"] or "").strip(),
-                        str(item["description"] or "").strip(),
-                        normalize_image_path(item["image_path"]),
-                        str(item["category"] or "").strip(),
-                        str(item["product_type"] or "").strip(),
-                        str(item["size"] or "").strip(),
-                        str(item["color"] or "").strip(),
-                        round(float(item["price"] or 0), 2),
-                        quantity,
-                    ),
+        try:
+            with get_db_connection() as connection:
+                checkout_items = load_checkout_items_for_order_or_raise(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
                 )
-                connection.execute(
-                    """
-                    UPDATE products
-                    SET stock_quantity = CASE
-                        WHEN stock_quantity - ? < 0 THEN 0
-                        ELSE stock_quantity - ?
-                    END
-                    WHERE id = ?
-                    """,
-                    (quantity, quantity, item["id"]),
+                order_id, saved_order, saved_items = create_order_from_checkout_items(
+                    connection,
+                    user=user,
+                    payment_method=payment_method,
+                    cleaned_address=cleaned_address,
+                    checkout_items=checkout_items,
+                    cart_line_ids=cart_line_ids,
                 )
-
-            placeholders = ", ".join("?" for _ in product_ids)
-            connection.execute(
-                """
-                DELETE FROM cart_items
-                WHERE user_id = ?
-                  AND product_id IN ("""
-                + placeholders
-                + """)
-                """,
-                [user["id"], *product_ids],
+        except CheckoutProcessError as error:
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "errors": error.errors,
+                    "message": error.message or "Porosia nuk u konfirmua.",
+                },
             )
-
-            saved_order = connection.execute(
-                """
-                SELECT
-                """
-                + ORDER_SELECT_COLUMNS
-                + """
-                FROM orders
-                WHERE id = ?
-                LIMIT 1
-                """,
-                (order_id,),
-            ).fetchone()
-            saved_items = connection.execute(
-                """
-                SELECT
-                """
-                + ORDER_ITEM_SELECT_COLUMNS
-                + """
-                FROM order_items
-                WHERE order_id = ?
-                ORDER BY id DESC
-                """,
-                (order_id,),
-            ).fetchall()
+            return
 
         notification_messages, notification_warnings = build_business_notification_messages(
             fetch_order_notification_rows(order_id)
@@ -7334,14 +11487,57 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        variant_inventory = deserialize_product_variant_inventory(
+            product["variant_inventory"] if "variant_inventory" in product.keys() else [],
+            category=product["category"],
+            size=product["size"],
+            color=product["color"],
+            stock_quantity=product["stock_quantity"],
+        )
+        if len(variant_inventory) > 1 or any(
+            str(entry.get("size", "")).strip() or str(entry.get("color", "")).strip()
+            for entry in variant_inventory
+        ):
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": "Per produktet me variante, perditeso stokun nga forma e editimit te produktit.",
+                },
+            )
+            return
+
         with get_db_connection() as connection:
+            next_inventory = variant_inventory or [
+                {
+                    "key": "default",
+                    "size": "",
+                    "color": "",
+                    "quantity": 0,
+                    "label": "Standard",
+                }
+            ]
+            next_inventory[0]["quantity"] = max(0, int(next_inventory[0].get("quantity") or 0)) + quantity
+            normalized_size, normalized_color, total_stock_quantity, serialized_inventory = summarize_variant_inventory_for_storage(
+                next_inventory
+            )
             connection.execute(
                 """
                 UPDATE products
-                SET stock_quantity = stock_quantity + ?
+                SET
+                    variant_inventory = ?,
+                    size = ?,
+                    color = ?,
+                    stock_quantity = ?
                 WHERE id = ?
                 """,
-                (quantity, product_id),
+                (
+                    serialized_inventory,
+                    normalized_size,
+                    normalized_color,
+                    total_stock_quantity,
+                    product_id,
+                ),
             )
 
         updated_product = fetch_product_by_id(product_id)
@@ -7350,6 +11546,124 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "message": f"U shtuan {quantity} cope ne stok.",
+                "product": serialize_product(updated_product),
+            },
+        )
+
+    def handle_reduce_stock_product(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per ta menaxhuar produktin."})
+            return
+
+        if user["role"] not in {"admin", "business"}:
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem admin ose biznes mund te heqe stok."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors, product_id = parse_product_id(payload)
+        quantity_errors, quantity = parse_positive_quantity(payload, "quantity")
+        combined_errors = errors + quantity_errors
+
+        if combined_errors or product_id is None or quantity is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        product = fetch_product_by_id(product_id)
+        if not product:
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        if not can_manage_product(user, product):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Nuk ke akses ta menaxhosh kete produkt."},
+            )
+            return
+
+        variant_inventory = deserialize_product_variant_inventory(
+            product["variant_inventory"] if "variant_inventory" in product.keys() else [],
+            category=product["category"],
+            size=product["size"],
+            color=product["color"],
+            stock_quantity=product["stock_quantity"],
+        )
+        if len(variant_inventory) > 1 or any(
+            str(entry.get("size", "")).strip() or str(entry.get("color", "")).strip()
+            for entry in variant_inventory
+        ):
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": "Per produktet me variante, perditeso stokun nga forma e editimit te produktit.",
+                },
+            )
+            return
+
+        current_stock = max(0, int(product["stock_quantity"] or 0))
+        if quantity > current_stock:
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "message": f"Nuk mund te largosh {quantity} cope. Stoku aktual eshte {current_stock}.",
+                },
+            )
+            return
+
+        with get_db_connection() as connection:
+            next_inventory = variant_inventory or [
+                {
+                    "key": "default",
+                    "size": "",
+                    "color": "",
+                    "quantity": 0,
+                    "label": "Standard",
+                }
+            ]
+            next_inventory[0]["quantity"] = max(0, int(next_inventory[0].get("quantity") or 0)) - quantity
+            normalized_size, normalized_color, total_stock_quantity, serialized_inventory = summarize_variant_inventory_for_storage(
+                next_inventory
+            )
+            connection.execute(
+                """
+                UPDATE products
+                SET
+                    variant_inventory = ?,
+                    size = ?,
+                    color = ?,
+                    stock_quantity = ?,
+                    show_stock_public = CASE
+                        WHEN ? > 0 THEN show_stock_public
+                        ELSE 0
+                    END
+                WHERE id = ?
+                """,
+                (
+                    serialized_inventory,
+                    normalized_size,
+                    normalized_color,
+                    total_stock_quantity,
+                    total_stock_quantity,
+                    product_id,
+                ),
+            )
+
+        updated_product = fetch_product_by_id(product_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": f"U larguan {quantity} cope nga stoku.",
                 "product": serialize_product(updated_product),
             },
         )
@@ -8184,6 +12498,24 @@ class AppHandler(SimpleHTTPRequestHandler):
         self.send_header("Location", location)
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def get_public_app_origin(self) -> str:
+        if STRIPE_PUBLIC_APP_URL:
+            return STRIPE_PUBLIC_APP_URL
+
+        forwarded_proto = str(self.headers.get("X-Forwarded-Proto", "")).split(",")[0].strip()
+        forwarded_host = str(self.headers.get("X-Forwarded-Host", "")).split(",")[0].strip()
+        host = forwarded_host or str(self.headers.get("Host", "")).strip() or "127.0.0.1:8000"
+        protocol = forwarded_proto or ("https" if IS_VERCEL else "http")
+        return f"{protocol}://{host}"
+
+    def build_public_url(self, path: str) -> str:
+        normalized_path = str(path or "/").strip() or "/"
+        if normalized_path.startswith("http://") or normalized_path.startswith("https://"):
+            return normalized_path
+        if not normalized_path.startswith("/"):
+            normalized_path = f"/{normalized_path}"
+        return f"{self.get_public_app_origin()}{normalized_path}"
 
     def send_json(
         self,

@@ -1,3 +1,17 @@
+import {
+  PRODUCT_COLOR_LABELS,
+  PRODUCT_COLOR_OPTIONS,
+  PRODUCT_PAGE_SECTION_OPTIONS,
+  PRODUCT_AUDIENCE_OPTIONS,
+  PRODUCT_SECTION_OPTIONS,
+  PRODUCT_TYPE_LABELS,
+  PRODUCT_TYPE_OPTIONS_BY_CATEGORY,
+  SECTION_PRODUCT_TYPE_OPTIONS,
+  buildCategoryFromSelection,
+  deriveSectionFromCategory,
+  isClothingSection as isCatalogClothingSection,
+} from "./product-catalog";
+
 export const LOGIN_GREETING_KEY = "trego_login_greeting";
 export const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address_draft";
 export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
@@ -5,31 +19,68 @@ export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids"
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 export const APP_LOADER_MIN_DURATION_MS = 160;
 
-export const PRIMARY_NAVIGATION = [
-  {
-    key: "clothing",
-    label: "Veshje",
-    href: "/kerko?categoryGroup=clothing",
-    items: [
-      { label: "Meshkuj", href: "/kerko?category=clothing-men" },
-      { label: "Femra", href: "/kerko?category=clothing-women" },
-      { label: "Femije", href: "/kerko?category=clothing-kids" },
-    ],
-  },
-  {
-    key: "cosmetics",
-    label: "Kozmetika",
-    href: "/kerko?categoryGroup=cosmetics",
-    items: [
-      { label: "Meshkuj", href: "/kerko?category=cosmetics-men" },
-      { label: "Femra", href: "/kerko?category=cosmetics-women" },
-      { label: "Femije", href: "/kerko?category=cosmetics-kids" },
-    ],
-  },
-  { key: "home", label: "Shtepi", href: "/kerko?category=home" },
-  { key: "sport", label: "Sport", href: "/kerko?category=sport" },
-  { key: "technology", label: "Teknologji", href: "/kerko?category=technology" },
-];
+function createSearchHref({ categoryGroup = "", category = "", productType = "" } = {}) {
+  const params = new URLSearchParams();
+  if (categoryGroup) {
+    params.set("categoryGroup", categoryGroup);
+  }
+  if (category) {
+    params.set("category", category);
+  }
+  if (productType) {
+    params.set("productType", productType);
+  }
+
+  return `/kerko?${params.toString()}`;
+}
+
+function createNavigationGroups(sectionValue) {
+  const audiences = PRODUCT_AUDIENCE_OPTIONS[sectionValue] || [];
+
+  if (audiences.length > 0) {
+    return audiences.map((audience) => {
+      const category = buildCategoryFromSelection(sectionValue, audience.value);
+      const productTypes = PRODUCT_TYPE_OPTIONS_BY_CATEGORY[category] || [];
+
+      return {
+        key: `${sectionValue}-${audience.value}`,
+        label: audience.label,
+        href: createSearchHref({ category }),
+        items: productTypes.map((productType) => ({
+          key: `${category}-${productType.value}`,
+          label: productType.label,
+          href: createSearchHref({ category, productType: productType.value }),
+        })),
+      };
+    });
+  }
+
+  const productTypes = PRODUCT_TYPE_OPTIONS_BY_CATEGORY[sectionValue] || [];
+
+  return [{
+    key: `${sectionValue}-group`,
+    label: `Te gjitha ${PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === sectionValue)?.label || sectionValue}`,
+    href: createSearchHref({ category: sectionValue }),
+    items: productTypes.map((productType) => ({
+      key: `${sectionValue}-${productType.value}`,
+      label: productType.label,
+      href: createSearchHref({ category: sectionValue, productType: productType.value }),
+    })),
+  }];
+}
+
+export const PRIMARY_NAVIGATION = PRODUCT_PAGE_SECTION_OPTIONS.map((section) => {
+  const hasAudiences = (PRODUCT_AUDIENCE_OPTIONS[section.value] || []).length > 0;
+
+  return {
+    key: section.value,
+    label: section.label,
+    href: hasAudiences
+      ? createSearchHref({ categoryGroup: section.value })
+      : createSearchHref({ category: section.value }),
+    groups: createNavigationGroups(section.value),
+  };
+});
 
 export const HOME_PROMO_SLIDES = [
   {
@@ -59,103 +110,6 @@ export const HOME_PROMO_SLIDES = [
     ctaHref: "/kerko?category=technology",
     imagePath: "/gruri.webp",
   },
-];
-
-export const PRODUCT_SECTION_OPTIONS = [
-  { value: "clothing-men", label: "Veshje per meshkuj" },
-  { value: "clothing-women", label: "Veshje per femra" },
-  { value: "clothing-kids", label: "Veshje per femije" },
-  { value: "cosmetics-men", label: "Kozmetik per meshkuj" },
-  { value: "cosmetics-women", label: "Kozmetik per femra" },
-  { value: "cosmetics-kids", label: "Kozmetik per femije" },
-  { value: "home", label: "Shtepi" },
-  { value: "sport", label: "Sport" },
-  { value: "technology", label: "Teknologji" },
-];
-
-export const SECTION_PRODUCT_TYPE_OPTIONS = {
-  "clothing-men": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
-    { value: "pants", label: "Pantallona" },
-    { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
-    { value: "jacket", label: "Jakne" },
-    { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
-  ],
-  "clothing-women": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
-    { value: "pants", label: "Pantallona" },
-    { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
-    { value: "jacket", label: "Jakne" },
-    { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
-  ],
-  "clothing-kids": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
-    { value: "pants", label: "Pantallona" },
-    { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
-    { value: "jacket", label: "Jakne" },
-    { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
-  ],
-  "cosmetics-men": [
-    { value: "perfumes", label: "Parfume" },
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
-  ],
-  "cosmetics-women": [
-    { value: "perfumes", label: "Parfume" },
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
-    { value: "makeup", label: "Makup" },
-    { value: "nails", label: "Thonjet" },
-    { value: "hair-colors", label: "Ngjyrat e flokeve" },
-  ],
-  "cosmetics-kids": [
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
-    { value: "kids-care", label: "Kujdes per femije" },
-  ],
-  home: [
-    { value: "room-decor", label: "Dekorim per dhome" },
-    { value: "bathroom-items", label: "Pjeset per banjo" },
-    { value: "bedroom-items", label: "Pjeset per dhome te gjumit" },
-    { value: "kids-room-items", label: "Pjese per dhomat e femijeve" },
-  ],
-  sport: [
-    { value: "sports-equipment", label: "Pajisje sportive" },
-    { value: "sportswear", label: "Veshje sportive" },
-    { value: "sports-accessories", label: "Aksesor sportiv" },
-  ],
-  technology: [
-    { value: "phone-cases", label: "Mbrojtese per telefon" },
-    { value: "headphones", label: "Ndegjuesit" },
-    { value: "phone-parts", label: "Pjese per telefon" },
-    { value: "phone-accessories", label: "Aksesor te telefonave" },
-  ],
-};
-
-export const PRODUCT_COLOR_OPTIONS = [
-  { value: "", label: "Pa ngjyre specifike" },
-  { value: "bardhe", label: "Bardhe" },
-  { value: "zeze", label: "Zeze" },
-  { value: "gri", label: "Gri" },
-  { value: "beige", label: "Beige" },
-  { value: "kafe", label: "Kafe" },
-  { value: "kuqe", label: "Kuqe" },
-  { value: "roze", label: "Roze" },
-  { value: "vjollce", label: "Vjollce" },
-  { value: "blu", label: "Blu" },
-  { value: "gjelber", label: "Gjelber" },
-  { value: "verdhe", label: "Verdhe" },
-  { value: "portokalli", label: "Portokalli" },
-  { value: "shume-ngjyra", label: "Shume ngjyra" },
 ];
 
 export function calculateCartItemsCount(items = []) {
@@ -329,21 +283,14 @@ export function formatPrice(value) {
 
 export function formatCategoryLabel(category) {
   const labels = {
-    "clothing-men": "Veshje per meshkuj",
-    "clothing-women": "Veshje per femra",
-    "clothing-kids": "Veshje per femije",
-    "cosmetics-men": "Kozmetik per meshkuj",
-    "cosmetics-women": "Kozmetik per femra",
-    "cosmetics-kids": "Kozmetik per femije",
+    "clothing-babies": "Veshje per beba",
+    "cosmetics-kids": "Kozmetike per femije",
     pets: "Kafshet shtepiake",
     agriculture: "Bujqesi",
     medicine: "Barnat",
-    home: "Shtepi",
-    sport: "Sport",
-    technology: "Teknologji",
   };
 
-  return labels[category] || humanizeSlug(category);
+  return labels[category] || PRODUCT_SECTION_OPTIONS.find((option) => option.value === category)?.label || humanizeSlug(category);
 }
 
 export function formatCategoryGroupLabel(group) {
@@ -362,55 +309,13 @@ export function formatProductTypeLabel(productType) {
     food: "Ushqim",
     tools: "Vegla",
     other: "Tjera",
-    tshirt: "Maica",
-    undershirt: "Maica e brendshme",
-    pants: "Pantallona",
-    hoodie: "Duks",
-    turtleneck: "Rollke",
-    jacket: "Jakne",
-    underwear: "Te brendshme",
-    pajamas: "Pixhama",
-    perfumes: "Parfume",
-    hygiene: "Higjiena",
-    creams: "Kremerat",
-    makeup: "Makup",
-    nails: "Thonjet",
-    "hair-colors": "Ngjyrat e flokeve",
-    "kids-care": "Kujdes per femije",
-    "room-decor": "Dekorim per dhome",
-    "bathroom-items": "Pjeset per banjo",
-    "bedroom-items": "Pjeset per dhome te gjumit",
-    "kids-room-items": "Pjese per dhomat e femijeve",
-    "sports-equipment": "Pajisje sportive",
-    sportswear: "Veshje sportive",
-    "sports-accessories": "Aksesor sportiv",
-    "phone-cases": "Mbrojtese per telefon",
-    headphones: "Ndegjuesit",
-    "phone-parts": "Pjese per telefon",
-    "phone-accessories": "Aksesor te telefonave",
   };
 
-  return labels[productType] || humanizeSlug(productType);
+  return labels[productType] || PRODUCT_TYPE_LABELS[productType] || humanizeSlug(productType);
 }
 
 export function formatProductColorLabel(color) {
-  const labels = {
-    bardhe: "Bardhe",
-    zeze: "Zeze",
-    gri: "Gri",
-    beige: "Beige",
-    kafe: "Kafe",
-    kuqe: "Kuqe",
-    roze: "Roze",
-    vjollce: "Vjollce",
-    blu: "Blu",
-    gjelber: "Gjelber",
-    verdhe: "Verdhe",
-    portokalli: "Portokalli",
-    "shume-ngjyra": "Shume ngjyra",
-  };
-
-  return labels[color] || color;
+  return PRODUCT_COLOR_LABELS[color] || color;
 }
 
 export function formatStockQuantity(value) {
@@ -467,6 +372,7 @@ export function getCategoryUrl(category) {
     "clothing-men": "/kerko?category=clothing-men",
     "clothing-women": "/kerko?category=clothing-women",
     "clothing-kids": "/kerko?category=clothing-kids",
+    "clothing-babies": "/kerko?category=clothing-babies",
     "cosmetics-men": "/kerko?category=cosmetics-men",
     "cosmetics-women": "/kerko?category=cosmetics-women",
     "cosmetics-kids": "/kerko?category=cosmetics-kids",
@@ -587,7 +493,7 @@ export function createEmptyAddress() {
 }
 
 export function isClothingSection(sectionValue) {
-  return String(sectionValue || "").startsWith("clothing-");
+  return isCatalogClothingSection(sectionValue);
 }
 
 export function getProfileValuesFromUser(user) {

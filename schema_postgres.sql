@@ -100,6 +100,47 @@ CREATE TABLE IF NOT EXISTS business_followers (
 CREATE INDEX IF NOT EXISTS idx_business_followers_business
     ON business_followers(business_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id BIGSERIAL PRIMARY KEY,
+    client_user_id BIGINT NOT NULL,
+    business_user_id BIGINT NOT NULL,
+    business_profile_id BIGINT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (client_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (business_profile_id) REFERENCES business_profiles(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversations_client_business
+    ON chat_conversations(client_user_id, business_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_client_last_message
+    ON chat_conversations(client_user_id, last_message_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_business_last_message
+    ON chat_conversations(business_user_id, last_message_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL,
+    sender_user_id BIGINT NOT NULL,
+    recipient_user_id BIGINT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    read_at TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_created
+    ON chat_messages(conversation_id, created_at ASC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient_read
+    ON chat_messages(recipient_user_id, read_at, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS uploaded_assets (
     id BIGSERIAL PRIMARY KEY,
     stored_name TEXT NOT NULL UNIQUE,
@@ -116,6 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_uploaded_assets_created_at
 
 CREATE TABLE IF NOT EXISTS products (
     id BIGSERIAL PRIMARY KEY,
+    article_number TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     price DOUBLE PRECISION NOT NULL,
@@ -128,6 +170,9 @@ CREATE TABLE IF NOT EXISTS products (
     product_type TEXT NOT NULL DEFAULT 'other',
     size TEXT NOT NULL DEFAULT '',
     color TEXT NOT NULL DEFAULT '',
+    variant_inventory TEXT NOT NULL DEFAULT '[]',
+    package_amount_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+    package_amount_unit TEXT NOT NULL DEFAULT '',
     stock_quantity INTEGER NOT NULL DEFAULT 0,
     is_public INTEGER NOT NULL DEFAULT 1,
     show_stock_public INTEGER NOT NULL DEFAULT 0,
@@ -167,6 +212,27 @@ CREATE TABLE IF NOT EXISTS cart_items (
 
 CREATE INDEX IF NOT EXISTS idx_cart_user_updated_at ON cart_items(user_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS cart_lines (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
+    variant_key TEXT NOT NULL DEFAULT 'default',
+    variant_label TEXT NOT NULL DEFAULT 'Standard',
+    selected_size TEXT NOT NULL DEFAULT '',
+    selected_color TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_lines_user_product_variant
+    ON cart_lines(user_id, product_id, variant_key);
+
+CREATE INDEX IF NOT EXISTS idx_cart_lines_user_updated_at
+    ON cart_lines(user_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS orders (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT,
@@ -199,6 +265,11 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_type TEXT NOT NULL DEFAULT '',
     product_size TEXT NOT NULL DEFAULT '',
     product_color TEXT NOT NULL DEFAULT '',
+    product_variant_key TEXT NOT NULL DEFAULT '',
+    product_variant_label TEXT NOT NULL DEFAULT '',
+    product_variant_snapshot TEXT NOT NULL DEFAULT '[]',
+    product_package_amount_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+    product_package_amount_unit TEXT NOT NULL DEFAULT '',
     unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
     quantity INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
@@ -212,3 +283,29 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order_id
 
 CREATE INDEX IF NOT EXISTS idx_order_items_business_user_id
     ON order_items(business_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS stripe_payment_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    stripe_session_id TEXT NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL,
+    checkout_signature TEXT NOT NULL DEFAULT '',
+    cart_line_ids TEXT NOT NULL DEFAULT '[]',
+    checkout_address TEXT NOT NULL DEFAULT '{}',
+    checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
+    amount_total INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'eur',
+    payment_status TEXT NOT NULL DEFAULT '',
+    stripe_status TEXT NOT NULL DEFAULT '',
+    order_id BIGINT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    confirmed_at TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_payment_sessions_user_created
+    ON stripe_payment_sessions(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_payment_sessions_order_id
+    ON stripe_payment_sessions(order_id);

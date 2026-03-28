@@ -1,0 +1,187 @@
+{
+  "sections": [
+    {
+      "value": "clothing",
+      "label": "Veshje",
+      "audiences": [
+        { "value": "men", "label": "Veshje per meshkuj", "category": "clothing-men" },
+        { "value": "women", "label": "Veshje per femra", "category": "clothing-women" },
+        { "value": "kids", "label": "Veshje per femije", "category": "clothing-kids" },
+        { "value": "babies", "label": "Veshje per beba", "category": "clothing-babies" }
+      ]
+    },
+    {
+      "value": "cosmetics",
+      "label": "Kozmetika",
+      "audiences": [
+        { "value": "men", "label": "Kozmetike per meshkuj", "category": "cosmetics-men" },
+        { "value": "women", "label": "Kozmetike per femra", "category": "cosmetics-women" }
+      ]
+    },
+    { "value": "home", "label": "Shtepia", "audiences": [] },
+    { "value": "sport", "label": "Sport", "audiences": [] },
+    { "value": "technology", "label": "Teknologji", "audiences": [] }
+  ],
+  "productTypes": {
+    "clothing-men": [
+      { "value": "tshirt", "label": "Maice" },
+      { "value": "shirt", "label": "Kemishe" },
+      { "value": "pants", "label": "Pantallona" },
+      { "value": "jeans", "label": "Xhinse" },
+      { "value": "shorts", "label": "Pantallona te shkurta" },
+      { "value": "hoodie", "label": "Duks" },
+      { "value": "sweater", "label": "Pulover" },
+      { "value": "jacket", "label": "Jakne" },
+      { "value": "coat", "label": "Pallto" },
+      { "value": "tracksuit", "label": "Trenerke" },
+      { "value": "underwear", "label": "Te brendshme" },
+      { "value": "pajamas", "label": "Pizhame" },
+      { "value": "socks", "label": "Corape" },
+      { "value": "shoes", "label": "Kepuce" }
+    ],
+    "clothing-women": [
+      { "value": "tshirt", "label": "Maice" },
+      { "value": "blouse", "label": "Bluze" },
+      { "value": "pants", "label": "Pantallona" },
+      { "value": "jeans", "label": "Xhinse" },
+      { "value": "shorts", "label": "Pantallona te shkurta" },
+      { "value": "dress", "label": "Fustan" },
+      { "value": "skirt", "label": "Fund" },
+      { "value": "hoodie", "label": "Duks" },
+      { "value": "sweater", "label": "Pulover" },
+      { "value": "jacket", "label": "Jakne" },
+      { "value": "coat", "label": "Pallto" },
+      { "value": "tracksuit", "label": "Trenerke" },
+      { "value": "underwear", "label": "Te brendshme" },
+      { "value": "pajamas", "label": "Pizhame" },
+      { "value": "shoes", "label": "Kepuce" }
+    ],
+    "clothing-kids": [
+      { "value": "tshirt", "label": "Maice" },
+      { "value": "pants", "label": "Pantallona" },
+      { "value": "jeans", "label": "Xhinse" },
+      { "value": "shorts", "label": "Pantallona te shkurta" },
+      { "value": "hoodie", "label": "Duks" },
+      { "value": "sweater", "label": "Pulover" },
+      { "value": "jacket", "label": "Jakne" },
+      { "value": "tracksuit", "label": "Trenerke" },
+      { "value": "pajamas", "label": "Pizhame" },
+      { "value": "shoes", "label": "Kepuce" }
+    ],
+    "clothing-babies": [
+      { "value": "bodysuit", "label": "Bodysuit" },
+      { "value": "onesie", "label": "Kompleti per bebe" },
+      { "value": "baby-pants", "label": "Pantallona per bebe" },
+      { "value": "baby-set", "label": "Set per bebe" },
+      { "value": "baby-pajamas", "label": "Pizhame per bebe" },
+      { "value": "baby-jacket", "label": "Jakne per bebe" }
+    ],
+    "cosmetics-men": [
+      { "value": "face-cream", "label": "Krem per fytyre" },
+      { "value": "body-cream", "label": "Krem per trup" },
+      { "value": "hand-cream", "label": "Krem per duar" },
+      { "value": "foot-cream", "label": "Krem per kembe" },
+      { "value": "hair-cream", "label": "Krem per floke" },
+      { "value": "shampoo", "label": "Shampo" },
+      { "value": "conditioner", "label": "Balsam" },
+      { "value": "shower-gel", "label": "Gjel per dush" },
+      { "value": "hand-soap", "label": "Sapun per duar" },
+      { "value": "face-cleanser", "label": "Pastrues per fytyre" },
+      { "value": "deodorant", "label": "Deodorant" },
+      { "value": "perfume", "label": "Parfum" },
+      { "value": "hair-gel", "label": "Xhel per floke" },
+      { "value": "hair-oil", "label": "Vaj per floke" },
+      { "value": "toothpaste", "label": "Paste dhembesh" }
+    ],
+    "cosmetics-women": [
+      { "value": "face-cream", "label": "Krem per fytyre" },
+      { "value": "body-cream", "label": "Krem per trup" },
+      { "value": "hand-cream", "label": "Krem per duar" },
+      { "value": "foot-cream", "label": "Krem per kembe" },
+      { "value": "hair-cream", "label": "Krem per floke" },
+      { "value": "shampoo", "label": "Shampo" },
+      { "value": "conditioner", "label": "Balsam" },
+      { "value": "shower-gel", "label": "Gjel per dush" },
+      { "value": "hand-soap", "label": "Sapun per duar" },
+      { "value": "face-cleanser", "label": "Pastrues per fytyre" },
+      { "value": "deodorant", "label": "Deodorant" },
+      { "value": "perfume", "label": "Parfum" },
+      { "value": "hair-gel", "label": "Xhel per floke" },
+      { "value": "hair-oil", "label": "Vaj per floke" },
+      { "value": "makeup", "label": "Makeup" },
+      { "value": "lipstick", "label": "Buzekuq" },
+      { "value": "nail-care", "label": "Kujdes per thonj" }
+    ],
+    "home": [
+      { "value": "table", "label": "Tavoline" },
+      { "value": "chair", "label": "Karrige" },
+      { "value": "sofa", "label": "Divan" },
+      { "value": "bed", "label": "Krevat" },
+      { "value": "mattress", "label": "Dyshek" },
+      { "value": "wardrobe", "label": "Dollap" },
+      { "value": "desk", "label": "Tavoline pune" },
+      { "value": "shelf", "label": "Raft" },
+      { "value": "lamp", "label": "Llambe" },
+      { "value": "carpet", "label": "Tepih" },
+      { "value": "curtain", "label": "Perde" },
+      { "value": "mirror", "label": "Pasqyre" },
+      { "value": "pillow", "label": "Jastek" },
+      { "value": "blanket", "label": "Batanije" },
+      { "value": "cookware", "label": "Ene kuzhine" },
+      { "value": "plate-set", "label": "Set pjatash" }
+    ],
+    "sport": [
+      { "value": "sneakers", "label": "Patika" },
+      { "value": "sports-tshirt", "label": "Maice sportive" },
+      { "value": "leggings", "label": "Leggings" },
+      { "value": "tracksuit", "label": "Trenerke" },
+      { "value": "ball", "label": "Top" },
+      { "value": "racket", "label": "Raket" },
+      { "value": "dumbbells", "label": "Pesha" },
+      { "value": "yoga-mat", "label": "Yoga mat" },
+      { "value": "sports-bag", "label": "Cante sportive" },
+      { "value": "gloves", "label": "Doreza sportive" },
+      { "value": "water-bottle", "label": "Shishe uji" }
+    ],
+    "technology": [
+      { "value": "phone", "label": "Telefon" },
+      { "value": "laptop", "label": "Laptop" },
+      { "value": "pc", "label": "PC" },
+      { "value": "tablet", "label": "Tablet" },
+      { "value": "headphones", "label": "Degjuese" },
+      { "value": "speaker", "label": "Boks" },
+      { "value": "smartwatch", "label": "Smartwatch" },
+      { "value": "keyboard", "label": "Tastiere" },
+      { "value": "mouse", "label": "Mouse" },
+      { "value": "monitor", "label": "Monitor" },
+      { "value": "charger", "label": "Karikues" },
+      { "value": "cable", "label": "Kabllo" },
+      { "value": "power-bank", "label": "Power bank" },
+      { "value": "router", "label": "Router" },
+      { "value": "microphone", "label": "Mikrofon" }
+    ]
+  },
+  "colorOptions": [
+    { "value": "bardhe", "label": "Bardhe" },
+    { "value": "zeze", "label": "Zeze" },
+    { "value": "gri", "label": "Gri" },
+    { "value": "beige", "label": "Bezh" },
+    { "value": "kafe", "label": "Kafe" },
+    { "value": "kuqe", "label": "Kuqe" },
+    { "value": "roze", "label": "Roze" },
+    { "value": "vjollce", "label": "Vjollce" },
+    { "value": "blu", "label": "Blu" },
+    { "value": "gjelber", "label": "Gjelber" },
+    { "value": "verdhe", "label": "Verdhe" },
+    { "value": "portokalli", "label": "Portokalli" },
+    { "value": "argjend", "label": "Argjend" },
+    { "value": "ari", "label": "Ari" },
+    { "value": "krem", "label": "Krem" },
+    { "value": "shume-ngjyra", "label": "Shume ngjyra" }
+  ],
+  "clothingSizes": ["XS", "S", "M", "L", "XL", "XXL", "XXXL"],
+  "amountUnits": [
+    { "value": "ml", "label": "ml" },
+    { "value": "l", "label": "L" }
+  ]
+}

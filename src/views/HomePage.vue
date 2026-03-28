@@ -1,15 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { RouterLink, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import PromoSlider from "../components/PromoSlider.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
-import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
+import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
+const router = useRouter();
 const products = ref([]);
 const businesses = ref([]);
+const businessProfile = ref(null);
+const businessProducts = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const busyWishlistIds = ref([]);
@@ -20,7 +23,11 @@ const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
 const statusText = ref("Po ngarkohen produktet publike te TREGO.");
 const productsPageSize = ref(getProductsPageSize());
+const availableFilters = ref(createEmptyProductFacets());
 const filters = reactive({
+  pageSection: "",
+  category: "",
+  productType: "",
   size: "",
   color: "",
   sort: "",
@@ -29,18 +36,57 @@ const ui = reactive({
   message: "",
   type: "",
 });
+const businessUi = reactive({
+  message: "",
+  type: "",
+});
 let stopProductsPageSizeSubscription = () => {};
+const isBusinessUser = computed(() => appState.user?.role === "business");
+
+const businessDisplayName = computed(() =>
+  String(
+    businessProfile.value?.businessName
+    || appState.user?.businessName
+    || appState.user?.fullName
+    || "Biznesi yt",
+  ).trim(),
+);
+
+const businessDescription = computed(() =>
+  String(businessProfile.value?.businessDescription || "").trim()
+  || "Nga kjo faqe ke qasje direkte te profili yt, artikujt e biznesit dhe veprimet kryesore.",
+);
+
+const businessPublicProfileUrl = computed(() =>
+  String(businessProfile.value?.publicProfileUrl || appState.user?.businessProfileUrl || "").trim(),
+);
+
+const businessFollowersCount = computed(() => Math.max(0, Number(businessProfile.value?.followersCount || 0)));
+const businessOrdersCount = computed(() => Math.max(0, Number(businessProfile.value?.ordersCount || 0)));
+const businessProductsCount = computed(() =>
+  Math.max(
+    0,
+    businessProducts.value.length || Number(businessProfile.value?.productsCount || 0),
+  ),
+);
+
+const availablePageSectionOptions = computed(() => availableFilters.value.pageSections);
+const availableCategoryOptions = computed(() =>
+  availableFilters.value.categories.filter((option) =>
+    !filters.pageSection || String(option.pageSection || "") === filters.pageSection,
+  ),
+);
+const availableProductTypeOptions = computed(() =>
+  availableFilters.value.productTypes.filter((option) =>
+    (!filters.pageSection || String(option.pageSection || "") === filters.pageSection)
+    && (!filters.category || String(option.category || "") === filters.category),
+  ),
+);
+const availableSizeOptions = computed(() => availableFilters.value.sizes);
+const availableColorOptions = computed(() => availableFilters.value.colors);
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
-
-  if (filters.size) {
-    nextProducts = nextProducts.filter((product) => String(product.size || "") === filters.size);
-  }
-
-  if (filters.color) {
-    nextProducts = nextProducts.filter((product) => String(product.color || "") === filters.color);
-  }
 
   if (filters.sort === "price-asc") {
     nextProducts.sort((left, right) => Number(left.price || 0) - Number(right.price || 0));
@@ -74,12 +120,21 @@ onMounted(async () => {
     }
 
     productsPageSize.value = nextPageSize;
-    void loadProducts();
+    if (!isBusinessUser.value) {
+      void loadProducts();
+    }
   });
 
   try {
+    const user = await ensureSessionLoaded();
+    if (user?.role === "business") {
+      await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
+      markRouteReady();
+      return;
+    }
+
     await Promise.all([
-      ensureSessionLoaded().then(() => refreshCollectionState()),
+      refreshCollectionState(),
       loadProducts(),
     ]);
     markRouteReady();
@@ -95,6 +150,22 @@ onBeforeUnmount(() => {
   stopProductsPageSizeSubscription();
 });
 
+watch(
+  () => appState.catalogRevision,
+  async (nextRevision, previousRevision) => {
+    if (nextRevision === previousRevision) {
+      return;
+    }
+
+    if (isBusinessUser.value) {
+      await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
+      return;
+    }
+
+    await loadProducts();
+  },
+);
+
 async function refreshCollectionState() {
   if (!appState.user) {
     wishlistIds.value = [];
@@ -108,24 +179,40 @@ async function refreshCollectionState() {
   ]);
 
   wishlistIds.value = wishlistItems.map((item) => item.id);
-  cartIds.value = cartItems.map((item) => item.id);
+  cartIds.value = cartItems.map((item) => item.productId || item.id);
   setCartItems(cartItems);
 }
 
 async function loadProducts(options = {}) {
   const { append = false } = options;
   const offset = append ? products.value.length : 0;
-  const { response, data } = await requestJson(
-    `/api/products?limit=${productsPageSize.value}&offset=${offset}`,
-    {},
-    { cacheTtlMs: 10000 },
-  );
+  const params = new URLSearchParams();
+  params.set("limit", String(productsPageSize.value));
+  params.set("offset", String(offset));
+  if (filters.pageSection) {
+    params.set("pageSection", filters.pageSection);
+  }
+  if (filters.category) {
+    params.set("category", filters.category);
+  }
+  if (filters.productType) {
+    params.set("productType", filters.productType);
+  }
+  if (filters.size) {
+    params.set("size", filters.size);
+  }
+  if (filters.color) {
+    params.set("color", filters.color);
+  }
+
+  const { response, data } = await requestJson(`/api/products?${params.toString()}`, {});
   if (!response.ok || !data?.ok) {
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     if (!append) {
       products.value = [];
       totalProductsCount.value = 0;
       hasMoreProducts.value = false;
+      availableFilters.value = createEmptyProductFacets();
     }
     return;
   }
@@ -134,6 +221,7 @@ async function loadProducts(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
+  availableFilters.value = normalizeProductFacets(data.facets);
   statusText.value =
     totalProductsCount.value > 0
       ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
@@ -162,15 +250,90 @@ async function loadBusinesses() {
   businesses.value = Array.isArray(data.businesses) ? data.businesses : [];
 }
 
+async function loadBusinessProfile() {
+  const { response, data } = await requestJson("/api/business-profile");
+  if (!response.ok || !data?.ok) {
+    businessProfile.value = null;
+    businessUi.message = resolveApiMessage(data, "Profili i biznesit nuk u ngarkua.");
+    businessUi.type = "error";
+    return;
+  }
+
+  businessProfile.value = data.profile || null;
+  if (!businessProfile.value) {
+    businessUi.message = "Plotesoje profilin e biznesit per te filluar me publikimin e artikujve.";
+    businessUi.type = "";
+    return;
+  }
+
+  businessUi.message = "";
+  businessUi.type = "";
+}
+
+async function loadBusinessProducts() {
+  const { response, data } = await requestJson("/api/business/products");
+  if (!response.ok || !data?.ok) {
+    businessProducts.value = [];
+    businessUi.message = resolveApiMessage(data, "Artikujt e biznesit nuk u ngarkuan.");
+    businessUi.type = "error";
+    return;
+  }
+
+  businessProducts.value = Array.isArray(data.products) ? data.products : [];
+  if (businessProfile.value) {
+    businessUi.message = "";
+    businessUi.type = "";
+  }
+}
+
 function setMessage(message, type = "") {
   ui.message = message;
   ui.type = type;
 }
 
+function createEmptyProductFacets() {
+  return {
+    pageSections: [],
+    categories: [],
+    productTypes: [],
+    sizes: [],
+    colors: [],
+  };
+}
+
+function normalizeProductFacets(rawFacets) {
+  return {
+    pageSections: Array.isArray(rawFacets?.pageSections) ? rawFacets.pageSections : [],
+    categories: Array.isArray(rawFacets?.categories) ? rawFacets.categories : [],
+    productTypes: Array.isArray(rawFacets?.productTypes) ? rawFacets.productTypes : [],
+    sizes: Array.isArray(rawFacets?.sizes) ? rawFacets.sizes : [],
+    colors: Array.isArray(rawFacets?.colors) ? rawFacets.colors : [],
+  };
+}
+
+function handlePageSectionChange() {
+  filters.category = "";
+  filters.productType = "";
+  void loadProducts();
+}
+
+function handleCategoryChange() {
+  filters.productType = "";
+  void loadProducts();
+}
+
+function handleCatalogFilterChange() {
+  void loadProducts();
+}
+
 function resetFilters() {
+  filters.pageSection = "";
+  filters.category = "";
+  filters.productType = "";
   filters.size = "";
   filters.color = "";
   filters.sort = "";
+  void loadProducts();
 }
 
 async function handleWishlist(productId) {
@@ -216,6 +379,12 @@ async function handleCart(productId) {
     return;
   }
 
+  const product = products.value.find((entry) => Number(entry.id) === Number(productId));
+  if (product?.requiresVariantSelection) {
+    router.push(getProductDetailUrl(productId, "/"));
+    return;
+  }
+
   busyCartIds.value = [...busyCartIds.value, productId];
   if (!cartIds.value.includes(productId)) {
     cartIds.value = [...cartIds.value, productId];
@@ -235,14 +404,141 @@ async function handleCart(productId) {
   }
 
   const items = Array.isArray(data.items) ? data.items : [];
-  cartIds.value = items.map((item) => item.id);
+  cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   setMessage(data.message || "Produkti u shtua ne shporte.", "success");
 }
 </script>
 
 <template>
-  <section class="collection-page home-collection-page" aria-label="Faqja kryesore">
+  <section v-if="isBusinessUser" class="collection-page business-home-page" aria-label="Faqja kryesore e biznesit">
+    <section class="card business-home-hero">
+      <div class="business-home-branding">
+        <div class="business-home-logo-shell">
+          <img
+            v-if="businessProfile?.logoPath"
+            class="business-home-logo"
+            :src="businessProfile.logoPath"
+            :alt="businessDisplayName"
+            width="220"
+            height="220"
+          >
+          <span v-else class="business-home-logo-fallback">
+            {{ getBusinessInitials(businessDisplayName) }}
+          </span>
+        </div>
+
+        <div class="business-home-copy">
+          <p class="section-label">Business mode</p>
+          <h1>{{ businessDisplayName }}</h1>
+          <p class="section-text">{{ businessDescription }}</p>
+        </div>
+      </div>
+
+      <div class="business-home-actions">
+        <RouterLink class="nav-action nav-action-primary" to="/biznesi-juaj?view=add-product">
+          Shto artikull
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-secondary" to="/biznesi-juaj">
+          Menaxho profilin
+        </RouterLink>
+        <RouterLink
+          v-if="businessPublicProfileUrl"
+          class="nav-action nav-action-secondary"
+          :to="businessPublicProfileUrl"
+        >
+          Profili publik
+        </RouterLink>
+      </div>
+    </section>
+
+    <div class="business-home-summary-grid">
+      <article class="card business-home-stat">
+        <span class="business-home-stat-label">Ndjekesit</span>
+        <strong>{{ businessFollowersCount }}</strong>
+        <p>Shiko si po rritet interesi per biznesin tend.</p>
+      </article>
+
+      <article class="card business-home-stat">
+        <span class="business-home-stat-label">Artikujt e tu</span>
+        <strong>{{ businessProductsCount }}</strong>
+        <p>Te gjitha produktet qe ke publikuar ose ruajtur ne panel.</p>
+      </article>
+
+      <article class="card business-home-stat">
+        <span class="business-home-stat-label">Porosite</span>
+        <strong>{{ businessOrdersCount }}</strong>
+        <p>Numri i porosive ku jane perfshire produktet e biznesit tend.</p>
+      </article>
+    </div>
+
+    <section class="card business-home-contact">
+      <div>
+        <p class="section-label">Kontaktet</p>
+        <h2>Mesazhet dhe ndjekesit</h2>
+        <p class="section-text">
+          Ketu ke qasje te shpejte te inbox-it te mesazheve dhe profilit publik te biznesit.
+        </p>
+      </div>
+
+      <div class="business-home-contact-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/mesazhet">
+          Hape mesazhet
+        </RouterLink>
+        <RouterLink
+          v-if="businessPublicProfileUrl"
+          class="nav-action nav-action-primary"
+          :to="businessPublicProfileUrl"
+        >
+          Shiko ndjekesit
+        </RouterLink>
+      </div>
+    </section>
+
+    <div class="form-message" :class="businessUi.type" role="status" aria-live="polite">
+      {{ businessUi.message }}
+    </div>
+
+    <section class="business-home-products" aria-label="Produktet e biznesit tend">
+      <header class="collection-page-header business-home-products-header">
+        <p class="section-label">Produktet e tua</p>
+        <h2>Lista e artikujve</h2>
+        <p>
+          Ne homepage te biznesit shfaqen vetem profili yt, produktet e tua dhe qasja direkte per shtim artikujsh.
+        </p>
+      </header>
+
+      <section v-if="businessProducts.length > 0" class="pet-products-grid business-home-products-grid">
+        <ProductCard
+          v-for="product in businessProducts"
+          :key="product.id"
+          :product="product"
+          :show-overlay-actions="false"
+          :show-business-name="false"
+        />
+      </section>
+
+      <div v-else class="collection-empty-state business-home-empty-state">
+        Nuk ke artikuj ende. Shto produktin e pare dhe ai do te shfaqet ketu.
+      </div>
+    </section>
+
+    <section class="card business-home-bottom-cta">
+      <div>
+        <p class="section-label">Veprimi i shpejte</p>
+        <h2>Shto produkte te reja</h2>
+        <p class="section-text">
+          Kalo direkt te forma e artikullit dhe vazhdo me publikimin e produkteve te biznesit tend.
+        </p>
+      </div>
+
+      <RouterLink class="hero-cta" to="/biznesi-juaj?view=add-product">
+        Shto artikull
+      </RouterLink>
+    </section>
+  </section>
+
+  <section v-else class="collection-page home-collection-page" aria-label="Faqja kryesore">
     <PromoSlider :slides="HOME_PROMO_SLIDES" />
 
     <header class="collection-page-header home-collection-header">
@@ -264,35 +560,73 @@ async function handleCart(productId) {
 
     <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet ne faqen kryesore">
       <div class="search-filters-grid">
-        <label class="field">
-          <span>Madhesia</span>
-          <select v-model="filters.size" class="search-filter-select">
-            <option value="">Te gjitha madhesite</option>
-            <option value="XS">XS</option>
-            <option value="S">S</option>
-            <option value="M">M</option>
-            <option value="L">L</option>
-            <option value="XL">XL</option>
+        <label v-if="availablePageSectionOptions.length > 0" class="field">
+          <span>Kategoria e faqes</span>
+          <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
+            <option value="">Te gjitha kategorite</option>
+            <option
+              v-for="option in availablePageSectionOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
         </label>
 
-        <label class="field">
+        <label v-if="availableCategoryOptions.length > 0" class="field">
+          <span>Nenkategoria</span>
+          <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
+            <option value="">Te gjitha nenkategorite</option>
+            <option
+              v-for="option in availableCategoryOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableProductTypeOptions.length > 0" class="field">
+          <span>Lloji i produktit</span>
+          <select v-model="filters.productType" class="search-filter-select" @change="handleCatalogFilterChange">
+            <option value="">Te gjitha llojet</option>
+            <option
+              v-for="option in availableProductTypeOptions"
+              :key="`${option.category}-${option.value}`"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableSizeOptions.length > 0" class="field">
+          <span>Madhesia</span>
+          <select v-model="filters.size" class="search-filter-select" @change="handleCatalogFilterChange">
+            <option value="">Te gjitha madhesite</option>
+            <option
+              v-for="option in availableSizeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label v-if="availableColorOptions.length > 0" class="field">
           <span>Ngjyra</span>
-          <select v-model="filters.color" class="search-filter-select">
+          <select v-model="filters.color" class="search-filter-select" @change="handleCatalogFilterChange">
             <option value="">Te gjitha ngjyrat</option>
-            <option value="bardhe">Bardhe</option>
-            <option value="zeze">Zeze</option>
-            <option value="gri">Gri</option>
-            <option value="beige">Beige</option>
-            <option value="kafe">Kafe</option>
-            <option value="kuqe">Kuqe</option>
-            <option value="roze">Roze</option>
-            <option value="vjollce">Vjollce</option>
-            <option value="blu">Blu</option>
-            <option value="gjelber">Gjelber</option>
-            <option value="verdhe">Verdhe</option>
-            <option value="portokalli">Portokalli</option>
-            <option value="shume-ngjyra">Shume ngjyra</option>
+            <option
+              v-for="option in availableColorOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
         </label>
 

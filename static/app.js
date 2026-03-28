@@ -35,6 +35,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
+  if (page === "messages") {
+    initializeMessagesPage();
+    return;
+  }
+
   if (page === "business-dashboard") {
     initializeBusinessDashboardPage();
     return;
@@ -634,33 +639,233 @@ function initializeSiteNavigation() {
 
 
 function renderPrimaryNavigation() {
-  return `
+  const navigation = [
+    {
+      label: "Veshje",
+      href: "/kerko?categoryGroup=clothing",
+      groups: [
+        {
+          label: "Veshje per meshkuj",
+          href: "/kerko?category=clothing-men",
+          items: [
+            ["Maice", "/kerko?category=clothing-men&productType=tshirt"],
+            ["Kemishe", "/kerko?category=clothing-men&productType=shirt"],
+            ["Pantallona", "/kerko?category=clothing-men&productType=pants"],
+            ["Xhinse", "/kerko?category=clothing-men&productType=jeans"],
+            ["Pantallona te shkurta", "/kerko?category=clothing-men&productType=shorts"],
+            ["Duks", "/kerko?category=clothing-men&productType=hoodie"],
+            ["Pulover", "/kerko?category=clothing-men&productType=sweater"],
+            ["Jakne", "/kerko?category=clothing-men&productType=jacket"],
+            ["Pallto", "/kerko?category=clothing-men&productType=coat"],
+            ["Trenerke", "/kerko?category=clothing-men&productType=tracksuit"],
+            ["Te brendshme", "/kerko?category=clothing-men&productType=underwear"],
+            ["Pizhame", "/kerko?category=clothing-men&productType=pajamas"],
+            ["Corape", "/kerko?category=clothing-men&productType=socks"],
+            ["Kepuce", "/kerko?category=clothing-men&productType=shoes"],
+          ],
+        },
+        {
+          label: "Veshje per femra",
+          href: "/kerko?category=clothing-women",
+          items: [
+            ["Maice", "/kerko?category=clothing-women&productType=tshirt"],
+            ["Bluze", "/kerko?category=clothing-women&productType=blouse"],
+            ["Pantallona", "/kerko?category=clothing-women&productType=pants"],
+            ["Xhinse", "/kerko?category=clothing-women&productType=jeans"],
+            ["Pantallona te shkurta", "/kerko?category=clothing-women&productType=shorts"],
+            ["Fustan", "/kerko?category=clothing-women&productType=dress"],
+            ["Fund", "/kerko?category=clothing-women&productType=skirt"],
+            ["Duks", "/kerko?category=clothing-women&productType=hoodie"],
+            ["Pulover", "/kerko?category=clothing-women&productType=sweater"],
+            ["Jakne", "/kerko?category=clothing-women&productType=jacket"],
+            ["Pallto", "/kerko?category=clothing-women&productType=coat"],
+            ["Trenerke", "/kerko?category=clothing-women&productType=tracksuit"],
+            ["Te brendshme", "/kerko?category=clothing-women&productType=underwear"],
+            ["Pizhame", "/kerko?category=clothing-women&productType=pajamas"],
+            ["Kepuce", "/kerko?category=clothing-women&productType=shoes"],
+          ],
+        },
+        {
+          label: "Veshje per femije",
+          href: "/kerko?category=clothing-kids",
+          items: [
+            ["Maice", "/kerko?category=clothing-kids&productType=tshirt"],
+            ["Pantallona", "/kerko?category=clothing-kids&productType=pants"],
+            ["Xhinse", "/kerko?category=clothing-kids&productType=jeans"],
+            ["Pantallona te shkurta", "/kerko?category=clothing-kids&productType=shorts"],
+            ["Duks", "/kerko?category=clothing-kids&productType=hoodie"],
+            ["Pulover", "/kerko?category=clothing-kids&productType=sweater"],
+            ["Jakne", "/kerko?category=clothing-kids&productType=jacket"],
+            ["Trenerke", "/kerko?category=clothing-kids&productType=tracksuit"],
+            ["Pizhame", "/kerko?category=clothing-kids&productType=pajamas"],
+            ["Kepuce", "/kerko?category=clothing-kids&productType=shoes"],
+          ],
+        },
+        {
+          label: "Veshje per beba",
+          href: "/kerko?category=clothing-babies",
+          items: [
+            ["Bodysuit", "/kerko?category=clothing-babies&productType=bodysuit"],
+            ["Kompleti per bebe", "/kerko?category=clothing-babies&productType=onesie"],
+            ["Pantallona per bebe", "/kerko?category=clothing-babies&productType=baby-pants"],
+            ["Set per bebe", "/kerko?category=clothing-babies&productType=baby-set"],
+            ["Pizhame per bebe", "/kerko?category=clothing-babies&productType=baby-pajamas"],
+            ["Jakne per bebe", "/kerko?category=clothing-babies&productType=baby-jacket"],
+          ],
+        },
+      ],
+    },
+    {
+      label: "Kozmetika",
+      href: "/kerko?categoryGroup=cosmetics",
+      groups: [
+        {
+          label: "Kozmetike per meshkuj",
+          href: "/kerko?category=cosmetics-men",
+          items: [
+            ["Krem per fytyre", "/kerko?category=cosmetics-men&productType=face-cream"],
+            ["Krem per trup", "/kerko?category=cosmetics-men&productType=body-cream"],
+            ["Krem per duar", "/kerko?category=cosmetics-men&productType=hand-cream"],
+            ["Krem per kembe", "/kerko?category=cosmetics-men&productType=foot-cream"],
+            ["Krem per floke", "/kerko?category=cosmetics-men&productType=hair-cream"],
+            ["Shampo", "/kerko?category=cosmetics-men&productType=shampoo"],
+            ["Balsam", "/kerko?category=cosmetics-men&productType=conditioner"],
+            ["Gjel per dush", "/kerko?category=cosmetics-men&productType=shower-gel"],
+            ["Sapun per duar", "/kerko?category=cosmetics-men&productType=hand-soap"],
+            ["Pastrues per fytyre", "/kerko?category=cosmetics-men&productType=face-cleanser"],
+            ["Deodorant", "/kerko?category=cosmetics-men&productType=deodorant"],
+            ["Parfum", "/kerko?category=cosmetics-men&productType=perfume"],
+            ["Xhel per floke", "/kerko?category=cosmetics-men&productType=hair-gel"],
+            ["Vaj per floke", "/kerko?category=cosmetics-men&productType=hair-oil"],
+            ["Paste dhembesh", "/kerko?category=cosmetics-men&productType=toothpaste"],
+          ],
+        },
+        {
+          label: "Kozmetike per femra",
+          href: "/kerko?category=cosmetics-women",
+          items: [
+            ["Krem per fytyre", "/kerko?category=cosmetics-women&productType=face-cream"],
+            ["Krem per trup", "/kerko?category=cosmetics-women&productType=body-cream"],
+            ["Krem per duar", "/kerko?category=cosmetics-women&productType=hand-cream"],
+            ["Krem per kembe", "/kerko?category=cosmetics-women&productType=foot-cream"],
+            ["Krem per floke", "/kerko?category=cosmetics-women&productType=hair-cream"],
+            ["Shampo", "/kerko?category=cosmetics-women&productType=shampoo"],
+            ["Balsam", "/kerko?category=cosmetics-women&productType=conditioner"],
+            ["Gjel per dush", "/kerko?category=cosmetics-women&productType=shower-gel"],
+            ["Sapun per duar", "/kerko?category=cosmetics-women&productType=hand-soap"],
+            ["Pastrues per fytyre", "/kerko?category=cosmetics-women&productType=face-cleanser"],
+            ["Deodorant", "/kerko?category=cosmetics-women&productType=deodorant"],
+            ["Parfum", "/kerko?category=cosmetics-women&productType=perfume"],
+            ["Xhel per floke", "/kerko?category=cosmetics-women&productType=hair-gel"],
+            ["Vaj per floke", "/kerko?category=cosmetics-women&productType=hair-oil"],
+            ["Makeup", "/kerko?category=cosmetics-women&productType=makeup"],
+            ["Buzekuq", "/kerko?category=cosmetics-women&productType=lipstick"],
+            ["Kujdes per thonj", "/kerko?category=cosmetics-women&productType=nail-care"],
+          ],
+        },
+      ],
+    },
+    {
+      label: "Shtepia",
+      href: "/kerko?category=home",
+      groups: [
+        {
+          label: "Te gjitha Shtepia",
+          href: "/kerko?category=home",
+          items: [
+            ["Tavoline", "/kerko?category=home&productType=table"],
+            ["Karrige", "/kerko?category=home&productType=chair"],
+            ["Divan", "/kerko?category=home&productType=sofa"],
+            ["Krevat", "/kerko?category=home&productType=bed"],
+            ["Dyshek", "/kerko?category=home&productType=mattress"],
+            ["Dollap", "/kerko?category=home&productType=wardrobe"],
+            ["Tavoline pune", "/kerko?category=home&productType=desk"],
+            ["Raft", "/kerko?category=home&productType=shelf"],
+            ["Llambe", "/kerko?category=home&productType=lamp"],
+            ["Tepih", "/kerko?category=home&productType=carpet"],
+            ["Perde", "/kerko?category=home&productType=curtain"],
+            ["Pasqyre", "/kerko?category=home&productType=mirror"],
+            ["Jastek", "/kerko?category=home&productType=pillow"],
+            ["Batanije", "/kerko?category=home&productType=blanket"],
+            ["Ene kuzhine", "/kerko?category=home&productType=cookware"],
+            ["Set pjatash", "/kerko?category=home&productType=plate-set"],
+          ],
+        },
+      ],
+    },
+    {
+      label: "Sport",
+      href: "/kerko?category=sport",
+      groups: [
+        {
+          label: "Te gjitha Sport",
+          href: "/kerko?category=sport",
+          items: [
+            ["Patika", "/kerko?category=sport&productType=sneakers"],
+            ["Maice sportive", "/kerko?category=sport&productType=sports-tshirt"],
+            ["Leggings", "/kerko?category=sport&productType=leggings"],
+            ["Trenerke", "/kerko?category=sport&productType=tracksuit"],
+            ["Top", "/kerko?category=sport&productType=ball"],
+            ["Raket", "/kerko?category=sport&productType=racket"],
+            ["Pesha", "/kerko?category=sport&productType=dumbbells"],
+            ["Yoga mat", "/kerko?category=sport&productType=yoga-mat"],
+            ["Cante sportive", "/kerko?category=sport&productType=sports-bag"],
+            ["Doreza sportive", "/kerko?category=sport&productType=gloves"],
+            ["Shishe uji", "/kerko?category=sport&productType=water-bottle"],
+          ],
+        },
+      ],
+    },
+    {
+      label: "Teknologji",
+      href: "/kerko?category=technology",
+      groups: [
+        {
+          label: "Te gjitha Teknologji",
+          href: "/kerko?category=technology",
+          items: [
+            ["Telefon", "/kerko?category=technology&productType=phone"],
+            ["Laptop", "/kerko?category=technology&productType=laptop"],
+            ["PC", "/kerko?category=technology&productType=pc"],
+            ["Tablet", "/kerko?category=technology&productType=tablet"],
+            ["Degjuese", "/kerko?category=technology&productType=headphones"],
+            ["Boks", "/kerko?category=technology&productType=speaker"],
+            ["Smartwatch", "/kerko?category=technology&productType=smartwatch"],
+            ["Tastiere", "/kerko?category=technology&productType=keyboard"],
+            ["Mouse", "/kerko?category=technology&productType=mouse"],
+            ["Monitor", "/kerko?category=technology&productType=monitor"],
+            ["Karikues", "/kerko?category=technology&productType=charger"],
+            ["Kabllo", "/kerko?category=technology&productType=cable"],
+            ["Power bank", "/kerko?category=technology&productType=power-bank"],
+            ["Router", "/kerko?category=technology&productType=router"],
+            ["Mikrofon", "/kerko?category=technology&productType=microphone"],
+          ],
+        },
+      ],
+    },
+  ];
+
+  return navigation.map((section) => `
     <div class="nav-dropdown">
       <button class="nav-dropdown-trigger" type="button" aria-expanded="false">
-        <span>Veshje</span>
+        <span>${section.label}</span>
         ${chevronDownIcon()}
       </button>
-      <div class="nav-dropdown-menu" hidden>
-        <a class="nav-dropdown-item" href="/kerko?category=clothing-men">Meshkuj</a>
-        <a class="nav-dropdown-item" href="/kerko?category=clothing-women">Femra</a>
-        <a class="nav-dropdown-item" href="/kerko?category=clothing-kids">Femije</a>
+      <div class="nav-dropdown-menu nav-dropdown-menu-rich" hidden>
+        <a class="nav-dropdown-all-link" href="${section.href}">Shih te gjitha</a>
+        ${section.groups.map((group) => `
+          <section class="nav-dropdown-group">
+            <a class="nav-dropdown-group-link" href="${group.href}">${group.label}</a>
+            <div class="nav-dropdown-group-items">
+              ${group.items.map((item) => `
+                <a class="nav-dropdown-item nav-dropdown-subitem" href="${item[1]}">${item[0]}</a>
+              `).join("")}
+            </div>
+          </section>
+        `).join("")}
       </div>
     </div>
-    <div class="nav-dropdown">
-      <button class="nav-dropdown-trigger" type="button" aria-expanded="false">
-        <span>Kozmetik</span>
-        ${chevronDownIcon()}
-      </button>
-      <div class="nav-dropdown-menu" hidden>
-        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-men">Meshkuj</a>
-        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-women">Femra</a>
-        <a class="nav-dropdown-item" href="/kerko?category=cosmetics-kids">Femije</a>
-      </div>
-    </div>
-    <a class="nav-link nav-link-home" href="/kerko?category=home">Shtepi</a>
-    <a class="nav-link nav-link-sport" href="/kerko?category=sport">Sport</a>
-    <a class="nav-link nav-link-tech" href="/kerko?category=technology">Teknologji</a>
-  `;
+  `).join("");
 }
 
 
@@ -770,9 +975,9 @@ const PRODUCT_SECTION_OPTIONS = [
   { value: "clothing-men", label: "Veshje per meshkuj" },
   { value: "clothing-women", label: "Veshje per femra" },
   { value: "clothing-kids", label: "Veshje per femije" },
+  { value: "clothing-babies", label: "Veshje per beba" },
   { value: "cosmetics-men", label: "Kozmetik per meshkuj" },
   { value: "cosmetics-women", label: "Kozmetik per femra" },
-  { value: "cosmetics-kids", label: "Kozmetik per femije" },
   { value: "home", label: "Shtepi" },
   { value: "sport", label: "Sport" },
   { value: "technology", label: "Teknologji" },
@@ -780,71 +985,152 @@ const PRODUCT_SECTION_OPTIONS = [
 
 const SECTION_PRODUCT_TYPE_OPTIONS = {
   "clothing-men": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
+    { value: "tshirt", label: "Maice" },
+    { value: "shirt", label: "Kemishe" },
     { value: "pants", label: "Pantallona" },
+    { value: "jeans", label: "Xhinse" },
+    { value: "shorts", label: "Pantallona te shkurta" },
     { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
+    { value: "sweater", label: "Pulover" },
     { value: "jacket", label: "Jakne" },
+    { value: "coat", label: "Pallto" },
+    { value: "tracksuit", label: "Trenerke" },
     { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
+    { value: "pajamas", label: "Pizhame" },
+    { value: "socks", label: "Corape" },
+    { value: "shoes", label: "Kepuce" },
   ],
   "clothing-women": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
+    { value: "tshirt", label: "Maice" },
+    { value: "blouse", label: "Bluze" },
     { value: "pants", label: "Pantallona" },
+    { value: "jeans", label: "Xhinse" },
+    { value: "shorts", label: "Pantallona te shkurta" },
+    { value: "dress", label: "Fustan" },
+    { value: "skirt", label: "Fund" },
     { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
+    { value: "sweater", label: "Pulover" },
     { value: "jacket", label: "Jakne" },
+    { value: "coat", label: "Pallto" },
+    { value: "tracksuit", label: "Trenerke" },
     { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
+    { value: "pajamas", label: "Pizhame" },
+    { value: "shoes", label: "Kepuce" },
   ],
   "clothing-kids": [
-    { value: "tshirt", label: "Maica" },
-    { value: "undershirt", label: "Maica e brendshme" },
+    { value: "tshirt", label: "Maice" },
     { value: "pants", label: "Pantallona" },
+    { value: "jeans", label: "Xhinse" },
+    { value: "shorts", label: "Pantallona te shkurta" },
     { value: "hoodie", label: "Duks" },
-    { value: "turtleneck", label: "Rollke" },
+    { value: "sweater", label: "Pulover" },
     { value: "jacket", label: "Jakne" },
-    { value: "underwear", label: "Te brendshme" },
-    { value: "pajamas", label: "Pixhama" },
+    { value: "tracksuit", label: "Trenerke" },
+    { value: "pajamas", label: "Pizhame" },
+    { value: "shoes", label: "Kepuce" },
+  ],
+  "clothing-babies": [
+    { value: "bodysuit", label: "Bodysuit" },
+    { value: "onesie", label: "Kompleti per bebe" },
+    { value: "baby-pants", label: "Pantallona per bebe" },
+    { value: "baby-set", label: "Set per bebe" },
+    { value: "baby-pajamas", label: "Pizhame per bebe" },
+    { value: "baby-jacket", label: "Jakne per bebe" },
   ],
   "cosmetics-men": [
-    { value: "perfumes", label: "Parfume" },
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
+    { value: "face-cream", label: "Krem per fytyre" },
+    { value: "body-cream", label: "Krem per trup" },
+    { value: "hand-cream", label: "Krem per duar" },
+    { value: "foot-cream", label: "Krem per kembe" },
+    { value: "hair-cream", label: "Krem per floke" },
+    { value: "shampoo", label: "Shampo" },
+    { value: "conditioner", label: "Balsam" },
+    { value: "shower-gel", label: "Gjel per dush" },
+    { value: "hand-soap", label: "Sapun per duar" },
+    { value: "face-cleanser", label: "Pastrues per fytyre" },
+    { value: "deodorant", label: "Deodorant" },
+    { value: "perfume", label: "Parfum" },
+    { value: "hair-gel", label: "Xhel per floke" },
+    { value: "hair-oil", label: "Vaj per floke" },
+    { value: "toothpaste", label: "Paste dhembesh" },
   ],
   "cosmetics-women": [
-    { value: "perfumes", label: "Parfume" },
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
-    { value: "makeup", label: "Makup" },
-    { value: "nails", label: "Thonjet" },
-    { value: "hair-colors", label: "Ngjyrat e flokeve" },
-  ],
-  "cosmetics-kids": [
-    { value: "hygiene", label: "Higjiena" },
-    { value: "creams", label: "Kremerat" },
-    { value: "kids-care", label: "Kujdes per femije" },
+    { value: "face-cream", label: "Krem per fytyre" },
+    { value: "body-cream", label: "Krem per trup" },
+    { value: "hand-cream", label: "Krem per duar" },
+    { value: "foot-cream", label: "Krem per kembe" },
+    { value: "hair-cream", label: "Krem per floke" },
+    { value: "shampoo", label: "Shampo" },
+    { value: "conditioner", label: "Balsam" },
+    { value: "shower-gel", label: "Gjel per dush" },
+    { value: "hand-soap", label: "Sapun per duar" },
+    { value: "face-cleanser", label: "Pastrues per fytyre" },
+    { value: "deodorant", label: "Deodorant" },
+    { value: "perfume", label: "Parfum" },
+    { value: "hair-gel", label: "Xhel per floke" },
+    { value: "hair-oil", label: "Vaj per floke" },
+    { value: "makeup", label: "Makeup" },
+    { value: "lipstick", label: "Buzekuq" },
+    { value: "nail-care", label: "Kujdes per thonj" },
   ],
   home: [
-    { value: "room-decor", label: "Dekorim per dhome" },
-    { value: "bathroom-items", label: "Pjeset per banjo" },
-    { value: "bedroom-items", label: "Pjeset per dhome te gjumit" },
-    { value: "kids-room-items", label: "Pjese per dhomat e femijeve" },
+    { value: "table", label: "Tavoline" },
+    { value: "chair", label: "Karrige" },
+    { value: "sofa", label: "Divan" },
+    { value: "bed", label: "Krevat" },
+    { value: "mattress", label: "Dyshek" },
+    { value: "wardrobe", label: "Dollap" },
+    { value: "desk", label: "Tavoline pune" },
+    { value: "shelf", label: "Raft" },
+    { value: "lamp", label: "Llambe" },
+    { value: "carpet", label: "Tepih" },
+    { value: "curtain", label: "Perde" },
+    { value: "mirror", label: "Pasqyre" },
+    { value: "pillow", label: "Jastek" },
+    { value: "blanket", label: "Batanije" },
+    { value: "cookware", label: "Ene kuzhine" },
+    { value: "plate-set", label: "Set pjatash" },
   ],
   sport: [
-    { value: "sports-equipment", label: "Pajisje sportive" },
-    { value: "sportswear", label: "Veshje sportive" },
-    { value: "sports-accessories", label: "Aksesor sportiv" },
+    { value: "sneakers", label: "Patika" },
+    { value: "sports-tshirt", label: "Maice sportive" },
+    { value: "leggings", label: "Leggings" },
+    { value: "tracksuit", label: "Trenerke" },
+    { value: "ball", label: "Top" },
+    { value: "racket", label: "Raket" },
+    { value: "dumbbells", label: "Pesha" },
+    { value: "yoga-mat", label: "Yoga mat" },
+    { value: "sports-bag", label: "Cante sportive" },
+    { value: "gloves", label: "Doreza sportive" },
+    { value: "water-bottle", label: "Shishe uji" },
   ],
   technology: [
-    { value: "phone-cases", label: "Mbrojtese per telefon" },
-    { value: "headphones", label: "Ndegjuesit" },
-    { value: "phone-parts", label: "Pjese per telefon" },
-    { value: "phone-accessories", label: "Aksesor te telefonave" },
+    { value: "phone", label: "Telefon" },
+    { value: "laptop", label: "Laptop" },
+    { value: "pc", label: "PC" },
+    { value: "tablet", label: "Tablet" },
+    { value: "headphones", label: "Degjuese" },
+    { value: "speaker", label: "Boks" },
+    { value: "smartwatch", label: "Smartwatch" },
+    { value: "keyboard", label: "Tastiere" },
+    { value: "mouse", label: "Mouse" },
+    { value: "monitor", label: "Monitor" },
+    { value: "charger", label: "Karikues" },
+    { value: "cable", label: "Kabllo" },
+    { value: "power-bank", label: "Power bank" },
+    { value: "router", label: "Router" },
+    { value: "microphone", label: "Mikrofon" },
   ],
 };
+
+const LEGACY_SECTION_VALUE_ALIASES = {
+  "cosmetics-kids": "cosmetics-women",
+};
+
+function normalizeLegacySectionValue(sectionValue = "") {
+  const normalizedValue = String(sectionValue || "").trim();
+  return LEGACY_SECTION_VALUE_ALIASES[normalizedValue] || normalizedValue;
+}
 
 
 function populateProductSectionSelect(selectElement, preferredValue = "") {
@@ -853,16 +1139,7 @@ function populateProductSectionSelect(selectElement, preferredValue = "") {
   }
 
   const options = [...PRODUCT_SECTION_OPTIONS];
-  const normalizedPreferredValue = String(preferredValue || "").trim();
-  if (
-    normalizedPreferredValue &&
-    !options.some((option) => option.value === normalizedPreferredValue)
-  ) {
-    options.unshift({
-      value: normalizedPreferredValue,
-      label: formatCategoryLabel(normalizedPreferredValue),
-    });
-  }
+  const normalizedPreferredValue = normalizeLegacySectionValue(preferredValue);
 
   selectElement.innerHTML = options
     .map((option) => `
@@ -883,17 +1160,8 @@ function populateProductTypeSelect(sectionValue, selectElement, preferredValue =
     return;
   }
 
-  const options = [...(SECTION_PRODUCT_TYPE_OPTIONS[sectionValue] || [])];
+  const options = [...(SECTION_PRODUCT_TYPE_OPTIONS[normalizeLegacySectionValue(sectionValue)] || [])];
   const normalizedPreferredValue = String(preferredValue || "").trim();
-  if (
-    normalizedPreferredValue &&
-    !options.some((option) => option.value === normalizedPreferredValue)
-  ) {
-    options.unshift({
-      value: normalizedPreferredValue,
-      label: formatProductTypeLabel(normalizedPreferredValue),
-    });
-  }
 
   selectElement.innerHTML = options
     .map((option) => `
@@ -910,7 +1178,7 @@ function populateProductTypeSelect(sectionValue, selectElement, preferredValue =
 
 
 function isClothingSection(sectionValue) {
-  return String(sectionValue || "").startsWith("clothing-");
+  return normalizeLegacySectionValue(sectionValue).startsWith("clothing-");
 }
 
 
@@ -1738,6 +2006,7 @@ function initializePaymentOptionsPage() {
 
   let selectedMethod = readCheckoutPaymentMethod();
   let currentUser = null;
+  const currentUrl = new URL(window.location.href);
 
   bootstrap();
 
@@ -1745,6 +2014,40 @@ function initializePaymentOptionsPage() {
     currentUser = await fetchCurrentUserOptional();
     if (!currentUser) {
       window.location.href = "/login";
+      return;
+    }
+
+    const stripeStatus = String(currentUrl.searchParams.get("stripeStatus") || "").trim().toLowerCase();
+    const stripeSessionId = String(currentUrl.searchParams.get("session_id") || "").trim();
+
+    renderSelectedMethod();
+    optionButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedMethod = button.dataset.paymentMethod || "";
+        renderSelectedMethod();
+        showMessage(messageElement, "", "");
+      });
+    });
+    submitButton.addEventListener("click", handleSubmit);
+    cancelButton.addEventListener("click", () => {
+      window.location.href = "/adresa-e-porosise";
+    });
+
+    if (stripeStatus === "cancelled") {
+      showMessage(
+        messageElement,
+        "Pagesa online u anulua. Mund te provosh perseri kur te jesh gati.",
+        "error",
+      );
+      clearStripeStateQuery();
+      return;
+    }
+
+    if (stripeStatus === "success" && stripeSessionId) {
+      selectedMethod = "card-online";
+      renderSelectedMethod();
+      persistCheckoutPaymentMethod("card-online");
+      await confirmStripePayment(stripeSessionId);
       return;
     }
 
@@ -1759,19 +2062,6 @@ function initializePaymentOptionsPage() {
       window.location.href = "/cart";
       return;
     }
-
-    renderSelectedMethod();
-    optionButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        selectedMethod = button.dataset.paymentMethod || "";
-        renderSelectedMethod();
-        showMessage(messageElement, "", "");
-      });
-    });
-    submitButton.addEventListener("click", handleSubmit);
-    cancelButton.addEventListener("click", () => {
-      window.location.href = "/adresa-e-porosise";
-    });
   }
 
   function renderSelectedMethod() {
@@ -1794,10 +2084,22 @@ function initializePaymentOptionsPage() {
       return;
     }
 
-    submitOrder();
+    if (selectedMethod === "card-online") {
+      void startStripeCheckout();
+      return;
+    }
+
+    void submitCashOrder();
   }
 
-  async function submitOrder() {
+  function clearStripeStateQuery() {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("stripeStatus");
+    nextUrl.searchParams.delete("session_id");
+    window.history.replaceState({}, "", nextUrl.toString());
+  }
+
+  async function submitCashOrder() {
     const checkoutAddress = readCheckoutAddressDraft();
     const selectedCartIds = readCheckoutSelectedCartIds();
 
@@ -1829,7 +2131,7 @@ function initializePaymentOptionsPage() {
 
     try {
       const payload = {
-        productIds: selectedCartIds,
+        cartItemIds: selectedCartIds,
         paymentMethod: selectedMethod,
         ...checkoutAddress,
       };
@@ -1871,6 +2173,128 @@ function initializePaymentOptionsPage() {
         false,
         "Konfirmo menyren e pageses",
         "Duke konfirmuar porosine...",
+      );
+    }
+  }
+
+  async function startStripeCheckout() {
+    const checkoutAddress = readCheckoutAddressDraft();
+    const selectedCartIds = readCheckoutSelectedCartIds();
+
+    if (!checkoutAddress || !checkoutAddress.addressLine) {
+      window.location.href = "/adresa-e-porosise";
+      return;
+    }
+
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
+
+    if (selectedCartIds.length === 0) {
+      showMessage(
+        messageElement,
+        "Nuk ka produkte te zgjedhura per kete porosi. Kthehu te shporta.",
+        "error",
+      );
+      return;
+    }
+
+    setButtonLoading(
+      submitButton,
+      true,
+      "Konfirmo menyren e pageses",
+      "Po vazhdohet me Stripe...",
+    );
+
+    try {
+      const payload = {
+        cartItemIds: selectedCartIds,
+        paymentMethod: "card-online",
+        ...checkoutAddress,
+      };
+
+      const { response, data } = await requestJson("/api/payments/stripe/checkout", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok || !data.ok || !data.checkoutUrl) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Stripe test checkout nuk u hap.";
+        showMessage(messageElement, message, "error");
+        return;
+      }
+
+      persistCheckoutPaymentMethod("card-online");
+      window.location.href = data.checkoutUrl;
+    } catch (error) {
+      showMessage(
+        messageElement,
+        "Serveri nuk po pergjigjet. Provoje perseri.",
+        "error",
+      );
+      console.error(error);
+    } finally {
+      setButtonLoading(
+        submitButton,
+        false,
+        "Konfirmo menyren e pageses",
+        "Po vazhdohet me Stripe...",
+      );
+    }
+  }
+
+  async function confirmStripePayment(stripeSessionId) {
+    setButtonLoading(
+      submitButton,
+      true,
+      "Konfirmo menyren e pageses",
+      "Po verifikohet pagesa...",
+    );
+
+    try {
+      const { response, data } = await requestJson("/api/payments/stripe/confirm", {
+        method: "POST",
+        body: JSON.stringify({ stripeSessionId }),
+      });
+
+      if (!response.ok || !data.ok) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Pagesa nuk u konfirmua nga Stripe.";
+        showMessage(messageElement, message, "error");
+        return;
+      }
+
+      const notificationWarnings = Array.isArray(data.notificationWarnings)
+        ? data.notificationWarnings.filter(Boolean)
+        : [];
+      const confirmationMessage = notificationWarnings.length > 0
+        ? `${data.message || "Pagesa u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
+        : (data.message || "Pagesa u konfirmua me sukses.");
+
+      persistCheckoutPaymentMethod("card-online");
+      persistOrderConfirmationMessage(confirmationMessage);
+      clearCheckoutFlowState();
+      clearStripeStateQuery();
+      window.location.href = data.redirectTo || "/porosite";
+    } catch (error) {
+      showMessage(
+        messageElement,
+        "Serveri nuk po pergjigjet. Provoje perseri.",
+        "error",
+      );
+      console.error(error);
+    } finally {
+      setButtonLoading(
+        submitButton,
+        false,
+        "Konfirmo menyren e pageses",
+        "Po verifikohet pagesa...",
       );
     }
   }
@@ -2204,10 +2628,14 @@ function initializeAccountPage() {
     const businessLinks = currentUser.role === "business"
       ? [
           { href: "/biznesi-juaj", label: "Biznesi juaj" },
+          { href: "/mesazhet", label: "Mesazhet" },
           { href: "/porosite-e-biznesit", label: "Porosite e biznesit" },
         ]
       : [];
-    const links = [...adminLinks, ...businessLinks];
+    const clientLinks = currentUser.role === "client"
+      ? [{ href: "/mesazhet", label: "Mesazhet" }]
+      : [];
+    const links = [...adminLinks, ...businessLinks, ...clientLinks];
 
     if (links.length === 0) {
       roleLinksElement.hidden = true;
@@ -2307,6 +2735,448 @@ function initializeAccountPage() {
 }
 
 
+function initializeMessagesPage() {
+  const pageMessage = document.getElementById("messages-page-message");
+  const pageTitle = document.getElementById("messages-page-title");
+  const pageIntro = document.getElementById("messages-page-intro");
+  const unreadCountElement = document.getElementById("messages-unread-count");
+  const conversationsCountElement = document.getElementById("messages-conversations-count");
+  const sidebarAction = document.getElementById("messages-sidebar-action");
+  const conversationsList = document.getElementById("messages-conversations-list");
+  const threadAvatar = document.getElementById("messages-thread-avatar");
+  const threadLabel = document.getElementById("messages-thread-label");
+  const threadTitle = document.getElementById("messages-thread-title");
+  const threadProfileLink = document.getElementById("messages-thread-profile-link");
+  const threadViewport = document.getElementById("messages-thread-viewport");
+  const composeForm = document.getElementById("messages-compose-form");
+  const composeInput = document.getElementById("messages-compose-input");
+  const sendButton = document.getElementById("messages-send-button");
+
+  if (
+    !pageMessage ||
+    !pageTitle ||
+    !pageIntro ||
+    !unreadCountElement ||
+    !conversationsCountElement ||
+    !sidebarAction ||
+    !conversationsList ||
+    !threadAvatar ||
+    !threadLabel ||
+    !threadTitle ||
+    !threadProfileLink ||
+    !threadViewport ||
+    !composeForm ||
+    !composeInput ||
+    !sendButton
+  ) {
+    return;
+  }
+
+  let currentUser = null;
+  let conversations = [];
+  let messages = [];
+  let activeConversationId = 0;
+  let pollIntervalId = 0;
+
+  bootstrap();
+
+  async function bootstrap() {
+    currentUser = await fetchCurrentUserOptional();
+    if (!currentUser) {
+      window.location.href = `/login?redirect=${encodeURIComponent("/mesazhet")}`;
+      return;
+    }
+
+    if (!["client", "business"].includes(String(currentUser.role || "").trim())) {
+      window.location.href = currentUser.role === "admin" ? "/admin-products" : "/";
+      return;
+    }
+
+    pageTitle.textContent = currentUser.role === "business" ? "Inbox-i i biznesit" : "Bisedat e tua";
+    pageIntro.textContent = currentUser.role === "business"
+      ? "Ketu i menaxhon mesazhet qe vijne nga klientet e interesuar per biznesin tend."
+      : "Ketu i gjen bisedat me bizneset dhe mund te vazhdosh komunikimin pa dale nga platforma.";
+    sidebarAction.textContent = currentUser.role === "business" ? "Paneli" : "Llogaria";
+    sidebarAction.href = currentUser.role === "business" ? "/biznesi-juaj" : "/llogaria";
+
+    conversationsList.addEventListener("click", handleConversationClick);
+    composeForm.addEventListener("submit", handleSendMessage);
+    await loadConversations({ keepSelection: false, refreshMessages: true });
+    startPolling();
+  }
+
+  function stopPolling() {
+    if (pollIntervalId) {
+      window.clearInterval(pollIntervalId);
+      pollIntervalId = 0;
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollIntervalId = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
+
+      void loadConversations({ keepSelection: true, refreshMessages: true, silent: true });
+    }, 10000);
+  }
+
+  function readConversationIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const conversationId = Number(params.get("conversationId") || 0);
+    return Number.isFinite(conversationId) && conversationId > 0 ? conversationId : 0;
+  }
+
+  function updateConversationQuery(conversationId) {
+    const nextUrl = new URL(window.location.href);
+    if (conversationId > 0) {
+      nextUrl.searchParams.set("conversationId", String(conversationId));
+    } else {
+      nextUrl.searchParams.delete("conversationId");
+    }
+    window.history.replaceState({}, "", nextUrl.toString());
+  }
+
+  function formatChatTimestamp(value) {
+    const rawValue = String(value || "").trim();
+    if (!rawValue) {
+      return "";
+    }
+
+    const normalizedValue = rawValue.includes("T") ? rawValue : rawValue.replace(" ", "T");
+    const parsedDate = new Date(normalizedValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return rawValue;
+    }
+
+    const now = new Date();
+    const sameDay =
+      parsedDate.getDate() === now.getDate()
+      && parsedDate.getMonth() === now.getMonth()
+      && parsedDate.getFullYear() === now.getFullYear();
+
+    return parsedDate.toLocaleString("sq-AL", sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function renderConversationAvatar(name, imagePath) {
+    const cleanPath = String(imagePath || "").trim();
+    if (cleanPath) {
+      return `<img class="messages-conversation-avatar-image" src="${escapeAttribute(cleanPath)}" alt="${escapeAttribute(name)}">`;
+    }
+
+    return `<span class="messages-conversation-avatar-fallback">${escapeHtml(getBusinessInitials(name))}</span>`;
+  }
+
+  function renderConversationCard(conversation) {
+    return `
+      <button
+        class="messages-conversation-card${Number(conversation.id) === Number(activeConversationId) ? " is-active" : ""}"
+        type="button"
+        data-conversation-id="${conversation.id}"
+      >
+        <span class="messages-conversation-avatar" aria-hidden="true">
+          ${renderConversationAvatar(conversation.counterpartName, conversation.counterpartImagePath)}
+        </span>
+        <span class="messages-conversation-copy">
+          <strong>${escapeHtml(conversation.counterpartName)}</strong>
+          <span>${escapeHtml(conversation.lastMessagePreview || "Nise biseden nga kjo dritare.")}</span>
+        </span>
+        <span class="messages-conversation-meta">
+          <small>${escapeHtml(formatChatTimestamp(conversation.lastMessageAt))}</small>
+          ${
+            Number(conversation.unreadCount || 0) > 0
+              ? `<span class="messages-unread-badge">${escapeHtml(String(conversation.unreadCount))}</span>`
+              : ""
+          }
+        </span>
+      </button>
+    `;
+  }
+
+  function renderMessageBubble(message) {
+    return `
+      <article class="messages-bubble${message.isOwn ? " is-own" : ""}">
+        <p>${escapeHtml(message.body)}</p>
+        <span>${escapeHtml(message.isOwn ? "Ti" : message.senderName)} · ${escapeHtml(formatChatTimestamp(message.createdAt))}</span>
+      </article>
+    `;
+  }
+
+  function mergeConversation(nextConversation) {
+    if (!nextConversation?.id) {
+      return;
+    }
+
+    const existingIndex = conversations.findIndex(
+      (conversation) => Number(conversation.id) === Number(nextConversation.id),
+    );
+    if (existingIndex >= 0) {
+      conversations.splice(existingIndex, 1, {
+        ...conversations[existingIndex],
+        ...nextConversation,
+      });
+      return;
+    }
+
+    conversations.unshift(nextConversation);
+  }
+
+  function renderConversations() {
+    conversationsCountElement.textContent = String(conversations.length);
+    unreadCountElement.textContent = String(
+      conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0),
+    );
+
+    if (conversations.length === 0) {
+      conversationsList.innerHTML = `
+        <div class="messages-empty-state">
+          ${
+            currentUser?.role === "business"
+              ? "Kur nje klient te te shkruaje, biseda do te shfaqet ketu."
+              : "Kliko Message te profili i nje biznesi per ta nisur biseden."
+          }
+        </div>
+      `;
+      return;
+    }
+
+    conversationsList.innerHTML = conversations.map(renderConversationCard).join("");
+  }
+
+  function renderThread() {
+    const activeConversation = conversations.find(
+      (conversation) => Number(conversation.id) === Number(activeConversationId),
+    );
+
+    if (!activeConversation) {
+      threadLabel.textContent = "Biseda";
+      threadTitle.textContent = "Zgjidh nje bisede";
+      threadAvatar.innerHTML = "";
+      threadProfileLink.hidden = true;
+      composeInput.value = "";
+      composeInput.disabled = true;
+      sendButton.disabled = true;
+      threadViewport.innerHTML = `
+        <div class="messages-empty-state messages-thread-empty">
+          Zgjidh nje bisede nga lista ne te majte per t'i pare mesazhet.
+        </div>
+      `;
+      return;
+    }
+
+    threadLabel.textContent = currentUser?.role === "business" ? "Klienti" : "Biznesi";
+    threadTitle.textContent = activeConversation.counterpartName;
+    threadAvatar.innerHTML = renderConversationAvatar(
+      activeConversation.counterpartName,
+      activeConversation.counterpartImagePath,
+    );
+
+    if (currentUser?.role !== "business" && activeConversation.profileUrl) {
+      threadProfileLink.hidden = false;
+      threadProfileLink.href = activeConversation.profileUrl;
+    } else {
+      threadProfileLink.hidden = true;
+    }
+
+    composeInput.disabled = false;
+    sendButton.disabled = false;
+
+    if (!messages.length) {
+      threadViewport.innerHTML = `
+        <div class="messages-empty-state messages-thread-empty">
+          Biseda eshte bosh. Shkruaje mesazhin e pare me poshte.
+        </div>
+      `;
+      return;
+    }
+
+    threadViewport.innerHTML = messages.map(renderMessageBubble).join("");
+  }
+
+  async function scrollThreadToBottom() {
+    window.requestAnimationFrame(() => {
+      threadViewport.scrollTop = threadViewport.scrollHeight;
+    });
+  }
+
+  async function loadMessages(conversationId, options = {}) {
+    const { scrollToBottom = false, silent = false } = options;
+    if (!conversationId) {
+      messages = [];
+      renderThread();
+      return;
+    }
+
+    try {
+      const { response, data } = await requestJson(
+        `/api/chat/messages?conversationId=${encodeURIComponent(conversationId)}`,
+      );
+
+      if (!response.ok || !data.ok) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Biseda nuk u hap.";
+        if (!silent) {
+          showMessage(pageMessage, message, "error");
+        }
+        return;
+      }
+
+      mergeConversation(data.conversation);
+      messages = Array.isArray(data.messages) ? data.messages : [];
+      renderConversations();
+      renderThread();
+      if (scrollToBottom) {
+        await scrollThreadToBottom();
+      }
+    } catch (error) {
+      if (!silent) {
+        showMessage(pageMessage, "Mesazhet nuk u ngarkuan. Provoje perseri.", "error");
+      }
+      console.error(error);
+    }
+  }
+
+  async function loadConversations(options = {}) {
+    const {
+      keepSelection = true,
+      refreshMessages = true,
+      silent = false,
+    } = options;
+
+    try {
+      const { response, data } = await requestJson("/api/chat/conversations");
+      if (!response.ok || !data.ok) {
+        conversations = [];
+        messages = [];
+        activeConversationId = 0;
+        renderConversations();
+        renderThread();
+        if (!silent) {
+          const message =
+            data.errors?.join(" ") ||
+            data.message ||
+            "Bisedat nuk u ngarkuan.";
+          showMessage(pageMessage, message, "error");
+        }
+        return;
+      }
+
+      conversations = Array.isArray(data.conversations) ? data.conversations : [];
+      const queryConversationId = readConversationIdFromUrl();
+      const hasConversation = (conversationId) =>
+        conversations.some((conversation) => Number(conversation.id) === Number(conversationId));
+
+      const nextConversationId = [queryConversationId, keepSelection ? activeConversationId : 0, conversations[0]?.id]
+        .map((value) => Number(value || 0))
+        .find((value) => value > 0 && hasConversation(value)) || 0;
+
+      const selectionChanged = nextConversationId !== Number(activeConversationId || 0);
+      activeConversationId = nextConversationId;
+      updateConversationQuery(activeConversationId);
+      renderConversations();
+
+      if (!activeConversationId) {
+        messages = [];
+        renderThread();
+        return;
+      }
+
+      if (refreshMessages) {
+        await loadMessages(activeConversationId, {
+          scrollToBottom: selectionChanged,
+          silent,
+        });
+      } else {
+        renderThread();
+      }
+    } catch (error) {
+      if (!silent) {
+        showMessage(pageMessage, "Inbox-i nuk u ngarkua. Provoje perseri pas pak.", "error");
+      }
+      console.error(error);
+    }
+  }
+
+  async function openConversation(conversationId) {
+    const normalizedConversationId = Number(conversationId || 0);
+    if (!Number.isFinite(normalizedConversationId) || normalizedConversationId <= 0) {
+      return;
+    }
+
+    activeConversationId = normalizedConversationId;
+    updateConversationQuery(activeConversationId);
+    renderConversations();
+    await loadMessages(activeConversationId, { scrollToBottom: true });
+    void loadConversations({ keepSelection: true, refreshMessages: false, silent: true });
+  }
+
+  async function handleConversationClick(event) {
+    const conversationButton = event.target.closest("[data-conversation-id]");
+    if (!conversationButton) {
+      return;
+    }
+
+    await openConversation(conversationButton.dataset.conversationId);
+  }
+
+  async function handleSendMessage(event) {
+    event.preventDefault();
+    if (!activeConversationId) {
+      return;
+    }
+
+    const body = String(composeInput.value || "").trim();
+    if (!body) {
+      showMessage(pageMessage, "Shkruaje mesazhin para se ta dergosh.", "error");
+      return;
+    }
+
+    setButtonLoading(sendButton, true, "Dergo", "Duke derguar...");
+
+    try {
+      const { response, data } = await requestJson("/api/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          conversationId: activeConversationId,
+          body,
+        }),
+      });
+
+      if (!response.ok || !data.ok || !data.message) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Mesazhi nuk u dergua.";
+        showMessage(pageMessage, message, "error");
+        return;
+      }
+
+      mergeConversation(data.conversation);
+      messages = [...messages, data.message];
+      composeInput.value = "";
+      renderConversations();
+      renderThread();
+      showMessage(pageMessage, "Mesazhi u dergua.", "success");
+      await scrollThreadToBottom();
+      void loadConversations({ keepSelection: true, refreshMessages: false, silent: true });
+    } catch (error) {
+      showMessage(pageMessage, "Mesazhi nuk u dergua. Provoje perseri.", "error");
+      console.error(error);
+    } finally {
+      setButtonLoading(sendButton, false, "Dergo", "Duke derguar...");
+    }
+  }
+
+  window.addEventListener("beforeunload", stopPolling, { once: true });
+}
+
+
 function initializeBusinessDashboardPage() {
   const userElement = document.getElementById("business-user-role");
   const accessElement = document.getElementById("business-access-note");
@@ -2366,6 +3236,24 @@ function initializeBusinessDashboardPage() {
   let businessLogoPreviewUrl = "";
   let productsCache = [];
   let editingProduct = null;
+
+  function productHasManagedVariants(product) {
+    return Array.isArray(product?.variantInventory)
+      && product.variantInventory.some((entry) => {
+        const size = String(entry?.size || "").trim();
+        const color = String(entry?.color || "").trim();
+        return size || color;
+      });
+  }
+
+  function getFirstVariantValue(product, key) {
+    if (!Array.isArray(product?.variantInventory)) {
+      return "";
+    }
+
+    const entry = product.variantInventory.find((item) => String(item?.[key] || "").trim());
+    return String(entry?.[key] || "");
+  }
 
   bootstrap();
 
@@ -2621,6 +3509,13 @@ function initializeBusinessDashboardPage() {
       color: formData.get("color")?.toString().trim() || "",
       stockQuantity: formData.get("stockQuantity")?.toString().trim() || "",
     };
+
+    if (editingProduct && productHasManagedVariants(editingProduct)) {
+      payload.variantInventory = editingProduct.variantInventory;
+      payload.size = "";
+      payload.color = "";
+      payload.stockQuantity = String(editingProduct.stockQuantity ?? payload.stockQuantity);
+    }
 
     if (!editingProduct && imageFiles.length === 0) {
       showMessage(
@@ -2878,8 +3773,9 @@ function initializeBusinessDashboardPage() {
 
   function syncProductSizeField() {
     const isClothing = isClothingSection(productCategorySelect.value);
+    const preserveExistingVariants = isClothing && productHasManagedVariants(editingProduct);
     productSizeField.hidden = !isClothing;
-    productSizeSelect.required = isClothing;
+    productSizeSelect.required = isClothing && !preserveExistingVariants;
 
     if (!isClothing) {
       productSizeSelect.value = "";
@@ -2957,13 +3853,15 @@ function initializeBusinessDashboardPage() {
       String(product.productType || ""),
     );
     syncProductSizeField();
-    productSizeSelect.value = String(product.size || "");
+    productSizeSelect.value = String(product.size || getFirstVariantValue(product, "size") || "");
     document.getElementById("business-product-color").value = String(product.color || "");
     document.getElementById("business-product-stock-quantity").value = String(product.stockQuantity ?? 0);
     renderSelectedImagePreviews(getProductImageGallery(product));
     showMessage(
       productFormMessageElement,
-      `Po editon artikullin "${product.title}".`,
+      productHasManagedVariants(product)
+        ? `Po editon artikullin "${product.title}". Variantet ekzistuese te stokut ruhen si jane.`
+        : `Po editon artikullin "${product.title}".`,
       "success",
     );
     productFormSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -4428,7 +5326,8 @@ function initializeLoginPage() {
       showMessage(messageElement, data.message || "U kyqe me sukses.", "success");
       persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
       window.setTimeout(() => {
-        window.location.href = data.redirectTo || "/";
+        const nextRedirect = new URLSearchParams(window.location.search).get("redirect");
+        window.location.href = data.redirectTo || nextRedirect || "/";
       }, 700);
     } catch (error) {
       showMessage(
@@ -4902,6 +5801,10 @@ function initializeBusinessProfilePage() {
       currentBusiness = businessResponse.data.business;
       heroElement.innerHTML = renderBusinessProfileHero(currentBusiness, currentUser);
 
+      if (String(searchParams.get("openChat") || "").trim() === "1" && currentUser?.role === "client") {
+        await openBusinessConversation({ fromAutoOpen: true });
+      }
+
       if (!productsResponse.response.ok || !productsResponse.data.ok) {
         grid.innerHTML = `
           <div class="pets-empty-state">
@@ -4959,6 +5862,12 @@ function initializeBusinessProfilePage() {
   }
 
   async function handleHeroAction(event) {
+    const messageButton = event.target.closest("[data-business-message-button]");
+    if (messageButton && currentBusiness) {
+      await openBusinessConversation();
+      return;
+    }
+
     const followButton = event.target.closest("[data-business-follow-button]");
     if (!followButton || !currentBusiness) {
       return;
@@ -5012,6 +5921,79 @@ function initializeBusinessProfilePage() {
     } finally {
       const nextButton = heroElement.querySelector("[data-business-follow-button]");
       if (nextButton) {
+        nextButton.disabled = false;
+      }
+    }
+  }
+
+  function clearOpenChatFlag() {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("openChat");
+    window.history.replaceState({}, "", nextUrl.toString());
+  }
+
+  async function openBusinessConversation(options = {}) {
+    const { fromAutoOpen = false } = options;
+    if (!currentBusiness) {
+      return;
+    }
+
+    if (!currentUser) {
+      const redirectTarget = `/profili-biznesit?id=${currentBusiness.id}&openChat=1`;
+      window.location.href = `/login?redirect=${encodeURIComponent(redirectTarget)}`;
+      return;
+    }
+
+    if (currentUser.role === "business" && Number(currentUser.id) === Number(currentBusiness.userId)) {
+      window.location.href = "/mesazhet";
+      return;
+    }
+
+    if (currentUser.role !== "client") {
+      showMessage(messageElement, "Vetem klientet mund te nisin bisede me biznesin.", "error");
+      if (fromAutoOpen) {
+        clearOpenChatFlag();
+      }
+      return;
+    }
+
+    const messageButton = heroElement.querySelector("[data-business-message-button]");
+    if (messageButton) {
+      messageButton.disabled = true;
+    }
+
+    try {
+      const { response, data } = await requestJson("/api/chat/open", {
+        method: "POST",
+        body: JSON.stringify({ businessId: currentBusiness.id }),
+      });
+
+      if (!response.ok || !data.ok || !data.conversation?.id) {
+        const message =
+          data.errors?.join(" ") ||
+          data.message ||
+          "Biseda nuk u hap.";
+        showMessage(messageElement, message, "error");
+        if (fromAutoOpen) {
+          clearOpenChatFlag();
+        }
+        return;
+      }
+
+      window.location.href = data.redirectTo || `/mesazhet?conversationId=${data.conversation.id}`;
+    } catch (error) {
+      showMessage(
+        messageElement,
+        "Serveri nuk po pergjigjet. Provoje perseri.",
+        "error",
+      );
+      console.error(error);
+      if (fromAutoOpen) {
+        clearOpenChatFlag();
+      }
+    } finally {
+      const nextButton = heroElement.querySelector("[data-business-message-button]");
+      if (nextButton && currentUser?.role === "client") {
         nextButton.disabled = false;
       }
     }
@@ -6142,6 +7124,24 @@ function initializeAdminProductsPage() {
   let productsCache = [];
   let editingProduct = null;
 
+  function productHasManagedVariants(product) {
+    return Array.isArray(product?.variantInventory)
+      && product.variantInventory.some((entry) => {
+        const size = String(entry?.size || "").trim();
+        const color = String(entry?.color || "").trim();
+        return size || color;
+      });
+  }
+
+  function getFirstVariantValue(product, key) {
+    if (!Array.isArray(product?.variantInventory)) {
+      return "";
+    }
+
+    const entry = product.variantInventory.find((item) => String(item?.[key] || "").trim());
+    return String(entry?.[key] || "");
+  }
+
   bootstrap();
 
   async function bootstrap() {
@@ -6204,6 +7204,13 @@ function initializeAdminProductsPage() {
       color: formData.get("color")?.toString().trim() || "",
       stockQuantity: formData.get("stockQuantity")?.toString().trim() || "",
     };
+
+    if (editingProduct && productHasManagedVariants(editingProduct)) {
+      payload.variantInventory = editingProduct.variantInventory;
+      payload.size = "";
+      payload.color = "";
+      payload.stockQuantity = String(editingProduct.stockQuantity ?? payload.stockQuantity);
+    }
 
     if (!editingProduct && imageFiles.length === 0) {
       showMessage(
@@ -6597,8 +7604,9 @@ function initializeAdminProductsPage() {
 
   function syncProductSizeField() {
     const isClothing = isClothingSection(productCategorySelect.value);
+    const preserveExistingVariants = isClothing && productHasManagedVariants(editingProduct);
     productSizeField.hidden = !isClothing;
-    productSizeSelect.required = isClothing;
+    productSizeSelect.required = isClothing && !preserveExistingVariants;
 
     if (!isClothing) {
       productSizeSelect.value = "";
@@ -6676,10 +7684,10 @@ function initializeAdminProductsPage() {
       String(product.productType || ""),
     );
     syncProductSizeField();
-    productSizeSelect.value = String(product.size || "");
+    productSizeSelect.value = String(product.size || getFirstVariantValue(product, "size") || "");
     const productColorSelect = document.getElementById("product-color");
     if (productColorSelect) {
-      productColorSelect.value = String(product.color || "");
+      productColorSelect.value = String(product.color || getFirstVariantValue(product, "color") || "");
     }
 
     const stockQuantityInput = document.getElementById("product-stock-quantity");
@@ -6688,7 +7696,13 @@ function initializeAdminProductsPage() {
     }
 
     renderSelectedImagePreviews(getProductImageGallery(product));
-    showMessage(messageElement, `Po editon artikullin "${product.title}".`, "success");
+    showMessage(
+      messageElement,
+      productHasManagedVariants(product)
+        ? `Po editon artikullin "${product.title}". Variantet ekzistuese te stokut ruhen si jane.`
+        : `Po editon artikullin "${product.title}".`,
+      "success",
+    );
     formSection.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -7350,11 +8364,9 @@ function renderBusinessProfileHero(business, currentUser) {
   const initials = getBusinessInitials(businessName);
   const canFollow = !currentUser || !(currentUser.role === "business" && Number(currentUser.id) === Number(business?.userId));
   const followLabel = business?.isFollowed ? "Following" : "Follow";
-  const messageHref = ownerEmail
-    ? `mailto:${ownerEmail}?subject=${encodeURIComponent(`Pershendetje ${businessName}`)}`
-    : phoneNumber && phoneNumber !== "-"
-      ? `tel:${phoneNumber.replace(/\s+/g, "")}`
-      : "#";
+  const isOwnBusiness = currentUser && currentUser.role === "business" && Number(currentUser.id) === Number(business?.userId);
+  const canUseMessageAction = !currentUser || currentUser.role === "client" || isOwnBusiness;
+  const messageActionLabel = isOwnBusiness ? "Mesazhet" : "Message";
 
   return `
     <div class="business-public-hero-layout">
@@ -7382,13 +8394,14 @@ function renderBusinessProfileHero(business, currentUser) {
         >
           ${escapeHtml(followLabel)}
         </button>
-        <a
-          class="nav-action nav-action-secondary business-message-button${messageHref === "#" ? " is-disabled" : ""}"
-          href="${escapeAttribute(messageHref)}"
-          ${messageHref === "#" ? 'aria-disabled="true" tabindex="-1"' : ""}
+        <button
+          class="nav-action nav-action-secondary business-message-button${canUseMessageAction ? "" : " is-disabled"}"
+          type="button"
+          data-business-message-button
+          ${canUseMessageAction ? "" : "disabled"}
         >
-          Message
-        </a>
+          ${escapeHtml(messageActionLabel)}
+        </button>
       </div>
 
       <div class="business-public-stats">

@@ -1,17 +1,19 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
-import { getBusinessInitials, getBusinessProfileUrl } from "../lib/shop";
+import { getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
 
 const route = useRoute();
+const router = useRouter();
 const business = ref(null);
 const products = ref([]);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
+const openingChat = ref(false);
 const totalProductsCount = ref(0);
 const hasMoreProducts = ref(false);
 const loadingMoreProducts = ref(false);
@@ -46,6 +48,17 @@ onBeforeUnmount(() => {
   stopProductsPageSizeSubscription();
 });
 
+watch(
+  () => appState.catalogRevision,
+  async (nextRevision, previousRevision) => {
+    if (nextRevision === previousRevision) {
+      return;
+    }
+
+    await loadProducts();
+  },
+);
+
 const canFollow = computed(() => {
   if (!business.value) {
     return false;
@@ -58,20 +71,36 @@ const canFollow = computed(() => {
   return !(appState.user.role === "business" && Number(appState.user.id) === Number(business.value.userId));
 });
 
-const messageHref = computed(() => {
+const canUseMessageAction = computed(() => {
   if (!business.value) {
-    return "#";
+    return false;
   }
 
-  if (business.value.ownerEmail) {
-    return `mailto:${business.value.ownerEmail}?subject=${encodeURIComponent(`Pershendetje ${business.value.businessName}`)}`;
+  if (!appState.user) {
+    return true;
   }
 
-  if (business.value.phoneNumber) {
-    return `tel:${String(business.value.phoneNumber).replace(/\s+/g, "")}`;
+  if (appState.user.role === "client") {
+    return true;
   }
 
-  return "#";
+  if (appState.user.role === "business") {
+    return Number(appState.user.id) === Number(business.value.userId);
+  }
+
+  return false;
+});
+
+const messageActionLabel = computed(() => {
+  if (
+    appState.user?.role === "business"
+    && business.value
+    && Number(appState.user.id) === Number(business.value.userId)
+  ) {
+    return "Mesazhet";
+  }
+
+  return "Message";
 });
 
 async function bootstrap() {
@@ -81,9 +110,40 @@ async function bootstrap() {
       loadBusiness(),
       loadProducts(),
     ]);
+    await maybeOpenChatFromRoute();
   } finally {
     markRouteReady();
   }
+}
+
+async function clearOpenChatQuery() {
+  if (String(route.query.openChat || "").trim() !== "1") {
+    return;
+  }
+
+  const nextQuery = { ...route.query };
+  delete nextQuery.openChat;
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  });
+}
+
+async function maybeOpenChatFromRoute() {
+  if (String(route.query.openChat || "").trim() !== "1") {
+    return;
+  }
+
+  if (!business.value || !appState.user) {
+    return;
+  }
+
+  if (appState.user.role !== "client") {
+    await clearOpenChatQuery();
+    return;
+  }
+
+  await handleOpenChat({ fromAutoOpen: true });
 }
 
 async function refreshCollectionState() {
@@ -99,7 +159,7 @@ async function refreshCollectionState() {
   ]);
 
   wishlistIds.value = wishlistItems.map((item) => item.id);
-  cartIds.value = cartItems.map((item) => item.id);
+  cartIds.value = cartItems.map((item) => item.productId || item.id);
   setCartItems(cartItems);
 }
 
@@ -143,7 +203,6 @@ async function loadProducts(options = {}) {
   const { response, data } = await requestJson(
     `/api/business/public-products?id=${encodeURIComponent(businessId)}&limit=${productsPageSize.value}&offset=${offset}`,
     {},
-    { cacheTtlMs: 15000 },
   );
   if (!response.ok || !data?.ok) {
     if (!append) {
@@ -203,6 +262,69 @@ async function toggleFollow() {
   ui.type = "success";
 }
 
+async function handleOpenChat(options = {}) {
+  const { fromAutoOpen = false } = options;
+  if (!business.value || openingChat.value) {
+    return;
+  }
+
+  if (!appState.user) {
+    await router.push({
+      path: "/login",
+      query: {
+        redirect: `/profili-biznesit?id=${business.value.id}&openChat=1`,
+      },
+    });
+    return;
+  }
+
+  if (
+    appState.user.role === "business"
+    && Number(appState.user.id) === Number(business.value.userId)
+  ) {
+    await router.push("/mesazhet");
+    return;
+  }
+
+  if (appState.user.role !== "client") {
+    ui.message = "Vetem klientet mund te nisin bisede me biznesin.";
+    ui.type = "error";
+    if (fromAutoOpen) {
+      await clearOpenChatQuery();
+    }
+    return;
+  }
+
+  openingChat.value = true;
+
+  try {
+    const { response, data } = await requestJson("/api/chat/open", {
+      method: "POST",
+      body: JSON.stringify({ businessId: business.value.id }),
+    });
+
+    if (!response.ok || !data?.ok || !data.conversation?.id) {
+      ui.message = resolveApiMessage(data, "Biseda nuk u hap.");
+      ui.type = "error";
+      if (fromAutoOpen) {
+        await clearOpenChatQuery();
+      }
+      return;
+    }
+
+    await router.push(data.redirectTo || `/mesazhet?conversationId=${data.conversation.id}`);
+  } catch (error) {
+    console.error(error);
+    ui.message = "Biseda nuk u hap. Provoje perseri.";
+    ui.type = "error";
+    if (fromAutoOpen) {
+      await clearOpenChatQuery();
+    }
+  } finally {
+    openingChat.value = false;
+  }
+}
+
 async function handleWishlist(productId) {
   if (!appState.user) {
     ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
@@ -241,6 +363,12 @@ async function handleCart(productId) {
     return;
   }
 
+  const product = products.value.find((entry) => Number(entry.id) === Number(productId));
+  if (product?.requiresVariantSelection) {
+    router.push(getProductDetailUrl(productId, route.fullPath));
+    return;
+  }
+
   if (!cartIds.value.includes(productId)) {
     cartIds.value = [...cartIds.value, productId];
   }
@@ -258,7 +386,7 @@ async function handleCart(productId) {
   }
 
   const items = Array.isArray(data.items) ? data.items : [];
-  cartIds.value = items.map((item) => item.id);
+  cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
@@ -310,14 +438,15 @@ async function handleCart(productId) {
             {{ business.isFollowed ? "Following" : "Follow" }}
           </button>
 
-          <a
+          <button
             class="nav-action nav-action-secondary business-message-button"
-            :class="{ 'is-disabled': messageHref === '#' }"
-            :href="messageHref"
-            :aria-disabled="messageHref === '#'"
+            :class="{ 'is-disabled': !canUseMessageAction || openingChat }"
+            type="button"
+            :disabled="!canUseMessageAction || openingChat"
+            @click="handleOpenChat"
           >
-            Message
-          </a>
+            {{ openingChat ? "Duke hapur..." : messageActionLabel }}
+          </button>
         </div>
 
         <div class="business-public-stats">

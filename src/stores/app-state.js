@@ -10,6 +10,7 @@ export const appState = reactive({
   user: null,
   sessionLoaded: false,
   cartCount: 0,
+  catalogRevision: 0,
   loaderVisible: true,
   loaderStartedAt: Date.now(),
   loginGreeting: "",
@@ -55,13 +56,17 @@ export function setCartItems(items = []) {
   setCartCount(calculateCartItemsCount(items));
 }
 
+export function bumpCatalogRevision() {
+  appState.catalogRevision += 1;
+}
+
 async function enrichUserSessionData(user) {
   if (!user || user.role !== "business") {
     return user;
   }
 
   try {
-    const { response, data } = await requestJson("/api/business/profile");
+    const { response, data } = await requestJson("/api/business-profile");
     if (!response.ok || !data?.ok || !data.profile) {
       return user;
     }
@@ -70,6 +75,7 @@ async function enrichUserSessionData(user) {
       ...user,
       businessName: String(data.profile.businessName || "").trim(),
       businessLogoPath: String(data.profile.logoPath || "").trim(),
+      businessProfileUrl: String(data.profile.publicProfileUrl || "").trim(),
     };
   } catch (error) {
     console.error(error);

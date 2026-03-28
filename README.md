@@ -26,6 +26,80 @@ Regjistrimi i ri kerkon edhe verifikim te email-it me kod 6-shifror. Kodi vlen `
 
 Per `Postgres` ne deploy perdoret `psycopg`.
 
+## Voice assistant zanor
+
+Ne projekt tani eshte integruar nje voice assistant real, i gatshem per prodhim, me `Vapi web widget`.
+
+### Pse u zgjodh ky opsion
+
+Krahasimi i shkurter:
+
+- `Vapi`
+  Zgjidhja me e thjeshte per nje assistant real zanor ne web: widget i embeddable, voice-first, `public key + assistant id`, pa backend te ri ne kete projekt.
+- `Voiceflow`
+  E thjeshte gjithashtu, por zakonisht eshte me e orientuar te builder-i i vet i flukseve/chat-it dhe ka pak me shume pune operative per voice-first rollout.
+- `Custom OpenAI Realtime`
+  Me fleksibla, por jo zgjidhja me e lehte: do endpoint per token/ephemeral session, menaxhim audio/WebRTC dhe me shume kod custom.
+
+Per kete arsye, u zgjodh `Vapi` si opsioni me i lehte dhe me pak pune custom, por qe prape jep voice assistant real.
+
+### Environment variables
+
+Per ta aktivizuar widget-in zanor, vendos:
+
+- `VITE_VAPI_PUBLIC_KEY`
+- `VITE_VAPI_ASSISTANT_ID`
+- `VITE_VAPI_ASSISTANT_LABEL` opsionale
+
+Shembull:
+
+```bash
+export VITE_VAPI_PUBLIC_KEY="pk_live_or_test_here"
+export VITE_VAPI_ASSISTANT_ID="your_assistant_id"
+export VITE_VAPI_ASSISTANT_LABEL="Asistenti zanor TREGO"
+```
+
+Shenim i rendesishem:
+
+- `VITE_VAPI_PUBLIC_KEY` eshte `public`, pra lejohet te jete ne frontend
+- mos vendos `private/server keys` te Vapi ne frontend
+- logjika dhe sekretet e verteta mbeten te Vapi dashboard / provider settings
+
+### Si ta konfigurosh ne Vapi
+
+1. Krijo nje assistant ne dashboard te `Vapi`.
+2. Zgjidh modelin, voice-in dhe prompt-in e assistant-it.
+3. Kopjo `Public Key`.
+4. Kopjo `Assistant ID`.
+5. Vendosi si env vars ne projekt.
+
+Widget-i shfaqet automatikisht vetem kur keto env vars jane te vendosura.
+
+### Si ta testosh lokalisht
+
+1. Nise backend-in:
+
+```bash
+cd /Users/ebsarhoxha/Documents/Playground
+python3 app.py
+```
+
+2. Nise frontend-in me env vars:
+
+```bash
+cd /Users/ebsarhoxha/Documents/Playground
+VITE_VAPI_PUBLIC_KEY="pk_test_or_live_here" \
+VITE_VAPI_ASSISTANT_ID="your_assistant_id" \
+VITE_VAPI_ASSISTANT_LABEL="Asistenti zanor TREGO" \
+npm run dev
+```
+
+3. Hape app-in ne browser te `localhost`.
+4. Lejo lejen e mikrofonit kur browser-i ta kerkon.
+5. Ne qoshen e poshtme djathtas do te shfaqet widget-i zanor.
+
+Per `localhost`, shumica e browser-ave lejojne testim me mikrofon. Ne production perdor `HTTPS`.
+
 ## Njoftimet me email per bizneset
 
 Kur konfirmohet nje porosi, sistemi tani mund t'i dergoje email biznesit qe e ka postuar produktin.

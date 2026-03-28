@@ -201,12 +201,28 @@ export async function searchProductsByImage(file, options = {}) {
   const uploadData = new FormData();
   uploadData.append("image", file);
 
+  if (options.pageSection) {
+    uploadData.append("pageSection", String(options.pageSection).trim());
+  }
+
   if (options.category) {
     uploadData.append("category", String(options.category).trim());
   }
 
   if (options.categoryGroup) {
     uploadData.append("categoryGroup", String(options.categoryGroup).trim());
+  }
+
+  if (options.productType) {
+    uploadData.append("productType", String(options.productType).trim());
+  }
+
+  if (options.size) {
+    uploadData.append("size", String(options.size).trim());
+  }
+
+  if (options.color) {
+    uploadData.append("color", String(options.color).trim());
   }
 
   if (Number.isFinite(Number(options.limit))) {
@@ -235,9 +251,52 @@ export async function searchProductsByImage(file, options = {}) {
   return {
     ok: true,
     products: Array.isArray(data.products) ? data.products : [],
+    facets: data.facets || null,
+    activeFilters: data.activeFilters || null,
     total: Number(data.total || 0),
     hasMore: Boolean(data.hasMore),
     message: data.message || "U gjeten produkte te ngjashme sipas fotos.",
+  };
+}
+
+export async function fetchChatReplySuggestions(conversationId) {
+  const { response, data } = await requestJson(
+    `/api/chat/reply-suggestions?conversationId=${encodeURIComponent(conversationId)}`,
+  );
+
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      suggestions: [],
+      message: resolveApiMessage(data, "Sugjerimet e bisedes nuk u pergatiten."),
+    };
+  }
+
+  return {
+    ok: true,
+    suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+    message: data.message || "Sugjerimet e bisedes u pergatiten.",
+  };
+}
+
+export async function requestProductAIDraft(formData) {
+  const { response, data } = await requestJson("/api/products/ai-draft", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok || !data?.ok || !data?.draft) {
+    return {
+      ok: false,
+      draft: null,
+      message: resolveApiMessage(data, "AI draft nuk u pergatit."),
+    };
+  }
+
+  return {
+    ok: true,
+    draft: data.draft,
+    message: data.message || "Drafti i produktit u pergatit.",
   };
 }
 
@@ -261,7 +320,7 @@ export async function downloadBusinessProductsImportTemplate() {
   try {
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
-    anchor.download = "trego-products-template.csv";
+    anchor.download = "trego-products-template.xlsx";
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -271,7 +330,7 @@ export async function downloadBusinessProductsImportTemplate() {
 
   return {
     ok: true,
-    message: "Template-i u shkarkua me sukses.",
+    message: "Template-i XLSX u shkarkua me sukses.",
   };
 }
 

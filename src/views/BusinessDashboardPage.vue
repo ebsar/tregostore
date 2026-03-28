@@ -2,27 +2,29 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
+import ProductVariantConfigurator from "../components/ProductVariantConfigurator.vue";
 import {
   downloadBusinessProductsImportTemplate,
   importBusinessProductsFile,
+  requestProductAIDraft,
   requestJson,
   resolveApiMessage,
   uploadImages,
 } from "../lib/api";
 import {
-  PRODUCT_COLOR_OPTIONS,
-  PRODUCT_SECTION_OPTIONS,
-  SECTION_PRODUCT_TYPE_OPTIONS,
-  formatRoleLabel,
-  getProductImageGallery,
-  isClothingSection,
-} from "../lib/shop";
+  buildVariantInventoryFromForm,
+  createEmptyProductFormState,
+  hydrateProductFormFromProduct,
+  syncProductFormCatalogState,
+} from "../lib/product-catalog";
+import { formatRoleLabel, getProductImageGallery } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const route = useRoute();
 const businessProfile = ref(null);
 const products = ref([]);
+const productSearchQuery = ref("");
 const logoFile = ref(null);
 const logoPreviewUrl = ref("");
 const selectedFiles = ref([]);
@@ -43,7 +45,7 @@ const profileForm = reactive({
   businessLogoPath: "",
 });
 
-const productForm = reactive(createEmptyProductState());
+const productForm = reactive(createEmptyProductFormState());
 const ui = reactive({
   accessNote: "Po kontrollohet aksesimi i biznesit...",
   profileMessage: "",
@@ -54,10 +56,9 @@ const ui = reactive({
   listType: "",
   importMessage: "",
   importType: "",
+  productAiBusy: false,
 });
 
-const productTypeOptions = computed(() => SECTION_PRODUCT_TYPE_OPTIONS[productForm.category] || []);
-const clothingSection = computed(() => isClothingSection(productForm.category));
 const productPreviewItems = computed(() => {
   if (previewUrls.value.length > 0) {
     return previewUrls.value.map((path, index) => ({
@@ -71,6 +72,53 @@ const productPreviewItems = computed(() => {
   }));
 });
 const businessLogoPreview = computed(() => logoPreviewUrl.value || profileForm.businessLogoPath || "");
+const filteredProducts = computed(() => {
+  const normalizedQuery = String(productSearchQuery.value || "").trim().toLowerCase();
+  const nextProducts = [...products.value];
+  if (!normalizedQuery) {
+    return nextProducts;
+  }
+
+  const scoreProductMatch = (product) => {
+    const articleNumber = String(product.articleNumber || "").trim().toLowerCase();
+    const title = String(product.title || "").trim().toLowerCase();
+    const category = String(product.category || "").trim().toLowerCase();
+    const productType = String(product.productType || "").trim().toLowerCase();
+    const description = String(product.description || "").trim().toLowerCase();
+
+    if (articleNumber.startsWith(normalizedQuery)) {
+      return 0;
+    }
+    if (title.startsWith(normalizedQuery)) {
+      return 1;
+    }
+    if (articleNumber.includes(normalizedQuery)) {
+      return 2;
+    }
+    if (title.includes(normalizedQuery)) {
+      return 3;
+    }
+    if (category.includes(normalizedQuery)) {
+      return 4;
+    }
+    if (productType.includes(normalizedQuery)) {
+      return 5;
+    }
+    if (description.includes(normalizedQuery)) {
+      return 6;
+    }
+    return 99;
+  };
+
+  return nextProducts
+    .map((product) => ({ product, score: scoreProductMatch(product) }))
+    .filter((entry) => entry.score < 99)
+    .sort((left, right) =>
+      left.score - right.score
+      || String(left.product.title || "").localeCompare(String(right.product.title || ""))
+    )
+    .map((entry) => entry.product);
+});
 
 onMounted(async () => {
   try {
@@ -112,21 +160,6 @@ onBeforeUnmount(() => {
   revokePreviewUrls();
 });
 
-function createEmptyProductState() {
-  const defaultCategory = PRODUCT_SECTION_OPTIONS[0]?.value || "clothing-men";
-  return {
-    title: "",
-    price: "",
-    description: "",
-    category: defaultCategory,
-    productType: SECTION_PRODUCT_TYPE_OPTIONS[defaultCategory]?.[0]?.value || "",
-    size: "",
-    color: "",
-    stockQuantity: "1",
-    imageGallery: [],
-  };
-}
-
 function revokeLogoPreview() {
   if (logoPreviewUrl.value) {
     URL.revokeObjectURL(logoPreviewUrl.value);
@@ -137,17 +170,6 @@ function revokeLogoPreview() {
 function revokePreviewUrls() {
   previewUrls.value.forEach((url) => URL.revokeObjectURL(url));
   previewUrls.value = [];
-}
-
-function syncProductType() {
-  const options = SECTION_PRODUCT_TYPE_OPTIONS[productForm.category] || [];
-  if (!options.some((option) => option.value === productForm.productType)) {
-    productForm.productType = options[0]?.value || "";
-  }
-
-  if (!clothingSection.value) {
-    productForm.size = "";
-  }
 }
 
 async function loadBusinessProfile() {
@@ -236,7 +258,7 @@ async function loadProducts() {
 }
 
 function resetProductForm() {
-  Object.assign(productForm, createEmptyProductState());
+  Object.assign(productForm, createEmptyProductFormState());
   editingProduct.value = null;
   selectedFiles.value = [];
   revokePreviewUrls();
@@ -265,18 +287,13 @@ async function handleRouteView() {
 
 function beginProductEdit(product) {
   editingProduct.value = product;
-  productForm.title = String(product.title || "");
-  productForm.price = String(product.price ?? "");
-  productForm.description = String(product.description || "");
-  productForm.category = String(product.category || PRODUCT_SECTION_OPTIONS[0]?.value || "clothing-men");
-  productForm.productType = String(product.productType || "");
-  productForm.size = String(product.size || "");
-  productForm.color = String(product.color || "");
-  productForm.stockQuantity = String(product.stockQuantity ?? 0);
-  productForm.imageGallery = getProductImageGallery(product);
+  hydrateProductFormFromProduct(productForm, {
+    ...product,
+    imageGallery: getProductImageGallery(product),
+  });
   selectedFiles.value = [];
   revokePreviewUrls();
-  syncProductType();
+  syncProductFormCatalogState(productForm);
   ui.productMessage = `Po editon artikullin "${product.title}".`;
   ui.productTypeMessage = "success";
 }
@@ -329,8 +346,62 @@ async function submitImportProducts() {
   await loadProducts();
 }
 
+async function suggestProductWithAi() {
+  ui.productMessage = "";
+  ui.productTypeMessage = "";
+  ui.productAiBusy = true;
+
+  try {
+    const payload = new FormData();
+    payload.append("title", productForm.title.trim());
+    payload.append("description", productForm.description.trim());
+    payload.append("pageSection", productForm.pageSection);
+    payload.append("audience", productForm.audience);
+    payload.append("productType", productForm.productType);
+    payload.append("imagePath", productForm.imageGallery[0] || "");
+    payload.append("imageGallery", JSON.stringify(productForm.imageGallery));
+    selectedFiles.value.forEach((file) => {
+      payload.append("images", file);
+    });
+
+    const result = await requestProductAIDraft(payload);
+    if (!result.ok || !result.draft) {
+      ui.productMessage = result.message;
+      ui.productTypeMessage = "error";
+      return;
+    }
+
+    const draft = result.draft;
+    const nextSelectedColors = Array.isArray(draft.selectedColors)
+      ? draft.selectedColors
+      : productForm.selectedColors;
+
+    productForm.title = String(draft.title || productForm.title || "").trim();
+    productForm.description = String(draft.description || productForm.description || "").trim();
+    productForm.pageSection = String(draft.pageSection || productForm.pageSection || "").trim();
+    productForm.audience = String(draft.audience || productForm.audience || "").trim();
+    syncProductFormCatalogState(productForm);
+    productForm.productType = String(draft.productType || productForm.productType || "").trim();
+    productForm.selectedColors = nextSelectedColors;
+    productForm.packageAmountValue = String(draft.packageAmountValue || productForm.packageAmountValue || "").trim();
+    productForm.packageAmountUnit = String(draft.packageAmountUnit || productForm.packageAmountUnit || "").trim();
+    syncProductFormCatalogState(productForm);
+
+    ui.productMessage = result.message;
+    ui.productTypeMessage = "success";
+  } catch (error) {
+    console.error(error);
+    ui.productMessage = "AI draft nuk u pergatit. Provoje perseri.";
+    ui.productTypeMessage = "error";
+  } finally {
+    ui.productAiBusy = false;
+  }
+}
+
 async function submitProduct() {
   ui.productMessage = "";
+  await nextTick();
+  syncProductFormCatalogState(productForm);
 
   if (!businessProfile.value) {
     ui.productMessage = "Regjistroje fillimisht biznesin para se te shtosh artikuj.";
@@ -356,14 +427,18 @@ async function submitProduct() {
   }
 
   const payload = {
+    articleNumber: productForm.articleNumber.trim(),
     title: productForm.title.trim(),
     price: productForm.price,
     description: productForm.description.trim(),
+    pageSection: productForm.pageSection,
+    audience: productForm.audience,
     category: productForm.category,
     productType: productForm.productType,
-    size: clothingSection.value ? productForm.size : "",
-    color: productForm.color,
-    stockQuantity: productForm.stockQuantity,
+    stockQuantity: productForm.simpleStockQuantity,
+    packageAmountValue: productForm.packageAmountValue,
+    packageAmountUnit: productForm.packageAmountUnit,
+    variantInventory: buildVariantInventoryFromForm(productForm),
     imageGallery,
     imagePath: imageGallery[0] || "",
   };
@@ -439,16 +514,6 @@ async function handleToggleStock(product) {
   }
 }
 
-async function handleRestockProduct({ productId, quantity }) {
-  const ok = await submitProductAction(
-    "/api/products/restock",
-    { productId, quantity },
-    "Stoku u perditesua me sukses.",
-  );
-  if (ok) {
-    await loadProducts();
-  }
-}
 </script>
 
 <template>
@@ -549,6 +614,16 @@ async function handleRestockProduct({ productId, quantity }) {
 
         <form class="auth-form" @submit.prevent="submitProduct">
           <label class="field">
+            <span>Numri i artikullit</span>
+            <input
+              v-model="productForm.articleNumber"
+              type="text"
+              inputmode="numeric"
+              placeholder="p.sh. 10025"
+            >
+          </label>
+
+          <label class="field">
             <span>Titulli</span>
             <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
           </label>
@@ -558,63 +633,7 @@ async function handleRestockProduct({ productId, quantity }) {
             <input v-model="productForm.price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
           </label>
 
-          <label class="field">
-            <span>Seksioni i faqes</span>
-            <select v-model="productForm.category" required @change="syncProductType">
-              <option
-                v-for="option in PRODUCT_SECTION_OPTIONS"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Kategoria e produktit</span>
-            <select v-model="productForm.productType" required>
-              <option
-                v-for="option in productTypeOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <div class="field-row">
-            <label v-if="clothingSection" class="field">
-              <span>Madhesia e produktit</span>
-              <select v-model="productForm.size">
-                <option value="">Pa madhesi</option>
-                <option value="XS">XS</option>
-                <option value="S">S</option>
-                <option value="M">M</option>
-                <option value="L">L</option>
-                <option value="XL">XL</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Sasia ne stok</span>
-              <input v-model="productForm.stockQuantity" type="number" min="0" step="1" required>
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Ngjyra e produktit</span>
-            <select v-model="productForm.color">
-              <option
-                v-for="option in PRODUCT_COLOR_OPTIONS"
-                :key="option.value || 'empty'"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
+          <ProductVariantConfigurator :form="productForm" />
 
           <label class="field">
             <span>Upload photo</span>
@@ -646,6 +665,9 @@ async function handleRestockProduct({ productId, quantity }) {
           </label>
 
           <div class="auth-form-actions">
+            <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
+              {{ ui.productAiBusy ? "Duke analizuar..." : "Sugjero me AI" }}
+            </button>
             <button type="submit">{{ editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin" }}</button>
             <button v-if="editingProduct" class="button-secondary" type="button" @click="resetProductForm">Anulo editimin</button>
           </div>
@@ -666,13 +688,13 @@ async function handleRestockProduct({ productId, quantity }) {
       </div>
 
       <p class="section-text">
-        Shkarko template-n CSV, hape ne Excel, ploteso artikujt dhe pastaj ngarkoje prape ketu.
+        Shkarko template-n XLSX, hape ne Excel, ploteso artikujt dhe pastaj ngarkoje prape ketu.
         Kolonat e kerkuara jane te perfshira ne template, perfshire kategorine, llojin, ngjyren,
-        stokun dhe fotot. Per fotot perdor path-et ekzistuese si <code>/uploads/...</code>.
+        stokun, numrin e artikullit dhe fotot. Per fotot perdor path-et ekzistuese si <code>/uploads/...</code>.
       </p>
 
       <div class="auth-form-actions">
-        <button type="button" @click="downloadImportTemplate">Shkarko template-in per Excel</button>
+        <button type="button" @click="downloadImportTemplate">Shkarko template XLSX per Excel</button>
       </div>
 
       <form class="auth-form" @submit.prevent="submitImportProducts">
@@ -681,13 +703,14 @@ async function handleRestockProduct({ productId, quantity }) {
           <input
             ref="importFileInput"
             type="file"
-            accept=".csv,text/csv,application/vnd.ms-excel"
+            accept=".xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             @change="handleImportFileChange"
           >
         </label>
 
         <p class="product-upload-help">
-          CSV hapet direkt ne Excel. Kolona <code>imageGallery</code> pranon disa foto te ndara me <code>;</code>.
+          XLSX ose CSV hapen direkt ne Excel. Kolona <code>imageGallery</code> pranon disa foto te ndara me <code>;</code>,
+          ndersa <code>articleNumber</code> ruan numrin unik te artikullit.
         </p>
 
         <div class="auth-form-actions">
@@ -705,27 +728,43 @@ async function handleRestockProduct({ productId, quantity }) {
         <div>
           <p class="section-label">Artikujt e biznesit tend</p>
           <h2>Lista e artikujve</h2>
+          <p class="admin-compact-copy">{{ filteredProducts.length }} / {{ products.length }} artikuj</p>
         </div>
       </div>
+
+      <label class="admin-compact-search" aria-label="Kerko produktin e biznesit">
+        <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <input
+          v-model="productSearchQuery"
+          type="search"
+          placeholder="Kerko produkt me numer, emer, kategori..."
+        >
+      </label>
 
       <div class="form-message" :class="ui.listType" role="status" aria-live="polite">
         {{ ui.listMessage }}
       </div>
 
-      <div class="admin-products-list">
+      <div class="admin-products-list admin-products-list-scroll">
         <div v-if="products.length === 0" class="admin-empty-state">
           Ende nuk ke artikuj te publikuar nga ky biznes.
         </div>
 
+        <div v-else-if="filteredProducts.length === 0" class="admin-empty-state">
+          Nuk u gjet asnje produkt per kete kerkim.
+        </div>
+
         <ManagedProductCard
-          v-for="product in products"
+          v-for="product in filteredProducts"
           :key="product.id"
           :product="product"
           @edit="beginProductEdit"
           @delete="handleDeleteProduct"
           @toggle-visibility="handleToggleVisibility"
           @toggle-stock-public="handleToggleStock"
-          @restock="handleRestockProduct"
         />
       </div>
     </section>

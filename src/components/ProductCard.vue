@@ -24,6 +24,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showOverlayActions: {
+    type: Boolean,
+    default: true,
+  },
+  showBusinessName: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(["wishlist", "cart"]);
@@ -32,7 +40,17 @@ const route = useRoute();
 const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
 const businessName = computed(() => String(props.product.businessName || "").trim());
 const wishlistLabel = computed(() => (props.isWishlisted ? "Hiqe nga wishlist" : "Shto ne wishlist"));
-const cartLabel = computed(() => (props.isInCart ? "Produkti eshte ne shporte" : "Shto ne shporte"));
+const cartLabel = computed(() => {
+  if (props.isInCart) {
+    return "Produkti eshte ne shporte";
+  }
+
+  if (props.product?.requiresVariantSelection) {
+    return "Zgjidh variantin";
+  }
+
+  return "Shto ne shporte";
+});
 const currentPrice = computed(() => Number(props.product.price || 0));
 const compareAtPrice = computed(() => {
   const rawValue = Number(props.product.compareAtPrice ?? props.product.originalPrice ?? 0);
@@ -106,35 +124,37 @@ const ratingSummary = computed(() => {
         </div>
       </RouterLink>
 
-      <button
-        class="product-card-overlay-button product-card-cart-button cart-action"
-        :class="{ active: isInCart }"
-        type="button"
-        :disabled="cartBusy"
-        :aria-label="cartLabel"
-        :aria-pressed="isInCart"
-        @click.stop="emit('cart', product.id)"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
-          <circle cx="10" cy="19" r="1.4"></circle>
-          <circle cx="18" cy="19" r="1.4"></circle>
-        </svg>
-      </button>
+      <template v-if="showOverlayActions">
+        <button
+          class="product-card-overlay-button product-card-cart-button cart-action"
+          :class="{ active: isInCart }"
+          type="button"
+          :disabled="cartBusy"
+          :aria-label="cartLabel"
+          :aria-pressed="isInCart"
+          @click.stop="emit('cart', product.id)"
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+            <circle cx="10" cy="19" r="1.4"></circle>
+            <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </button>
 
-      <button
-        class="product-card-overlay-button product-card-wishlist-button wishlist-action"
-        :class="{ active: isWishlisted }"
-        type="button"
-        :disabled="wishlistBusy"
-        :aria-label="wishlistLabel"
-        :aria-pressed="isWishlisted"
-        @click.stop="emit('wishlist', product.id)"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-        </svg>
-      </button>
+        <button
+          class="product-card-overlay-button product-card-wishlist-button wishlist-action"
+          :class="{ active: isWishlisted }"
+          type="button"
+          :disabled="wishlistBusy"
+          :aria-label="wishlistLabel"
+          :aria-pressed="isWishlisted"
+          @click.stop="emit('wishlist', product.id)"
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </button>
+      </template>
     </div>
 
     <div class="pet-product-content-shell">
@@ -145,7 +165,7 @@ const ratingSummary = computed(() => {
           </RouterLink>
         </h3>
 
-        <p v-if="businessName" class="pet-product-business-name">
+        <p v-if="showBusinessName && businessName" class="pet-product-business-name">
           {{ businessName }}
         </p>
 

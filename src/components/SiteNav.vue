@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PRIMARY_NAVIGATION } from "../lib/shop";
+import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
 
 const route = useRoute();
@@ -15,7 +16,13 @@ const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
 const searchQuery = ref("");
 const searchInputElement = ref(null);
+const navVisualSearchInputElement = ref(null);
 let lastScrollY = 0;
+const AI_SEARCH_PROMPTS = [
+  "me trego maica te kuqe",
+  "dua pantallona te gjera",
+  "me gjej patika te veres",
+];
 
 const cartBadgeLabel = computed(() => {
   if (appState.cartCount <= 0) {
@@ -26,6 +33,7 @@ const cartBadgeLabel = computed(() => {
 });
 
 const isBusinessUser = computed(() => appState.user?.role === "business");
+const showConsumerNavigation = computed(() => !isBusinessUser.value);
 
 const userMenuLinks = computed(() => {
   if (!appState.user) {
@@ -44,12 +52,17 @@ const userMenuLinks = computed(() => {
   if (appState.user.role === "business") {
     return [
       { label: "Biznesi i imi", href: "/biznesi-juaj" },
+      { label: "Mesazhet", href: "/mesazhet" },
+      ...(String(appState.user.businessProfileUrl || "").trim()
+        ? [{ label: "Profili publik", href: String(appState.user.businessProfileUrl || "").trim() }]
+        : []),
       { label: "Porosite e bera", href: "/porosite-e-biznesit" },
       { label: "Te dhenat personale", href: "/te-dhenat-personale" },
     ];
   }
 
   return [
+    { label: "Mesazhet", href: "/mesazhet" },
     { label: "Porosite", href: "/porosite" },
     { label: "Refund / Returne", href: "/refund-returne" },
     { label: "Adresat", href: "/adresat" },
@@ -214,6 +227,34 @@ function submitNavSearch() {
   });
 }
 
+function applySearchPrompt(prompt) {
+  searchQuery.value = String(prompt || "").trim();
+  submitNavSearch();
+}
+
+function openNavVisualSearchPicker() {
+  navVisualSearchInputElement.value?.click?.();
+}
+
+async function handleNavVisualSearchSelection(event) {
+  const nextFile = event?.target?.files?.[0] || null;
+  if (!nextFile) {
+    return;
+  }
+
+  setPendingVisualSearchFile(nextFile);
+  closeExpandedPanels();
+  mobileMenuOpen.value = false;
+  await router.push({
+    path: "/kerko",
+    query: { visualSearch: String(Date.now()) },
+  });
+
+  if (event?.target) {
+    event.target.value = "";
+  }
+}
+
 watch(
   () => route.fullPath,
   () => {
@@ -284,13 +325,23 @@ onBeforeUnmount(() => {
         <span class="nav-mobile-search-label">Kerko ketu...</span>
       </button>
 
-      <RouterLink class="nav-icon-button wishlist-link nav-mobile-shortcut" to="/wishlist" aria-label="Wishlist">
+      <RouterLink
+        v-if="showConsumerNavigation"
+        class="nav-icon-button wishlist-link nav-mobile-shortcut"
+        to="/wishlist"
+        aria-label="Wishlist"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
         </svg>
       </RouterLink>
 
-      <RouterLink class="nav-icon-button cart-button nav-mobile-shortcut" to="/cart" aria-label="My Cart">
+      <RouterLink
+        v-if="showConsumerNavigation"
+        class="nav-icon-button cart-button nav-mobile-shortcut"
+        to="/cart"
+        aria-label="My Cart"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
           <circle cx="10" cy="19" r="1.4"></circle>
@@ -317,16 +368,6 @@ onBeforeUnmount(() => {
     </div>
 
     <Transition name="nav-floating-panel">
-      <button
-        v-if="searchMenuOpen"
-        class="nav-search-backdrop"
-        type="button"
-        aria-label="Mbylle kerkimin"
-        @click="closeExpandedPanels"
-      ></button>
-    </Transition>
-
-    <Transition name="nav-floating-panel">
       <form
         v-if="searchMenuOpen"
         class="nav-search-panel"
@@ -345,43 +386,84 @@ onBeforeUnmount(() => {
           placeholder="p.sh. dua pantallona te gjera"
           autocomplete="off"
         >
-        <button class="nav-search-submit" type="submit">Kerko</button>
+        <div class="nav-search-actions">
+          <button class="nav-search-submit" type="submit">Kerko</button>
+          <button class="nav-search-submit nav-search-image-button" type="button" @click="openNavVisualSearchPicker">
+            Kerko me foto
+          </button>
+        </div>
+        <div class="nav-search-suggestions" aria-label="Sugjerime AI per kerkim">
+          <button
+            v-for="prompt in AI_SEARCH_PROMPTS"
+            :key="prompt"
+            class="nav-search-suggestion-chip"
+            type="button"
+            @click="applySearchPrompt(prompt)"
+          >
+            {{ prompt }}
+          </button>
+        </div>
+        <input
+          ref="navVisualSearchInputElement"
+          class="sr-only"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          @change="handleNavVisualSearchSelection"
+        >
       </form>
     </Transition>
 
-    <div id="site-nav-mobile-panel" class="nav-links">
+    <div v-if="showConsumerNavigation" id="site-nav-mobile-panel" class="nav-links">
       <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
-        <div v-if="section.items" class="nav-dropdown nav-dropdown-split" :class="{ open: openDropdownKey === section.key }">
-          <RouterLink
-            class="nav-link nav-dropdown-link"
-            :to="section.href"
-            @click="closeExpandedPanels"
-          >
-            <span>{{ section.label }}</span>
-          </RouterLink>
-
+        <div v-if="section.groups?.length" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
           <button
-            class="nav-dropdown-toggle"
+            class="nav-dropdown-trigger"
             type="button"
             :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
             :aria-label="`Hape menune per ${section.label}`"
             @click="toggleDropdown(section.key)"
           >
+            <span>{{ section.label }}</span>
             <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m7 10 5 5 5-5"></path>
             </svg>
           </button>
 
-          <div class="nav-dropdown-menu" :hidden="openDropdownKey !== section.key">
+          <div class="nav-dropdown-menu nav-dropdown-menu-rich" :hidden="openDropdownKey !== section.key">
             <RouterLink
-              v-for="item in section.items"
-              :key="item.href"
-              class="nav-dropdown-item"
-              :to="item.href"
+              class="nav-dropdown-all-link"
+              :to="section.href"
               @click="closeExpandedPanels"
             >
-              {{ item.label }}
+              Shih te gjitha
             </RouterLink>
+
+            <section
+              v-for="group in section.groups"
+              :key="group.key"
+              class="nav-dropdown-group"
+            >
+              <RouterLink
+                class="nav-dropdown-group-link"
+                :to="group.href"
+                @click="closeExpandedPanels"
+              >
+                {{ group.label }}
+              </RouterLink>
+
+              <div class="nav-dropdown-group-items">
+                <RouterLink
+                  v-for="item in group.items"
+                  :key="item.key || item.href"
+                  class="nav-dropdown-item nav-dropdown-subitem"
+                  :to="item.href"
+                  @click="closeExpandedPanels"
+                >
+                  {{ item.label }}
+                </RouterLink>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -422,13 +504,23 @@ onBeforeUnmount(() => {
         </svg>
       </button>
 
-      <RouterLink class="nav-icon-button wishlist-link" to="/wishlist" aria-label="Wishlist">
+      <RouterLink
+        v-if="showConsumerNavigation"
+        class="nav-icon-button wishlist-link"
+        to="/wishlist"
+        aria-label="Wishlist"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
         </svg>
       </RouterLink>
 
-      <RouterLink class="nav-icon-button cart-button" to="/cart" aria-label="My Cart">
+      <RouterLink
+        v-if="showConsumerNavigation"
+        class="nav-icon-button cart-button"
+        to="/cart"
+        aria-label="My Cart"
+      >
         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
           <circle cx="10" cy="19" r="1.4"></circle>

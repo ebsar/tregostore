@@ -13,6 +13,7 @@ const ChangePasswordPage = () => import("../views/ChangePasswordPage.vue");
 const WishlistPage = () => import("../views/WishlistPage.vue");
 const CartPage = () => import("../views/CartPage.vue");
 const AccountPage = () => import("../views/AccountPage.vue");
+const MessagesPage = () => import("../views/MessagesPage.vue");
 const PersonalDataPage = () => import("../views/PersonalDataPage.vue");
 const AddressesPage = () => import("../views/AddressesPage.vue");
 const OrdersPage = () => import("../views/OrdersPage.vue");
@@ -152,6 +153,17 @@ const routes = [
     meta: {
       pageKey: "account",
       title: "TREGO | Llogaria",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/mesazhet",
+    component: MessagesPage,
+    meta: {
+      pageKey: "account",
+      title: "TREGO | Mesazhet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,

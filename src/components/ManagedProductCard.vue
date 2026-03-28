@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import {
   formatCategoryLabel,
@@ -22,10 +22,7 @@ const emit = defineEmits([
   "delete",
   "toggle-visibility",
   "toggle-stock-public",
-  "restock",
 ]);
-
-const restockQuantity = ref(1);
 const route = useRoute();
 const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
 
@@ -51,14 +48,6 @@ const details = computed(() =>
       : "Stoku eshte privat",
   ].filter(Boolean),
 );
-
-function submitRestock() {
-  emit("restock", {
-    productId: props.product.id,
-    quantity: restockQuantity.value,
-  });
-  restockQuantity.value = 1;
-}
 </script>
 
 <template>
@@ -78,7 +67,10 @@ function submitRestock() {
     </RouterLink>
 
     <div class="admin-product-copy">
-      <p class="admin-product-meta">{{ formatCategoryLabel(product.category) }}</p>
+      <div class="admin-product-head-meta">
+        <p class="admin-product-meta">{{ formatCategoryLabel(product.category) }}</p>
+        <p v-if="product.articleNumber" class="admin-product-article">Nr. {{ product.articleNumber }}</p>
+      </div>
       <h3>
         <RouterLink class="admin-product-title-link" :to="detailUrl">
           {{ product.title }}
@@ -102,20 +94,6 @@ function submitRestock() {
         <button class="product-action-button admin-action-button" type="button" @click="$emit('edit', product)">
           <span>Edito artikullin</span>
         </button>
-
-        <div class="admin-stock-editor">
-          <input
-            v-model.number="restockQuantity"
-            class="admin-stock-input"
-            type="number"
-            min="1"
-            step="1"
-            aria-label="Shto stok"
-          >
-          <button class="product-action-button admin-action-button" type="button" @click="submitRestock">
-            <span>Shto stok</span>
-          </button>
-        </div>
 
         <button class="product-action-button admin-action-button" type="button" @click="$emit('toggle-visibility', product)">
           <span>{{ visibilityLabel }}</span>
