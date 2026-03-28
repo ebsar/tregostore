@@ -97,9 +97,13 @@ async function resendCode() {
 
 <template>
   <section class="login-hero" aria-label="Verify email hero">
-    <section class="card auth-card login-card">
+    <section class="card auth-card login-card verify-email-card">
       <p class="section-label">Verifiko emailin</p>
       <h1>Verifiko emailin</h1>
+      <div class="verify-email-brand">
+        <img src="/trego-logo.png" alt="TREGO logo" class="verify-email-logo" />
+        <span>TREGO</span>
+      </div>
       <p class="section-text">
         Pasi e krijon llogarine, kodi 6-shifror vjen ne email. Kodi vlen 30 minuta. Nese skadon, kerkoje kodin e ri dhe kodi i vjeter nuk vlen me.
       </p>
@@ -170,8 +174,8 @@ async function resendCode() {
       <div class="verify-email-dialog-icon" aria-hidden="true">✓</div>
       <p class="section-label">Verifikimi perfundoi</p>
       <h2 id="verify-email-success-title">Email-i u verifikua me sukses</h2>
-      <p class="section-text">
-        Llogaria jote tani eshte aktive. Mund te vazhdosh normalisht te `Login`.
+      <p class="section-text verify-email-success-copy">
+        Llogaria jote tani eshte aktive dhe e sigurt. Shtyp “Vazhdo te Login” për të hyrë në personalizimin e ofertave.
       </p>
       <button id="verify-email-success-continue" type="button" @click="goToSuccessRedirect">
         Vazhdo te Login
