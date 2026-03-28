@@ -61,19 +61,15 @@ onMounted(async () => {
   }
 });
 
-async function handleConfirm() {
+async function handlePaymentSelection(method) {
   if (submitting.value) {
     return;
   }
 
+  selectedMethod.value = method;
   ui.message = "";
-  if (!selectedMethod.value) {
-    ui.message = "Zgjedhe nje menyre pagese para se te vazhdosh.";
-    ui.type = "error";
-    return;
-  }
 
-  if (selectedMethod.value === "card-online") {
+  if (method === "card-online") {
     await startStripeCheckout();
     return;
   }
@@ -212,31 +208,46 @@ async function confirmStripePayment(stripeSessionId) {
           class="payment-option-card"
           :class="{ active: selectedMethod === 'cash' }"
           type="button"
-          @click="selectedMethod = 'cash'"
+          aria-pressed="false"
+          @click="handlePaymentSelection('cash')"
         >
-          Pages cash
+          <div class="payment-option-card-header">
+            <span class="checkout-choice-label">Opsioni 01</span>
+            <strong class="checkout-choice-title">Pagesë cash</strong>
+          </div>
+          <p class="payment-option-copy">
+            Paguani kur porosia të arrijë te ju dhe ruani fleksibilitetin e biznesit tuaj.
+          </p>
+          <div class="payment-option-cta">
+            <span class="payment-option-chip">Cash on Delivery</span>
+            <span class="payment-option-status">Çaktivizuar nga Stripe</span>
+          </div>
         </button>
 
         <button
           class="payment-option-card"
           :class="{ active: selectedMethod === 'card-online' }"
           type="button"
-          @click="selectedMethod = 'card-online'"
+          aria-pressed="false"
+          @click="handlePaymentSelection('card-online')"
         >
-          Pages me kartel Online (Stripe test)
+          <div class="payment-option-card-header">
+            <span class="checkout-choice-label">Opsioni 02</span>
+            <strong class="checkout-choice-title">Pagesë me kartë</strong>
+          </div>
+          <p class="payment-option-copy">
+            Drejtojeni pagesën drejt Stripe dhe përfundoni transaksionin me imazh profesional.
+          </p>
+          <div class="payment-option-logos">
+            <span class="payment-option-logo-badge">Stripe</span>
+            <span class="payment-option-logo-label">Test mode</span>
+          </div>
         </button>
       </div>
 
-      <div class="profile-form-actions">
-        <button class="profile-save-button" type="button" :disabled="submitting" @click="handleConfirm">
-          {{
-            submitting
-              ? (selectedMethod === "card-online" ? "Po vazhdohet me Stripe..." : "Duke konfirmuar porosine...")
-              : "Konfirmo menyren e pageses"
-          }}
-        </button>
+      <div class="profile-form-actions subtle-actions">
         <button class="ghost-button profile-cancel-button" type="button" @click="router.push('/adresa-e-porosise')">
-          Cancel
+          Kthehu te adresa
         </button>
       </div>
     </section>

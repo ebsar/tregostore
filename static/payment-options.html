@@ -60,36 +60,45 @@
         <section class="card payment-options-card">
           <div id="payment-options-message" class="form-message" role="status" aria-live="polite"></div>
 
-          <div class="payment-option-grid">
+          <div class="payment-options-grid">
             <button
               id="payment-method-cash"
-              class="payment-option-button"
+              class="payment-option-card"
               type="button"
               data-payment-method="cash"
               aria-pressed="false"
             >
-              <span class="checkout-choice-label">Opsioni 01</span>
-              <strong class="checkout-choice-title">Pages cash</strong>
-              <span class="payment-option-copy">Paguani kur porosia te arrije te ju.</span>
+              <div class="payment-option-card-header">
+                <span class="checkout-choice-label">Opsioni 01</span>
+                <strong class="checkout-choice-title">Pages cash</strong>
+              </div>
+              <p class="payment-option-copy">Paguani kur porosia të arrijë dhe ruani fleksibilitetin.</p>
+              <div class="payment-option-cta">
+                <span class="payment-option-chip">Cash on Delivery</span>
+                <span class="payment-option-status">Pa Stripe</span>
+              </div>
             </button>
 
             <button
               id="payment-method-card"
-              class="payment-option-button"
+              class="payment-option-card"
               type="button"
               data-payment-method="card-online"
               aria-pressed="false"
             >
-              <span class="checkout-choice-label">Opsioni 02</span>
-              <strong class="checkout-choice-title">Pages me kartel online (Stripe test)</strong>
-              <span class="payment-option-copy">Perfundoni pagesen me Stripe ne test mode.</span>
+              <div class="payment-option-card-header">
+                <span class="checkout-choice-label">Opsioni 02</span>
+                <strong class="checkout-choice-title">Pages me kartel online</strong>
+              </div>
+              <p class="payment-option-copy">Përfundo pagesën me Stripe me stil të pastër të biznesit.</p>
+              <div class="payment-option-logos">
+                <span class="payment-option-logo-badge">Stripe</span>
+                <span class="payment-option-logo-label">Test mode</span>
+              </div>
             </button>
           </div>
 
-          <div class="profile-form-actions">
-            <button id="payment-options-submit" class="profile-save-button" type="button">
-              Konfirmo menyren e pageses
-            </button>
+          <div class="profile-form-actions subtle-actions">
             <button id="payment-options-cancel" class="ghost-button profile-cancel-button" type="button">
               Kthehu te adresa
             </button>

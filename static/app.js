@@ -1996,16 +1996,16 @@ function initializeCheckoutAddressPage() {
 
 function initializePaymentOptionsPage() {
   const messageElement = document.getElementById("payment-options-message");
-  const submitButton = document.getElementById("payment-options-submit");
   const cancelButton = document.getElementById("payment-options-cancel");
   const optionButtons = Array.from(document.querySelectorAll("[data-payment-method]"));
 
-  if (!messageElement || !submitButton || !cancelButton || optionButtons.length === 0) {
+  if (!messageElement || !cancelButton || optionButtons.length === 0) {
     return;
   }
 
   let selectedMethod = readCheckoutPaymentMethod();
   let currentUser = null;
+  let isSubmittingPayment = false;
   const currentUrl = new URL(window.location.href);
 
   bootstrap();
@@ -2023,12 +2023,9 @@ function initializePaymentOptionsPage() {
     renderSelectedMethod();
     optionButtons.forEach((button) => {
       button.addEventListener("click", () => {
-        selectedMethod = button.dataset.paymentMethod || "";
-        renderSelectedMethod();
-        showMessage(messageElement, "", "");
+        void handlePaymentSelection(button.dataset.paymentMethod || "");
       });
     });
-    submitButton.addEventListener("click", handleSubmit);
     cancelButton.addEventListener("click", () => {
       window.location.href = "/adresa-e-porosise";
     });
@@ -2072,24 +2069,33 @@ function initializePaymentOptionsPage() {
     });
   }
 
-  function handleSubmit() {
+  async function handlePaymentSelection(method) {
+    if (!method || isSubmittingPayment) {
+      return;
+    }
+
+    selectedMethod = method;
+    renderSelectedMethod();
     showMessage(messageElement, "", "");
+    setPaymentLoading(true);
 
-    if (!selectedMethod) {
-      showMessage(
-        messageElement,
-        "Zgjedhe nje menyre pagese para se te vazhdosh.",
-        "error",
-      );
-      return;
+    try {
+      if (method === "card-online") {
+        await startStripeCheckout();
+        return;
+      }
+
+      await submitCashOrder();
+    } finally {
+      setPaymentLoading(false);
     }
+  }
 
-    if (selectedMethod === "card-online") {
-      void startStripeCheckout();
-      return;
-    }
-
-    void submitCashOrder();
+  function setPaymentLoading(isLoading) {
+    isSubmittingPayment = Boolean(isLoading);
+    optionButtons.forEach((button) => {
+      button.disabled = isLoading;
+    });
   }
 
   function clearStripeStateQuery() {
@@ -2121,13 +2127,6 @@ function initializePaymentOptionsPage() {
       );
       return;
     }
-
-    setButtonLoading(
-      submitButton,
-      true,
-      "Konfirmo menyren e pageses",
-      "Duke konfirmuar porosine...",
-    );
 
     try {
       const payload = {
@@ -2168,12 +2167,7 @@ function initializePaymentOptionsPage() {
       );
       console.error(error);
     } finally {
-      setButtonLoading(
-        submitButton,
-        false,
-        "Konfirmo menyren e pageses",
-        "Duke konfirmuar porosine...",
-      );
+      // nothing to do here, button loading replaced by payment loading flag
     }
   }
 
@@ -2199,13 +2193,6 @@ function initializePaymentOptionsPage() {
       );
       return;
     }
-
-    setButtonLoading(
-      submitButton,
-      true,
-      "Konfirmo menyren e pageses",
-      "Po vazhdohet me Stripe...",
-    );
 
     try {
       const payload = {
@@ -2238,22 +2225,11 @@ function initializePaymentOptionsPage() {
       );
       console.error(error);
     } finally {
-      setButtonLoading(
-        submitButton,
-        false,
-        "Konfirmo menyren e pageses",
-        "Po vazhdohet me Stripe...",
-      );
+      // setPaymentLoading handles enable state
     }
   }
 
   async function confirmStripePayment(stripeSessionId) {
-    setButtonLoading(
-      submitButton,
-      true,
-      "Konfirmo menyren e pageses",
-      "Po verifikohet pagesa...",
-    );
 
     try {
       const { response, data } = await requestJson("/api/payments/stripe/confirm", {
@@ -2289,14 +2265,6 @@ function initializePaymentOptionsPage() {
         "error",
       );
       console.error(error);
-    } finally {
-      setButtonLoading(
-        submitButton,
-        false,
-        "Konfirmo menyren e pageses",
-        "Po verifikohet pagesa...",
-      );
-    }
   }
 }
 

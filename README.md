@@ -133,6 +133,17 @@ Shenim per `Brevo`: `TREGO_SMTP_USE_TLS` zakonisht duhet te jete `true` per port
 
 Kur SMTP nuk eshte konfiguruar ende, kodi i verifikimit te email-it printohet edhe ne terminalin lokal te serverit per testim.
 
+### Opsionale: Brevo per kodet verifikues
+Per nje rrjedhe outsourcuar (pa SMTP) mund te perdorim API-n e Brevo per te dërguar kodet e verifikimit dhe ndryshimit te fjalekalimit. Vetëm vendos keto variabla:
+
+- `BREVO_API_KEY`
+- `BREVO_SENDER_EMAIL`
+- `BREVO_SENDER_NAME` (opsionale, default `TREGO`)
+
+Permes tyre, backend-i (app.py) do te therrase `https://api.brevo.com/v3/smtp/email` dhe do te dergoje nje email transactional. Email-i `BREVO_SENDER_EMAIL` duhet te jete verifikuar ne Brevo dashboard. Nese vendos edhe SMTP-në, ai do te kete prioritet (per shembull per njoftime biznesesh), por nese mungon SMTP-ja, Brevo do te perdoret automatikisht.
+
+Ne Vercel shto keto env vars ne `Project Settings → Environment Variables`. Ne README e deploy-it cekim se `BREVO_API_KEY` dhe `BREVO_SENDER_EMAIL` duhet ti shtosh ne projekt nga Settings.
+
 ## Cfare duhet te instalosh
 
 Ne kete makine tash te duhen:

@@ -8,6 +8,7 @@ from email.parser import BytesParser
 from email.policy import default
 import hashlib
 from io import BytesIO, StringIO
+import html
 import json
 import mimetypes
 import os
@@ -66,6 +67,10 @@ STRIPE_PUBLIC_APP_URL = str(os.environ.get("TREGO_PUBLIC_APP_URL", "")).strip().
 STRIPE_API_BASE_URL = "https://api.stripe.com/v1"
 STRIPE_TIMEOUT_SECONDS = 15
 STRIPE_CURRENCY = str(os.environ.get("STRIPE_CURRENCY", "eur")).strip().lower() or "eur"
+BREVO_API_KEY = str(os.environ.get("BREVO_API_KEY", "")).strip()
+BREVO_SENDER_EMAIL = str(os.environ.get("BREVO_SENDER_EMAIL", "")).strip()
+BREVO_SENDER_NAME = str(os.environ.get("BREVO_SENDER_NAME", "TREGO")).strip()
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -5598,16 +5603,19 @@ def build_password_reset_message(
     }
 
 
-def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
-    if not messages:
-        return []
+def convert_email_body_to_html(body: str) -> str:
+    escaped = html.escape(str(body or ""))
+    return f"<p>{escaped.replace(chr(10), '<br>')}</p>"
 
-    smtp_settings = get_smtp_settings()
-    if not is_smtp_configured(smtp_settings):
-        return [
-            "SMTP nuk eshte konfiguruar ende. Vendos kredencialet e email-it qe njoftimet te dergohen automatikisht."
-        ]
 
+def is_brevo_configured() -> bool:
+    return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL)
+
+
+def send_email_messages_via_smtp(
+    messages: list[dict[str, str]],
+    smtp_settings: dict[str, object],
+) -> list[str]:
     warnings: list[str] = []
     try:
         with smtplib.SMTP(
@@ -5632,11 +5640,71 @@ def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
                 email_message.set_content(message_payload["body"])
                 server.send_message(email_message)
     except Exception as error:
-        warnings.append(
-            f"Njoftimi me email nuk u dergua: {error}"
-        )
+        warnings.append(f"Njoftimi me email nuk u dergua: {error}")
 
     return warnings
+
+
+def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
+    warnings: list[str] = []
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "api-key": BREVO_API_KEY,
+    }
+    sender = {
+        "email": BREVO_SENDER_EMAIL,
+        "name": BREVO_SENDER_NAME or "TREGO",
+    }
+
+    for message_payload in messages:
+        payload = {
+            "sender": sender,
+            "to": [{"email": message_payload["to_email"]}],
+            "subject": message_payload["subject"],
+            "textContent": message_payload["body"],
+            "htmlContent": convert_email_body_to_html(message_payload["body"]),
+        }
+
+        request = Request(
+            BREVO_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=20) as response:
+                if response.status >= 400:
+                    resp_body = response.read().decode("utf-8", errors="ignore")
+                    warnings.append(
+                        f"Brevo dërgoi kod gabimi {response.status}: {resp_body}"
+                    )
+        except HTTPError as error:
+            body = error.read().decode("utf-8", errors="ignore") if error.fp else ""
+            warnings.append(f"Brevo HTTP gabim {error.code}: {body}")
+        except URLError as error:
+            warnings.append(f"Brevo nuk u arrit: {error.reason}")
+        except Exception as error:
+            warnings.append(f"Brevo: {error}")
+
+    return warnings
+
+
+def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
+    if not messages:
+        return []
+
+    smtp_settings = get_smtp_settings()
+    if is_smtp_configured(smtp_settings):
+        return send_email_messages_via_smtp(messages, smtp_settings)
+
+    if is_brevo_configured():
+        return send_email_messages_via_brevo(messages)
+
+    return [
+        "SMTP nuk eshte konfiguruar dhe Brevo nuk ka API key. Shto njeren prej tyre (TREGO_SMTP_* ose BREVO_API_KEY + BREVO_SENDER_EMAIL) per te dërguar emaile."
+    ]
 
 
 def send_email_notifications(messages: list[dict[str, str]]) -> list[str]:
