@@ -7169,6 +7169,7 @@ body[data-page="cart"] .saved-product-copy h3 {
     max(var(--safe-space-right), clamp(20px, 5vw, 72px))
     max(calc(var(--safe-space-bottom) + 20px), clamp(44px, 7vh, 76px))
     max(var(--safe-space-left), clamp(20px, 5vw, 72px));
+  padding-bottom: max(calc(20px + env(safe-area-inset-bottom, 0px)), clamp(44px, 7vh, 76px));
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(18, 28, 18, 0.16), rgba(18, 28, 18, 0.34)),
@@ -9946,6 +9947,10 @@ code {
       max(var(--safe-space-right), 16px)
       max(calc(var(--safe-space-bottom) + 18px), 32px)
       max(var(--safe-space-left), 16px);
+  }
+
+  .login-hero {
+    padding-bottom: max(calc(18px + env(safe-area-inset-bottom, 0px)), 32px);
   }
 }
 
