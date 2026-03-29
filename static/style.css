@@ -60,10 +60,10 @@
     0 6px 16px rgba(255, 255, 255, 0.12);
   --app-vh: 100vh;
   --app-vh: 100dvh;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-top: var(--safe-top-runtime, env(safe-area-inset-top, 0px));
+  --safe-right: var(--safe-right-runtime, env(safe-area-inset-right, 0px));
+  --safe-bottom: var(--safe-bottom-runtime, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--safe-left-runtime, env(safe-area-inset-left, 0px));
 }
 
 * {
@@ -165,7 +165,11 @@ img {
   z-index: 4000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding:
+    calc(var(--safe-top) + 24px)
+    calc(var(--safe-right) + 24px)
+    calc(var(--safe-bottom) + 24px)
+    calc(var(--safe-left) + 24px);
   pointer-events: all;
   transition: opacity 0.55s ease, visibility 0.55s ease;
 }
@@ -1414,11 +1418,11 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
 
 .login-greeting-toast {
   position: fixed;
-  top: 96px;
+  top: calc(var(--safe-top) + 96px);
   left: 50%;
   z-index: 1400;
   min-width: 220px;
-  max-width: min(92vw, 420px);
+  max-width: min(calc(100vw - var(--safe-left) - var(--safe-right) - 20px), 420px);
   padding: 14px 18px;
   border: 1px solid rgba(255, 255, 255, 0.82);
   border-radius: 18px;
@@ -1468,7 +1472,7 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
   top: 50%;
   left: 50%;
   z-index: 3200;
-  width: min(92vw, 360px);
+  width: min(calc(100vw - var(--safe-left) - var(--safe-right) - 24px), 360px);
   min-height: 120px;
   display: grid;
   gap: 14px;
@@ -8428,7 +8432,7 @@ button {
   position: relative;
   z-index: 1;
   width: min(1120px, calc(100% - 32px));
-  margin: 0 auto 34px;
+  margin: 0 auto calc(var(--safe-bottom) + 34px);
   padding: 22px 24px;
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 30px;
@@ -8970,8 +8974,8 @@ code {
   }
 
   .nav-search-panel {
-    left: 12px;
-    right: 12px;
+    left: max(12px, calc(var(--safe-left) + 12px));
+    right: max(12px, calc(var(--safe-right) + 12px));
     width: auto;
     grid-template-columns: 1fr;
   }
@@ -9250,7 +9254,7 @@ code {
   }
 
   .site-footer {
-    width: min(100% - 20px, 1120px);
+    width: min(calc(100% - 20px), 1120px);
     padding: 20px 18px;
     border-radius: 24px;
   }

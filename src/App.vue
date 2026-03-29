@@ -6,6 +6,7 @@ import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
 import SiteNav from "./components/SiteNav.vue";
 import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
+import { useScreenSafeArea } from "./composables/useScreenSafeArea";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
 const route = useRoute();
@@ -20,6 +21,7 @@ let lastGlobalToastKey = "";
 let speedInsightsHandle = null;
 const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG || "").trim();
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
+const safeArea = useScreenSafeArea();
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -54,6 +56,22 @@ watch(
     syncGreetingToastFromSession();
     updateSpeedInsightsRoute();
   },
+);
+
+watch(
+  [safeArea.top, safeArea.right, safeArea.bottom, safeArea.left],
+  ([top, right, bottom, left]) => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty("--safe-top-runtime", String(top || "0px"));
+    rootStyle.setProperty("--safe-right-runtime", String(right || "0px"));
+    rootStyle.setProperty("--safe-bottom-runtime", String(bottom || "0px"));
+    rootStyle.setProperty("--safe-left-runtime", String(left || "0px"));
+  },
+  { immediate: true },
 );
 
 watch(
@@ -102,6 +120,13 @@ onBeforeUnmount(() => {
   document.body.style.left = "";
   document.body.style.right = "";
   document.body.style.width = "";
+  if (typeof document !== "undefined") {
+    const rootStyle = document.documentElement.style;
+    rootStyle.removeProperty("--safe-top-runtime");
+    rootStyle.removeProperty("--safe-right-runtime");
+    rootStyle.removeProperty("--safe-bottom-runtime");
+    rootStyle.removeProperty("--safe-left-runtime");
+  }
 });
 
 function handleGlobalToastEvent(event) {
