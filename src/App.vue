@@ -309,7 +309,7 @@ function updateSpeedInsightsRoute() {
     <footer v-if="showSiteFooter" class="site-footer" aria-label="Footer i faqes">
       <div class="site-footer-grid">
         <div class="site-footer-brand">
-          <img class="site-footer-logo" src="/trego-logo.png" alt="TREGO" width="420" height="159">
+          <img class="site-footer-logo" src="/trego-logo.webp" alt="TREGO" width="420" height="159">
           <p class="site-footer-copy">
             TREGO lidh bizneset dhe bleresit ne nje eksperience te paster, moderne dhe te shpejte.
           </p>

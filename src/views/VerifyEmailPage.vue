@@ -101,7 +101,7 @@ async function resendCode() {
       <p class="section-label">Verifiko emailin</p>
       <h1>Verifiko emailin</h1>
       <div class="verify-email-brand">
-        <img src="/trego-logo.png" alt="TREGO logo" class="verify-email-logo" />
+        <img src="/trego-logo.webp" alt="TREGO logo" class="verify-email-logo" />
         <span>TREGO</span>
       </div>
       <p class="section-text">

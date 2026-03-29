@@ -150,7 +150,7 @@ const navSearchResultImage = computed(() => {
     navSearchResult.value.imagePath
     || navSearchResult.value.image_path
     || navSearchResult.value.image
-    || "/bujqesia.jpg"
+    || "/bujqesia.webp"
   );
 });
 
@@ -477,7 +477,7 @@ onBeforeUnmount(() => {
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGO" width="420" height="159" fetchpriority="high">
+      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO" width="420" height="159" fetchpriority="high">
       <span class="sr-only">TREGO</span>
     </RouterLink>
 

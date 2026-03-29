@@ -723,6 +723,47 @@ def guess_content_type_for_extension(extension: str) -> str:
     return EXTENSION_CONTENT_TYPES.get(str(extension or "").strip().lower(), "application/octet-stream")
 
 
+def convert_image_bytes_to_webp(file_bytes: bytes) -> bytes | None:
+    if not PILLOW_AVAILABLE or not file_bytes:
+        return None
+
+    try:
+        with Image.open(BytesIO(file_bytes)) as raw_image:
+            prepared_image = ImageOps.exif_transpose(raw_image)
+            has_alpha = "A" in prepared_image.getbands()
+            target_mode = "RGBA" if has_alpha else "RGB"
+            if prepared_image.mode != target_mode:
+                prepared_image = prepared_image.convert(target_mode)
+
+            output_buffer = BytesIO()
+            prepared_image.save(output_buffer, "WEBP", quality=86, method=6)
+            return output_buffer.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+
+
+def normalize_uploaded_image_payload(
+    file_bytes: bytes,
+    extension: str,
+    content_type: str,
+) -> tuple[bytes, str, str]:
+    normalized_extension = str(extension or "").strip().lower()
+    normalized_content_type = str(content_type or "").strip().lower()
+
+    if normalized_extension in {".webp", ".gif", ".avif"}:
+        if not normalized_content_type.startswith("image/"):
+            normalized_content_type = guess_content_type_for_extension(normalized_extension)
+        return file_bytes, normalized_extension, normalized_content_type
+
+    converted_bytes = convert_image_bytes_to_webp(file_bytes)
+    if converted_bytes:
+        return converted_bytes, ".webp", "image/webp"
+
+    if not normalized_content_type.startswith("image/"):
+        normalized_content_type = guess_content_type_for_extension(normalized_extension)
+    return file_bytes, normalized_extension, normalized_content_type
+
+
 def store_uploaded_asset(
     *,
     stored_name: str,
@@ -11128,12 +11169,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                 )
                 continue
 
+            content_type = str(part.get_content_type() or "").strip().lower()
+            file_bytes, extension, content_type = normalize_uploaded_image_payload(
+                file_bytes,
+                extension,
+                content_type,
+            )
             base_name = re.sub(r"[^a-zA-Z0-9]+", "-", Path(original_filename).stem)
             safe_name = base_name.strip("-").lower() or "product-photo"
             stored_name = f"{safe_name[:48]}-{secrets.token_hex(6)}{extension}"
-            content_type = str(part.get_content_type() or "").strip().lower()
-            if not content_type.startswith("image/"):
-                content_type = guess_content_type_for_extension(extension)
 
             store_uploaded_asset(
                 stored_name=stored_name,
@@ -11226,11 +11270,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        content_type = str(image_part.get_content_type() or "").strip().lower()
+        file_bytes, extension, content_type = normalize_uploaded_image_payload(
+            file_bytes,
+            extension,
+            content_type,
+        )
         safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "-", Path(original_filename).stem).strip("-") or "profile"
         stored_name = f"profile-{user['id']}-{safe_name[:36]}-{secrets.token_hex(6)}{extension}"
-        content_type = str(image_part.get_content_type() or "").strip().lower()
-        if not content_type.startswith("image/"):
-            content_type = guess_content_type_for_extension(extension)
 
         store_uploaded_asset(
             stored_name=stored_name,

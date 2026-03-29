@@ -153,7 +153,7 @@ function initializeBrandLogo() {
 
     brandLink.classList.add("has-logo");
     brandLink.innerHTML = `
-      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGO">
+      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO">
       <span class="sr-only">TREGO</span>
     `;
   });
@@ -4790,7 +4790,7 @@ function initializeHomePage() {
       badge: "Reklame 01",
       ctaLabel: "Shiko produktet",
       ctaHref: "/kerko",
-      imagePath: "/bujqesia.jpg",
+      imagePath: "/bujqesia.webp",
     },
     {
       title: "Veshje dhe kozmetike ne trend",
@@ -4799,7 +4799,7 @@ function initializeHomePage() {
       badge: "Reklame 02",
       ctaLabel: "Kerko koleksionin",
       ctaHref: "/kerko?category=clothing-women",
-      imagePath: "/gjelbert.jpeg",
+      imagePath: "/gjelbert.webp",
     },
     {
       title: "Teknologji dhe shtepi me oferta",

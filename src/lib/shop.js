@@ -90,7 +90,7 @@ export const HOME_PROMO_SLIDES = [
     badge: "Reklame 01",
     ctaLabel: "Shiko produktet",
     ctaHref: "/kerko",
-    imagePath: "/bujqesia.jpg",
+    imagePath: "/bujqesia.webp",
   },
   {
     title: "Veshje dhe kozmetike ne trend",
@@ -99,7 +99,7 @@ export const HOME_PROMO_SLIDES = [
     badge: "Reklame 02",
     ctaLabel: "Kerko koleksionin",
     ctaHref: "/kerko?category=clothing-women",
-    imagePath: "/gjelbert.jpeg",
+    imagePath: "/gjelbert.webp",
   },
   {
     title: "Teknologji dhe shtepi me oferta",
