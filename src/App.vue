@@ -1,4 +1,5 @@
 <script setup>
+import { SpeedInsights } from "@vercel/speed-insights/vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
@@ -269,6 +270,7 @@ function stopFormMessageObserver() {
     </div>
   </div>
   <VoiceAssistantWidget />
+  <SpeedInsights />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
