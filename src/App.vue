@@ -1,5 +1,5 @@
 <script setup>
-import { SpeedInsights } from "@vercel/speed-insights/vue";
+import { computeRoute, injectSpeedInsights } from "@vercel/speed-insights";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
@@ -17,6 +17,9 @@ const globalToastType = ref("success");
 const globalToastActions = ref([]);
 let formMessageObserver = null;
 let lastGlobalToastKey = "";
+let speedInsightsHandle = null;
+const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG || "").trim();
+const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -49,6 +52,7 @@ watch(
   () => route.fullPath,
   () => {
     syncGreetingToastFromSession();
+    updateSpeedInsightsRoute();
   },
 );
 
@@ -80,6 +84,7 @@ watch(
 onMounted(() => {
   syncGreetingToastFromSession();
   void ensureSessionLoaded();
+  initializeSpeedInsights();
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startFormMessageObserver();
 });
@@ -242,6 +247,26 @@ function stopFormMessageObserver() {
   formMessageObserver?.disconnect?.();
   formMessageObserver = null;
 }
+
+function initializeSpeedInsights() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  speedInsightsHandle = injectSpeedInsights(
+    {
+      framework: "vue",
+      ...(speedInsightsBasePath ? { basePath: speedInsightsBasePath } : {}),
+    },
+    speedInsightsClientConfig || undefined,
+  );
+
+  updateSpeedInsightsRoute();
+}
+
+function updateSpeedInsightsRoute() {
+  speedInsightsHandle?.setRoute?.(computeRoute(route.path, route.params));
+}
 </script>
 
 <template>
@@ -270,7 +295,6 @@ function stopFormMessageObserver() {
     </div>
   </div>
   <VoiceAssistantWidget />
-  <SpeedInsights />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
