@@ -10,6 +10,7 @@ from io import BytesIO, StringIO
 import html
 import json
 import mimetypes
+import math
 import os
 import re
 import secrets
@@ -84,6 +85,7 @@ PAGE_ROUTES = {
     "/kerko": "/search.html",
     "/profili-biznesit": "/business-profile-public.html",
     "/mesazhet": "/messages.html",
+    "/njoftimet": "/account.html",
     "/login": "/login.html",
     "/forgot-password": "/forgot-password.html",
     "/signup": "/signup.html",
@@ -258,10 +260,27 @@ CHAT_PARTICIPANT_ROLES = {"client", "business", "admin"}
 CHAT_MESSAGE_MAX_LENGTH = 1500
 GENDER_OPTIONS = {"mashkull", "femer"}
 PAYMENT_METHODS = {"cash", "card-online"}
+ORDER_ITEM_FULFILLMENT_STATUSES = {
+    "confirmed",
+    "packed",
+    "shipped",
+    "delivered",
+    "cancelled",
+    "returned",
+}
+RETURN_REQUEST_STATUSES = {"requested", "approved", "rejected", "received", "refunded"}
+BUSINESS_VERIFICATION_STATUSES = {"unverified", "pending", "verified", "rejected"}
+REPORT_TARGET_TYPES = {"product", "business", "user", "message"}
+REPORT_STATUSES = {"open", "reviewing", "resolved", "dismissed"}
+PROMO_CODE_TYPES = {"percent", "fixed"}
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
 CHAT_ATTACHMENT_MAX_FILE_SIZE = 16 * 1024 * 1024
 CHAT_UNREAD_REMINDER_AFTER_HOURS = 2
 CHAT_UNREAD_REMINDER_BATCH_LIMIT = 100
+NOTIFICATIONS_PAGE_LIMIT = 50
+PAYOUT_HOLD_DAYS = 14
+STOCK_RESERVATION_HOLD_MINUTES = 15
+PROMO_CODE_DEFAULT_PER_USER_LIMIT = 1
 CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -330,7 +349,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-29-performance-1"
+APP_SCHEMA_VERSION = "2026-03-29-marketplace-2"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -363,6 +382,10 @@ BUSINESS_PROFILE_SELECT_COLUMNS = """
     business_description,
     business_number,
     business_logo_path,
+    verification_status,
+    verification_requested_at,
+    verification_verified_at,
+    verification_notes,
     phone_number,
     city,
     address_line,
@@ -385,6 +408,14 @@ USER_SELECT_COLUMNS = (
     "created_at"
 )
 USER_AUTH_SELECT_COLUMNS = USER_SELECT_COLUMNS + ", password_hash"
+try:
+    MARKETPLACE_COMMISSION_RATE = min(
+        0.95,
+        max(0.0, float(str(os.environ.get("MARKETPLACE_COMMISSION_RATE", "0.08")).strip() or 0.08)),
+    )
+except ValueError:
+    MARKETPLACE_COMMISSION_RATE = 0.08
+
 PRODUCT_SELECT_COLUMNS = """
     id,
     article_number,
@@ -414,6 +445,18 @@ PRODUCT_SELECT_COLUMNS = """
         WHERE oi.product_id = products.id
     ), 0) AS buyers_count,
     COALESCE((
+        SELECT ROUND(AVG(pr.rating), 2)
+        FROM product_reviews pr
+        WHERE pr.product_id = products.id
+          AND pr.status = 'published'
+    ), 0) AS average_rating,
+    COALESCE((
+        SELECT COUNT(*)
+        FROM product_reviews pr
+        WHERE pr.product_id = products.id
+          AND pr.status = 'published'
+    ), 0) AS review_count,
+    COALESCE((
         SELECT bp.business_name
         FROM business_profiles bp
         WHERE bp.user_id = products.created_by_user_id
@@ -432,6 +475,10 @@ ORDER_SELECT_COLUMNS = """
     country,
     zip_code,
     phone_number,
+    subtotal_amount,
+    discount_amount,
+    total_amount,
+    promo_code,
     created_at
 """
 ORDER_ITEM_SELECT_COLUMNS = """
@@ -454,6 +501,24 @@ ORDER_ITEM_SELECT_COLUMNS = """
     product_package_amount_unit,
     unit_price,
     quantity,
+    fulfillment_status,
+    tracking_code,
+    tracking_url,
+    shipped_at,
+    delivered_at,
+    cancelled_at,
+    commission_rate,
+    commission_amount,
+    seller_earnings_amount,
+    payout_status,
+    payout_due_at,
+    COALESCE((
+        SELECT rr.status
+        FROM return_requests rr
+        WHERE rr.order_item_id = order_items.id
+        ORDER BY rr.id DESC
+        LIMIT 1
+    ), '') AS return_request_status,
     created_at
 """
 
@@ -645,6 +710,14 @@ def split_full_name(full_name: str) -> tuple[str, str]:
 
 def build_full_name(first_name: str, last_name: str) -> str:
     return " ".join(part for part in [first_name.strip(), last_name.strip()] if part).strip()
+
+
+def get_business_initials(value: str) -> str:
+    parts = [part for part in str(value or "").strip().split() if part][:2]
+    if not parts:
+        return "TR"
+
+    return "".join(part[0].upper() for part in parts)
 
 
 def get_db_connection() -> DatabaseConnection:
@@ -1174,12 +1247,40 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE business_profiles ADD COLUMN business_logo_path TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "business_profiles", "verification_status"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unverified'"
+        )
+
+    if not column_exists(connection, "business_profiles", "verification_requested_at"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN verification_requested_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "verification_verified_at"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN verification_verified_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "verification_notes"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN verification_notes TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE business_profiles
         SET
             business_number = COALESCE(NULLIF(TRIM(business_number), ''), ''),
-            business_logo_path = COALESCE(NULLIF(TRIM(business_logo_path), ''), '')
+            business_logo_path = COALESCE(NULLIF(TRIM(business_logo_path), ''), ''),
+            verification_status = CASE
+                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) IN ('pending', 'verified', 'rejected')
+                    THEN LOWER(TRIM(COALESCE(verification_status, '')))
+                ELSE 'unverified'
+            END,
+            verification_requested_at = COALESCE(verification_requested_at, ''),
+            verification_verified_at = COALESCE(verification_verified_at, ''),
+            verification_notes = COALESCE(verification_notes, '')
         """
     )
 
@@ -1868,6 +1969,40 @@ def migrate_database(connection: DatabaseConnection) -> None:
             ),
         )
 
+    if not column_exists(connection, "orders", "subtotal_amount"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN subtotal_amount REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "orders", "discount_amount"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN discount_amount REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "orders", "total_amount"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN total_amount REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "orders", "promo_code"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE orders
+        SET
+            subtotal_amount = COALESCE(subtotal_amount, 0),
+            discount_amount = COALESCE(discount_amount, 0),
+            total_amount = CASE
+                WHEN COALESCE(total_amount, 0) > 0 THEN total_amount
+                ELSE COALESCE(subtotal_amount, 0)
+            END,
+            promo_code = COALESCE(promo_code, '')
+        """
+    )
+
     if not column_exists(connection, "order_items", "product_variant_key"):
         connection.execute(
             "ALTER TABLE order_items ADD COLUMN product_variant_key TEXT NOT NULL DEFAULT ''"
@@ -1893,6 +2028,462 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE order_items ADD COLUMN product_package_amount_unit TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "order_items", "fulfillment_status"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'confirmed'"
+        )
+
+    if not column_exists(connection, "order_items", "tracking_code"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN tracking_code TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "tracking_url"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN tracking_url TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "shipped_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN shipped_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "delivered_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN delivered_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "cancelled_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN cancelled_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "commission_rate"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN commission_rate REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "order_items", "commission_amount"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN commission_amount REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "order_items", "seller_earnings_amount"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN seller_earnings_amount REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "order_items", "payout_status"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN payout_status TEXT NOT NULL DEFAULT 'pending'"
+        )
+
+    if not column_exists(connection, "order_items", "payout_due_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN payout_due_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE order_items
+        SET
+            fulfillment_status = CASE
+                WHEN LOWER(TRIM(COALESCE(fulfillment_status, ''))) IN ('packed', 'shipped', 'delivered', 'cancelled', 'returned')
+                    THEN LOWER(TRIM(COALESCE(fulfillment_status, '')))
+                ELSE 'confirmed'
+            END,
+            tracking_code = COALESCE(tracking_code, ''),
+            tracking_url = COALESCE(tracking_url, ''),
+            shipped_at = COALESCE(shipped_at, ''),
+            delivered_at = COALESCE(delivered_at, ''),
+            cancelled_at = COALESCE(cancelled_at, ''),
+            commission_rate = CASE
+                WHEN COALESCE(commission_rate, 0) > 0 THEN commission_rate
+                ELSE ?
+            END,
+            commission_amount = CASE
+                WHEN COALESCE(commission_amount, 0) > 0 THEN commission_amount
+                ELSE ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?, 2)
+            END,
+            seller_earnings_amount = CASE
+                WHEN COALESCE(seller_earnings_amount, 0) > 0 THEN seller_earnings_amount
+                ELSE ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) - ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?, 2), 2)
+            END,
+            payout_status = CASE
+                WHEN LOWER(TRIM(COALESCE(payout_status, ''))) IN ('ready', 'paid', 'on_hold')
+                    THEN LOWER(TRIM(COALESCE(payout_status, '')))
+                ELSE 'pending'
+            END,
+            payout_due_at = COALESCE(payout_due_at, '')
+        """,
+        (MARKETPLACE_COMMISSION_RATE, MARKETPLACE_COMMISSION_RATE, MARKETPLACE_COMMISSION_RATE),
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_order_items_fulfillment_status
+        ON order_items(fulfillment_status, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "product_reviews"):
+        connection.execute(
+            """
+            CREATE TABLE product_reviews (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                order_id BIGINT NOT NULL,
+                order_item_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                business_user_id BIGINT,
+                rating INTEGER NOT NULL,
+                review_title TEXT NOT NULL DEFAULT '',
+                review_body TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'published',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE product_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                order_id INTEGER NOT NULL,
+                order_item_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                business_user_id INTEGER,
+                rating INTEGER NOT NULL,
+                review_title TEXT NOT NULL DEFAULT '',
+                review_body TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'published',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_order_item_user
+        ON product_reviews(order_item_id, user_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_reviews_product_created
+        ON product_reviews(product_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_reviews_business_created
+        ON product_reviews(business_user_id, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "return_requests"):
+        connection.execute(
+            """
+            CREATE TABLE return_requests (
+                id BIGSERIAL PRIMARY KEY,
+                order_id BIGINT NOT NULL,
+                order_item_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                business_user_id BIGINT,
+                reason TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'requested',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                resolved_at TEXT NOT NULL DEFAULT '',
+                resolution_notes TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE return_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                order_item_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                business_user_id INTEGER,
+                reason TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'requested',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT NOT NULL DEFAULT '',
+                resolution_notes TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_return_requests_user_created
+        ON return_requests(user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_return_requests_business_created
+        ON return_requests(business_user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_return_requests_status_created
+        ON return_requests(status, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "notifications"):
+        connection.execute(
+            """
+            CREATE TABLE notifications (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'info',
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                href TEXT NOT NULL DEFAULT '',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                read_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL DEFAULT 'info',
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                href TEXT NOT NULL DEFAULT '',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+        ON notifications(user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+        ON notifications(user_id, is_read, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "reports"):
+        connection.execute(
+            """
+            CREATE TABLE reports (
+                id BIGSERIAL PRIMARY KEY,
+                reporter_user_id BIGINT NOT NULL,
+                reported_user_id BIGINT,
+                business_user_id BIGINT,
+                target_type TEXT NOT NULL DEFAULT 'product',
+                target_id BIGINT NOT NULL DEFAULT 0,
+                target_label TEXT NOT NULL DEFAULT '',
+                reason TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                admin_notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                resolved_at TEXT NOT NULL DEFAULT '',
+                resolved_by_user_id BIGINT,
+                FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (reported_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_user_id INTEGER NOT NULL,
+                reported_user_id INTEGER,
+                business_user_id INTEGER,
+                target_type TEXT NOT NULL DEFAULT 'product',
+                target_id INTEGER NOT NULL DEFAULT 0,
+                target_label TEXT NOT NULL DEFAULT '',
+                reason TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                admin_notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT NOT NULL DEFAULT '',
+                resolved_by_user_id INTEGER,
+                FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (reported_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_reports_status_created
+        ON reports(status, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_reports_reporter_created
+        ON reports(reporter_user_id, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "promo_codes"):
+        connection.execute(
+            """
+            CREATE TABLE promo_codes (
+                id BIGSERIAL PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                discount_type TEXT NOT NULL DEFAULT 'percent',
+                discount_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+                minimum_subtotal DOUBLE PRECISION NOT NULL DEFAULT 0,
+                usage_limit INTEGER NOT NULL DEFAULT 0,
+                per_user_limit INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                page_section TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                business_user_id BIGINT,
+                created_by_user_id BIGINT,
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE promo_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                discount_type TEXT NOT NULL DEFAULT 'percent',
+                discount_value REAL NOT NULL DEFAULT 0,
+                minimum_subtotal REAL NOT NULL DEFAULT 0,
+                usage_limit INTEGER NOT NULL DEFAULT 0,
+                per_user_limit INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                page_section TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                business_user_id INTEGER,
+                created_by_user_id INTEGER,
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_promo_codes_active_code
+        ON promo_codes(is_active, code)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_promo_codes_business_created
+        ON promo_codes(business_user_id, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "stock_reservations"):
+        connection.execute(
+            """
+            CREATE TABLE stock_reservations (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                cart_line_id BIGINT NOT NULL,
+                product_id BIGINT NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                expires_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (cart_line_id) REFERENCES cart_lines(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE stock_reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                cart_line_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                expires_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (cart_line_id) REFERENCES cart_lines(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_cart_line
+        ON stock_reservations(cart_line_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_stock_reservations_variant_expiry
+        ON stock_reservations(product_id, variant_key, expires_at)
+        """
+    )
+
     if not table_exists(connection, "stripe_payment_sessions"):
         connection.execute(
             """
@@ -1905,6 +2496,8 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 checkout_address TEXT NOT NULL DEFAULT '{}',
                 checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
                 amount_total INTEGER NOT NULL DEFAULT 0,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                promo_code TEXT NOT NULL DEFAULT '',
                 currency TEXT NOT NULL DEFAULT 'eur',
                 payment_status TEXT NOT NULL DEFAULT '',
                 stripe_status TEXT NOT NULL DEFAULT '',
@@ -1927,6 +2520,8 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 checkout_address TEXT NOT NULL DEFAULT '{}',
                 checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
                 amount_total INTEGER NOT NULL DEFAULT 0,
+                discount_amount INTEGER NOT NULL DEFAULT 0,
+                promo_code TEXT NOT NULL DEFAULT '',
                 currency TEXT NOT NULL DEFAULT 'eur',
                 payment_status TEXT NOT NULL DEFAULT '',
                 stripe_status TEXT NOT NULL DEFAULT '',
@@ -1938,6 +2533,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
             )
             """
+        )
+
+    if not column_exists(connection, "stripe_payment_sessions", "discount_amount"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "stripe_payment_sessions", "promo_code"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''"
         )
 
     connection.execute(
@@ -3353,6 +3958,81 @@ def parse_business_id_query(
             or query_params.get("businessId", [""])[0]
         }
     )
+
+
+def parse_order_item_id(data: dict[str, object]) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_order_item_id = str(data.get("orderItemId", "")).strip()
+
+    try:
+        order_item_id = int(raw_order_item_id)
+        if order_item_id <= 0:
+            errors.append("Artikulli i porosise nuk eshte valid.")
+    except ValueError:
+        order_item_id = None
+        errors.append("Artikulli i porosise nuk eshte valid.")
+
+    return errors, order_item_id
+
+
+def parse_return_request_id(data: dict[str, object]) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_return_request_id = str(data.get("returnRequestId", "")).strip()
+
+    try:
+        return_request_id = int(raw_return_request_id)
+        if return_request_id <= 0:
+            errors.append("Kerkesa per kthim nuk eshte valide.")
+    except ValueError:
+        return_request_id = None
+        errors.append("Kerkesa per kthim nuk eshte valide.")
+
+    return errors, return_request_id
+
+
+def parse_report_id(data: dict[str, object]) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_report_id = str(data.get("reportId", "")).strip()
+
+    try:
+        report_id = int(raw_report_id)
+        if report_id <= 0:
+            errors.append("Raportimi nuk eshte valid.")
+    except ValueError:
+        report_id = None
+        errors.append("Raportimi nuk eshte valid.")
+
+    return errors, report_id
+
+
+def parse_report_target_type(data: dict[str, object]) -> tuple[list[str], str]:
+    normalized_type = str(data.get("targetType", "")).strip().lower()
+    if normalized_type not in REPORT_TARGET_TYPES:
+        return ["Objekti i raportimit nuk eshte valid."], ""
+    return [], normalized_type
+
+
+def parse_report_status(data: dict[str, object]) -> tuple[list[str], str]:
+    normalized_status = str(data.get("status", "")).strip().lower()
+    if normalized_status not in REPORT_STATUSES:
+        return ["Statusi i raportimit nuk eshte valid."], ""
+    return [], normalized_status
+
+
+def parse_promo_code(data: dict[str, object], *, field_name: str = "promoCode") -> tuple[list[str], str]:
+    promo_code = str(data.get(field_name, "") or "").strip().upper()
+    if not promo_code:
+        return [], ""
+    if len(promo_code) > 40:
+        return ["Kodi promocional nuk eshte valid."], ""
+    return [], promo_code
+
+
+def parse_promo_code_type(data: dict[str, object]) -> tuple[list[str], str]:
+    normalized_type = str(data.get("discountType", "")).strip().lower()
+    if normalized_type not in PROMO_CODE_TYPES:
+        return ["Lloji i kuponit nuk eshte valid."], ""
+    return [], normalized_type
 
 
 def parse_conversation_id(
@@ -4967,6 +5647,52 @@ def parse_payment_method(data: dict[str, object]) -> tuple[list[str], str | None
     return [], payment_method
 
 
+def parse_review_rating(data: dict[str, object], field_name: str = "rating") -> tuple[list[str], int | None]:
+    raw_value = str(data.get(field_name, "")).strip()
+    if not raw_value:
+        return ["Zgjidh vleresimin me yje nga 1 deri ne 5."], None
+
+    try:
+        rating = int(raw_value)
+    except ValueError:
+        return ["Vleresimi duhet te jete numer i plote nga 1 deri ne 5."], None
+
+    if rating < 1 or rating > 5:
+        return ["Vleresimi duhet te jete nga 1 deri ne 5."], None
+
+    return [], rating
+
+
+def parse_fulfillment_status(
+    data: dict[str, object],
+    field_name: str = "fulfillmentStatus",
+) -> tuple[list[str], str | None]:
+    status = str(data.get(field_name, "")).strip().lower()
+    if status not in ORDER_ITEM_FULFILLMENT_STATUSES:
+        return ["Statusi i porosise nuk eshte valid."], None
+    return [], status
+
+
+def parse_return_status(
+    data: dict[str, object],
+    field_name: str = "status",
+) -> tuple[list[str], str | None]:
+    status = str(data.get(field_name, "")).strip().lower()
+    if status not in RETURN_REQUEST_STATUSES:
+        return ["Statusi i kerkeses per kthim nuk eshte valid."], None
+    return [], status
+
+
+def parse_business_verification_status(
+    data: dict[str, object],
+    field_name: str = "verificationStatus",
+) -> tuple[list[str], str | None]:
+    status = str(data.get(field_name, "")).strip().lower()
+    if status not in BUSINESS_VERIFICATION_STATUSES:
+        return ["Statusi i verifikimit nuk eshte valid."], None
+    return [], status
+
+
 def parse_stripe_session_id(
     data: dict[str, object],
     field_name: str = "stripeSessionId",
@@ -5056,6 +5782,26 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "businessDescription": row["business_description"],
         "businessNumber": row["business_number"],
         "logoPath": normalize_image_path(row["business_logo_path"]),
+        "verificationStatus": (
+            str(row["verification_status"] or "").strip().lower()
+            if "verification_status" in row.keys()
+            else "unverified"
+        ),
+        "verificationRequestedAt": (
+            str(row["verification_requested_at"] or "").strip()
+            if "verification_requested_at" in row.keys()
+            else ""
+        ),
+        "verificationVerifiedAt": (
+            str(row["verification_verified_at"] or "").strip()
+            if "verification_verified_at" in row.keys()
+            else ""
+        ),
+        "verificationNotes": (
+            str(row["verification_notes"] or "").strip()
+            if "verification_notes" in row.keys()
+            else ""
+        ),
         "phoneNumber": row["phone_number"],
         "city": row["city"],
         "addressLine": row["address_line"],
@@ -5070,6 +5816,10 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         payload["productsCount"] = row["products_count"]
     if "orders_count" in row.keys():
         payload["ordersCount"] = row["orders_count"]
+    if "seller_rating" in row.keys():
+        payload["sellerRating"] = round(float(row["seller_rating"] or 0), 2)
+    if "seller_review_count" in row.keys():
+        payload["sellerReviewCount"] = max(0, int(row["seller_review_count"] or 0))
     payload["publicProfileUrl"] = f"/profili-biznesit?id={row['id']}"
     return payload
 
@@ -5080,11 +5830,22 @@ def serialize_public_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "businessName": row["business_name"],
         "businessDescription": row["business_description"],
         "logoPath": normalize_image_path(row["business_logo_path"]),
+        "verificationStatus": (
+            str(row["verification_status"] or "").strip().lower()
+            if "verification_status" in row.keys()
+            else "unverified"
+        ),
         "city": row["city"],
         "phoneNumber": row["phone_number"],
         "addressLine": row["address_line"],
         "followersCount": row["followers_count"],
         "productsCount": row["products_count"],
+        "sellerRating": round(float(row["seller_rating"] or 0), 2)
+        if "seller_rating" in row.keys()
+        else 0,
+        "sellerReviewCount": max(0, int(row["seller_review_count"] or 0))
+        if "seller_review_count" in row.keys()
+        else 0,
         "profileUrl": f"/profili-biznesit?id={row['id']}",
     }
 
@@ -5116,6 +5877,26 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "businessName": row["business_name"],
         "businessDescription": row["business_description"],
         "logoPath": normalize_image_path(row["business_logo_path"]),
+        "verificationStatus": (
+            str(row["verification_status"] or "").strip().lower()
+            if "verification_status" in row.keys()
+            else "unverified"
+        ),
+        "verificationRequestedAt": (
+            str(row["verification_requested_at"] or "").strip()
+            if "verification_requested_at" in row.keys()
+            else ""
+        ),
+        "verificationVerifiedAt": (
+            str(row["verification_verified_at"] or "").strip()
+            if "verification_verified_at" in row.keys()
+            else ""
+        ),
+        "verificationNotes": (
+            str(row["verification_notes"] or "").strip()
+            if "verification_notes" in row.keys()
+            else ""
+        ),
         "city": row["city"],
         "addressLine": row["address_line"],
         "phoneNumber": row["phone_number"],
@@ -5123,6 +5904,12 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "ownerEmail": row["owner_email"],
         "productsCount": row["products_count"],
         "ordersCount": row["orders_count"],
+        "sellerRating": round(float(row["seller_rating"] or 0), 2)
+        if "seller_rating" in row.keys()
+        else 0,
+        "sellerReviewCount": max(0, int(row["seller_review_count"] or 0))
+        if "seller_review_count" in row.keys()
+        else 0,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -5223,6 +6010,12 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "createdAt": row["created_at"],
         "businessName": business_name,
         "buyersCount": buyers_count,
+        "averageRating": round(float(row["average_rating"] or 0), 2)
+        if "average_rating" in row.keys()
+        else 0,
+        "reviewCount": max(0, int(row["review_count"] or 0))
+        if "review_count" in row.keys()
+        else 0,
     }
 
 
@@ -5300,8 +6093,64 @@ def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
         "unitPrice": unit_price,
         "quantity": quantity,
         "totalPrice": round(unit_price * quantity, 2),
+        "fulfillmentStatus": (
+            str(row["fulfillment_status"] or "").strip().lower()
+            if "fulfillment_status" in row.keys()
+            else "confirmed"
+        ),
+        "trackingCode": str(row["tracking_code"] or "").strip()
+        if "tracking_code" in row.keys()
+        else "",
+        "trackingUrl": str(row["tracking_url"] or "").strip()
+        if "tracking_url" in row.keys()
+        else "",
+        "shippedAt": str(row["shipped_at"] or "").strip()
+        if "shipped_at" in row.keys()
+        else "",
+        "deliveredAt": str(row["delivered_at"] or "").strip()
+        if "delivered_at" in row.keys()
+        else "",
+        "cancelledAt": str(row["cancelled_at"] or "").strip()
+        if "cancelled_at" in row.keys()
+        else "",
+        "commissionRate": round(float(row["commission_rate"] or 0), 4)
+        if "commission_rate" in row.keys()
+        else 0,
+        "commissionAmount": round(float(row["commission_amount"] or 0), 2)
+        if "commission_amount" in row.keys()
+        else 0,
+        "sellerEarningsAmount": round(float(row["seller_earnings_amount"] or 0), 2)
+        if "seller_earnings_amount" in row.keys()
+        else 0,
+        "payoutStatus": str(row["payout_status"] or "").strip().lower()
+        if "payout_status" in row.keys()
+        else "pending",
+        "payoutDueAt": str(row["payout_due_at"] or "").strip()
+        if "payout_due_at" in row.keys()
+        else "",
+        "returnRequestStatus": str(row["return_request_status"] or "").strip().lower()
+        if "return_request_status" in row.keys()
+        else "",
         "createdAt": row["created_at"],
     }
+
+
+def summarize_order_fulfillment_status(items: list[dict[str, object]]) -> str:
+    statuses = [str(item.get("fulfillmentStatus") or "").strip().lower() for item in items if str(item.get("fulfillmentStatus") or "").strip()]
+    if not statuses:
+        return "confirmed"
+    unique_statuses = set(statuses)
+    if unique_statuses == {"returned"}:
+        return "returned"
+    if unique_statuses == {"cancelled"}:
+        return "cancelled"
+    if unique_statuses.issubset({"delivered", "returned"}):
+        return "delivered"
+    if unique_statuses.issubset({"shipped", "delivered", "returned"}):
+        return "shipped"
+    if unique_statuses.issubset({"packed", "shipped", "delivered", "returned"}):
+        return "packed"
+    return "confirmed"
 
 
 def serialize_order(
@@ -5310,10 +6159,13 @@ def serialize_order(
 ) -> dict[str, object]:
     normalized_items = list(items or [])
     total_items = sum(max(0, int(item.get("quantity", 0) or 0)) for item in normalized_items)
-    total_price = round(
+    calculated_total_price = round(
         sum(float(item.get("totalPrice", 0) or 0) for item in normalized_items),
         2,
     )
+    subtotal_amount = round(float(row["subtotal_amount"] or calculated_total_price), 2) if "subtotal_amount" in row.keys() else calculated_total_price
+    discount_amount = round(float(row["discount_amount"] or 0), 2) if "discount_amount" in row.keys() else 0
+    total_price = round(float(row["total_amount"] or calculated_total_price), 2) if "total_amount" in row.keys() else calculated_total_price
 
     return {
         "id": row["id"],
@@ -5322,6 +6174,7 @@ def serialize_order(
         "customerEmail": row["customer_email"],
         "paymentMethod": row["payment_method"],
         "status": row["status"],
+        "fulfillmentStatus": summarize_order_fulfillment_status(normalized_items),
         "addressLine": row["address_line"],
         "city": row["city"],
         "country": row["country"],
@@ -5329,8 +6182,74 @@ def serialize_order(
         "phoneNumber": row["phone_number"],
         "createdAt": row["created_at"],
         "totalItems": total_items,
+        "subtotalAmount": subtotal_amount,
+        "discountAmount": discount_amount,
         "totalPrice": total_price,
+        "promoCode": str(row["promo_code"] or "").strip().upper() if "promo_code" in row.keys() else "",
         "items": normalized_items,
+    }
+
+
+def serialize_notification(row: sqlite3.Row) -> dict[str, object]:
+    try:
+        metadata = json.loads(str(row["metadata"] or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        metadata = {}
+
+    return {
+        "id": row["id"],
+        "type": str(row["type"] or "info").strip().lower() or "info",
+        "title": str(row["title"] or "").strip(),
+        "body": str(row["body"] or "").strip(),
+        "href": str(row["href"] or "").strip(),
+        "isRead": bool(row["is_read"]),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "readAt": str(row["read_at"] or "").strip(),
+        "metadata": metadata if isinstance(metadata, dict) else {},
+    }
+
+
+def serialize_product_review(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "productId": row["product_id"],
+        "orderItemId": row["order_item_id"],
+        "userId": row["user_id"],
+        "rating": max(1, min(5, int(row["rating"] or 1))),
+        "title": str(row["review_title"] or "").strip(),
+        "body": str(row["review_body"] or "").strip(),
+        "status": str(row["status"] or "").strip().lower() or "published",
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+        "authorName": str(row["author_name"] or "").strip() or "User",
+        "authorInitials": get_business_initials(str(row["author_name"] or "").strip() or "U"),
+    }
+
+
+def serialize_return_request(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "orderId": row["order_id"],
+        "orderItemId": row["order_item_id"],
+        "userId": row["user_id"],
+        "businessUserId": row["business_user_id"],
+        "reason": str(row["reason"] or "").strip(),
+        "details": str(row["details"] or "").strip(),
+        "status": str(row["status"] or "").strip().lower() or "requested",
+        "resolutionNotes": str(row["resolution_notes"] or "").strip(),
+        "resolvedAt": str(row["resolved_at"] or "").strip(),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+        "productTitle": str(row["product_title"] or "").strip() if "product_title" in row.keys() else "",
+        "productImagePath": normalize_image_path(row["product_image_path"])
+        if "product_image_path" in row.keys()
+        else "",
+        "businessName": str(row["business_name_snapshot"] or "").strip()
+        if "business_name_snapshot" in row.keys()
+        else "",
+        "customerName": str(row["customer_full_name"] or "").strip()
+        if "customer_full_name" in row.keys()
+        else "",
     }
 
 
@@ -6568,6 +7487,10 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.verification_status,
+                bp.verification_requested_at,
+                bp.verification_verified_at,
+                bp.verification_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -6576,7 +7499,9 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 u.email AS owner_email,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
                 COALESCE(product_totals.total_products, 0) AS products_count,
-                COALESCE(order_totals.total_orders, 0) AS orders_count
+                COALESCE(order_totals.total_orders, 0) AS orders_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
             INNER JOIN users u ON u.id = bp.user_id
             LEFT JOIN (
@@ -6602,6 +7527,16 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 WHERE business_user_id IS NOT NULL
                 GROUP BY business_user_id
             ) order_totals ON order_totals.business_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
             WHERE bp.user_id = ?
             LIMIT 1
             """,
@@ -6620,6 +7555,10 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.verification_status,
+                bp.verification_requested_at,
+                bp.verification_verified_at,
+                bp.verification_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -6628,7 +7567,9 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 u.full_name AS owner_full_name,
                 u.email AS owner_email,
                 COALESCE(product_totals.total_products, 0) AS products_count,
-                COALESCE(order_totals.total_orders, 0) AS orders_count
+                COALESCE(order_totals.total_orders, 0) AS orders_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
             INNER JOIN users u ON u.id = bp.user_id
             LEFT JOIN (
@@ -6647,6 +7588,16 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 WHERE business_user_id IS NOT NULL
                 GROUP BY business_user_id
             ) order_totals ON order_totals.business_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
             ORDER BY bp.updated_at DESC, bp.id DESC
             """
         ).fetchall()
@@ -6663,6 +7614,10 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.verification_status,
+                bp.verification_requested_at,
+                bp.verification_verified_at,
+                bp.verification_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -6671,7 +7626,9 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 u.full_name AS owner_full_name,
                 u.email AS owner_email,
                 COALESCE(product_totals.total_products, 0) AS products_count,
-                COALESCE(order_totals.total_orders, 0) AS orders_count
+                COALESCE(order_totals.total_orders, 0) AS orders_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
             INNER JOIN users u ON u.id = bp.user_id
             LEFT JOIN (
@@ -6690,6 +7647,16 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 WHERE business_user_id IS NOT NULL
                 GROUP BY business_user_id
             ) order_totals ON order_totals.business_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
             WHERE bp.id = ?
             LIMIT 1
             """,
@@ -6708,13 +7675,16 @@ def fetch_public_business_profiles() -> list[sqlite3.Row]:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.verification_status,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
                 bp.created_at,
                 bp.updated_at,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
-                COALESCE(product_totals.total_products, 0) AS products_count
+                COALESCE(product_totals.total_products, 0) AS products_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
             LEFT JOIN (
                 SELECT
@@ -6732,6 +7702,16 @@ def fetch_public_business_profiles() -> list[sqlite3.Row]:
                   AND created_by_user_id IS NOT NULL
                 GROUP BY created_by_user_id
             ) product_totals ON product_totals.created_by_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
             WHERE TRIM(business_name) <> ''
             ORDER BY updated_at DESC, id DESC
             """
@@ -6749,6 +7729,7 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.verification_status,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -6756,7 +7737,9 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
                 bp.updated_at,
                 u.email AS owner_email,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
-                COALESCE(product_totals.total_products, 0) AS products_count
+                COALESCE(product_totals.total_products, 0) AS products_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
             INNER JOIN users u ON u.id = bp.user_id
             LEFT JOIN (
@@ -6775,6 +7758,16 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
                   AND created_by_user_id IS NOT NULL
                 GROUP BY created_by_user_id
             ) product_totals ON product_totals.created_by_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
             WHERE bp.id = ?
             LIMIT 1
             """,
@@ -6804,32 +7797,19 @@ def fetch_public_products_for_business(
     offset: int = 0,
 ) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
-        query = """
+        query = (
+            """
             SELECT
-                p.id,
-                p.title,
-                p.description,
-                p.price,
-                p.image_path,
-                p.image_gallery,
-                p.category,
-                p.product_type,
-                p.size,
-                p.color,
-                p.variant_inventory,
-                p.package_amount_value,
-                p.package_amount_unit,
-                p.stock_quantity,
-                p.is_public,
-                p.show_stock_public,
-                p.created_by_user_id,
-                p.created_at
-            FROM products p
-            INNER JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            """
+            + PRODUCT_SELECT_COLUMNS
+            + """
+            FROM products
+            INNER JOIN business_profiles bp ON bp.user_id = products.created_by_user_id
             WHERE bp.id = ?
-              AND p.is_public = 1
-            ORDER BY p.id DESC
+              AND products.is_public = 1
+            ORDER BY products.id DESC
         """
+        )
         params: list[object] = [business_id]
 
         if limit is not None:
@@ -6837,6 +7817,22 @@ def fetch_public_products_for_business(
             params.extend([limit, offset])
 
         return connection.execute(query, params).fetchall()
+
+
+def fetch_public_products_page_for_business(
+    business_id: int,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+) -> tuple[list[sqlite3.Row], bool]:
+    safe_limit = max(1, int(limit))
+    rows = fetch_public_products_for_business(
+        business_id,
+        limit=safe_limit + 1,
+        offset=offset,
+    )
+    has_more = len(rows) > safe_limit
+    return rows[:safe_limit], has_more
 
 
 def is_business_followed_by_user(business_id: int, user_id: int) -> bool:
@@ -6902,6 +7898,38 @@ def fetch_products(
             """,
             parameters,
         ).fetchall()
+
+
+def fetch_products_page(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
+    include_hidden: bool = False,
+    created_by_user_id: int | None = None,
+    search_text: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> tuple[list[sqlite3.Row], bool]:
+    safe_limit = max(1, int(limit))
+    rows = fetch_products(
+        category,
+        category_group=category_group,
+        product_type=product_type,
+        size=size,
+        color=color,
+        business_name_search=business_name_search,
+        include_hidden=include_hidden,
+        created_by_user_id=created_by_user_id,
+        search_text=search_text,
+        limit=safe_limit + 1,
+        offset=offset,
+    )
+    has_more = len(rows) > safe_limit
+    return rows[:safe_limit], has_more
 
 
 def build_product_query_filters(
@@ -7531,7 +8559,11 @@ def load_checkout_items_for_order_or_raise(
         )
 
     checkout_items = [normalize_checkout_item_record(item) for item in checkout_rows]
-    validate_checkout_stock_or_raise(connection, checkout_items)
+    validate_checkout_stock_or_raise(
+        connection,
+        checkout_items,
+        exclude_reserved_for_user_id=user_id,
+    )
     return checkout_items
 
 
@@ -7590,6 +8622,7 @@ def build_checkout_signature(
     user_id: int,
     cleaned_address: dict[str, str],
     checkout_items: list[dict[str, object]],
+    promo_code: str = "",
 ) -> str:
     normalized_items = sorted(
         [
@@ -7620,6 +8653,7 @@ def build_checkout_signature(
             "phoneNumber": str(cleaned_address.get("phone_number") or "").strip(),
         },
         "items": normalized_items,
+        "promoCode": str(promo_code or "").strip().upper(),
     }
     payload_text = json.dumps(
         signature_payload,
@@ -7633,7 +8667,10 @@ def build_checkout_signature(
 def validate_checkout_stock_or_raise(
     connection: DatabaseConnection,
     checkout_items: list[dict[str, object]],
+    *,
+    exclude_reserved_for_user_id: int | None = None,
 ) -> None:
+    purge_expired_stock_reservations(connection)
     product_rows_by_id = fetch_products_for_checkout_records(connection, checkout_items)
     stock_errors: list[str] = []
 
@@ -7674,9 +8711,16 @@ def validate_checkout_stock_or_raise(
             continue
 
         stock_quantity = max(0, int(selected_variant.get("quantity") or 0))
-        if stock_quantity < max(1, int(item["quantity"] or 1)):
+        reserved_quantity = fetch_reserved_variant_quantity(
+            connection,
+            product_id=int(product_row["id"]),
+            variant_key=str(selected_variant.get("key") or "").strip(),
+            exclude_user_id=exclude_reserved_for_user_id,
+        )
+        available_quantity = max(0, stock_quantity - reserved_quantity)
+        if available_quantity < max(1, int(item["quantity"] or 1)):
             stock_errors.append(
-                f"Produkti `{item['title']}` nuk ka stok te mjaftueshem per variantin `{variant_label}`."
+                f"Produkti `{item['title']}` nuk ka stok te mjaftueshem per variantin `{variant_label}`. Mbeten {available_quantity} cope te lira."
             )
 
     if stock_errors:
@@ -7691,9 +8735,23 @@ def create_order_from_checkout_items(
     cleaned_address: dict[str, str],
     checkout_items: list[dict[str, object]],
     cart_line_ids: list[int] | None = None,
+    pricing_summary: dict[str, object] | None = None,
 ) -> tuple[int, sqlite3.Row | None, list[sqlite3.Row]]:
-    validate_checkout_stock_or_raise(connection, checkout_items)
+    validate_checkout_stock_or_raise(
+        connection,
+        checkout_items,
+        exclude_reserved_for_user_id=int(user["id"]),
+    )
     product_rows_by_id = fetch_products_for_checkout_records(connection, checkout_items)
+    normalized_pricing_summary = pricing_summary or build_checkout_pricing_summary(
+        connection,
+        checkout_items=checkout_items,
+        user_id=int(user["id"]),
+    )
+    subtotal_amount = round(float(normalized_pricing_summary.get("subtotal") or 0), 2)
+    discount_amount = round(float(normalized_pricing_summary.get("discountAmount") or 0), 2)
+    total_amount = round(float(normalized_pricing_summary.get("total") or 0), 2)
+    promo_code = str(normalized_pricing_summary.get("promoCode") or "").strip().upper()
 
     customer_full_name = (
         str(user["full_name"] or "").strip()
@@ -7717,9 +8775,13 @@ def create_order_from_checkout_items(
             city,
             country,
             zip_code,
-            phone_number
+            phone_number,
+            subtotal_amount,
+            discount_amount,
+            total_amount,
+            promo_code
         )
-        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["id"],
@@ -7731,6 +8793,10 @@ def create_order_from_checkout_items(
             cleaned_address["country"],
             cleaned_address["zip_code"],
             cleaned_address["phone_number"],
+            subtotal_amount,
+            discount_amount,
+            total_amount,
+            promo_code,
         ),
     )
 
@@ -7740,6 +8806,12 @@ def create_order_from_checkout_items(
         business_user_id = item["businessUserId"] or (
             int(product_row["created_by_user_id"]) if product_row and product_row["created_by_user_id"] else None
         )
+        quantity = max(1, int(item["quantity"] or 1))
+        unit_price = round(float(item["price"] or 0), 2)
+        line_total = round(unit_price * quantity, 2)
+        commission_rate = MARKETPLACE_COMMISSION_RATE
+        commission_amount = round(line_total * commission_rate, 2)
+        seller_earnings_amount = round(line_total - commission_amount, 2)
         variant_label = (
             str(item["variantLabel"] or "").strip()
             or build_product_variant_label(
@@ -7768,9 +8840,15 @@ def create_order_from_checkout_items(
                 product_package_amount_value,
                 product_package_amount_unit,
                 unit_price,
-                quantity
+                quantity,
+                fulfillment_status,
+                commission_rate,
+                commission_amount,
+                seller_earnings_amount,
+                payout_status,
+                payout_due_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order_id,
@@ -7792,15 +8870,21 @@ def create_order_from_checkout_items(
                             "key": str(item["variantKey"] or "").strip(),
                             "size": str(item["selectedSize"] or "").strip().upper(),
                             "color": str(item["selectedColor"] or "").strip().lower(),
-                            "quantity": max(1, int(item["quantity"] or 1)),
+                            "quantity": quantity,
                         }
                     ],
                     ensure_ascii=False,
                 ),
                 round(float(item["packageAmountValue"] or 0), 2),
                 str(item["packageAmountUnit"] or "").strip().lower(),
-                round(float(item["price"] or 0), 2),
-                max(1, int(item["quantity"] or 1)),
+                unit_price,
+                quantity,
+                "confirmed",
+                commission_rate,
+                commission_amount,
+                seller_earnings_amount,
+                "pending",
+                build_order_item_payout_due_at(),
             ),
         )
 
@@ -7809,12 +8893,17 @@ def create_order_from_checkout_items(
                 connection,
                 product_row,
                 variant_key=str(item["variantKey"] or "").strip(),
-                quantity=max(1, int(item["quantity"] or 1)),
+                quantity=quantity,
             )
             if stock_errors:
                 raise CheckoutProcessError(errors=stock_errors)
 
     if cart_line_ids:
+        clear_stock_reservations_for_user(
+            connection,
+            user_id=int(user["id"]),
+            cart_line_ids=cart_line_ids,
+        )
         placeholders = ", ".join("?" for _ in cart_line_ids)
         connection.execute(
             """
@@ -7923,25 +9012,53 @@ def resolve_stripe_error_message(payload: dict[str, object], fallback_message: s
 
 def build_stripe_checkout_line_items(
     checkout_items: list[dict[str, object]],
+    *,
+    discount_amount: float = 0.0,
 ) -> tuple[list[tuple[str, str]], int]:
     form_fields: list[tuple[str, str]] = []
-    total_amount = 0
+    unit_entries: list[dict[str, object]] = []
 
-    for index, item in enumerate(checkout_items):
+    for item in checkout_items:
         quantity = max(1, int(item["quantity"] or 1))
         unit_amount = max(1, int(round(float(item["price"] or 0) * 100)))
-        total_amount += unit_amount * quantity
         variant_label = str(item["variantLabel"] or "").strip()
         product_name = str(item["title"] or "").strip() or "Produkt"
         if variant_label and variant_label.lower() != "standard":
             product_name = f"{product_name} ({variant_label})"
+        for _ in range(quantity):
+            unit_entries.append({"unitAmount": unit_amount, "name": product_name[:120]})
 
+    total_amount = sum(int(entry["unitAmount"]) for entry in unit_entries)
+    discount_cents = min(total_amount, max(0, int(round(float(discount_amount or 0) * 100))))
+    if total_amount > 1 and discount_cents >= total_amount:
+        discount_cents = total_amount - 1
+    if total_amount > 0 and discount_cents > 0:
+        weighted_entries: list[tuple[int, float]] = []
+        discount_shares = [0 for _ in unit_entries]
+        distributed_discount = 0
+        for index, entry in enumerate(unit_entries):
+            raw_share = (int(entry["unitAmount"]) * discount_cents) / total_amount
+            base_share = int(math.floor(raw_share))
+            discount_shares[index] = base_share
+            distributed_discount += base_share
+            weighted_entries.append((index, raw_share - base_share))
+
+        remaining_discount = max(0, discount_cents - distributed_discount)
+        for index, _remainder in sorted(weighted_entries, key=lambda item: item[1], reverse=True)[:remaining_discount]:
+            discount_shares[index] += 1
+
+        for index, entry in enumerate(unit_entries):
+            entry["unitAmount"] = max(1, int(entry["unitAmount"]) - discount_shares[index])
+
+        total_amount = sum(int(entry["unitAmount"]) for entry in unit_entries)
+
+    for index, entry in enumerate(unit_entries):
         form_fields.extend(
             [
                 (f"line_items[{index}][price_data][currency]", STRIPE_CURRENCY),
-                (f"line_items[{index}][price_data][unit_amount]", str(unit_amount)),
-                (f"line_items[{index}][price_data][product_data][name]", product_name[:120]),
-                (f"line_items[{index}][quantity]", str(quantity)),
+                (f"line_items[{index}][price_data][unit_amount]", str(int(entry["unitAmount"]))),
+                (f"line_items[{index}][price_data][product_data][name]", str(entry["name"])),
+                (f"line_items[{index}][quantity]", "1"),
             ]
         )
 
@@ -7958,6 +9075,8 @@ def persist_stripe_payment_session(
     cleaned_address: dict[str, str],
     checkout_items: list[dict[str, object]],
     amount_total: int,
+    discount_amount: int = 0,
+    promo_code: str = "",
     currency: str,
     payment_status: str = "",
     stripe_status: str = "",
@@ -7973,13 +9092,15 @@ def persist_stripe_payment_session(
             checkout_address,
             checkout_items_snapshot,
             amount_total,
+            discount_amount,
+            promo_code,
             currency,
             payment_status,
             stripe_status,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(stripe_session_id)
         DO UPDATE SET
             user_id = excluded.user_id,
@@ -7988,6 +9109,8 @@ def persist_stripe_payment_session(
             checkout_address = excluded.checkout_address,
             checkout_items_snapshot = excluded.checkout_items_snapshot,
             amount_total = excluded.amount_total,
+            discount_amount = excluded.discount_amount,
+            promo_code = excluded.promo_code,
             currency = excluded.currency,
             payment_status = excluded.payment_status,
             stripe_status = excluded.stripe_status,
@@ -8001,6 +9124,8 @@ def persist_stripe_payment_session(
             json.dumps(cleaned_address, ensure_ascii=False),
             json.dumps(checkout_items, ensure_ascii=False),
             amount_total,
+            max(0, int(discount_amount or 0)),
+            str(promo_code or "").strip().upper(),
             str(currency or STRIPE_CURRENCY).strip().lower() or STRIPE_CURRENCY,
             str(payment_status or "").strip().lower(),
             str(stripe_status or "").strip().lower(),
@@ -8025,6 +9150,8 @@ def fetch_stripe_payment_session(
             checkout_address,
             checkout_items_snapshot,
             amount_total,
+            discount_amount,
+            promo_code,
             currency,
             payment_status,
             stripe_status,
@@ -8248,6 +9375,105 @@ def decrement_product_variant_stock(
     return [], variant_inventory
 
 
+def build_order_item_payout_due_at(base_time: datetime | None = None) -> str:
+    return datetime_to_storage_text((base_time or utc_now()) + timedelta(days=PAYOUT_HOLD_DAYS))
+
+
+def update_order_item_fulfillment_state(
+    connection: DatabaseConnection,
+    *,
+    order_item_id: int,
+    fulfillment_status: str,
+    tracking_code: str = "",
+    tracking_url: str = "",
+) -> None:
+    now_text = datetime_to_storage_text(utc_now())
+    normalized_status = str(fulfillment_status or "").strip().lower() or "confirmed"
+    normalized_tracking_code = str(tracking_code or "").strip()
+    normalized_tracking_url = str(tracking_url or "").strip()
+
+    shipped_at = ""
+    delivered_at = ""
+    cancelled_at = ""
+    payout_status = "pending"
+    payout_due_at = ""
+
+    if normalized_status == "shipped":
+        shipped_at = now_text
+    elif normalized_status == "delivered":
+        shipped_at = now_text
+        delivered_at = now_text
+        payout_status = "ready"
+        payout_due_at = build_order_item_payout_due_at()
+    elif normalized_status == "cancelled":
+        cancelled_at = now_text
+        payout_status = "on_hold"
+    elif normalized_status == "returned":
+        delivered_at = now_text
+        payout_status = "on_hold"
+
+    connection.execute(
+        """
+        UPDATE order_items
+        SET
+            fulfillment_status = ?,
+            tracking_code = CASE
+                WHEN ? <> '' THEN ?
+                ELSE COALESCE(tracking_code, '')
+            END,
+            tracking_url = CASE
+                WHEN ? <> '' THEN ?
+                ELSE COALESCE(tracking_url, '')
+            END,
+            shipped_at = CASE
+                WHEN ? <> '' THEN ?
+                ELSE COALESCE(shipped_at, '')
+            END,
+            delivered_at = CASE
+                WHEN ? <> '' THEN ?
+                ELSE CASE
+                    WHEN ? = 'delivered' AND COALESCE(delivered_at, '') = '' THEN ?
+                    ELSE COALESCE(delivered_at, '')
+                END
+            END,
+            cancelled_at = CASE
+                WHEN ? <> '' THEN ?
+                ELSE CASE
+                    WHEN ? = 'cancelled' AND COALESCE(cancelled_at, '') = '' THEN ?
+                    ELSE COALESCE(cancelled_at, '')
+                END
+            END,
+            payout_status = ?,
+            payout_due_at = CASE
+                WHEN ? <> '' THEN ?
+                ELSE COALESCE(payout_due_at, '')
+            END
+        WHERE id = ?
+        """,
+        (
+            normalized_status,
+            normalized_tracking_code,
+            normalized_tracking_code,
+            normalized_tracking_url,
+            normalized_tracking_url,
+            shipped_at,
+            shipped_at,
+            delivered_at,
+            delivered_at,
+            normalized_status,
+            now_text,
+            cancelled_at,
+            cancelled_at,
+            normalized_status,
+            now_text,
+            payout_status,
+            payout_due_at,
+            payout_due_at,
+            order_item_id,
+        ),
+    )
+
+
 def fetch_orders_for_user(user_id: int) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         return connection.execute(
@@ -8304,23 +9530,15 @@ def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, obje
         order_rows = connection.execute(
             """
             SELECT
-                o.id,
-                o.user_id,
-                o.customer_full_name,
-                o.customer_email,
-                o.payment_method,
-                o.status,
-                o.address_line,
-                o.city,
-                o.country,
-                o.zip_code,
-                o.phone_number,
-                o.created_at
+            """
+            + ORDER_SELECT_COLUMNS
+            + """
             FROM orders o
             INNER JOIN order_items oi ON oi.order_id = o.id
             WHERE oi.business_user_id = ?
             GROUP BY o.id
             ORDER BY o.id DESC
+            FROM orders o
             """,
             (business_user_id,),
         ).fetchall()
@@ -8339,6 +9557,665 @@ def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, obje
         ).fetchall()
 
     return build_orders_payload(order_rows, order_items)
+
+
+def fetch_all_orders_for_admin() -> list[dict[str, object]]:
+    with get_db_connection() as connection:
+        order_rows = connection.execute(
+            """
+            SELECT
+            """
+            + ORDER_SELECT_COLUMNS
+            + """
+            FROM orders
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        order_items = connection.execute(
+            """
+            SELECT
+            """
+            + ORDER_ITEM_SELECT_COLUMNS
+            + """
+            FROM order_items
+            ORDER BY order_id DESC, id DESC
+            """
+        ).fetchall()
+
+    return build_orders_payload(order_rows, order_items)
+
+
+def fetch_product_reviews(product_id: int, *, limit: int = 12) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                pr.id,
+                pr.product_id,
+                pr.order_item_id,
+                pr.user_id,
+                pr.rating,
+                pr.review_title,
+                pr.review_body,
+                pr.status,
+                pr.created_at,
+                pr.updated_at,
+                u.full_name AS author_name
+            FROM product_reviews pr
+            INNER JOIN users u ON u.id = pr.user_id
+            WHERE pr.product_id = ?
+              AND pr.status = 'published'
+            ORDER BY pr.created_at DESC, pr.id DESC
+            LIMIT ?
+            """,
+            (product_id, max(1, int(limit))),
+        ).fetchall()
+
+
+def find_reviewable_order_item(
+    *,
+    connection: DatabaseConnection,
+    user_id: int,
+    product_id: int,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+            oi.id,
+            oi.order_id,
+            oi.product_id,
+            oi.business_user_id,
+            oi.fulfillment_status
+        FROM order_items oi
+        INNER JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN product_reviews pr
+            ON pr.order_item_id = oi.id
+           AND pr.user_id = o.user_id
+        WHERE o.user_id = ?
+          AND oi.product_id = ?
+          AND oi.fulfillment_status = 'delivered'
+          AND pr.id IS NULL
+        ORDER BY oi.delivered_at DESC, oi.id DESC
+        LIMIT 1
+        """,
+        (user_id, product_id),
+    ).fetchone()
+
+
+def fetch_notifications_for_user(user_id: int, *, limit: int = NOTIFICATIONS_PAGE_LIMIT) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                type,
+                title,
+                body,
+                href,
+                metadata,
+                is_read,
+                created_at,
+                read_at
+            FROM notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, max(1, int(limit))),
+        ).fetchall()
+
+
+def create_notification(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    notification_type: str,
+    title: str,
+    body: str,
+    href: str = "",
+    metadata: dict[str, object] | None = None,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO notifications (
+            user_id,
+            type,
+            title,
+            body,
+            href,
+            metadata,
+            is_read,
+            created_at,
+            read_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, '')
+        """,
+        (
+            user_id,
+            str(notification_type or "info").strip().lower() or "info",
+            str(title or "").strip(),
+            str(body or "").strip(),
+            str(href or "").strip(),
+            json.dumps(metadata or {}, ensure_ascii=False),
+        ),
+    )
+
+
+def fetch_unread_notifications_count(user_id: int) -> int:
+    with get_db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM notifications
+            WHERE user_id = ?
+              AND COALESCE(is_read, 0) = 0
+            """,
+            (user_id,),
+        ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def mark_notifications_as_read(connection: DatabaseConnection, *, user_id: int) -> None:
+    now_text = datetime_to_storage_text(utc_now())
+    connection.execute(
+        """
+        UPDATE notifications
+        SET
+            is_read = 1,
+            read_at = CASE
+                WHEN TRIM(COALESCE(read_at, '')) <> '' THEN read_at
+                ELSE ?
+            END
+        WHERE user_id = ?
+          AND COALESCE(is_read, 0) = 0
+        """,
+        (now_text, user_id),
+    )
+
+
+def fetch_return_requests_for_user(user: sqlite3.Row) -> list[sqlite3.Row]:
+    normalized_role = str(user["role"] or "").strip().lower()
+    with get_db_connection() as connection:
+        if normalized_role == "admin":
+            return connection.execute(
+                """
+                SELECT
+                    rr.*,
+                    oi.product_title,
+                    oi.product_image_path,
+                    oi.business_name_snapshot,
+                    o.customer_full_name
+                FROM return_requests rr
+                INNER JOIN order_items oi ON oi.id = rr.order_item_id
+                INNER JOIN orders o ON o.id = rr.order_id
+                ORDER BY rr.created_at DESC, rr.id DESC
+                """
+            ).fetchall()
+
+        if normalized_role == "business":
+            return connection.execute(
+                """
+                SELECT
+                    rr.*,
+                    oi.product_title,
+                    oi.product_image_path,
+                    oi.business_name_snapshot,
+                    o.customer_full_name
+                FROM return_requests rr
+                INNER JOIN order_items oi ON oi.id = rr.order_item_id
+                INNER JOIN orders o ON o.id = rr.order_id
+                WHERE rr.business_user_id = ?
+                ORDER BY rr.created_at DESC, rr.id DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+
+        return connection.execute(
+            """
+            SELECT
+                rr.*,
+                oi.product_title,
+                oi.product_image_path,
+                oi.business_name_snapshot,
+                o.customer_full_name
+            FROM return_requests rr
+            INNER JOIN order_items oi ON oi.id = rr.order_item_id
+            INNER JOIN orders o ON o.id = rr.order_id
+            WHERE rr.user_id = ?
+            ORDER BY rr.created_at DESC, rr.id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+
+def purge_expired_stock_reservations(connection: DatabaseConnection) -> None:
+    now_text = datetime_to_storage_text(utc_now())
+    connection.execute(
+        """
+        DELETE FROM stock_reservations
+        WHERE TRIM(COALESCE(expires_at, '')) <> ''
+          AND expires_at <= ?
+        """,
+        (now_text,),
+    )
+
+
+def fetch_reserved_variant_quantity(
+    connection: DatabaseConnection,
+    *,
+    product_id: int,
+    variant_key: str,
+    exclude_user_id: int | None = None,
+) -> int:
+    query = """
+        SELECT COALESCE(SUM(quantity), 0) AS total
+        FROM stock_reservations
+        WHERE product_id = ?
+          AND variant_key = ?
+          AND TRIM(COALESCE(expires_at, '')) <> ''
+          AND expires_at > ?
+    """
+    parameters: list[object] = [
+        product_id,
+        str(variant_key or "").strip(),
+        datetime_to_storage_text(utc_now()),
+    ]
+    if exclude_user_id is not None:
+        query += " AND user_id <> ?"
+        parameters.append(int(exclude_user_id))
+    row = connection.execute(query, parameters).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def clear_stock_reservations_for_user(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    cart_line_ids: list[int] | None = None,
+) -> None:
+    purge_expired_stock_reservations(connection)
+    if cart_line_ids:
+        placeholders = ", ".join("?" for _ in cart_line_ids)
+        connection.execute(
+            """
+            DELETE FROM stock_reservations
+            WHERE user_id = ?
+              AND cart_line_id IN ("""
+            + placeholders
+            + """)
+            """,
+            [user_id, *cart_line_ids],
+        )
+        return
+    connection.execute(
+        """
+        DELETE FROM stock_reservations
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    )
+
+
+def reserve_checkout_stock(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    cart_line_ids: list[int],
+    checkout_items: list[dict[str, object]],
+) -> str:
+    purge_expired_stock_reservations(connection)
+    validate_checkout_stock_or_raise(connection, checkout_items, exclude_reserved_for_user_id=user_id)
+    expires_at = datetime_to_storage_text(utc_now() + timedelta(minutes=STOCK_RESERVATION_HOLD_MINUTES))
+    valid_cart_line_ids = {int(cart_line_id) for cart_line_id in cart_line_ids}
+    clear_stock_reservations_for_user(connection, user_id=user_id)
+    for item in checkout_items:
+        cart_line_id = int(item.get("cartLineId") or 0)
+        if cart_line_id <= 0 or cart_line_id not in valid_cart_line_ids:
+            continue
+        connection.execute(
+            """
+            INSERT INTO stock_reservations (
+                user_id,
+                cart_line_id,
+                product_id,
+                variant_key,
+                quantity,
+                expires_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(cart_line_id)
+            DO UPDATE SET
+                user_id = excluded.user_id,
+                product_id = excluded.product_id,
+                variant_key = excluded.variant_key,
+                quantity = excluded.quantity,
+                expires_at = excluded.expires_at,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                user_id,
+                cart_line_id,
+                int(item.get("productId") or 0),
+                str(item.get("variantKey") or "").strip(),
+                max(1, int(item.get("quantity") or 1)),
+                expires_at,
+            ),
+        )
+    return expires_at
+
+
+def fetch_reports_for_admin() -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                r.*,
+                reporter.full_name AS reporter_name,
+                reported.full_name AS reported_name
+            FROM reports r
+            INNER JOIN users reporter ON reporter.id = r.reporter_user_id
+            LEFT JOIN users reported ON reported.id = r.reported_user_id
+            ORDER BY r.created_at DESC, r.id DESC
+            """
+        ).fetchall()
+
+
+def serialize_report(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "reporterUserId": row["reporter_user_id"],
+        "reportedUserId": row["reported_user_id"] if "reported_user_id" in row.keys() else None,
+        "businessUserId": row["business_user_id"] if "business_user_id" in row.keys() else None,
+        "targetType": str(row["target_type"] or "").strip().lower(),
+        "targetId": int(row["target_id"] or 0),
+        "targetLabel": str(row["target_label"] or "").strip(),
+        "reason": str(row["reason"] or "").strip(),
+        "details": str(row["details"] or "").strip(),
+        "status": str(row["status"] or "").strip().lower(),
+        "adminNotes": str(row["admin_notes"] or "").strip() if "admin_notes" in row.keys() else "",
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+        "resolvedAt": str(row["resolved_at"] or "").strip() if "resolved_at" in row.keys() else "",
+        "reporterName": str(row["reporter_name"] or "").strip() if "reporter_name" in row.keys() else "",
+        "reportedName": str(row["reported_name"] or "").strip() if "reported_name" in row.keys() else "",
+    }
+
+
+def fetch_business_promotions(user: sqlite3.Row) -> list[sqlite3.Row]:
+    normalized_role = str(user["role"] or "").strip().lower()
+    with get_db_connection() as connection:
+        if normalized_role == "admin":
+            return connection.execute(
+                """
+                SELECT *
+                FROM promo_codes
+                ORDER BY created_at DESC, id DESC
+                """
+            ).fetchall()
+        return connection.execute(
+            """
+            SELECT *
+            FROM promo_codes
+            WHERE COALESCE(business_user_id, 0) = ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+
+def serialize_promo_code(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "code": str(row["code"] or "").strip().upper(),
+        "title": str(row["title"] or "").strip(),
+        "description": str(row["description"] or "").strip(),
+        "discountType": str(row["discount_type"] or "").strip().lower(),
+        "discountValue": round(float(row["discount_value"] or 0), 2),
+        "minimumSubtotal": round(float(row["minimum_subtotal"] or 0), 2),
+        "usageLimit": max(0, int(row["usage_limit"] or 0)),
+        "perUserLimit": max(0, int(row["per_user_limit"] or 0)),
+        "isActive": bool(row["is_active"]),
+        "pageSection": str(row["page_section"] or "").strip(),
+        "category": str(row["category"] or "").strip(),
+        "startsAt": str(row["starts_at"] or "").strip(),
+        "endsAt": str(row["ends_at"] or "").strip(),
+        "createdAt": str(row["created_at"] or "").strip(),
+    }
+
+
+def fetch_promo_code_by_code(connection: DatabaseConnection, promo_code: str) -> sqlite3.Row | None:
+    normalized_code = str(promo_code or "").strip().upper()
+    if not normalized_code:
+        return None
+    return connection.execute(
+        """
+        SELECT *
+        FROM promo_codes
+        WHERE UPPER(code) = ?
+        LIMIT 1
+        """,
+        (normalized_code,),
+    ).fetchone()
+
+
+def count_promo_code_usage(
+    connection: DatabaseConnection,
+    *,
+    promo_code: str,
+    user_id: int | None = None,
+) -> int:
+    query = """
+        SELECT COUNT(*) AS total
+        FROM orders
+        WHERE UPPER(COALESCE(promo_code, '')) = ?
+    """
+    parameters: list[object] = [str(promo_code or "").strip().upper()]
+    if user_id is not None:
+        query += " AND COALESCE(user_id, 0) = ?"
+        parameters.append(int(user_id))
+    row = connection.execute(query, parameters).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def build_checkout_pricing_summary(
+    connection: DatabaseConnection,
+    *,
+    checkout_items: list[dict[str, object]],
+    promo_code: str = "",
+    user_id: int | None = None,
+) -> dict[str, object]:
+    subtotal = round(
+        sum(round(float(item.get("price") or 0), 2) * max(1, int(item.get("quantity") or 1)) for item in checkout_items),
+        2,
+    )
+    normalized_code = str(promo_code or "").strip().upper()
+    discount_amount = 0.0
+    promo_row = None
+    message = ""
+
+    if normalized_code:
+        promo_row = fetch_promo_code_by_code(connection, normalized_code)
+        if not promo_row:
+            raise CheckoutProcessError(message="Kodi promocional nuk ekziston.")
+
+        if not bool(promo_row["is_active"]):
+            raise CheckoutProcessError(message="Kodi promocional nuk eshte aktiv.")
+
+        starts_at = parse_storage_datetime(promo_row["starts_at"])
+        ends_at = parse_storage_datetime(promo_row["ends_at"])
+        now_value = utc_now()
+        if starts_at and starts_at > now_value:
+            raise CheckoutProcessError(message="Ky kupon ende nuk ka nisur.")
+        if ends_at and ends_at < now_value:
+            raise CheckoutProcessError(message="Ky kupon ka skaduar.")
+
+        minimum_subtotal = round(float(promo_row["minimum_subtotal"] or 0), 2)
+        if subtotal < minimum_subtotal:
+            raise CheckoutProcessError(
+                message=f"Ky kupon kerkon minimumin {minimum_subtotal:.2f}€ ne shporte."
+            )
+
+        required_page_section = str(promo_row["page_section"] or "").strip().lower()
+        required_category = str(promo_row["category"] or "").strip().lower()
+        if required_page_section:
+            matches_page_section = any(
+                build_section_value_from_category(str(item.get("category") or "").strip().lower()) == required_page_section
+                for item in checkout_items
+            )
+            if not matches_page_section:
+                raise CheckoutProcessError(message="Ky kupon nuk vlen per kete seksion produktesh.")
+        if required_category:
+            matches_category = any(
+                str(item.get("category") or "").strip().lower() == required_category
+                for item in checkout_items
+            )
+            if not matches_category:
+                raise CheckoutProcessError(message="Ky kupon nuk vlen per kete kategori produktesh.")
+
+        usage_limit = max(0, int(promo_row["usage_limit"] or 0))
+        if usage_limit > 0 and count_promo_code_usage(connection, promo_code=normalized_code) >= usage_limit:
+            raise CheckoutProcessError(message="Ky kupon ka arritur limitin e perdorimit.")
+
+        per_user_limit = max(0, int(promo_row["per_user_limit"] or 0))
+        if user_id and per_user_limit > 0 and count_promo_code_usage(connection, promo_code=normalized_code, user_id=user_id) >= per_user_limit:
+            raise CheckoutProcessError(message="E ke perdorur maksimumin e lejuar per kete kupon.")
+
+        discount_type = str(promo_row["discount_type"] or "").strip().lower()
+        discount_value = round(float(promo_row["discount_value"] or 0), 2)
+        if discount_type == "percent":
+            discount_amount = round(subtotal * (discount_value / 100), 2)
+        else:
+            discount_amount = round(discount_value, 2)
+        discount_amount = max(0.0, min(subtotal, discount_amount))
+        message = str(promo_row["title"] or "").strip() or f"Kuponi {normalized_code} u aplikua."
+
+    total = round(max(0.0, subtotal - discount_amount), 2)
+    return {
+        "promoCode": normalized_code,
+        "promo": serialize_promo_code(promo_row) if promo_row else None,
+        "subtotal": subtotal,
+        "discountAmount": discount_amount,
+        "total": total,
+        "message": message,
+    }
+
+
+def fetch_business_analytics(user_id: int) -> dict[str, object]:
+    with get_db_connection() as connection:
+        products_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_products,
+                SUM(CASE WHEN COALESCE(is_public, 0) = 1 THEN 1 ELSE 0 END) AS public_products,
+                SUM(COALESCE(stock_quantity, 0)) AS total_stock
+            FROM products
+            WHERE created_by_user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        orders_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_order_items,
+                SUM(COALESCE(quantity, 0)) AS units_sold,
+                SUM(COALESCE(unit_price, 0) * COALESCE(quantity, 0)) AS gross_sales,
+                SUM(COALESCE(seller_earnings_amount, 0)) AS seller_earnings,
+                SUM(CASE WHEN COALESCE(payout_status, '') = 'ready' THEN COALESCE(seller_earnings_amount, 0) ELSE 0 END) AS ready_payout,
+                SUM(CASE WHEN COALESCE(payout_status, '') = 'pending' THEN COALESCE(seller_earnings_amount, 0) ELSE 0 END) AS pending_payout
+            FROM order_items
+            WHERE business_user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        reviews_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS review_count,
+                AVG(COALESCE(rating, 0)) AS average_rating
+            FROM product_reviews
+            WHERE business_user_id = ?
+              AND COALESCE(status, 'published') = 'published'
+            """,
+            (user_id,),
+        ).fetchone()
+        returns_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_returns,
+                SUM(CASE WHEN COALESCE(status, '') IN ('requested', 'approved', 'received') THEN 1 ELSE 0 END) AS open_returns
+            FROM return_requests
+            WHERE business_user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        promotions_row = connection.execute(
+            """
+            SELECT COUNT(*) AS total_promotions
+            FROM promo_codes
+            WHERE business_user_id = ?
+              AND COALESCE(is_active, 0) = 1
+            """,
+            (user_id,),
+        ).fetchone()
+
+    return {
+        "totalProducts": int(products_row["total_products"] or 0) if products_row else 0,
+        "publicProducts": int(products_row["public_products"] or 0) if products_row else 0,
+        "totalStock": int(products_row["total_stock"] or 0) if products_row else 0,
+        "orderItems": int(orders_row["total_order_items"] or 0) if orders_row else 0,
+        "unitsSold": int(orders_row["units_sold"] or 0) if orders_row else 0,
+        "grossSales": round(float(orders_row["gross_sales"] or 0), 2) if orders_row else 0,
+        "sellerEarnings": round(float(orders_row["seller_earnings"] or 0), 2) if orders_row else 0,
+        "readyPayout": round(float(orders_row["ready_payout"] or 0), 2) if orders_row else 0,
+        "pendingPayout": round(float(orders_row["pending_payout"] or 0), 2) if orders_row else 0,
+        "reviewCount": int(reviews_row["review_count"] or 0) if reviews_row else 0,
+        "averageRating": round(float(reviews_row["average_rating"] or 0), 2) if reviews_row else 0,
+        "totalReturns": int(returns_row["total_returns"] or 0) if returns_row else 0,
+        "openReturns": int(returns_row["open_returns"] or 0) if returns_row else 0,
+        "activePromotions": int(promotions_row["total_promotions"] or 0) if promotions_row else 0,
+    }
+
+
+def create_order_notifications(
+    connection: DatabaseConnection,
+    *,
+    order_row: sqlite3.Row | None,
+    saved_items: list[sqlite3.Row],
+) -> None:
+    if not order_row:
+        return
+
+    order_id = int(order_row["id"])
+    customer_id = int(order_row["user_id"] or 0)
+    if customer_id > 0:
+        create_notification(
+            connection,
+            user_id=customer_id,
+            notification_type="order",
+            title=f"Porosia #{order_id} u krijua",
+            body="Porosia juaj u regjistrua me sukses dhe po pergatitet nga shitësi.",
+            href="/porosite",
+            metadata={"orderId": order_id},
+        )
+
+    notified_businesses: set[int] = set()
+    for item in saved_items:
+        business_user_id = int(item["business_user_id"] or 0)
+        if business_user_id <= 0 or business_user_id in notified_businesses:
+            continue
+        notified_businesses.add(business_user_id)
+        create_notification(
+            connection,
+            user_id=business_user_id,
+            notification_type="order",
+            title="Keni porosi te re",
+            body=f"Porosia #{order_id} permban artikuj nga biznesi juaj.",
+            href="/porosite-e-biznesit",
+            metadata={"orderId": order_id},
+        )
 
 
 def fetch_order_notification_rows(order_id: int) -> list[sqlite3.Row]:
@@ -8376,6 +10253,61 @@ def fetch_order_notification_rows(order_id: int) -> list[sqlite3.Row]:
             """,
             (order_id,),
         ).fetchall()
+
+
+def fetch_order_item_by_id(order_item_id: int) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                oi.id,
+                oi.order_id,
+                oi.product_id,
+                oi.business_user_id,
+                oi.business_name_snapshot,
+                oi.product_title,
+                oi.product_image_path,
+                oi.fulfillment_status,
+                oi.tracking_code,
+                oi.tracking_url,
+                oi.shipped_at,
+                oi.delivered_at,
+                oi.cancelled_at,
+                oi.commission_rate,
+                oi.commission_amount,
+                oi.seller_earnings_amount,
+                oi.payout_status,
+                oi.payout_due_at,
+                o.user_id AS customer_user_id,
+                o.customer_full_name,
+                o.customer_email
+            FROM order_items oi
+            INNER JOIN orders o ON o.id = oi.order_id
+            WHERE oi.id = ?
+            LIMIT 1
+            """,
+            (order_item_id,),
+        ).fetchone()
+
+
+def fetch_return_request_by_id(return_request_id: int) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                rr.*,
+                oi.product_title,
+                oi.product_image_path,
+                oi.business_name_snapshot,
+                o.customer_full_name
+            FROM return_requests rr
+            INNER JOIN order_items oi ON oi.id = rr.order_item_id
+            INNER JOIN orders o ON o.id = rr.order_id
+            WHERE rr.id = ?
+            LIMIT 1
+            """,
+            (return_request_id,),
+        ).fetchone()
 
 
 def format_notification_payment_method(payment_method: str) -> str:
@@ -8701,6 +10633,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/product":
             self.handle_product_detail(query_params)
             return
+        if path == "/api/product/reviews":
+            self.handle_product_reviews_list(query_params)
+            return
         if path == "/api/products":
             self.handle_products_list(query_params)
             return
@@ -8718,6 +10653,27 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/business/orders":
             self.handle_business_orders_list()
+            return
+        if path == "/api/business/analytics":
+            self.handle_business_analytics()
+            return
+        if path == "/api/business/promotions":
+            self.handle_business_promotions_list()
+            return
+        if path == "/api/admin/orders":
+            self.handle_admin_orders_list()
+            return
+        if path == "/api/admin/reports":
+            self.handle_admin_reports_list()
+            return
+        if path == "/api/returns":
+            self.handle_returns_list()
+            return
+        if path == "/api/notifications":
+            self.handle_notifications_list()
+            return
+        if path == "/api/notifications/count":
+            self.handle_notifications_count()
             return
 
         if path in {"/admin-products", "/bizneset-e-regjistruara"}:
@@ -8775,6 +10731,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             "/adresa-e-porosise",
             "/menyra-e-pageses",
             "/porosite",
+            "/njoftimet",
             "/ndrysho-fjalekalimin",
         }:
             is_password_reset_mode = (
@@ -8834,6 +10791,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/business-profile":
             self.handle_save_business_profile()
             return
+        if path == "/api/business-profile/verification-request":
+            self.handle_business_verification_request()
+            return
         if path == "/api/admin/users/role":
             self.handle_admin_user_role()
             return
@@ -8848,6 +10808,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/admin/businesses/update":
             self.handle_admin_update_business()
+            return
+        if path == "/api/admin/businesses/verification":
+            self.handle_admin_update_business_verification()
             return
         if path == "/api/admin/businesses/logo":
             self.handle_admin_update_business_logo()
@@ -8918,11 +10881,41 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/cart/remove":
             self.handle_remove_from_cart()
             return
+        if path == "/api/checkout/reserve":
+            self.handle_checkout_reserve_stock()
+            return
         if path == "/api/business/follow-toggle":
             self.handle_business_follow_toggle()
             return
+        if path == "/api/promotions/apply":
+            self.handle_apply_promotion()
+            return
+        if path == "/api/business/promotions":
+            self.handle_save_business_promotion()
+            return
         if path == "/api/orders/create":
             self.handle_create_order()
+            return
+        if path == "/api/orders/status":
+            self.handle_update_order_status()
+            return
+        if path == "/api/reports":
+            self.handle_create_report()
+            return
+        if path == "/api/admin/reports/status":
+            self.handle_admin_update_report_status()
+            return
+        if path == "/api/product/reviews":
+            self.handle_create_product_review()
+            return
+        if path == "/api/returns/request":
+            self.handle_create_return_request()
+            return
+        if path == "/api/returns/status":
+            self.handle_update_return_request_status()
+            return
+        if path == "/api/notifications/read":
+            self.handle_mark_notifications_read()
             return
 
         self.send_json(404, {"ok": False, "message": "Rruga nuk u gjet."})
@@ -9321,24 +11314,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
             return
 
-        total_count = count_products(
+        product_rows, has_more = fetch_products_page(
             category,
             category_group=category_group,
             product_type=product_type,
             size=size,
             color=color,
+            limit=limit,
+            offset=offset,
         )
         products = [
             serialize_product(row)
-            for row in fetch_products(
-                category,
-                category_group=category_group,
-                product_type=product_type,
-                size=size,
-                color=color,
-                limit=limit,
-                offset=offset,
-            )
+            for row in product_rows
         ]
         facets = None
         if include_facets:
@@ -9366,8 +11353,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 },
                 "limit": limit,
                 "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
+                "total": None,
+                "hasMore": has_more,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -9442,7 +11429,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        total_count = count_products(
+        product_rows, has_more = fetch_products_page(
             category,
             category_group=category_group,
             product_type=product_type,
@@ -9450,20 +11437,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             color=color,
             business_name_search=business_name,
             search_text=search_text,
+            limit=limit,
+            offset=offset,
         )
         products = [
             serialize_product(row)
-            for row in fetch_products(
-                category,
-                category_group=category_group,
-                product_type=product_type,
-                size=size,
-                color=color,
-                business_name_search=business_name,
-                search_text=search_text,
-                limit=limit,
-                offset=offset,
-            )
+            for row in product_rows
         ]
         facets = None
         if include_facets:
@@ -9503,8 +11482,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 },
                 "limit": limit,
                 "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
+                "total": None,
+                "hasMore": has_more,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -9709,6 +11688,48 @@ class AppHandler(SimpleHTTPRequestHandler):
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS if bool(product["is_public"]) else None,
         )
 
+    def handle_product_reviews_list(self, query_params: dict[str, list[str]]) -> None:
+        errors, product_id = parse_product_id_query(query_params)
+        if errors or product_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        product = fetch_product_by_id(product_id)
+        if not product or not bool(product["is_public"]):
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        reviews = [serialize_product_review(row) for row in fetch_product_reviews(product_id)]
+        current_user = self.get_current_user()
+        can_submit_review = False
+        if current_user:
+            with get_db_connection() as connection:
+                can_submit_review = bool(
+                    find_reviewable_order_item(
+                        connection=connection,
+                        user_id=int(current_user["id"]),
+                        product_id=product_id,
+                    )
+                )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "reviews": reviews,
+                "canSubmitReview": can_submit_review,
+                "stats": {
+                    "averageRating": round(float(product["average_rating"] or 0), 2)
+                    if "average_rating" in product.keys()
+                    else 0,
+                    "reviewCount": max(0, int(product["review_count"] or 0))
+                    if "review_count" in product.keys()
+                    else len(reviews),
+                },
+            },
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS if not current_user else None,
+        )
+
     def handle_admin_products_list(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -9819,6 +11840,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     is_followed=is_followed,
                 ),
             },
+            headers=PUBLIC_BUSINESSES_CACHE_HEADERS if not current_user else None,
         )
 
     def handle_public_business_products(
@@ -9839,14 +11861,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
-        total_count = count_public_products_for_business(business_id)
+        product_rows, has_more = fetch_public_products_page_for_business(
+            business_id,
+            limit=limit,
+            offset=offset,
+        )
         products = [
             serialize_product(row)
-            for row in fetch_public_products_for_business(
-                business_id,
-                limit=limit,
-                offset=offset,
-            )
+            for row in product_rows
         ]
         self.send_json(
             200,
@@ -9855,8 +11877,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "products": products,
                 "limit": limit,
                 "offset": offset,
-                "total": total_count,
-                "hasMore": offset + len(products) < total_count,
+                "total": None,
+                "hasMore": has_more,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -11687,7 +13709,8 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
         address_errors, cleaned_address = validate_address_payload(payload)
-        combined_errors = cart_line_ids_errors + address_errors
+        promo_code_errors, promo_code = parse_promo_code(payload)
+        combined_errors = cart_line_ids_errors + address_errors + promo_code_errors
         if combined_errors:
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
@@ -11698,6 +13721,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                     connection,
                     user_id=int(user["id"]),
                     cart_line_ids=cart_line_ids,
+                )
+                pricing_summary = build_checkout_pricing_summary(
+                    connection,
+                    checkout_items=checkout_items,
+                    promo_code=promo_code,
+                    user_id=int(user["id"]),
+                )
+                reserved_until = reserve_checkout_stock(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
+                    checkout_items=checkout_items,
                 )
         except CheckoutProcessError as error:
             self.send_json(
@@ -11714,8 +13749,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             int(user["id"]),
             cleaned_address,
             checkout_items,
+            promo_code,
         )
-        line_item_fields, fallback_total_amount = build_stripe_checkout_line_items(checkout_items)
+        line_item_fields, fallback_total_amount = build_stripe_checkout_line_items(
+            checkout_items,
+            discount_amount=float(pricing_summary.get("discountAmount") or 0),
+        )
         form_fields = list(line_item_fields)
         form_fields.extend(
             [
@@ -11734,6 +13773,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 ("locale", "auto"),
                 ("metadata[trego_user_id]", str(user["id"])),
                 ("metadata[trego_checkout_signature]", checkout_signature),
+                ("metadata[trego_promo_code]", promo_code),
             ]
         )
 
@@ -11765,6 +13805,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 cleaned_address=cleaned_address,
                 checkout_items=checkout_items,
                 amount_total=int(stripe_payload.get("amount_total") or fallback_total_amount),
+                discount_amount=int(round(float(pricing_summary.get("discountAmount") or 0) * 100)),
+                promo_code=promo_code,
                 currency=str(stripe_payload.get("currency") or STRIPE_CURRENCY).strip().lower(),
                 payment_status=str(stripe_payload.get("payment_status") or "").strip().lower(),
                 stripe_status=str(stripe_payload.get("status") or "").strip().lower(),
@@ -11774,9 +13816,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {
                 "ok": True,
-                "message": "Po hapet Stripe test checkout.",
+                "message": pricing_summary.get("message") or "Po hapet Stripe test checkout.",
                 "sessionId": str(stripe_payload.get("id") or "").strip(),
                 "checkoutUrl": str(stripe_payload.get("url") or "").strip(),
+                "pricing": pricing_summary,
+                "reservedUntil": reserved_until,
             },
         )
 
@@ -11961,6 +14005,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                     },
                     checkout_items=checkout_items_snapshot,
                     cart_line_ids=cart_line_ids,
+                    pricing_summary={
+                        "promoCode": str(stored_session["promo_code"] or "").strip().upper(),
+                        "subtotal": round(
+                            sum(
+                                round(float(item.get("price") or 0), 2) * max(1, int(item.get("quantity") or 1))
+                                for item in checkout_items_snapshot
+                            ),
+                            2,
+                        ),
+                        "discountAmount": round(float(int(stored_session["discount_amount"] or 0)) / 100, 2),
+                        "total": round(float(stripe_amount_total or 0) / 100, 2),
+                    },
                 )
                 update_stripe_payment_session_state(
                     connection,
@@ -11968,6 +14024,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                     payment_status=payment_status,
                     stripe_status=stripe_status,
                     order_id=order_id,
+                )
+                create_order_notifications(
+                    connection,
+                    order_row=saved_order,
+                    saved_items=saved_items,
                 )
         except CheckoutProcessError as error:
             self.send_json(
@@ -12038,6 +14099,980 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         orders = fetch_business_orders_for_user(user["id"])
         self.send_json(200, {"ok": True, "orders": orders})
+
+    def handle_admin_orders_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admini mund t'i shohë te gjitha porosite."})
+            return
+
+        self.send_json(200, {"ok": True, "orders": fetch_all_orders_for_admin()})
+
+    def handle_notifications_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i pare njoftimet."})
+            return
+
+        notifications = [serialize_notification(row) for row in fetch_notifications_for_user(int(user["id"]))]
+        unread_count = sum(1 for notification in notifications if not notification["isRead"])
+        self.send_json(
+            200,
+            {"ok": True, "notifications": notifications, "unreadCount": unread_count},
+        )
+
+    def handle_notifications_count(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i pare njoftimet."})
+            return
+
+        unread_count = fetch_unread_notifications_count(int(user["id"]))
+        self.send_json(200, {"ok": True, "unreadCount": unread_count})
+
+    def handle_mark_notifications_read(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i perditesuar njoftimet."})
+            return
+
+        with get_db_connection() as connection:
+            mark_notifications_as_read(connection, user_id=int(user["id"]))
+
+        self.send_json(200, {"ok": True, "message": "Njoftimet u shenuan si te lexuara."})
+
+    def handle_business_analytics(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si biznes."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset kane analytics."})
+            return
+
+        self.send_json(200, {"ok": True, "analytics": fetch_business_analytics(int(user["id"]))})
+
+    def handle_business_promotions_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i pare promocionet."})
+            return
+
+        if user["role"] not in {"business", "admin"}:
+            self.send_json(403, {"ok": False, "message": "Nuk ke akses ne promocione."})
+            return
+
+        promotions = [serialize_promo_code(row) for row in fetch_business_promotions(user)]
+        self.send_json(200, {"ok": True, "promotions": promotions})
+
+    def handle_admin_reports_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admin mund t'i shohë raportimet."})
+            return
+
+        reports = [serialize_report(row) for row in fetch_reports_for_admin()]
+        self.send_json(200, {"ok": True, "reports": reports})
+
+    def handle_checkout_reserve_stock(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para checkout-it."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
+        if cart_line_ids_errors:
+            self.send_json(400, {"ok": False, "errors": cart_line_ids_errors})
+            return
+
+        try:
+            with get_db_connection() as connection:
+                checkout_items = load_checkout_items_for_order_or_raise(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
+                )
+                reserved_until = reserve_checkout_stock(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
+                    checkout_items=checkout_items,
+                )
+        except CheckoutProcessError as error:
+            self.send_json(
+                409,
+                {
+                    "ok": False,
+                    "errors": error.errors,
+                    "message": error.message or "Stoku nuk u rezervua.",
+                },
+            )
+            return
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": f"Stoku u rezervua per {STOCK_RESERVATION_HOLD_MINUTES} minuta.",
+                "reservedUntil": reserved_until,
+            },
+        )
+
+    def handle_apply_promotion(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para checkout-it."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        promo_code_errors, promo_code = parse_promo_code(payload)
+        cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
+        combined_errors = promo_code_errors + cart_line_ids_errors
+        if combined_errors:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        try:
+            with get_db_connection() as connection:
+                checkout_items = load_checkout_items_for_order_or_raise(
+                    connection,
+                    user_id=int(user["id"]),
+                    cart_line_ids=cart_line_ids,
+                )
+                pricing = build_checkout_pricing_summary(
+                    connection,
+                    checkout_items=checkout_items,
+                    promo_code=promo_code,
+                    user_id=int(user["id"]),
+                )
+        except CheckoutProcessError as error:
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "errors": error.errors,
+                    "message": error.message or "Kuponi nuk u aplikua.",
+                },
+            )
+            return
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": pricing.get("message") or "Kuponi u aplikua.",
+                "pricing": pricing,
+            },
+        )
+
+    def handle_save_business_promotion(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te ruajtur promocionin."})
+            return
+
+        if user["role"] not in {"business", "admin"}:
+            self.send_json(403, {"ok": False, "message": "Vetem biznesi ose admini mund te ruaje promocione."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        promo_code_errors, promo_code = parse_promo_code(payload, field_name="code")
+        discount_type_errors, discount_type = parse_promo_code_type(payload)
+        title = re.sub(r"\s+", " ", str(payload.get("title", "")).strip())[:120]
+        description = re.sub(r"\s+", " ", str(payload.get("description", "")).strip())[:220]
+        page_section = str(payload.get("pageSection", "")).strip().lower()
+        category = str(payload.get("category", "")).strip().lower()
+        starts_at = str(payload.get("startsAt", "")).strip()
+        ends_at = str(payload.get("endsAt", "")).strip()
+        is_active = 1 if str(payload.get("isActive", "1")).strip().lower() not in {"0", "false", "jo", "no"} else 0
+        try:
+            discount_value = round(float(str(payload.get("discountValue", "")).strip() or 0), 2)
+            minimum_subtotal = round(float(str(payload.get("minimumSubtotal", "")).strip() or 0), 2)
+            usage_limit = max(0, int(str(payload.get("usageLimit", "")).strip() or 0))
+            per_user_limit = max(0, int(str(payload.get("perUserLimit", "")).strip() or PROMO_CODE_DEFAULT_PER_USER_LIMIT))
+        except ValueError:
+            self.send_json(400, {"ok": False, "message": "Vlerat e promocionit nuk jane valide."})
+            return
+
+        combined_errors = promo_code_errors + discount_type_errors
+        if combined_errors:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        if discount_value <= 0:
+            self.send_json(400, {"ok": False, "message": "Zbritja duhet te jete me e madhe se 0."})
+            return
+
+        if discount_type == "percent" and discount_value > 95:
+            self.send_json(400, {"ok": False, "message": "Zbritja ne perqindje nuk mund te jete mbi 95%."})
+            return
+
+        if user["role"] == "business":
+            normalized_business_user_id = int(user["id"])
+        else:
+            try:
+                normalized_business_user_id = int(str(payload.get("businessUserId", "")).strip() or 0) or None
+            except ValueError:
+                self.send_json(400, {"ok": False, "message": "Biznesi i kuponit nuk eshte valid."})
+                return
+
+        with get_db_connection() as connection:
+            existing_row = fetch_promo_code_by_code(connection, promo_code)
+            if existing_row:
+                if user["role"] == "business" and int(existing_row["business_user_id"] or 0) != int(user["id"]):
+                    self.send_json(403, {"ok": False, "message": "Ky kupon i takon nje biznesi tjeter."})
+                    return
+                connection.execute(
+                    """
+                    UPDATE promo_codes
+                    SET
+                        title = ?,
+                        description = ?,
+                        discount_type = ?,
+                        discount_value = ?,
+                        minimum_subtotal = ?,
+                        usage_limit = ?,
+                        per_user_limit = ?,
+                        is_active = ?,
+                        page_section = ?,
+                        category = ?,
+                        starts_at = ?,
+                        ends_at = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        title,
+                        description,
+                        discount_type,
+                        discount_value,
+                        minimum_subtotal,
+                        usage_limit,
+                        per_user_limit,
+                        is_active,
+                        page_section,
+                        category,
+                        starts_at,
+                        ends_at,
+                        int(existing_row["id"]),
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO promo_codes (
+                        code,
+                        title,
+                        description,
+                        discount_type,
+                        discount_value,
+                        minimum_subtotal,
+                        usage_limit,
+                        per_user_limit,
+                        is_active,
+                        page_section,
+                        category,
+                        business_user_id,
+                        created_by_user_id,
+                        starts_at,
+                        ends_at,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        promo_code,
+                        title,
+                        description,
+                        discount_type,
+                        discount_value,
+                        minimum_subtotal,
+                        usage_limit,
+                        per_user_limit,
+                        is_active,
+                        page_section,
+                        category,
+                        normalized_business_user_id,
+                        int(user["id"]),
+                        starts_at,
+                        ends_at,
+                    ),
+                )
+
+        promotions = [serialize_promo_code(row) for row in fetch_business_promotions(user)]
+        self.send_json(200, {"ok": True, "message": "Promocioni u ruajt me sukses.", "promotions": promotions})
+
+    def handle_create_report(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te raportuar."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        target_type_errors, target_type = parse_report_target_type(payload)
+        reason = re.sub(r"\s+", " ", str(payload.get("reason", "")).strip())[:180]
+        details = re.sub(r"\s+", " ", str(payload.get("details", "")).strip())[:900]
+        try:
+            target_id = int(str(payload.get("targetId", "")).strip() or 0)
+        except ValueError:
+            self.send_json(400, {"ok": False, "message": "Objekti i raportimit nuk eshte valid."})
+            return
+        target_label = re.sub(r"\s+", " ", str(payload.get("targetLabel", "")).strip())[:180]
+        try:
+            reported_user_id = int(str(payload.get("reportedUserId", "")).strip() or 0) or None
+            business_user_id = int(str(payload.get("businessUserId", "")).strip() or 0) or None
+        except ValueError:
+            self.send_json(400, {"ok": False, "message": "Perdoruesi i raportuar nuk eshte valid."})
+            return
+        if target_type_errors:
+            self.send_json(400, {"ok": False, "errors": target_type_errors})
+            return
+
+        if target_id <= 0:
+            self.send_json(400, {"ok": False, "message": "Objekti i raportimit nuk eshte valid."})
+            return
+
+        if not reason:
+            self.send_json(400, {"ok": False, "message": "Shkruaj arsyen e raportimit."})
+            return
+
+        with get_db_connection() as connection:
+            existing_report = connection.execute(
+                """
+                SELECT id
+                FROM reports
+                WHERE reporter_user_id = ?
+                  AND target_type = ?
+                  AND target_id = ?
+                  AND status IN ('open', 'reviewing')
+                LIMIT 1
+                """,
+                (int(user["id"]), target_type, target_id),
+            ).fetchone()
+            if existing_report:
+                self.send_json(409, {"ok": False, "message": "Per kete objekt ekziston tashme nje raportim aktiv."})
+                return
+
+            report_id = execute_insert_and_get_id(
+                connection,
+                """
+                INSERT INTO reports (
+                    reporter_user_id,
+                    reported_user_id,
+                    business_user_id,
+                    target_type,
+                    target_id,
+                    target_label,
+                    reason,
+                    details,
+                    status,
+                    admin_notes,
+                    created_at,
+                    updated_at,
+                    resolved_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '')
+                """,
+                (
+                    int(user["id"]),
+                    reported_user_id,
+                    business_user_id,
+                    target_type,
+                    target_id,
+                    target_label,
+                    reason,
+                    details,
+                ),
+            )
+
+            admin_rows = connection.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE role = 'admin'
+                """
+            ).fetchall()
+            for admin_row in admin_rows:
+                create_notification(
+                    connection,
+                    user_id=int(admin_row["id"]),
+                    notification_type="report",
+                    title="Raportim i ri",
+                    body=f"U raportua nje {target_type}: {target_label or reason}.",
+                    href="/admin-products",
+                    metadata={"reportId": report_id, "targetType": target_type, "targetId": target_id},
+                )
+
+        self.send_json(201, {"ok": True, "message": "Raportimi u dergua me sukses."})
+
+    def handle_admin_update_report_status(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admin mund te menaxhoje raportimet."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        report_id_errors, report_id = parse_report_id(payload)
+        report_status_errors, report_status = parse_report_status(payload)
+        admin_notes = re.sub(r"\s+", " ", str(payload.get("adminNotes", "")).strip())[:500]
+        combined_errors = report_id_errors + report_status_errors
+        if combined_errors or report_id is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        with get_db_connection() as connection:
+            report_row = connection.execute(
+                """
+                SELECT *
+                FROM reports
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (report_id,),
+            ).fetchone()
+            if not report_row:
+                self.send_json(404, {"ok": False, "message": "Raportimi nuk u gjet."})
+                return
+
+            connection.execute(
+                """
+                UPDATE reports
+                SET
+                    status = ?,
+                    admin_notes = ?,
+                    updated_at = CURRENT_TIMESTAMP,
+                    resolved_at = CASE
+                        WHEN ? IN ('resolved', 'dismissed') THEN CURRENT_TIMESTAMP
+                        ELSE COALESCE(resolved_at, '')
+                    END,
+                    resolved_by_user_id = ?
+                WHERE id = ?
+                """,
+                (
+                    report_status,
+                    admin_notes,
+                    report_status,
+                    int(user["id"]),
+                    report_id,
+                ),
+            )
+
+            if int(report_row["reporter_user_id"] or 0) > 0:
+                create_notification(
+                    connection,
+                    user_id=int(report_row["reporter_user_id"]),
+                    notification_type="report",
+                    title="Raportimi juaj u perditesua",
+                    body=f"Raportimi per `{report_row['target_label']}` tani eshte `{report_status}`.",
+                    href="/njoftimet",
+                    metadata={"reportId": report_id},
+                )
+
+        self.send_json(200, {"ok": True, "message": "Raportimi u perditesua."})
+
+    def handle_create_product_review(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te lene review."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        product_errors, product_id = parse_product_id(payload)
+        rating_errors, rating = parse_review_rating(payload)
+        review_title = re.sub(r"\s+", " ", str(payload.get("title", "")).strip())[:120]
+        review_body = re.sub(r"\s+", " ", str(payload.get("body", "")).strip())[:900]
+        combined_errors = product_errors + rating_errors
+        if product_id is None or rating is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        if not review_title and not review_body:
+            self.send_json(400, {"ok": False, "message": "Shkruaj pak tekst per pershtypjen tende."})
+            return
+
+        product = fetch_product_by_id(product_id)
+        if not product or not bool(product["is_public"]):
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        with get_db_connection() as connection:
+            reviewable_item = find_reviewable_order_item(
+                connection=connection,
+                user_id=int(user["id"]),
+                product_id=product_id,
+            )
+            if not reviewable_item:
+                self.send_json(
+                    400,
+                    {"ok": False, "message": "Mund te vleresosh vetem nje produkt qe e ke pranuar ne porosi."},
+                )
+                return
+
+            execute_insert_and_get_id(
+                connection,
+                """
+                INSERT INTO product_reviews (
+                    product_id,
+                    order_id,
+                    order_item_id,
+                    user_id,
+                    business_user_id,
+                    rating,
+                    review_title,
+                    review_body,
+                    status,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    product_id,
+                    int(reviewable_item["order_id"]),
+                    int(reviewable_item["id"]),
+                    int(user["id"]),
+                    int(reviewable_item["business_user_id"] or 0) or None,
+                    rating,
+                    review_title,
+                    review_body,
+                ),
+            )
+
+            business_user_id = int(reviewable_item["business_user_id"] or 0)
+            if business_user_id > 0:
+                create_notification(
+                    connection,
+                    user_id=business_user_id,
+                    notification_type="review",
+                    title="Keni review te ri",
+                    body=f"Produkti `{product['title']}` mori {rating} yje nga nje bleres.",
+                    href=f"/produkti?id={product_id}",
+                    metadata={"productId": product_id},
+                )
+
+        self.send_json(201, {"ok": True, "message": "Review u ruajt me sukses."})
+
+    def handle_create_return_request(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te hapur kerkese per kthim."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        item_errors, order_item_id = parse_order_item_id(payload)
+        reason = re.sub(r"\s+", " ", str(payload.get("reason", "")).strip())[:160]
+        details = re.sub(r"\s+", " ", str(payload.get("details", "")).strip())[:900]
+        if item_errors or order_item_id is None:
+            self.send_json(400, {"ok": False, "errors": item_errors})
+            return
+
+        if not reason:
+            self.send_json(400, {"ok": False, "message": "Shkruaj arsyen e kthimit."})
+            return
+
+        order_item_row = fetch_order_item_by_id(order_item_id)
+        if not order_item_row:
+            self.send_json(404, {"ok": False, "message": "Artikulli i porosise nuk u gjet."})
+            return
+
+        if int(order_item_row["customer_user_id"] or 0) != int(user["id"]):
+            self.send_json(403, {"ok": False, "message": "Mund te kerkosh kthim vetem per porosite e tua."})
+            return
+
+        if str(order_item_row["fulfillment_status"] or "").strip().lower() not in {"delivered", "returned"}:
+            self.send_json(400, {"ok": False, "message": "Kthimi mund te kerkohet pasi produkti te jete dorezuar."})
+            return
+
+        with get_db_connection() as connection:
+            existing_request = connection.execute(
+                """
+                SELECT id
+                FROM return_requests
+                WHERE user_id = ?
+                  AND order_item_id = ?
+                  AND status IN ('requested', 'approved', 'received')
+                LIMIT 1
+                """,
+                (user["id"], order_item_id),
+            ).fetchone()
+            if existing_request:
+                self.send_json(409, {"ok": False, "message": "Per kete artikull ekziston tashme nje kerkese aktive per kthim."})
+                return
+
+            return_request_id = execute_insert_and_get_id(
+                connection,
+                """
+                INSERT INTO return_requests (
+                    order_id,
+                    order_item_id,
+                    user_id,
+                    business_user_id,
+                    reason,
+                    details,
+                    status,
+                    created_at,
+                    updated_at,
+                    resolved_at,
+                    resolution_notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'requested', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '', '')
+                """,
+                (
+                    int(order_item_row["order_id"]),
+                    order_item_id,
+                    int(user["id"]),
+                    int(order_item_row["business_user_id"] or 0) or None,
+                    reason,
+                    details,
+                ),
+            )
+
+            business_user_id = int(order_item_row["business_user_id"] or 0)
+            if business_user_id > 0:
+                create_notification(
+                    connection,
+                    user_id=business_user_id,
+                    notification_type="return",
+                    title="Kerkese e re per kthim",
+                    body=f"Klienti kerkon kthim per `{order_item_row['product_title']}`.",
+                    href="/porosite-e-biznesit",
+                    metadata={"returnRequestId": return_request_id, "orderItemId": order_item_id},
+                )
+            create_notification(
+                connection,
+                user_id=int(user["id"]),
+                notification_type="return",
+                title="Kerkesa per kthim u dergua",
+                body=f"Kerkesa juaj per `{order_item_row['product_title']}` u regjistrua.",
+                href="/refund-returne",
+                metadata={"returnRequestId": return_request_id, "orderItemId": order_item_id},
+            )
+
+        self.send_json(201, {"ok": True, "message": "Kerkesa per kthim u dergua me sukses."})
+
+    def handle_returns_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i pare kerkesat e kthimit."})
+            return
+
+        requests_payload = [serialize_return_request(row) for row in fetch_return_requests_for_user(user)]
+        self.send_json(200, {"ok": True, "requests": requests_payload})
+
+    def handle_update_return_request_status(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te perditesuar kerkesen."})
+            return
+
+        if user["role"] not in {"business", "admin"}:
+            self.send_json(403, {"ok": False, "message": "Nuk ke akses per te perditesuar kerkesat e kthimit."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        id_errors, return_request_id = parse_return_request_id(payload)
+        status_errors, next_status = parse_return_status(payload)
+        resolution_notes = re.sub(r"\s+", " ", str(payload.get("resolutionNotes", "")).strip())[:500]
+        combined_errors = id_errors + status_errors
+        if combined_errors or return_request_id is None or next_status is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        return_request_row = fetch_return_request_by_id(return_request_id)
+        if not return_request_row:
+            self.send_json(404, {"ok": False, "message": "Kerkesa per kthim nuk u gjet."})
+            return
+
+        if user["role"] == "business" and int(return_request_row["business_user_id"] or 0) != int(user["id"]):
+            self.send_json(403, {"ok": False, "message": "Nuk ke akses mbi kete kerkese."})
+            return
+
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE return_requests
+                SET
+                    status = ?,
+                    updated_at = CURRENT_TIMESTAMP,
+                    resolved_at = CASE
+                        WHEN ? IN ('rejected', 'refunded') THEN CURRENT_TIMESTAMP
+                        ELSE COALESCE(resolved_at, '')
+                    END,
+                    resolution_notes = ?
+                WHERE id = ?
+                """,
+                (next_status, next_status, resolution_notes, return_request_id),
+            )
+
+            if next_status == "refunded":
+                update_order_item_fulfillment_state(
+                    connection,
+                    order_item_id=int(return_request_row["order_item_id"]),
+                    fulfillment_status="returned",
+                )
+
+            create_notification(
+                connection,
+                user_id=int(return_request_row["user_id"]),
+                notification_type="return",
+                title="Kerkesa juaj u perditesua",
+                body=f"Kerkesa per `{return_request_row['product_title']}` tani eshte `{next_status}`.",
+                href="/refund-returne",
+                metadata={"returnRequestId": return_request_id},
+            )
+
+        self.send_json(200, {"ok": True, "message": "Kerkesa e kthimit u perditesua."})
+
+    def handle_update_order_status(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te perditesuar porosite."})
+            return
+
+        if user["role"] not in {"business", "admin"}:
+            self.send_json(403, {"ok": False, "message": "Nuk ke akses per te perditesuar porosite."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        item_errors, order_item_id = parse_order_item_id(payload)
+        status_errors, next_status = parse_fulfillment_status(payload)
+        tracking_code = re.sub(r"\s+", " ", str(payload.get("trackingCode", "")).strip())[:120]
+        tracking_url = str(payload.get("trackingUrl", "")).strip()[:280]
+        combined_errors = item_errors + status_errors
+        if combined_errors or order_item_id is None or next_status is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        order_item_row = fetch_order_item_by_id(order_item_id)
+        if not order_item_row:
+            self.send_json(404, {"ok": False, "message": "Artikulli i porosise nuk u gjet."})
+            return
+
+        if user["role"] == "business" and int(order_item_row["business_user_id"] or 0) != int(user["id"]):
+            self.send_json(403, {"ok": False, "message": "Nuk ke akses mbi kete porosi."})
+            return
+
+        with get_db_connection() as connection:
+            update_order_item_fulfillment_state(
+                connection,
+                order_item_id=order_item_id,
+                fulfillment_status=next_status,
+                tracking_code=tracking_code,
+                tracking_url=tracking_url,
+            )
+
+            customer_user_id = int(order_item_row["customer_user_id"] or 0)
+            if customer_user_id > 0:
+                create_notification(
+                    connection,
+                    user_id=customer_user_id,
+                    notification_type="order",
+                    title="Porosia juaj u perditesua",
+                    body=f"`{order_item_row['product_title']}` tani eshte `{next_status}`.",
+                    href="/porosite",
+                    metadata={"orderItemId": order_item_id, "orderId": int(order_item_row['order_id'])},
+                )
+
+        self.send_json(200, {"ok": True, "message": "Statusi i porosise u perditesua."})
+
+    def handle_business_verification_request(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si biznes."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te kerkojne verifikim."})
+            return
+
+        with get_db_connection() as connection:
+            business_profile = connection.execute(
+                """
+                SELECT id, verification_status
+                FROM business_profiles
+                WHERE user_id = ?
+                LIMIT 1
+                """,
+                (user["id"],),
+            ).fetchone()
+            if not business_profile:
+                self.send_json(404, {"ok": False, "message": "Ruaje fillimisht profilin e biznesit."})
+                return
+
+            if str(business_profile["verification_status"] or "").strip().lower() == "verified":
+                self.send_json(200, {"ok": True, "message": "Biznesi eshte tashme i verifikuar."})
+                return
+
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    verification_status = 'pending',
+                    verification_requested_at = CURRENT_TIMESTAMP,
+                    verification_notes = ''
+                WHERE id = ?
+                """,
+                (business_profile["id"],),
+            )
+
+            admin_rows = connection.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE role = 'admin'
+                """
+            ).fetchall()
+            for admin_row in admin_rows:
+                create_notification(
+                    connection,
+                    user_id=int(admin_row["id"]),
+                    notification_type="verification",
+                    title="Biznes kerkon verifikim",
+                    body="Nje biznes ka derguar kerkese per verifikim.",
+                    href="/bizneset-e-regjistruara",
+                    metadata={"businessId": int(business_profile["id"])},
+                )
+
+        updated_profile = fetch_business_profile_for_user(int(user["id"]))
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Kerkesa per verifikim u dergua.",
+                "profile": serialize_business_profile(updated_profile) if updated_profile else None,
+            },
+        )
+
+    def handle_admin_update_business_verification(self) -> None:
+        current_user = self.get_current_user()
+        if not current_user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if current_user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admin mund te ndryshoje verifikimin."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        id_errors, business_id = parse_business_id(payload)
+        status_errors, verification_status = parse_business_verification_status(payload)
+        verification_notes = re.sub(r"\s+", " ", str(payload.get("verificationNotes", "")).strip())[:500]
+        combined_errors = id_errors + status_errors
+        if combined_errors or business_id is None or verification_status is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        business_row = fetch_business_profile_for_admin_by_id(business_id)
+        if not business_row:
+            self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
+            return
+
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    verification_status = ?,
+                    verification_verified_at = CASE
+                        WHEN ? = 'verified' THEN CURRENT_TIMESTAMP
+                        ELSE ''
+                    END,
+                    verification_notes = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    verification_status,
+                    verification_status,
+                    verification_notes,
+                    business_id,
+                ),
+            )
+
+            create_notification(
+                connection,
+                user_id=int(business_row["user_id"]),
+                notification_type="verification",
+                title="Statusi i verifikimit u perditesua",
+                body=f"Biznesi juaj tani eshte `{verification_status}`.",
+                href="/biznesi-juaj",
+                metadata={"businessId": business_id},
+            )
+
+        updated_business = fetch_business_profile_for_admin_by_id(business_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Statusi i verifikimit u ruajt.",
+                "business": serialize_admin_business_profile(updated_business) if updated_business else None,
+            },
+        )
 
     def handle_toggle_wishlist(self) -> None:
         user = self.get_current_user()
@@ -12367,7 +15402,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
         payment_method_errors, payment_method = parse_payment_method(payload)
         address_errors, cleaned_address = validate_address_payload(payload)
-        combined_errors = cart_line_ids_errors + payment_method_errors + address_errors
+        promo_code_errors, promo_code = parse_promo_code(payload)
+        combined_errors = cart_line_ids_errors + payment_method_errors + address_errors + promo_code_errors
 
         if combined_errors or payment_method is None:
             self.send_json(400, {"ok": False, "errors": combined_errors})
@@ -12390,6 +15426,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                     user_id=int(user["id"]),
                     cart_line_ids=cart_line_ids,
                 )
+                pricing_summary = build_checkout_pricing_summary(
+                    connection,
+                    checkout_items=checkout_items,
+                    promo_code=promo_code,
+                    user_id=int(user["id"]),
+                )
                 order_id, saved_order, saved_items = create_order_from_checkout_items(
                     connection,
                     user=user,
@@ -12397,6 +15439,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                     cleaned_address=cleaned_address,
                     checkout_items=checkout_items,
                     cart_line_ids=cart_line_ids,
+                    pricing_summary=pricing_summary,
+                )
+                create_order_notifications(
+                    connection,
+                    order_row=saved_order,
+                    saved_items=saved_items,
                 )
         except CheckoutProcessError as error:
             self.send_json(
@@ -12418,7 +15466,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             201,
             {
                 "ok": True,
-                "message": "Porosia u konfirmua me sukses.",
+                "message": (pricing_summary.get("message") or "").strip() or "Porosia u konfirmua me sukses.",
                 "order": (
                     serialize_order(
                         saved_order,

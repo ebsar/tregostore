@@ -151,20 +151,28 @@ onMounted(async () => {
   });
 
   try {
-    const sessionPromise = ensureSessionLoaded();
-    const publicProductsPromise = loadProducts();
-    const user = await sessionPromise;
-    if (user?.role === "business") {
+    if (appState.sessionLoaded && appState.user?.role === "business") {
       await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
       markRouteReady();
       return;
     }
 
+    const publicProductsPromise = loadProducts();
+    void ensureSessionLoaded()
+      .then(async (user) => {
+        if (user?.role === "business") {
+          await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
+          return;
+        }
+
+        await refreshCollectionState();
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+
     await publicProductsPromise;
     markRouteReady();
-    void refreshCollectionState().catch((error) => {
-      console.error(error);
-    });
     void loadBusinesses();
   } catch (error) {
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";

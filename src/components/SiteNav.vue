@@ -22,6 +22,7 @@ const navSearchResult = ref(null);
 const navSearchLoading = ref(false);
 const navSearchMessage = ref("");
 const unreadMessagesCount = ref(0);
+const unreadNotificationsCount = ref(0);
 let lastScrollY = 0;
 let unreadMessagesPollIntervalId = 0;
 const UNREAD_MESSAGES_POLL_MS = 3000;
@@ -56,6 +57,14 @@ const unreadMessagesBadgeLabel = computed(() => {
   return unreadMessagesCount.value > 99 ? "99+" : String(unreadMessagesCount.value);
 });
 
+const unreadNotificationsBadgeLabel = computed(() => {
+  if (unreadNotificationsCount.value <= 0) {
+    return "0";
+  }
+
+  return unreadNotificationsCount.value > 99 ? "99+" : String(unreadNotificationsCount.value);
+});
+
 const userMenuLinks = computed(() => {
   if (!appState.user) {
     return [];
@@ -66,6 +75,7 @@ const userMenuLinks = computed(() => {
       { label: "Artikujt", href: "/admin-products" },
       { label: "Bizneset e regjistruara", href: "/bizneset-e-regjistruara" },
       { label: "Porosit", href: "/admin-porosite" },
+      { label: "Njoftimet", href: "/njoftimet", showUnreadNotifications: true },
       { label: "Te dhenat personale", href: "/te-dhenat-personale" },
     ];
   }
@@ -77,6 +87,7 @@ const userMenuLinks = computed(() => {
         ? [{ label: "Profili publik", href: String(appState.user.businessProfileUrl || "").trim() }]
         : []),
       { label: "Porosite e bera", href: "/porosite-e-biznesit" },
+      { label: "Njoftimet", href: "/njoftimet", showUnreadNotifications: true },
       { label: "Te dhenat personale", href: "/te-dhenat-personale" },
     ];
   }
@@ -85,6 +96,7 @@ const userMenuLinks = computed(() => {
     { label: "Porosite", href: "/porosite" },
     { label: "Refund / Returne", href: "/refund-returne" },
     { label: "Adresat", href: "/adresat" },
+    { label: "Njoftimet", href: "/njoftimet", showUnreadNotifications: true },
     { label: "Te dhenat personale", href: "/te-dhenat-personale" },
   ];
 });
@@ -307,13 +319,35 @@ async function loadUnreadMessagesCount() {
   }
 }
 
+async function loadUnreadNotificationsCount() {
+  if (!appState.user) {
+    unreadNotificationsCount.value = 0;
+    return;
+  }
+
+  try {
+    const { response, data } = await requestJson("/api/notifications/count", {}, { cacheTtlMs: 2500 });
+    if (!response.ok || !data?.ok) {
+      unreadNotificationsCount.value = 0;
+      return;
+    }
+
+    unreadNotificationsCount.value = Math.max(0, Number(data.unreadCount || 0));
+  } catch (error) {
+    console.error(error);
+    unreadNotificationsCount.value = 0;
+  }
+}
+
 function handleWindowFocus() {
   void loadUnreadMessagesCount();
+  void loadUnreadNotificationsCount();
 }
 
 function handleVisibilityChange() {
   if (document.visibilityState === "visible") {
     void loadUnreadMessagesCount();
+    void loadUnreadNotificationsCount();
   }
 }
 
@@ -322,6 +356,7 @@ async function handleLogout() {
   closeExpandedPanels();
   mobileMenuOpen.value = false;
   unreadMessagesCount.value = 0;
+  unreadNotificationsCount.value = 0;
   await ensureSessionLoaded({ force: true });
   router.push(data?.redirectTo || "/login");
 }
@@ -418,6 +453,7 @@ watch(
     navSearchResult.value = null;
     navSearchMessage.value = "";
     void loadUnreadMessagesCount();
+    void loadUnreadNotificationsCount();
   },
 );
 
@@ -425,6 +461,7 @@ watch(
   () => appState.user?.id,
   () => {
     void loadUnreadMessagesCount();
+    void loadUnreadNotificationsCount();
   },
 );
 
@@ -445,9 +482,11 @@ onMounted(async () => {
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
   void loadUnreadMessagesCount();
+  void loadUnreadNotificationsCount();
   unreadMessagesPollIntervalId = window.setInterval(() => {
     if (document.visibilityState !== "hidden") {
       void loadUnreadMessagesCount();
+      void loadUnreadNotificationsCount();
     }
   }, UNREAD_MESSAGES_POLL_MS);
 });
@@ -847,6 +886,12 @@ onBeforeUnmount(() => {
                 @click="closeExpandedPanels"
               >
                 <span>{{ link.label }}</span>
+                <span
+                  v-if="link.showUnreadNotifications && unreadNotificationsCount > 0"
+                  class="nav-user-panel-link-badge"
+                >
+                  {{ unreadNotificationsBadgeLabel }}
+                </span>
               </RouterLink>
             </div>
 

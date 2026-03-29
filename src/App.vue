@@ -22,6 +22,7 @@ let speedInsightsHandle = null;
 const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG || "").trim();
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
 const safeArea = useScreenSafeArea();
+let sessionWarmupTimeoutId = 0;
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -101,7 +102,9 @@ watch(
 
 onMounted(() => {
   syncGreetingToastFromSession();
-  void ensureSessionLoaded();
+  sessionWarmupTimeoutId = window.setTimeout(() => {
+    void ensureSessionLoaded();
+  }, 180);
   initializeSpeedInsights();
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startFormMessageObserver();
@@ -113,6 +116,10 @@ onBeforeUnmount(() => {
   if (globalToastTimeoutId) {
     window.clearTimeout(globalToastTimeoutId);
     globalToastTimeoutId = 0;
+  }
+  if (sessionWarmupTimeoutId) {
+    window.clearTimeout(sessionWarmupTimeoutId);
+    sessionWarmupTimeoutId = 0;
   }
   document.body.classList.remove("app-loading");
   document.body.style.position = "";

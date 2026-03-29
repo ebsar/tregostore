@@ -7,6 +7,7 @@ import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const orders = ref([]);
+const busyOrderItemId = ref(0);
 const ui = reactive({
   message: "",
   type: "",
@@ -42,6 +43,27 @@ async function loadOrders() {
 
   orders.value = Array.isArray(data.orders) ? data.orders : [];
 }
+
+async function handleUpdateStatus(payload) {
+  busyOrderItemId.value = Number(payload.orderItemId) || 0;
+  try {
+    const { response, data } = await requestJson("/api/orders/status", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Statusi nuk u ruajt.");
+      ui.type = "error";
+      return;
+    }
+
+    ui.message = data.message || "Statusi u ruajt.";
+    ui.type = "success";
+    await loadOrders();
+  } finally {
+    busyOrderItemId.value = 0;
+  }
+}
 </script>
 
 <template>
@@ -69,6 +91,9 @@ async function loadOrders() {
         v-for="order in orders"
         :key="order.id"
         :order="order"
+        can-manage-status
+        :busy-order-item-id="busyOrderItemId"
+        @update-status="handleUpdateStatus"
       />
     </div>
   </section>

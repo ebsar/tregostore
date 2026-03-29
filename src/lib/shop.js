@@ -448,9 +448,50 @@ export function formatOrderStatusLabel(status) {
   const labels = {
     confirmed: "Porosia u konfirmua",
     pending: "Ne pritje",
+    packed: "Po pergatitet",
+    shipped: "Ne transport",
+    delivered: "E dorezuar",
+    cancelled: "E anuluar",
+    returned: "E kthyer",
   };
 
   return labels[String(status || "").trim()] || "Porosia";
+}
+
+export function formatFulfillmentStatusLabel(status) {
+  const labels = {
+    confirmed: "E konfirmuar",
+    packed: "E paketuar",
+    shipped: "Ne dergese",
+    delivered: "E dorezuar",
+    cancelled: "E anuluar",
+    returned: "E kthyer",
+  };
+
+  return labels[String(status || "").trim()] || "Ne proces";
+}
+
+export function formatReturnRequestStatusLabel(status) {
+  const labels = {
+    requested: "Kerkese e derguar",
+    approved: "E aprovuar",
+    rejected: "E refuzuar",
+    received: "Produkti u pranua",
+    refunded: "E rimbursuar",
+  };
+
+  return labels[String(status || "").trim()] || "Ne shqyrtim";
+}
+
+export function formatVerificationStatusLabel(status) {
+  const labels = {
+    unverified: "Pa verifikim",
+    pending: "Ne shqyrtim",
+    verified: "I verifikuar",
+    rejected: "I refuzuar",
+  };
+
+  return labels[String(status || "").trim()] || "Pa verifikim";
 }
 
 export function humanizeSlug(value) {

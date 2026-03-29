@@ -11,12 +11,13 @@ import {
   hydrateProductFormFromProduct,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
-import { formatRoleLabel, getProductImageGallery } from "../lib/shop";
+import { formatDateLabel, formatRoleLabel, getProductImageGallery } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const products = ref([]);
 const users = ref([]);
+const reports = ref([]);
 const userSearchQuery = ref("");
 const productSearchQuery = ref("");
 const selectedFiles = ref([]);
@@ -32,6 +33,8 @@ const ui = reactive({
   listType: "",
   usersMessage: "",
   usersType: "",
+  reportsMessage: "",
+  reportsType: "",
   productAiBusy: false,
 });
 
@@ -151,7 +154,7 @@ onMounted(async () => {
     }
 
     ui.accessNote = "Je kyçur si admin. Ketu mund t'i menaxhosh artikujt dhe rolet.";
-    await Promise.all([loadProducts(), loadUsers()]);
+    await Promise.all([loadProducts(), loadUsers(), loadReports()]);
   } finally {
     markRouteReady();
   }
@@ -192,6 +195,20 @@ async function loadUsers() {
   ui.usersMessage = "";
   ui.usersType = "";
   users.value = Array.isArray(data.users) ? data.users : [];
+}
+
+async function loadReports() {
+  const { response, data } = await requestJson("/api/admin/reports");
+  if (!response.ok || !data?.ok) {
+    ui.reportsMessage = resolveApiMessage(data, "Raportimet nuk u ngarkuan.");
+    ui.reportsType = "error";
+    reports.value = [];
+    return;
+  }
+
+  ui.reportsMessage = "";
+  ui.reportsType = "";
+  reports.value = Array.isArray(data.reports) ? data.reports : [];
 }
 
 function resetProductForm() {
@@ -437,6 +454,26 @@ async function handleSetUserPassword({ userId, newPassword, reset }) {
     reset();
   }
 }
+
+async function handleReportStatus(report, status) {
+  const { response, data } = await requestJson("/api/admin/reports/status", {
+    method: "POST",
+    body: JSON.stringify({
+      reportId: report.id,
+      status,
+    }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.reportsMessage = resolveApiMessage(data, "Raportimi nuk u perditesua.");
+    ui.reportsType = "error";
+    return;
+  }
+
+  ui.reportsMessage = data.message || "Raportimi u perditesua.";
+  ui.reportsType = "success";
+  await loadReports();
+}
 </script>
 
 <template>
@@ -625,6 +662,43 @@ async function handleSetUserPassword({ userId, newPassword, reset }) {
           @delete="handleDeleteUser"
           @set-password="handleSetUserPassword"
         />
+      </div>
+    </section>
+
+    <section class="card admin-users-card">
+      <div class="admin-list-header">
+        <div>
+          <p class="section-label">Raportimet</p>
+          <h2>Moderimi i marketplace-it</h2>
+          <p class="admin-compact-copy">{{ reports.length }} raportime</p>
+        </div>
+      </div>
+
+      <div class="form-message" :class="ui.reportsType" role="status" aria-live="polite">
+        {{ ui.reportsMessage }}
+      </div>
+
+      <div class="admin-users-list admin-users-list-scroll">
+        <div v-if="reports.length === 0" class="admin-empty-state">
+          Nuk ka raportime aktive.
+        </div>
+
+        <article v-for="report in reports" :key="report.id" class="card account-section notification-card">
+          <div class="notification-card-head">
+            <div>
+              <p class="section-label">{{ report.targetType }} • {{ formatDateLabel(report.createdAt) }}</p>
+              <h2>{{ report.targetLabel || "Raportim" }}</h2>
+            </div>
+            <strong>{{ report.status }}</strong>
+          </div>
+          <p class="section-text"><strong>Arsye:</strong> {{ report.reason }}</p>
+          <p v-if="report.details" class="section-text">{{ report.details }}</p>
+          <div class="auth-form-actions">
+            <button class="button-secondary" type="button" @click="handleReportStatus(report, 'reviewing')">Ne shqyrtim</button>
+            <button type="button" @click="handleReportStatus(report, 'resolved')">Zgjidhe</button>
+            <button class="button-secondary" type="button" @click="handleReportStatus(report, 'dismissed')">Mbylle</button>
+          </div>
+        </article>
       </div>
     </section>
   </section>

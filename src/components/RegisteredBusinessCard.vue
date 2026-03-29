@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from "vue";
-import { formatDateLabel, getBusinessInitials } from "../lib/shop";
+import { formatDateLabel, formatVerificationStatusLabel, getBusinessInitials } from "../lib/shop";
 
 const props = defineProps({
   business: {
@@ -9,7 +9,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["upload-logo", "save-edit"]);
+const emit = defineEmits(["upload-logo", "save-edit", "update-verification"]);
 
 const editing = ref(false);
 const formState = ref(createFormState(props.business));
@@ -103,6 +103,23 @@ function handleSave() {
         <div class="registered-business-number-chip">
           Nr. biznesi: <strong>{{ business.businessNumber || "-" }}</strong>
         </div>
+        <div class="registered-business-number-chip">
+          Verifikimi: <strong>{{ formatVerificationStatusLabel(business.verificationStatus) }}</strong>
+        </div>
+        <button
+          class="registered-business-edit-toggle"
+          type="button"
+          @click="emit('update-verification', { businessId: business.id, verificationStatus: 'verified' })"
+        >
+          Verifiko
+        </button>
+        <button
+          class="ghost-button registered-business-cancel-button"
+          type="button"
+          @click="emit('update-verification', { businessId: business.id, verificationStatus: 'rejected' })"
+        >
+          Refuzo
+        </button>
       </div>
     </div>
 

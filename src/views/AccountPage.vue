@@ -18,6 +18,7 @@ const accountLinks = computed(() => {
 
   if (appState.user.role === "admin") {
     return [
+      { href: "/njoftimet", label: "Njoftimet" },
       { href: "/admin-products", label: "Artikujt" },
       { href: "/bizneset-e-regjistruara", label: "Bizneset e regjistruara" },
       { href: "/mesazhet", label: "Mesazhet" },
@@ -28,6 +29,7 @@ const accountLinks = computed(() => {
 
   if (appState.user.role === "business") {
     return [
+      { href: "/njoftimet", label: "Njoftimet" },
       { href: "/biznesi-juaj", label: "Biznesi i imi" },
       { href: "/mesazhet", label: "Mesazhet" },
       { href: "/porosite-e-biznesit", label: "Porosite e bera" },
@@ -36,6 +38,7 @@ const accountLinks = computed(() => {
   }
 
   return [
+    { href: "/njoftimet", label: "Njoftimet" },
     { href: "/mesazhet", label: "Mesazhet" },
     { href: "/porosite", label: "Porosite" },
     { href: "/refund-returne", label: "Refund / Returne" },

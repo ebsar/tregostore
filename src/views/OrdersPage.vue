@@ -8,6 +8,7 @@ import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const orders = ref([]);
+const busyOrderItemId = ref(0);
 const ui = reactive({
   message: "",
   type: "",
@@ -46,6 +47,37 @@ async function loadOrders() {
 
   orders.value = Array.isArray(data.orders) ? data.orders : [];
 }
+
+async function handleReturnRequest(item) {
+  const reason = window.prompt("Shkruaj arsyen e kthimit:");
+  if (!reason) {
+    return;
+  }
+
+  busyOrderItemId.value = Number(item.id) || 0;
+  try {
+    const { response, data } = await requestJson("/api/returns/request", {
+      method: "POST",
+      body: JSON.stringify({
+        orderItemId: item.id,
+        reason,
+        details: "",
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Kerkesa per kthim nuk u dergua.");
+      ui.type = "error";
+      return;
+    }
+
+    ui.message = data.message || "Kerkesa per kthim u dergua.";
+    ui.type = "success";
+    await loadOrders();
+  } finally {
+    busyOrderItemId.value = 0;
+  }
+}
 </script>
 
 <template>
@@ -73,6 +105,8 @@ async function loadOrders() {
         v-for="order in orders"
         :key="order.id"
         :order="order"
+        :busy-order-item-id="busyOrderItemId"
+        @request-return="handleReturnRequest"
       />
     </div>
   </section>

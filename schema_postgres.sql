@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     business_description TEXT NOT NULL DEFAULT '',
     business_number TEXT NOT NULL DEFAULT '',
     business_logo_path TEXT NOT NULL DEFAULT '',
+    verification_status TEXT NOT NULL DEFAULT 'unverified',
+    verification_requested_at TEXT NOT NULL DEFAULT '',
+    verification_verified_at TEXT NOT NULL DEFAULT '',
+    verification_notes TEXT NOT NULL DEFAULT '',
     phone_number TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     address_line TEXT NOT NULL DEFAULT '',
@@ -251,6 +255,10 @@ CREATE TABLE IF NOT EXISTS orders (
     country TEXT NOT NULL,
     zip_code TEXT NOT NULL,
     phone_number TEXT NOT NULL,
+    subtotal_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    total_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    promo_code TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
@@ -278,6 +286,17 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_package_amount_unit TEXT NOT NULL DEFAULT '',
     unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
     quantity INTEGER NOT NULL DEFAULT 1,
+    fulfillment_status TEXT NOT NULL DEFAULT 'confirmed',
+    tracking_code TEXT NOT NULL DEFAULT '',
+    tracking_url TEXT NOT NULL DEFAULT '',
+    shipped_at TEXT NOT NULL DEFAULT '',
+    delivered_at TEXT NOT NULL DEFAULT '',
+    cancelled_at TEXT NOT NULL DEFAULT '',
+    commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+    commission_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    seller_earnings_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    payout_status TEXT NOT NULL DEFAULT 'pending',
+    payout_due_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
@@ -293,6 +312,164 @@ CREATE INDEX IF NOT EXISTS idx_order_items_product_id
 CREATE INDEX IF NOT EXISTS idx_order_items_business_user_id
     ON order_items(business_user_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_order_items_fulfillment_status
+    ON order_items(fulfillment_status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS product_reviews (
+    id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    order_item_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    business_user_id BIGINT,
+    rating INTEGER NOT NULL,
+    review_title TEXT NOT NULL DEFAULT '',
+    review_body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'published',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_order_item_user
+    ON product_reviews(order_item_id, user_id);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product_created
+    ON product_reviews(product_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_business_created
+    ON product_reviews(business_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS return_requests (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    order_item_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    business_user_id BIGINT,
+    reason TEXT NOT NULL DEFAULT '',
+    details TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'requested',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    resolved_at TEXT NOT NULL DEFAULT '',
+    resolution_notes TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_return_requests_user_created
+    ON return_requests(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_return_requests_business_created
+    ON return_requests(business_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_return_requests_status_created
+    ON return_requests(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    href TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    read_at TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+    ON notifications(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+    ON notifications(user_id, is_read, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id BIGSERIAL PRIMARY KEY,
+    reporter_user_id BIGINT NOT NULL,
+    reported_user_id BIGINT,
+    business_user_id BIGINT,
+    target_type TEXT NOT NULL DEFAULT 'product',
+    target_id BIGINT NOT NULL DEFAULT 0,
+    target_label TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    details TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    resolved_at TEXT NOT NULL DEFAULT '',
+    resolved_by_user_id BIGINT,
+    FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (reported_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_status_created
+    ON reports(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_reports_reporter_created
+    ON reports(reporter_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    discount_type TEXT NOT NULL DEFAULT 'percent',
+    discount_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+    minimum_subtotal DOUBLE PRECISION NOT NULL DEFAULT 0,
+    usage_limit INTEGER NOT NULL DEFAULT 0,
+    per_user_limit INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    page_section TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    business_user_id BIGINT,
+    created_by_user_id BIGINT,
+    starts_at TEXT NOT NULL DEFAULT '',
+    ends_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_promo_codes_active_code
+    ON promo_codes(is_active, code);
+
+CREATE INDEX IF NOT EXISTS idx_promo_codes_business_created
+    ON promo_codes(business_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS stock_reservations (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    cart_line_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
+    variant_key TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL DEFAULT 1,
+    expires_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (cart_line_id) REFERENCES cart_lines(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_reservations_cart_line
+    ON stock_reservations(cart_line_id);
+
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_variant_expiry
+    ON stock_reservations(product_id, variant_key, expires_at);
+
 CREATE TABLE IF NOT EXISTS stripe_payment_sessions (
     id BIGSERIAL PRIMARY KEY,
     stripe_session_id TEXT NOT NULL UNIQUE,
@@ -302,6 +479,8 @@ CREATE TABLE IF NOT EXISTS stripe_payment_sessions (
     checkout_address TEXT NOT NULL DEFAULT '{}',
     checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
     amount_total INTEGER NOT NULL DEFAULT 0,
+    discount_amount INTEGER NOT NULL DEFAULT 0,
+    promo_code TEXT NOT NULL DEFAULT '',
     currency TEXT NOT NULL DEFAULT 'eur',
     payment_status TEXT NOT NULL DEFAULT '',
     stripe_status TEXT NOT NULL DEFAULT '',

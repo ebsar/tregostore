@@ -6,7 +6,12 @@ import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSenti
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
-import { getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
+import {
+  formatVerificationStatusLabel,
+  getBusinessInitials,
+  getBusinessProfileUrl,
+  getProductDetailUrl,
+} from "../lib/shop";
 
 const route = useRoute();
 const router = useRouter();
@@ -406,6 +411,44 @@ async function handleCart(productId) {
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
 }
+
+async function handleReportBusiness() {
+  if (!business.value) {
+    return;
+  }
+
+  if (!appState.user) {
+    ui.message = "Duhet te kyçesh per te raportuar biznesin.";
+    ui.type = "error";
+    return;
+  }
+
+  const reason = window.prompt("Shkruaje shkurt arsyen e raportimit per kete biznes:");
+  if (!reason || !String(reason).trim()) {
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/reports", {
+    method: "POST",
+    body: JSON.stringify({
+      targetType: "business",
+      targetId: business.value.id,
+      targetLabel: business.value.businessName,
+      reportedUserId: business.value.userId,
+      businessUserId: business.value.userId,
+      reason,
+    }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Raportimi nuk u dergua.");
+    ui.type = "error";
+    return;
+  }
+
+  ui.message = data.message || "Raportimi u dergua.";
+  ui.type = "success";
+}
 </script>
 
 <template>
@@ -439,6 +482,14 @@ async function handleCart(productId) {
             <p class="section-text">
               {{ business.businessDescription || "Ky biznes ende nuk ka shtuar pershkrim." }}
             </p>
+            <div class="product-detail-tags product-detail-tags-saved">
+              <span class="product-detail-tag">
+                {{ formatVerificationStatusLabel(business.verificationStatus) }}
+              </span>
+              <span class="product-detail-tag" v-if="Number(business.sellerReviewCount || 0) > 0">
+                {{ Number(business.sellerRating || 0).toFixed(1) }} / 5 • {{ business.sellerReviewCount }} review
+              </span>
+            </div>
           </div>
         </div>
 
@@ -461,6 +512,14 @@ async function handleCart(productId) {
             @click="handleOpenChat"
           >
             {{ openingChat ? "Duke hapur..." : messageActionLabel }}
+          </button>
+
+          <button
+            class="nav-action nav-action-secondary business-message-button"
+            type="button"
+            @click="handleReportBusiness"
+          >
+            Raporto
           </button>
         </div>
 

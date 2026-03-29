@@ -19,6 +19,7 @@ const AddressesPage = () => import("../views/AddressesPage.vue");
 const OrdersPage = () => import("../views/OrdersPage.vue");
 const BusinessOrdersPage = () => import("../views/BusinessOrdersPage.vue");
 const RefundReturnsPage = () => import("../views/RefundReturnsPage.vue");
+const NotificationsPage = () => import("../views/NotificationsPage.vue");
 const AdminOrdersPage = () => import("../views/AdminOrdersPage.vue");
 const CheckoutAddressPage = () => import("../views/CheckoutAddressPage.vue");
 const PaymentOptionsPage = () => import("../views/PaymentOptionsPage.vue");
@@ -204,6 +205,17 @@ const routes = [
     meta: {
       pageKey: "refund-returns",
       title: "TREGO | Refund / Returne",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/njoftimet",
+    component: NotificationsPage,
+    meta: {
+      pageKey: "notifications",
+      title: "TREGO | Njoftimet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,

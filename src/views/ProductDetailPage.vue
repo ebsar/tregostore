@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from "vue-router";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import {
   formatCategoryLabel,
+  formatDateLabel,
   formatPrice,
   formatProductColorLabel,
   formatProductTypeLabel,
@@ -19,6 +20,14 @@ const wishlistIds = ref([]);
 const cartIds = ref([]);
 const selectedColor = ref("");
 const selectedSize = ref("");
+const productReviews = ref([]);
+const canSubmitReview = ref(false);
+const reviewBusy = ref(false);
+const reviewForm = reactive({
+  rating: 5,
+  title: "",
+  body: "",
+});
 const ui = reactive({
   message: "",
   type: "",
@@ -195,8 +204,21 @@ async function loadProduct() {
   currentProduct.value = data.product;
   currentImageIndex.value = 0;
   initializeVariantSelection();
+  await loadProductReviews(productId);
   ui.message = "";
   ui.type = "";
+}
+
+async function loadProductReviews(productId) {
+  const { response, data } = await requestJson(`/api/product/reviews?id=${encodeURIComponent(productId)}`);
+  if (!response.ok || !data?.ok) {
+    productReviews.value = [];
+    canSubmitReview.value = false;
+    return;
+  }
+
+  productReviews.value = Array.isArray(data.reviews) ? data.reviews : [];
+  canSubmitReview.value = Boolean(data.canSubmitReview);
 }
 
 function initializeVariantSelection() {
@@ -328,6 +350,84 @@ async function handleCart() {
   ui.type = "success";
 }
 
+async function handleSubmitReview() {
+  if (!currentProduct.value || reviewBusy.value) {
+    return;
+  }
+
+  if (!appState.user) {
+    ui.message = "Duhet te kyçesh per te lene review.";
+    ui.type = "error";
+    return;
+  }
+
+  reviewBusy.value = true;
+  try {
+    const { response, data } = await requestJson("/api/product/reviews", {
+      method: "POST",
+      body: JSON.stringify({
+        productId: currentProduct.value.id,
+        rating: reviewForm.rating,
+        title: reviewForm.title,
+        body: reviewForm.body,
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Review nuk u ruajt.");
+      ui.type = "error";
+      return;
+    }
+
+    reviewForm.rating = 5;
+    reviewForm.title = "";
+    reviewForm.body = "";
+    ui.message = data.message || "Review u ruajt.";
+    ui.type = "success";
+    await loadProduct();
+  } finally {
+    reviewBusy.value = false;
+  }
+}
+
+async function handleReportProduct() {
+  if (!currentProduct.value) {
+    return;
+  }
+
+  if (!appState.user) {
+    ui.message = "Duhet te kyçesh per te raportuar produktin.";
+    ui.type = "error";
+    return;
+  }
+
+  const reason = window.prompt("Shkruaje shkurt arsyen e raportimit:");
+  if (!reason || !String(reason).trim()) {
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/reports", {
+    method: "POST",
+    body: JSON.stringify({
+      targetType: "product",
+      targetId: currentProduct.value.id,
+      targetLabel: currentProduct.value.title,
+      reportedUserId: currentProduct.value.createdByUserId,
+      businessUserId: currentProduct.value.createdByUserId,
+      reason,
+    }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Raportimi nuk u dergua.");
+    ui.type = "error";
+    return;
+  }
+
+  ui.message = data.message || "Raportimi u dergua.";
+  ui.type = "success";
+}
+
 function nextImage() {
   if (imageGallery.value.length <= 1) {
     return;
@@ -442,9 +542,78 @@ function nextImage() {
               </svg>
               <span>{{ cartIds.includes(currentProduct.id) ? "Ne cart" : "Shto ne cart" }}</span>
             </button>
+
+            <button
+              class="product-action-button"
+              type="button"
+              @click="handleReportProduct"
+            >
+              Raporto
+            </button>
           </div>
         </div>
       </article>
+
+      <section class="card product-reviews-card" aria-label="Review-t e produktit">
+        <div class="product-reviews-header">
+          <div>
+            <p class="section-label">Marketplace trust</p>
+            <h2>Review-t e bleresve</h2>
+          </div>
+          <div class="summary-chip">
+            <span>Mesatarja</span>
+            <strong>{{ Number(currentProduct.averageRating || 0).toFixed(1) }}</strong>
+          </div>
+        </div>
+
+        <form
+          v-if="canSubmitReview"
+          class="product-review-form"
+          @submit.prevent="handleSubmitReview"
+        >
+          <label class="field">
+            <span>Vleresimi</span>
+            <select v-model.number="reviewForm.rating">
+              <option v-for="star in 5" :key="star" :value="star">{{ star }} yje</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Titulli</span>
+            <input v-model="reviewForm.title" type="text" placeholder="Si te eshte dukur produkti?">
+          </label>
+
+          <label class="field">
+            <span>Pershtypja jote</span>
+            <textarea v-model="reviewForm.body" rows="4" placeholder="Shkruaj si ishte produkti, dergesa dhe pervoja jote."></textarea>
+          </label>
+
+          <button type="submit" :disabled="reviewBusy">
+            {{ reviewBusy ? "Duke ruajtur..." : "Ruaje review-n" }}
+          </button>
+        </form>
+
+        <div v-else class="product-review-empty-note">
+          Vetem bleresit qe e kane pranuar produktin mund te lene review.
+        </div>
+
+        <div v-if="productReviews.length > 0" class="product-reviews-list">
+          <article v-for="review in productReviews" :key="review.id" class="product-review-item">
+            <div class="product-review-top">
+              <div>
+                <p class="section-label">{{ review.authorName }}</p>
+                <strong>{{ review.title || `${review.rating} yje` }}</strong>
+              </div>
+              <div class="product-review-rating">{{ review.rating }}/5</div>
+            </div>
+            <p class="section-text">{{ review.body }}</p>
+            <p class="product-review-date">{{ formatDateLabel(review.createdAt) }}</p>
+          </article>
+        </div>
+        <div v-else class="product-review-empty-note">
+          Ende nuk ka review per kete produkt.
+        </div>
+      </section>
     </section>
 
     <div v-else class="pets-empty-state">

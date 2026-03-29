@@ -12285,3 +12285,130 @@ code {
     scroll-behavior: auto !important;
   }
 }
+
+.product-reviews-card,
+.notification-card,
+.return-request-card {
+  display: grid;
+  gap: 16px;
+}
+
+.product-reviews-header,
+.notification-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.product-review-form {
+  display: grid;
+  gap: 14px;
+}
+
+.product-reviews-list {
+  display: grid;
+  gap: 14px;
+}
+
+.product-review-item {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+}
+
+.product-review-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.product-review-rating {
+  min-width: 62px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  font-weight: 700;
+}
+
+.product-review-date,
+.product-review-empty-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.order-item-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.order-item-marketplace-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.order-item-marketplace-meta.is-management {
+  margin-top: -4px;
+}
+
+.order-item-management-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.notifications-list {
+  display: grid;
+  gap: 16px;
+}
+
+.business-dashboard-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.marketplace-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+}
+
+@media (max-width: 900px) {
+  .business-dashboard-analytics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .order-item-management-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .business-dashboard-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-reviews-header,
+  .notification-card-head,
+  .marketplace-status-card {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .order-item-management-grid {
+    grid-template-columns: 1fr;
+  }
+}

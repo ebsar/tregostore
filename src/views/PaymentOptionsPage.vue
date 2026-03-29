@@ -4,6 +4,8 @@ import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   clearCheckoutFlowState,
+  formatDateLabel,
+  formatPrice,
   persistCheckoutPaymentMethod,
   persistOrderConfirmationMessage,
   readCheckoutAddressDraft,
@@ -16,6 +18,9 @@ const route = useRoute();
 const router = useRouter();
 const selectedMethod = ref(readCheckoutPaymentMethod());
 const submitting = ref(false);
+const promoCode = ref("");
+const pricing = ref(null);
+const reservedUntil = ref("");
 const ui = reactive({
   message: "",
   type: "",
@@ -56,6 +61,8 @@ onMounted(async () => {
       return;
     }
 
+    await reserveCheckoutStock();
+
   } finally {
     markRouteReady();
   }
@@ -77,12 +84,64 @@ async function handlePaymentSelection(method) {
   await submitCashOrder();
 }
 
+async function reserveCheckoutStock() {
+  const selectedCartIds = readCheckoutSelectedCartIds();
+  if (selectedCartIds.length === 0) {
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/checkout/reserve", {
+    method: "POST",
+    body: JSON.stringify({ cartItemIds: selectedCartIds }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Stoku nuk u rezervua.");
+    ui.type = "error";
+    return;
+  }
+
+  reservedUntil.value = String(data.reservedUntil || "").trim();
+}
+
+async function applyPromotion() {
+  const selectedCartIds = readCheckoutSelectedCartIds();
+  if (!String(promoCode.value || "").trim()) {
+    pricing.value = null;
+    ui.message = "";
+    ui.type = "";
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/promotions/apply", {
+    method: "POST",
+    body: JSON.stringify({
+      cartItemIds: selectedCartIds,
+      promoCode: promoCode.value,
+    }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    pricing.value = null;
+    ui.message = resolveApiMessage(data, "Kuponi nuk u aplikua.");
+    ui.type = "error";
+    return;
+  }
+
+  pricing.value = data.pricing || null;
+  promoCode.value = String(pricing.value?.promoCode || promoCode.value || "").trim().toUpperCase();
+  ui.message = data.message || "Kuponi u aplikua.";
+  ui.type = "success";
+}
+
 async function submitCashOrder() {
   const checkoutAddress = readCheckoutAddressDraft();
   const selectedCartIds = readCheckoutSelectedCartIds();
+  await reserveCheckoutStock();
   const payload = {
     cartItemIds: selectedCartIds,
     paymentMethod: selectedMethod.value,
+    promoCode: promoCode.value,
     ...checkoutAddress,
   };
 
@@ -118,9 +177,11 @@ async function submitCashOrder() {
 async function startStripeCheckout() {
   const checkoutAddress = readCheckoutAddressDraft();
   const selectedCartIds = readCheckoutSelectedCartIds();
+  await reserveCheckoutStock();
   const payload = {
     cartItemIds: selectedCartIds,
     paymentMethod: "card-online",
+    promoCode: promoCode.value,
     ...checkoutAddress,
   };
 
@@ -138,6 +199,8 @@ async function startStripeCheckout() {
       return;
     }
 
+    pricing.value = data.pricing || pricing.value;
+    reservedUntil.value = String(data.reservedUntil || reservedUntil.value || "").trim();
     persistCheckoutPaymentMethod("card-online");
     window.location.href = String(data.checkoutUrl).trim();
   } finally {
@@ -201,6 +264,38 @@ async function confirmStripePayment(stripeSessionId) {
 
       <div class="form-message" :class="ui.type" role="status" aria-live="polite">
         {{ ui.message }}
+      </div>
+
+      <div class="marketplace-status-card">
+        <div class="field">
+          <span>Kodi promocional</span>
+          <div class="field-row">
+            <input v-model="promoCode" type="text" placeholder="p.sh. TREGO10" autocomplete="off">
+            <button class="button-secondary" type="button" @click="applyPromotion">Apliko</button>
+          </div>
+        </div>
+        <div>
+          <p class="section-label">Rezervimi i stokut</p>
+          <strong>{{ reservedUntil ? `Rezervuar deri ${formatDateLabel(reservedUntil)}` : "Do te rezervohet ne checkout" }}</strong>
+          <p class="section-text">
+            Stoku i artikujve te zgjedhur mbahet i rezervuar per pak minuta qe checkout-i te mos humbe.
+          </p>
+        </div>
+      </div>
+
+      <div v-if="pricing" class="cart-summary-grid">
+        <div class="summary-chip">
+          <span>Nentotali</span>
+          <strong>{{ formatPrice(pricing.subtotal) }}</strong>
+        </div>
+        <div class="summary-chip">
+          <span>Zbritja</span>
+          <strong>{{ formatPrice(pricing.discountAmount) }}</strong>
+        </div>
+        <div class="summary-chip">
+          <span>Totali i ri</span>
+          <strong>{{ formatPrice(pricing.total) }}</strong>
+        </div>
       </div>
 
       <div class="payment-options-grid">

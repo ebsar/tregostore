@@ -161,6 +161,28 @@ async function handleSaveEdit({ businessId, payload, done }) {
   ui.listMessage = data.message || "Biznesi u perditesua me sukses.";
   ui.listType = "success";
 }
+
+async function handleVerificationUpdate({ businessId, verificationStatus }) {
+  const { response, data } = await requestJson("/api/admin/businesses/verification", {
+    method: "POST",
+    body: JSON.stringify({
+      businessId,
+      verificationStatus,
+    }),
+  });
+
+  if (!response.ok || !data?.ok || !data.business) {
+    ui.listMessage = resolveApiMessage(data, "Verifikimi nuk u perditesua.");
+    ui.listType = "error";
+    return;
+  }
+
+  businesses.value = businesses.value.map((business) =>
+    Number(business.id) === Number(businessId) ? data.business : business,
+  );
+  ui.listMessage = data.message || "Verifikimi u ruajt.";
+  ui.listType = "success";
+}
 </script>
 
 <template>
@@ -290,6 +312,7 @@ async function handleSaveEdit({ businessId, payload, done }) {
             :business="business"
             @upload-logo="handleUploadLogo"
             @save-edit="handleSaveEdit"
+            @update-verification="handleVerificationUpdate"
           />
         </div>
       </section>

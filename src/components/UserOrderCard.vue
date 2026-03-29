@@ -1,13 +1,26 @@
 <script setup>
 import OrderItemCard from "./OrderItemCard.vue";
-import { formatDateLabel, formatOrderStatusLabel, formatPaymentMethodLabel, formatPrice } from "../lib/shop";
+import {
+  formatDateLabel,
+  formatFulfillmentStatusLabel,
+  formatOrderStatusLabel,
+  formatPaymentMethodLabel,
+  formatPrice,
+  formatReturnRequestStatusLabel,
+} from "../lib/shop";
 
 defineProps({
   order: {
     type: Object,
     required: true,
   },
+  busyOrderItemId: {
+    type: Number,
+    default: 0,
+  },
 });
+
+const emit = defineEmits(["request-return"]);
 </script>
 
 <template>
@@ -15,7 +28,7 @@ defineProps({
     <div class="order-card-top">
       <div>
         <p class="section-label">Porosia #{{ order.id || "-" }}</p>
-        <h2>{{ formatOrderStatusLabel(order.status) }}</h2>
+        <h2>{{ formatFulfillmentStatusLabel(order.fulfillmentStatus || order.status) }}</h2>
       </div>
       <div class="order-card-meta">
         <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
@@ -36,11 +49,41 @@ defineProps({
 
     <div class="order-card-body">
       <div class="order-items-list">
-        <OrderItemCard
-          v-for="item in order.items || []"
-          :key="item.id"
-          :item="item"
-        />
+        <div v-for="item in order.items || []" :key="item.id" class="order-item-shell">
+          <OrderItemCard :item="item" />
+          <div class="order-item-marketplace-meta">
+            <span class="summary-chip">
+              <span>Statusi</span>
+              <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
+            </span>
+            <span v-if="item.trackingCode" class="summary-chip">
+              <span>Tracking</span>
+              <strong>{{ item.trackingCode }}</strong>
+            </span>
+            <a
+              v-if="item.trackingUrl"
+              class="nav-action nav-action-secondary"
+              :href="item.trackingUrl"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Ndiqe dergesen
+            </a>
+            <button
+              v-if="item.fulfillmentStatus === 'delivered' && !item.returnRequestStatus"
+              class="nav-action nav-action-secondary"
+              type="button"
+              :disabled="busyOrderItemId === Number(item.id)"
+              @click="emit('request-return', item)"
+            >
+              {{ busyOrderItemId === Number(item.id) ? "Duke derguar..." : "Kerko kthim" }}
+            </button>
+            <span v-else-if="item.returnRequestStatus" class="summary-chip">
+              <span>Kthimi</span>
+              <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
+            </span>
+          </div>
+        </div>
       </div>
 
       <aside class="order-address-card">

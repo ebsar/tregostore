@@ -14,15 +14,26 @@ import {
 import {
   buildVariantInventoryFromForm,
   createEmptyProductFormState,
+  deriveSectionFromCategory,
   hydrateProductFormFromProduct,
+  PRODUCT_PAGE_SECTION_OPTIONS,
+  PRODUCT_SECTION_OPTIONS,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
-import { formatRoleLabel, getProductImageGallery } from "../lib/shop";
+import {
+  formatCategoryLabel,
+  formatPrice,
+  formatRoleLabel,
+  formatVerificationStatusLabel,
+  getProductImageGallery,
+} from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const route = useRoute();
 const businessProfile = ref(null);
+const analytics = ref(null);
+const promotions = ref([]);
 const products = ref([]);
 const productSearchQuery = ref("");
 const logoFile = ref(null);
@@ -34,6 +45,21 @@ const productFormSection = ref(null);
 const productTitleInput = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
+const promotionForm = reactive({
+  code: "",
+  title: "",
+  description: "",
+  discountType: "percent",
+  discountValue: "",
+  minimumSubtotal: "",
+  usageLimit: "",
+  perUserLimit: "1",
+  pageSection: "",
+  category: "",
+  startsAt: "",
+  endsAt: "",
+  isActive: true,
+});
 
 const profileForm = reactive({
   businessName: "",
@@ -57,6 +83,8 @@ const ui = reactive({
   importMessage: "",
   importType: "",
   productAiBusy: false,
+  promotionMessage: "",
+  promotionType: "",
 });
 
 const productPreviewItems = computed(() => {
@@ -120,6 +148,21 @@ const filteredProducts = computed(() => {
     .map((entry) => entry.product);
 });
 
+const promotionCategoryOptions = computed(() => {
+  if (!promotionForm.pageSection) {
+    return PRODUCT_SECTION_OPTIONS;
+  }
+
+  return PRODUCT_SECTION_OPTIONS.filter(
+    (option) => deriveSectionFromCategory(option.value) === promotionForm.pageSection,
+  );
+});
+
+function formatPromotionSectionLabel(sectionValue) {
+  const match = PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === String(sectionValue || "").trim().toLowerCase());
+  return match?.label || String(sectionValue || "").trim();
+}
+
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
@@ -139,7 +182,7 @@ onMounted(async () => {
     }
 
     ui.accessNote = "Je kyçur si biznes. Ketu mund ta regjistrosh biznesin dhe t'i menaxhosh vetem artikujt e tu.";
-    await Promise.all([loadBusinessProfile(), loadProducts()]);
+    await Promise.all([loadBusinessProfile(), loadProducts(), loadBusinessAnalytics(), loadPromotions()]);
     await handleRouteView();
   } finally {
     markRouteReady();
@@ -159,6 +202,20 @@ onBeforeUnmount(() => {
   revokeLogoPreview();
   revokePreviewUrls();
 });
+
+watch(
+  () => promotionForm.pageSection,
+  (nextSection) => {
+    if (!nextSection) {
+      promotionForm.category = "";
+      return;
+    }
+
+    if (!promotionCategoryOptions.value.some((option) => option.value === promotionForm.category)) {
+      promotionForm.category = "";
+    }
+  },
+);
 
 function revokeLogoPreview() {
   if (logoPreviewUrl.value) {
@@ -182,6 +239,25 @@ async function loadBusinessProfile() {
 
   businessProfile.value = data.profile || null;
   hydrateProfileForm(businessProfile.value);
+}
+
+async function requestVerificationReview() {
+  const { response, data } = await requestJson("/api/business-profile/verification-request", {
+    method: "POST",
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.profileMessage = resolveApiMessage(data, "Kerkesa per verifikim nuk u dergua.");
+    ui.profileType = "error";
+    return;
+  }
+
+  businessProfile.value = data.profile || businessProfile.value;
+  if (businessProfile.value) {
+    hydrateProfileForm(businessProfile.value);
+  }
+  ui.profileMessage = data.message || "Kerkesa per verifikim u dergua.";
+  ui.profileType = "success";
 }
 
 function hydrateProfileForm(profile) {
@@ -255,6 +331,40 @@ async function loadProducts() {
   products.value = Array.isArray(data.products) ? data.products : [];
   ui.listMessage = "";
   ui.listType = "";
+}
+
+async function loadBusinessAnalytics() {
+  const { response, data } = await requestJson("/api/business/analytics");
+  if (!response.ok || !data?.ok) {
+    analytics.value = null;
+    return;
+  }
+  analytics.value = data.analytics || null;
+}
+
+async function loadPromotions() {
+  const { response, data } = await requestJson("/api/business/promotions");
+  if (!response.ok || !data?.ok) {
+    promotions.value = [];
+    return;
+  }
+  promotions.value = Array.isArray(data.promotions) ? data.promotions : [];
+}
+
+function resetPromotionForm() {
+  promotionForm.code = "";
+  promotionForm.title = "";
+  promotionForm.description = "";
+  promotionForm.discountType = "percent";
+  promotionForm.discountValue = "";
+  promotionForm.minimumSubtotal = "";
+  promotionForm.usageLimit = "";
+  promotionForm.perUserLimit = "1";
+  promotionForm.pageSection = "";
+  promotionForm.category = "";
+  promotionForm.startsAt = "";
+  promotionForm.endsAt = "";
+  promotionForm.isActive = true;
 }
 
 function resetProductForm() {
@@ -344,6 +454,7 @@ async function submitImportProducts() {
     importFileInput.value.value = "";
   }
   await loadProducts();
+  await loadBusinessAnalytics();
 }
 
 async function suggestProductWithAi() {
@@ -463,6 +574,38 @@ async function submitProduct() {
   ui.productTypeMessage = "success";
   resetProductForm();
   await loadProducts();
+  await loadBusinessAnalytics();
+}
+
+async function savePromotion() {
+  if (promotionForm.pageSection && promotionForm.category) {
+    const categoryStillMatches = promotionCategoryOptions.value.some((option) => option.value === promotionForm.category);
+    if (!categoryStillMatches) {
+      ui.promotionMessage = "Kategoria nuk perputhet me seksionin e zgjedhur.";
+      ui.promotionType = "error";
+      return;
+    }
+  }
+
+  const payload = {
+    ...promotionForm,
+  };
+  const { response, data } = await requestJson("/api/business/promotions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u ruajt.");
+    ui.promotionType = "error";
+    return;
+  }
+
+  promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
+  ui.promotionMessage = data.message || "Promocioni u ruajt.";
+  ui.promotionType = "success";
+  resetPromotionForm();
+  await loadBusinessAnalytics();
 }
 
 async function submitProductAction(url, payload, fallbackMessage) {
@@ -534,6 +677,45 @@ async function handleToggleStock(product) {
 
     <p class="admin-access-note">{{ ui.accessNote }}</p>
 
+    <section v-if="analytics" class="business-dashboard-analytics-grid" aria-label="Analytics e biznesit">
+      <article class="summary-chip">
+        <span>Artikuj publik</span>
+        <strong>{{ analytics.publicProducts }} / {{ analytics.totalProducts }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Njesi te shitura</span>
+        <strong>{{ analytics.unitsSold }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Qarkullimi</span>
+        <strong>{{ formatPrice(analytics.grossSales) }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Fitimi i biznesit</span>
+        <strong>{{ formatPrice(analytics.sellerEarnings) }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Payout gati</span>
+        <strong>{{ formatPrice(analytics.readyPayout) }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Payout ne pritje</span>
+        <strong>{{ formatPrice(analytics.pendingPayout) }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Promocione aktive</span>
+        <strong>{{ analytics.activePromotions }}</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Rating mesatar</span>
+        <strong>{{ Number(analytics.averageRating || 0).toFixed(1) }}/5</strong>
+      </article>
+      <article class="summary-chip">
+        <span>Review / Returne</span>
+        <strong>{{ analytics.reviewCount }} / {{ analytics.openReturns }}</strong>
+      </article>
+    </section>
+
     <div class="business-dashboard-layout">
       <section class="card business-profile-card">
         <h2>Regjistrimi i biznesit</h2>
@@ -593,6 +775,24 @@ async function handleToggleStock(product) {
               <img class="product-upload-preview-image business-logo-preview-image" :src="businessLogoPreview" alt="Logo e biznesit">
               <figcaption class="product-upload-preview-name">Logo e biznesit</figcaption>
             </figure>
+          </div>
+
+          <div v-if="businessProfile" class="marketplace-status-card">
+            <div>
+              <p class="section-label">Verifikimi</p>
+              <strong>{{ formatVerificationStatusLabel(businessProfile.verificationStatus) }}</strong>
+              <p class="section-text">
+                Pasi verifikohet biznesi, profili yt shfaqet me badge me te besueshme per bleresit.
+              </p>
+            </div>
+            <button
+              v-if="['unverified', 'rejected'].includes(String(businessProfile.verificationStatus || ''))"
+              class="nav-action nav-action-secondary"
+              type="button"
+              @click="requestVerificationReview"
+            >
+              Kerko verifikim
+            </button>
           </div>
 
           <button type="submit">Ruaje biznesin</button>
@@ -720,6 +920,158 @@ async function handleToggleStock(product) {
 
       <div class="form-message" :class="ui.importType" role="status" aria-live="polite">
         {{ ui.importMessage }}
+      </div>
+    </section>
+
+    <section v-if="businessProfile" class="card admin-list-card" aria-label="Promocionet e biznesit">
+      <div class="admin-list-header">
+        <div>
+          <p class="section-label">Promocionet</p>
+          <h2>Kuponet dhe ofertat</h2>
+          <p class="admin-compact-copy">{{ promotions.length }} aktive ose te ruajtura</p>
+        </div>
+      </div>
+
+      <form class="auth-form" @submit.prevent="savePromotion">
+        <div class="field-row">
+          <label class="field">
+            <span>Kodi</span>
+            <input v-model="promotionForm.code" type="text" placeholder="p.sh. TREGO10" required>
+          </label>
+          <label class="field">
+            <span>Lloji</span>
+            <select v-model="promotionForm.discountType">
+              <option value="percent">Perqindje</option>
+              <option value="fixed">Vlere fikse</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Vlera</span>
+            <input v-model="promotionForm.discountValue" type="number" min="0.01" step="0.01" placeholder="10" required>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Titulli</span>
+            <input v-model="promotionForm.title" type="text" placeholder="Oferta e javes">
+          </label>
+          <label class="field">
+            <span>Minimumi i shportes</span>
+            <input v-model="promotionForm.minimumSubtotal" type="number" min="0" step="0.01" placeholder="0">
+          </label>
+          <label class="field">
+            <span>Limit total</span>
+            <input v-model="promotionForm.usageLimit" type="number" min="0" step="1" placeholder="0 = pa limit">
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Limit per user</span>
+            <input v-model="promotionForm.perUserLimit" type="number" min="1" step="1" placeholder="1">
+          </label>
+          <label class="field">
+            <span>Seksioni</span>
+            <select v-model="promotionForm.pageSection">
+              <option value="">Te gjitha</option>
+              <option
+                v-for="option in PRODUCT_PAGE_SECTION_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Kategoria</span>
+            <select v-model="promotionForm.category">
+              <option value="">Te gjitha</option>
+              <option
+                v-for="option in promotionCategoryOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Aktiv nga</span>
+            <input v-model="promotionForm.startsAt" type="datetime-local">
+          </label>
+          <label class="field">
+            <span>Aktiv deri</span>
+            <input v-model="promotionForm.endsAt" type="datetime-local">
+          </label>
+          <label class="field">
+            <span>Statusi</span>
+            <select v-model="promotionForm.isActive">
+              <option :value="true">Aktiv</option>
+              <option :value="false">Pauzuar</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Pershkrimi</span>
+          <input v-model="promotionForm.description" type="text" placeholder="Pershkrim i shkurter per kete oferte">
+        </label>
+
+        <div class="auth-form-actions">
+          <button type="submit">Ruaje promocionin</button>
+        </div>
+      </form>
+
+      <div class="form-message" :class="ui.promotionType" role="status" aria-live="polite">
+        {{ ui.promotionMessage }}
+      </div>
+
+      <div v-if="promotions.length > 0" class="notifications-list">
+        <article v-for="promotion in promotions" :key="promotion.id" class="card account-section notification-card">
+          <div class="notification-card-head">
+            <div>
+              <p class="section-label">{{ promotion.code }}</p>
+              <h2>{{ promotion.title || "Promocion" }}</h2>
+            </div>
+            <strong>
+              {{ promotion.discountType === "percent" ? `${promotion.discountValue}%` : formatPrice(promotion.discountValue) }}
+            </strong>
+          </div>
+          <p class="section-text">{{ promotion.description || "Pa pershkrim shtese." }}</p>
+          <div class="order-item-marketplace-meta">
+            <span class="summary-chip">
+              <span>Statusi</span>
+              <strong>{{ promotion.isActive ? "Aktiv" : "Pauzuar" }}</strong>
+            </span>
+            <span class="summary-chip">
+              <span>Perdorime</span>
+              <strong>{{ promotion.usageLimit || "Pa limit" }}</strong>
+            </span>
+            <span class="summary-chip">
+              <span>Per user</span>
+              <strong>{{ promotion.perUserLimit || 1 }}</strong>
+            </span>
+          </div>
+          <div class="order-item-marketplace-meta">
+            <span v-if="promotion.pageSection" class="section-text">
+              Seksioni: <strong>{{ formatPromotionSectionLabel(promotion.pageSection) }}</strong>
+            </span>
+            <span v-if="promotion.category" class="section-text">
+              Kategoria: <strong>{{ formatCategoryLabel(promotion.category) }}</strong>
+            </span>
+            <span v-if="promotion.startsAt" class="section-text">
+              Nga: <strong>{{ formatDateLabel(promotion.startsAt) }}</strong>
+            </span>
+            <span v-if="promotion.endsAt" class="section-text">
+              Deri: <strong>{{ formatDateLabel(promotion.endsAt) }}</strong>
+            </span>
+          </div>
+        </article>
       </div>
     </section>
 

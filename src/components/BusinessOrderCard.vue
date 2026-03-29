@@ -1,37 +1,132 @@
 <script setup>
+import { reactive } from "vue";
 import OrderItemCard from "./OrderItemCard.vue";
-import { formatDateLabel, formatPaymentMethodLabel, formatPrice } from "../lib/shop";
+import {
+  formatDateLabel,
+  formatFulfillmentStatusLabel,
+  formatPaymentMethodLabel,
+  formatPrice,
+} from "../lib/shop";
 
-defineProps({
+const props = defineProps({
   order: {
     type: Object,
     required: true,
   },
+  canManageStatus: {
+    type: Boolean,
+    default: false,
+  },
+  showAdminFinance: {
+    type: Boolean,
+    default: false,
+  },
+  busyOrderItemId: {
+    type: Number,
+    default: 0,
+  },
 });
+
+const emit = defineEmits(["update-status"]);
+const draftByItemId = reactive({});
+
+function draftFor(item) {
+  const itemId = Number(item?.id || 0);
+  if (!draftByItemId[itemId]) {
+    draftByItemId[itemId] = {
+      fulfillmentStatus: String(item?.fulfillmentStatus || "confirmed"),
+      trackingCode: String(item?.trackingCode || ""),
+      trackingUrl: String(item?.trackingUrl || ""),
+    };
+  }
+
+  return draftByItemId[itemId];
+}
+
+function submitStatus(item) {
+  const draft = draftFor(item);
+  emit("update-status", {
+    orderItemId: item.id,
+    fulfillmentStatus: draft.fulfillmentStatus,
+    trackingCode: draft.trackingCode,
+    trackingUrl: draft.trackingUrl,
+  });
+}
 </script>
 
 <template>
   <article class="card order-card business-order-card">
-    <div class="order-card-top">
-      <div>
-        <p class="section-label">Porosia #{{ order.id || "-" }}</p>
-        <h2>{{ order.customerName || "Klient" }}</h2>
-        <p class="section-text">{{ order.customerEmail || "-" }}</p>
+      <div class="order-card-top">
+        <div>
+          <p class="section-label">Porosia #{{ order.id || "-" }}</p>
+          <h2>{{ order.customerName || "Klient" }}</h2>
+          <p class="section-text">{{ order.customerEmail || "-" }}</p>
+        </div>
+        <div class="order-card-meta">
+          <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
+          <strong>{{ formatDateLabel(order.createdAt || "") }}</strong>
+        </div>
       </div>
-      <div class="order-card-meta">
-        <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
-        <strong>{{ formatDateLabel(order.createdAt || "") }}</strong>
-      </div>
-    </div>
 
-    <div class="order-card-body">
-      <div class="order-items-list">
-        <OrderItemCard
-          v-for="item in order.items || []"
-          :key="item.id"
-          :item="item"
-          :show-business-name="false"
-        />
+      <div class="order-card-body">
+        <div class="order-items-list">
+        <div v-for="item in order.items || []" :key="item.id" class="order-item-shell">
+          <OrderItemCard
+            :item="item"
+            :show-business-name="false"
+          />
+          <div class="order-item-marketplace-meta is-management">
+            <span class="summary-chip">
+              <span>Statusi</span>
+              <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
+            </span>
+            <span v-if="showAdminFinance" class="summary-chip">
+              <span>Komisioni</span>
+              <strong>{{ formatPrice(item.commissionAmount || 0) }}</strong>
+            </span>
+            <span v-if="showAdminFinance" class="summary-chip">
+              <span>Biznesi merr</span>
+              <strong>{{ formatPrice(item.sellerEarningsAmount || 0) }}</strong>
+            </span>
+            <span class="summary-chip">
+              <span>Payout</span>
+              <strong>{{ item.payoutStatus || "pending" }}</strong>
+            </span>
+          </div>
+
+          <div v-if="canManageStatus" class="order-item-management-grid">
+            <label class="field">
+              <span>Fulfillment</span>
+              <select v-model="draftFor(item).fulfillmentStatus">
+                <option value="confirmed">Confirmed</option>
+                <option value="packed">Packed</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="returned">Returned</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Tracking code</span>
+              <input v-model="draftFor(item).trackingCode" type="text" placeholder="p.sh. TRK-2048">
+            </label>
+
+            <label class="field">
+              <span>Tracking link</span>
+              <input v-model="draftFor(item).trackingUrl" type="url" placeholder="https://...">
+            </label>
+
+            <button
+              class="nav-action nav-action-primary"
+              type="button"
+              :disabled="busyOrderItemId === Number(item.id)"
+              @click="submitStatus(item)"
+            >
+              {{ busyOrderItemId === Number(item.id) ? "Duke ruajtur..." : "Ruaje statusin" }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <aside class="order-address-card">

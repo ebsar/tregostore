@@ -19,6 +19,7 @@ export const appState = reactive({
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
 let sessionLoadPromise = null;
+let cartWarmupPromise = null;
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
@@ -55,6 +56,32 @@ export function setCartCount(count) {
 
 export function setCartItems(items = []) {
   setCartCount(calculateCartItemsCount(items));
+}
+
+async function warmCartForActiveSession(user) {
+  if (!user || user.role !== "client") {
+    setCartCount(0);
+    return;
+  }
+
+  if (cartWarmupPromise) {
+    return cartWarmupPromise;
+  }
+
+  const nextCartWarmupPromise = (async () => {
+    const cartItems = await fetchProtectedCollection("/api/cart");
+    setCartItems(cartItems);
+  })();
+
+  cartWarmupPromise = nextCartWarmupPromise;
+
+  try {
+    await nextCartWarmupPromise;
+  } finally {
+    if (cartWarmupPromise === nextCartWarmupPromise) {
+      cartWarmupPromise = null;
+    }
+  }
 }
 
 export function bumpCatalogRevision() {
@@ -109,8 +136,9 @@ export async function ensureSessionLoaded(options = {}) {
       return null;
     }
 
-    const cartItems = await fetchProtectedCollection("/api/cart");
-    setCartItems(cartItems);
+    void warmCartForActiveSession(user).catch((error) => {
+      console.error(error);
+    });
     return user;
   })();
 
