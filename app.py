@@ -2111,11 +2111,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
             END,
             commission_amount = CASE
                 WHEN COALESCE(commission_amount, 0) > 0 THEN commission_amount
-                ELSE ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?, 2)
+                ELSE ROUND(((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?) * 100.0) / 100.0
             END,
             seller_earnings_amount = CASE
                 WHEN COALESCE(seller_earnings_amount, 0) > 0 THEN seller_earnings_amount
-                ELSE ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) - ROUND((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?, 2), 2)
+                ELSE ROUND(((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) - (ROUND(((COALESCE(unit_price, 0) * COALESCE(quantity, 0)) * ?) * 100.0) / 100.0)) * 100.0) / 100.0
             END,
             payout_status = CASE
                 WHEN LOWER(TRIM(COALESCE(payout_status, ''))) IN ('ready', 'paid', 'on_hold')
