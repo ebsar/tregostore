@@ -203,11 +203,7 @@ img {
   z-index: 4000;
   display: grid;
   place-items: center;
-  padding:
-    calc(var(--safe-top) + 24px)
-    calc(var(--safe-right) + 24px)
-    calc(var(--safe-bottom) + 24px)
-    calc(var(--safe-left) + 24px);
+  padding: 0;
   pointer-events: all;
   transition: opacity 0.55s ease, visibility 0.55s ease;
 }
@@ -237,6 +233,11 @@ img {
   justify-items: center;
   gap: 16px;
   width: min(460px, calc(100vw - var(--safe-space-left) - var(--safe-space-right) - 40px));
+  margin:
+    var(--safe-space-top)
+    var(--safe-space-right)
+    var(--safe-space-bottom)
+    var(--safe-space-left);
   padding: 18px 20px 12px;
   text-align: center;
 }
@@ -290,6 +291,8 @@ img {
 @media (max-width: 640px) {
   .app-loader-panel {
     gap: 14px;
+    width: min(420px, calc(100vw - var(--safe-space-left) - var(--safe-space-right) - 28px));
+    padding: 16px 18px 12px;
   }
 
   .app-loader-stage {
