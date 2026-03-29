@@ -2,6 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/chat/unread-reminders",
+      "schedule": "0 * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -13,7 +19,7 @@
       ]
     },
     {
-      "source": "/(trego-logo.png|trego-logo.webp|bujqesia.jpg|gjelbert.jpeg|gruri.webp)",
+      "source": "/(trego-logo.png|trego-logo.webp|bujqesia.jpg|gjelbert.jpeg|gruri.webp|signup-background-shopping.webp|signup-background-mobile.webp)",
       "headers": [
         {
           "key": "Cache-Control",

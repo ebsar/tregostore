@@ -84,6 +84,10 @@ const availableProductTypeOptions = computed(() =>
 );
 const availableSizeOptions = computed(() => availableFilters.value.sizes);
 const availableColorOptions = computed(() => availableFilters.value.colors);
+const shouldRequestFacets = computed(() =>
+  filtersVisible.value
+  || Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
+);
 
 const filteredProducts = computed(() => {
   let nextProducts = [...products.value];
@@ -186,11 +190,15 @@ async function refreshCollectionState() {
 }
 
 async function loadProducts(options = {}) {
-  const { append = false } = options;
+  const { append = false, forceFacets = false } = options;
   const offset = append ? products.value.length : 0;
+  const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
   params.set("limit", String(productsPageSize.value));
   params.set("offset", String(offset));
+  if (includeFacets) {
+    params.set("includeFacets", "1");
+  }
   if (filters.pageSection) {
     params.set("pageSection", filters.pageSection);
   }
@@ -227,7 +235,9 @@ async function loadProducts(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
-  availableFilters.value = normalizeProductFacets(data.facets);
+  if (data.facets) {
+    availableFilters.value = normalizeProductFacets(data.facets);
+  }
   statusText.value =
     totalProductsCount.value > 0
       ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
@@ -332,6 +342,13 @@ function handleCatalogFilterChange() {
   void loadProducts();
 }
 
+function toggleFiltersPanel() {
+  filtersVisible.value = !filtersVisible.value;
+  if (filtersVisible.value && availablePageSectionOptions.value.length === 0) {
+    void loadProducts({ forceFacets: true });
+  }
+}
+
 function resetFilters() {
   filters.pageSection = "";
   filters.category = "";
@@ -374,6 +391,11 @@ async function handleWishlist(productId) {
 
   wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
   setMessage(data.message || "Produkti u shtua ne shporte.", "success");
+  if (!isWishlisted) {
+    window.dispatchEvent(new CustomEvent("trego:toast", {
+      detail: { message: "Artikulli eshte shtuar ne wishlist." },
+    }));
+  }
 }
 
 async function handleCart(productId) {
@@ -549,8 +571,6 @@ async function handleCart(productId) {
 
     <header class="collection-page-header home-collection-header">
       <p class="section-label">Produktet</p>
-      <h1>Te gjitha produktet</h1>
-      <p>{{ collectionLabel }}</p>
     </header>
 
     <div class="collection-toolbar">
@@ -558,7 +578,7 @@ async function handleCart(productId) {
         class="filter-toggle-button"
         type="button"
         :aria-expanded="filtersVisible ? 'true' : 'false'"
-        @click="filtersVisible = !filtersVisible"
+        @click="toggleFiltersPanel"
       >
         Filtro
       </button>
@@ -686,10 +706,6 @@ async function handleCart(productId) {
     >
       <header class="collection-page-header home-businesses-header">
         <p class="section-label">Bizneset partnere</p>
-        <h2>Bizneset me te cilat punojme</h2>
-        <p>
-          Emrat dhe logot e bizneseve qe kane regjistruar profilin e tyre ne TREGO.
-        </p>
       </header>
 
       <div class="home-businesses-marquee" aria-live="polite">

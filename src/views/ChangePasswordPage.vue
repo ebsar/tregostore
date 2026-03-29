@@ -119,9 +119,6 @@ async function resendCode() {
 
     ui.message = data.message || "Kodi i ri u dergua me sukses.";
     ui.type = "success";
-    if (data.redirectTo) {
-      router.replace(data.redirectTo);
-    }
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
     ui.type = "error";
@@ -136,7 +133,7 @@ async function resendCode() {
   <section class="account-page change-password-page" aria-label="Ndryshimi i fjalekalimit">
     <section class="card account-section change-password-card">
       <p class="section-label">{{ labelText }}</p>
-      <h1>{{ titleText }}</h1>
+      <h3>{{ titleText }}</h3>
       <p class="section-text">{{ leadText }}</p>
 
       <form class="auth-form" @submit.prevent="submitForm">
@@ -221,11 +218,6 @@ async function resendCode() {
       <div class="form-message" :class="ui.type" role="status" aria-live="polite">
         {{ ui.message }}
       </div>
-
-      <p class="form-footer">
-        E keni harruar fjalekalimin?
-        <RouterLink class="inline-link" to="/forgot-password">Shko te dergimi i kodit</RouterLink>
-      </p>
     </section>
   </section>
 </template>

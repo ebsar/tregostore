@@ -20,6 +20,7 @@ const accountLinks = computed(() => {
     return [
       { href: "/admin-products", label: "Artikujt" },
       { href: "/bizneset-e-regjistruara", label: "Bizneset e regjistruara" },
+      { href: "/mesazhet", label: "Mesazhet" },
       { href: "/admin-porosite", label: "Porosit" },
       { href: "/te-dhenat-personale", label: "Te dhenat personale" },
     ];

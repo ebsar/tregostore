@@ -275,6 +275,11 @@ async function handleWishlist() {
   wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
   ui.message = data.message || "Wishlist u perditesua.";
   ui.type = "success";
+  if (!hadItem) {
+    window.dispatchEvent(new CustomEvent("trego:toast", {
+      detail: { message: "Artikulli eshte shtuar ne wishlist." },
+    }));
+  }
 }
 
 async function handleCart() {

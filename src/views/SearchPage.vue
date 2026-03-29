@@ -63,6 +63,10 @@ const availableProductTypeOptions = computed(() =>
 );
 const availableSizeOptions = computed(() => availableFilters.value.sizes);
 const availableColorOptions = computed(() => availableFilters.value.colors);
+const shouldRequestFacets = computed(() =>
+  filtersVisible.value
+  || Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
+);
 const hasActiveCatalogFilters = computed(() =>
   Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
 );
@@ -384,10 +388,14 @@ function buildVisualSearchScope() {
 }
 
 async function loadProducts(options = {}) {
-  const { append = false } = options;
+  const { append = false, forceFacets = false } = options;
+  const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
   params.set("limit", String(productsPageSize.value));
   params.set("offset", String(append ? products.value.length : 0));
+  if (includeFacets) {
+    params.set("includeFacets", "1");
+  }
 
   if (activeQuery.value) {
     params.set("q", activeQuery.value);
@@ -438,7 +446,9 @@ async function loadProducts(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
-  availableFilters.value = normalizeProductFacets(data.facets);
+  if (data.facets) {
+    availableFilters.value = normalizeProductFacets(data.facets);
+  }
   if (!append) {
     applyServerActiveFilters(data.activeFilters);
   }
@@ -524,9 +534,10 @@ async function runVisualSearch(options = {}) {
     return;
   }
 
-  const { append = false } = options;
+  const { append = false, forceFacets = false } = options;
   visualSearchBusy.value = true;
   const visualScope = buildVisualSearchScope();
+  const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
 
   const result = await searchProductsByImage(visualSearchFile.value, {
     pageSection: visualScope.pageSection,
@@ -537,6 +548,7 @@ async function runVisualSearch(options = {}) {
     color: filters.color,
     limit: productsPageSize.value,
     offset: append ? products.value.length : 0,
+    includeFacets,
   });
 
   visualSearchBusy.value = false;
@@ -558,7 +570,9 @@ async function runVisualSearch(options = {}) {
   products.value = append ? [...products.value, ...nextProducts] : nextProducts;
   totalProductsCount.value = Number(result.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(result.hasMore);
-  availableFilters.value = normalizeProductFacets(result.facets);
+  if (result.facets) {
+    availableFilters.value = normalizeProductFacets(result.facets);
+  }
   if (!append) {
     applyServerActiveFilters(result.activeFilters);
   }
@@ -615,6 +629,20 @@ function handleCatalogFilterChange() {
     return;
   }
   void loadProducts();
+}
+
+function toggleFiltersPanel() {
+  filtersVisible.value = !filtersVisible.value;
+  if (!filtersVisible.value || availablePageSectionOptions.value.length > 0) {
+    return;
+  }
+
+  if (visualSearchActive.value && visualSearchFile.value) {
+    void runVisualSearch({ forceFacets: true });
+    return;
+  }
+
+  void loadProducts({ forceFacets: true });
 }
 
 function resetFilters() {
@@ -674,6 +702,11 @@ async function handleWishlist(productId) {
   wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
   ui.message = data.message || "Wishlist u perditesua.";
   ui.type = "success";
+  if (!currentHas) {
+    window.dispatchEvent(new CustomEvent("trego:toast", {
+      detail: { message: "Artikulli eshte shtuar ne wishlist." },
+    }));
+  }
 }
 
 async function handleCart(productId) {
@@ -744,7 +777,7 @@ async function handleCart(productId) {
           class="filter-toggle-button"
           type="button"
           :aria-expanded="filtersVisible ? 'true' : 'false'"
-          @click="filtersVisible = !filtersVisible"
+          @click="toggleFiltersPanel"
         >
           Filtro
         </button>

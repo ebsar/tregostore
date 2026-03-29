@@ -233,6 +233,10 @@ export async function searchProductsByImage(file, options = {}) {
     uploadData.append("offset", String(options.offset));
   }
 
+  if (options.includeFacets) {
+    uploadData.append("includeFacets", "1");
+  }
+
   const { response, data } = await requestJson("/api/products/visual-search", {
     method: "POST",
     body: uploadData,

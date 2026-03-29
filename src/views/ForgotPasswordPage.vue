@@ -1,5 +1,5 @@
 <script setup>
-import { reactive } from "vue";
+import { onBeforeUnmount, reactive } from "vue";
 import { useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { markRouteReady } from "../stores/app-state";
@@ -13,10 +13,23 @@ const ui = reactive({
   message: "",
   type: "",
 });
+let redirectTimeoutId = 0;
 
 markRouteReady();
 
+onBeforeUnmount(() => {
+  if (redirectTimeoutId) {
+    window.clearTimeout(redirectTimeoutId);
+    redirectTimeoutId = 0;
+  }
+});
+
 async function submitForm() {
+  if (redirectTimeoutId) {
+    window.clearTimeout(redirectTimeoutId);
+    redirectTimeoutId = 0;
+  }
+
   ui.loading = true;
   ui.message = "";
   ui.type = "";
@@ -35,9 +48,12 @@ async function submitForm() {
 
     ui.message = data.message || "Kodi u dergua me sukses.";
     ui.type = "success";
-    window.setTimeout(() => {
-      router.push(data.redirectTo || `/ndrysho-fjalekalimin?mode=reset&email=${encodeURIComponent(form.email)}`);
-    }, 900);
+    if (data.redirectTo) {
+      redirectTimeoutId = window.setTimeout(() => {
+        router.push(data.redirectTo);
+        redirectTimeoutId = 0;
+      }, 900);
+    }
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
     ui.type = "error";

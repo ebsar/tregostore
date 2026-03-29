@@ -84,6 +84,10 @@ const canUseMessageAction = computed(() => {
     return true;
   }
 
+  if (appState.user.role === "admin") {
+    return true;
+  }
+
   if (appState.user.role === "business") {
     return Number(appState.user.id) === Number(business.value.userId);
   }
@@ -138,7 +142,7 @@ async function maybeOpenChatFromRoute() {
     return;
   }
 
-  if (appState.user.role !== "client") {
+  if (!["client", "admin"].includes(String(appState.user.role || "").trim())) {
     await clearOpenChatQuery();
     return;
   }
@@ -286,8 +290,8 @@ async function handleOpenChat(options = {}) {
     return;
   }
 
-  if (appState.user.role !== "client") {
-    ui.message = "Vetem klientet mund te nisin bisede me biznesin.";
+  if (!["client", "admin"].includes(String(appState.user.role || "").trim())) {
+    ui.message = "Vetem klientet ose admini mund ta hapin kete bisede.";
     ui.type = "error";
     if (fromAutoOpen) {
       await clearOpenChatQuery();
@@ -354,6 +358,11 @@ async function handleWishlist(productId) {
   wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
   ui.message = data.message || "Wishlist u perditesua.";
   ui.type = "success";
+  if (!hadItem) {
+    window.dispatchEvent(new CustomEvent("trego:toast", {
+      detail: { message: "Artikulli eshte shtuar ne wishlist." },
+    }));
+  }
 }
 
 async function handleCart(productId) {

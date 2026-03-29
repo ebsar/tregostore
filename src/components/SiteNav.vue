@@ -21,7 +21,10 @@ const navVisualSearchInputElement = ref(null);
 const navSearchResult = ref(null);
 const navSearchLoading = ref(false);
 const navSearchMessage = ref("");
+const unreadMessagesCount = ref(0);
 let lastScrollY = 0;
+let unreadMessagesPollIntervalId = 0;
+const UNREAD_MESSAGES_POLL_MS = 3000;
 const AI_SEARCH_PROMPTS = [
   "me trego maica te kuqe",
   "dua pantallona te gjera",
@@ -43,6 +46,15 @@ const cartBadgeLabel = computed(() => {
 
 const isBusinessUser = computed(() => appState.user?.role === "business");
 const showConsumerNavigation = computed(() => !isBusinessUser.value);
+const canUseMessages = computed(() => ["client", "business", "admin"].includes(String(appState.user?.role || "").trim()));
+const showMessagesShortcut = computed(() => canUseMessages.value || !appState.user);
+const unreadMessagesBadgeLabel = computed(() => {
+  if (unreadMessagesCount.value <= 0) {
+    return "0";
+  }
+
+  return unreadMessagesCount.value > 99 ? "99+" : String(unreadMessagesCount.value);
+});
 
 const userMenuLinks = computed(() => {
   if (!appState.user) {
@@ -61,7 +73,6 @@ const userMenuLinks = computed(() => {
   if (appState.user.role === "business") {
     return [
       { label: "Biznesi i imi", href: "/biznesi-juaj" },
-      { label: "Mesazhet", href: "/mesazhet" },
       ...(String(appState.user.businessProfileUrl || "").trim()
         ? [{ label: "Profili publik", href: String(appState.user.businessProfileUrl || "").trim() }]
         : []),
@@ -71,7 +82,6 @@ const userMenuLinks = computed(() => {
   }
 
   return [
-    { label: "Mesazhet", href: "/mesazhet" },
     { label: "Porosite", href: "/porosite" },
     { label: "Refund / Returne", href: "/refund-returne" },
     { label: "Adresat", href: "/adresat" },
@@ -215,6 +225,40 @@ async function toggleSearchPanel() {
   }
 }
 
+function handleMessagesClick() {
+  if (canUseMessages.value) {
+    mobileMenuOpen.value = false;
+    closeExpandedPanels();
+    router.push("/mesazhet");
+    return;
+  }
+
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  window.dispatchEvent(new CustomEvent("trego:toast", {
+    detail: {
+      type: "info",
+      message: "Per te pare mesazhe ju duhet te hyni. Kliko ketu per te vazhduar.",
+      actions: [
+        {
+          label: "Login",
+          to: {
+            path: "/login",
+            query: { redirect: "/mesazhet" },
+          },
+        },
+        {
+          label: "Sign Up",
+          to: {
+            path: "/signup",
+            query: { redirect: "/mesazhet" },
+          },
+        },
+      ],
+    },
+  }));
+}
+
 function handleUserTrigger() {
   if (isMobileViewport.value) {
     mobileMenuOpen.value = false;
@@ -243,10 +287,41 @@ function closeOnEscape(event) {
   }
 }
 
+async function loadUnreadMessagesCount() {
+  if (!canUseMessages.value) {
+    unreadMessagesCount.value = 0;
+    return;
+  }
+
+  try {
+    const { response, data } = await requestJson("/api/chat/conversations", {}, { cacheTtlMs: 2500 });
+    if (!response.ok || !data?.ok) {
+      unreadMessagesCount.value = 0;
+      return;
+    }
+
+    unreadMessagesCount.value = Math.max(0, Number(data.unreadCount || 0));
+  } catch (error) {
+    console.error(error);
+    unreadMessagesCount.value = 0;
+  }
+}
+
+function handleWindowFocus() {
+  void loadUnreadMessagesCount();
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    void loadUnreadMessagesCount();
+  }
+}
+
 async function handleLogout() {
   const { data } = await logoutUser();
   closeExpandedPanels();
   mobileMenuOpen.value = false;
+  unreadMessagesCount.value = 0;
   await ensureSessionLoaded({ force: true });
   router.push(data?.redirectTo || "/login");
 }
@@ -342,6 +417,14 @@ watch(
     searchQuery.value = String(route.query.q || "").trim();
     navSearchResult.value = null;
     navSearchMessage.value = "";
+    void loadUnreadMessagesCount();
+  },
+);
+
+watch(
+  () => appState.user?.id,
+  () => {
+    void loadUnreadMessagesCount();
   },
 );
 
@@ -356,16 +439,30 @@ onMounted(async () => {
   lastScrollY = window.scrollY || window.pageYOffset || 0;
   window.addEventListener("resize", updateViewportState);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
+  window.addEventListener("focus", handleWindowFocus);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
   searchQuery.value = String(route.query.q || "").trim();
+  void loadUnreadMessagesCount();
+  unreadMessagesPollIntervalId = window.setInterval(() => {
+    if (document.visibilityState !== "hidden") {
+      void loadUnreadMessagesCount();
+    }
+  }, UNREAD_MESSAGES_POLL_MS);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewportState);
   window.removeEventListener("scroll", handleWindowScroll);
+  window.removeEventListener("focus", handleWindowFocus);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
+  if (unreadMessagesPollIntervalId) {
+    window.clearInterval(unreadMessagesPollIntervalId);
+    unreadMessagesPollIntervalId = 0;
+  }
 });
 </script>
 
@@ -435,6 +532,19 @@ onBeforeUnmount(() => {
         </svg>
         <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
       </RouterLink>
+
+      <button
+        v-if="showMessagesShortcut"
+        class="nav-icon-button messages-button nav-mobile-shortcut"
+        type="button"
+        aria-label="Mesazhet"
+        @click="handleMessagesClick"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
+        </svg>
+        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+      </button>
 
       <button
         class="nav-mobile-toggle"
@@ -651,6 +761,19 @@ onBeforeUnmount(() => {
         <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
       </RouterLink>
 
+      <button
+        v-if="showMessagesShortcut"
+        class="nav-icon-button messages-button"
+        type="button"
+        aria-label="Mesazhet"
+        @click="handleMessagesClick"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
+        </svg>
+        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+      </button>
+
       <template v-if="!appState.user">
         <RouterLink class="nav-action nav-action-secondary nav-link-login" to="/login">
           Login
@@ -737,7 +860,7 @@ onBeforeUnmount(() => {
                 :to="link.href"
                 @click="closeExpandedPanels"
               >
-                {{ link.label }}
+                <span>{{ link.label }}</span>
               </RouterLink>
             </div>
 

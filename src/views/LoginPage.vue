@@ -68,11 +68,7 @@ async function submitForm() {
 <template>
   <section class="login-hero" aria-label="Login hero">
     <section class="card auth-card login-card">
-      <p class="section-label">Login</p>
-      <h1>Hyr ne llogarine tende</h1>
-      <p class="section-text">
-        Shkruaje email-in dhe fjalekalimin qe jane ruajtur ne databaze. Nese jane te sakta, do te kalosh ne faqen kryesore.
-      </p>
+      <p class="section-label login-card-title">LOGIN</p>
 
       <form class="auth-form" @submit.prevent="submitForm">
         <label class="field">
@@ -108,10 +104,6 @@ async function submitForm() {
 
       <p class="form-footer">
         <RouterLink class="inline-link" to="/forgot-password">Kam harruar fjalekalimin?</RouterLink>
-      </p>
-      <p class="form-footer">
-        Nuk e ke verifikuar ende email-in?
-        <RouterLink class="inline-link" to="/verifiko-email">Verifikoje kodin</RouterLink>
       </p>
       <p class="form-footer">
         Nuk ke llogari ende?

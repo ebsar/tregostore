@@ -21,11 +21,27 @@ const ui = reactive({
 
 markRouteReady();
 
+function isStrongPassword(password) {
+  return (
+    password.length >= 8
+    && /[A-Za-z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password)
+  );
+}
+
 async function submitForm() {
   ui.loading = true;
   ui.message = "";
   ui.type = "";
   const submittedEmail = form.email.trim();
+
+  if (!isStrongPassword(form.password)) {
+    ui.message = "Fjalekalimi duhet te kete minimum 8 karaktere, te pakten nje shkronje, nje numer dhe nje simbol.";
+    ui.type = "error";
+    ui.loading = false;
+    return;
+  }
 
   try {
     const { response, data } = await requestJson("/api/register", {
@@ -45,8 +61,14 @@ async function submitForm() {
       return;
     }
 
+    const hasDeliveryWarnings = Array.isArray(data?.warnings) && data.warnings.length > 0;
     ui.message = data.message || "Llogaria u ruajt me sukses. Po kalon te verifikimi i email-it...";
-    ui.type = "success";
+    ui.type = hasDeliveryWarnings ? "error" : "success";
+
+    if (hasDeliveryWarnings) {
+      form.password = "";
+      return;
+    }
 
     form.fullName = "";
     form.email = "";
@@ -70,11 +92,7 @@ async function submitForm() {
 <template>
   <section class="signup-hero" aria-label="Sign Up hero">
     <section class="card auth-card signup-card">
-      <p class="section-label">Sign Up</p>
-      <h1>Krijo nje llogari te re</h1>
-      <p class="section-text">
-        Plotesoje emrin e plote, email-in, daten e lindjes, gjinine dhe fjalekalimin. Pasi te ruhen ne databaze, do te marresh nje kod verifikimi ne email para se te kyçesh.
-      </p>
+      <h1>Krijo llogari</h1>
 
       <form class="auth-form" @submit.prevent="submitForm">
         <label class="field">
@@ -121,10 +139,13 @@ async function submitForm() {
             v-model="form.password"
             name="password"
             type="password"
-            placeholder="Te pakten 8 karaktere"
+            placeholder="Minimum 8 karaktere, numer dhe simbol"
             minlength="8"
+            pattern="(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}"
+            title="Fjalekalimi duhet te kete minimum 8 karaktere, te pakten nje shkronje, nje numer dhe nje simbol."
             required
           >
+          <small class="field-help">Duhet te kete te pakten 8 karaktere, nje shkronje, nje numer dhe nje simbol.</small>
         </label>
 
         <button id="signup-submit-button" type="submit" :disabled="ui.loading">

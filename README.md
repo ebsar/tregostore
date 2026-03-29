@@ -211,6 +211,14 @@ Per Vercel:
 - nese nuk ekziston asnje admin, ky admin krijohet automatikisht nga keto env vars
 - per deploy me databaze reale, shto edhe:
   - `DATABASE_URL`
+- per email te chat-it dhe kujtesa automatike pas 2 oresh pa pergjigje, vendos edhe:
+  - `BREVO_API_KEY`
+  - `BREVO_SENDER_EMAIL`
+  - `BREVO_SENDER_NAME`
+  - `TREGO_PUBLIC_APP_URL`
+  - `CRON_SECRET`
+- `Vercel Cron` therrit `/api/chat/unread-reminders` cdo ore dhe serveri dergon email vetem per mesazhin e fundit ne bisede qe ka mbetur i palexuar mbi 2 ore
+- nese `CRON_SECRET` eshte i vendosur ne Vercel, cron-i duhet te dergohet me `Authorization: Bearer <CRON_SECRET>`
 
 Pra tani ke dy menyra:
 

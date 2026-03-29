@@ -50,6 +50,12 @@ CREATE TABLE IF NOT EXISTS password_reset_codes (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_runtime_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
+);
+
 CREATE TABLE IF NOT EXISTS user_addresses (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -280,6 +286,9 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id
     ON order_items(order_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_product_id
+    ON order_items(product_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_order_items_business_user_id
     ON order_items(business_user_id, created_at DESC);

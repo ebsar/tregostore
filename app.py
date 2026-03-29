@@ -69,6 +69,7 @@ BREVO_API_KEY = str(os.environ.get("BREVO_API_KEY", "")).strip()
 BREVO_SENDER_EMAIL = str(os.environ.get("BREVO_SENDER_EMAIL", "")).strip()
 BREVO_SENDER_NAME = str(os.environ.get("BREVO_SENDER_NAME", "TREGO")).strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+CRON_SECRET = str(os.environ.get("CRON_SECRET") or os.environ.get("TREGO_CRON_SECRET") or "").strip()
 SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -253,11 +254,31 @@ SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS = {
     "phone-accessories": {"aksesor telefoni"},
 }
 USER_ROLES = {"client", "admin", "business"}
-CHAT_PARTICIPANT_ROLES = {"client", "business"}
+CHAT_PARTICIPANT_ROLES = {"client", "business", "admin"}
 CHAT_MESSAGE_MAX_LENGTH = 1500
 GENDER_OPTIONS = {"mashkull", "femer"}
 PAYMENT_METHODS = {"cash", "card-online"}
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
+CHAT_ATTACHMENT_MAX_FILE_SIZE = 16 * 1024 * 1024
+CHAT_UNREAD_REMINDER_AFTER_HOURS = 2
+CHAT_UNREAD_REMINDER_BATCH_LIMIT = 100
+CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+    "application/pdf": ".pdf",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
+    "audio/webm": ".webm",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/ogg": ".ogg",
+}
 IMAGE_CONTENT_TYPE_EXTENSIONS = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -272,6 +293,14 @@ EXTENSION_CONTENT_TYPES = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".avif": "image/avif",
+    ".pdf": "application/pdf",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
 }
 MAX_UPLOAD_FILES = 8
 MAX_UPLOAD_FILE_SIZE = 8 * 1024 * 1024
@@ -301,6 +330,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
+APP_SCHEMA_VERSION = "2026-03-29-performance-1"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -311,6 +341,9 @@ PUBLIC_STATS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
 }
 POSTGRES_MIGRATION_LOCK_ID = 90422117
+CHAT_ONLINE_WINDOW_SECONDS = 180
+USER_PRESENCE_HEARTBEAT_SECONDS = 45
+CHAT_TYPING_WINDOW_SECONDS = 8
 ADDRESS_SELECT_COLUMNS = """
     id,
     user_id,
@@ -348,6 +381,7 @@ USER_SELECT_COLUMNS = (
     "is_email_verified, "
     "email_verified_at, "
     "profile_image_path, "
+    "last_seen_at, "
     "created_at"
 )
 USER_AUTH_SELECT_COLUMNS = USER_SELECT_COLUMNS + ", password_hash"
@@ -666,8 +700,12 @@ def initialize_database() -> None:
 
         try:
             schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
-            connection.executescript(schema_path.read_text(encoding="utf-8"))
-            migrate_database(connection)
+            current_schema_version = get_runtime_meta_value(connection, "schema_version")
+            has_core_schema = table_exists(connection, "users") and table_exists(connection, "products")
+            if current_schema_version != APP_SCHEMA_VERSION or not has_core_schema:
+                connection.executescript(schema_path.read_text(encoding="utf-8"))
+                migrate_database(connection)
+                set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
             ensure_bootstrap_admin(connection)
         finally:
             if acquired_postgres_lock:
@@ -989,6 +1027,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE users ADD COLUMN profile_image_path TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "users", "last_seen_at"):
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE users
@@ -1010,6 +1053,14 @@ def migrate_database(connection: DatabaseConnection) -> None:
         WHERE is_email_verified = 1
           AND (email_verified_at IS NULL OR TRIM(email_verified_at) = '')
         """
+    )
+    connection.execute(
+        """
+        UPDATE users
+        SET last_seen_at = COALESCE(NULLIF(TRIM(last_seen_at), ''), created_at, ?)
+        WHERE last_seen_at IS NULL OR TRIM(last_seen_at) = ''
+        """,
+        (now_text_value,),
     )
 
     users = connection.execute(
@@ -1207,8 +1258,14 @@ def migrate_database(connection: DatabaseConnection) -> None:
                     sender_user_id BIGINT NOT NULL,
                     recipient_user_id BIGINT NOT NULL,
                     body TEXT NOT NULL,
+                    attachment_path TEXT NOT NULL DEFAULT '',
+                    attachment_content_type TEXT NOT NULL DEFAULT '',
+                    attachment_file_name TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    edited_at TEXT NOT NULL DEFAULT '',
+                    deleted_at TEXT NOT NULL DEFAULT '',
                     read_at TEXT NOT NULL DEFAULT '',
+                    reminder_sent_at TEXT NOT NULL DEFAULT '',
                     FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
                     FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -1224,8 +1281,14 @@ def migrate_database(connection: DatabaseConnection) -> None:
                     sender_user_id INTEGER NOT NULL,
                     recipient_user_id INTEGER NOT NULL,
                     body TEXT NOT NULL,
+                    attachment_path TEXT NOT NULL DEFAULT '',
+                    attachment_content_type TEXT NOT NULL DEFAULT '',
+                    attachment_file_name TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    edited_at TEXT NOT NULL DEFAULT '',
+                    deleted_at TEXT NOT NULL DEFAULT '',
                     read_at TEXT NOT NULL DEFAULT '',
+                    reminder_sent_at TEXT NOT NULL DEFAULT '',
                     FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
                     FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -1238,10 +1301,47 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE chat_messages ADD COLUMN read_at TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "chat_messages", "attachment_path"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN attachment_path TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_messages", "attachment_content_type"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN attachment_content_type TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_messages", "attachment_file_name"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN attachment_file_name TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_messages", "edited_at"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN edited_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_messages", "deleted_at"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN deleted_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "chat_messages", "reminder_sent_at"):
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN reminder_sent_at TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE chat_messages
-        SET read_at = COALESCE(read_at, '')
+        SET
+            read_at = COALESCE(read_at, ''),
+            attachment_path = COALESCE(attachment_path, ''),
+            attachment_content_type = COALESCE(attachment_content_type, ''),
+            attachment_file_name = COALESCE(attachment_file_name, ''),
+            edited_at = COALESCE(edited_at, ''),
+            deleted_at = COALESCE(deleted_at, ''),
+            reminder_sent_at = COALESCE(reminder_sent_at, '')
         """
     )
 
@@ -1255,6 +1355,60 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient_read
         ON chat_messages(recipient_user_id, read_at, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "chat_typing_states"):
+        if is_postgres_connection(connection):
+            connection.execute(
+                """
+                CREATE TABLE chat_typing_states (
+                    id BIGSERIAL PRIMARY KEY,
+                    conversation_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+        else:
+            connection.execute(
+                """
+                CREATE TABLE chat_typing_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+
+    if not column_exists(connection, "chat_typing_states", "updated_at"):
+        connection.execute(
+            "ALTER TABLE chat_typing_states ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE chat_typing_states
+        SET updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), ?)
+        WHERE updated_at IS NULL OR TRIM(updated_at) = ''
+        """,
+        (now_text_value,),
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_typing_states_unique
+        ON chat_typing_states(conversation_id, user_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_typing_states_updated
+        ON chat_typing_states(conversation_id, updated_at DESC)
         """
     )
 
@@ -1808,6 +1962,45 @@ def table_exists(connection: DatabaseConnection, table_name: str) -> bool:
     return bool(row)
 
 
+def get_runtime_meta_value(connection: DatabaseConnection, key: str) -> str:
+    if not table_exists(connection, "app_runtime_meta"):
+        return ""
+
+    row = connection.execute(
+        """
+        SELECT value
+        FROM app_runtime_meta
+        WHERE key = ?
+        LIMIT 1
+        """,
+        (str(key or "").strip(),),
+    ).fetchone()
+    if not row:
+        return ""
+
+    return str(row["value"] or "").strip()
+
+
+def set_runtime_meta_value(connection: DatabaseConnection, key: str, value: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO app_runtime_meta (
+            key,
+            value,
+            updated_at
+        )
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            str(key or "").strip(),
+            str(value or "").strip(),
+        ),
+    )
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     iterations = 120_000
@@ -1914,8 +2107,7 @@ def validate_registration(data: dict[str, str]) -> list[str]:
     if not EMAIL_RE.match(email):
         errors.append("Vendos nje email valid.")
 
-    if len(password) < 8:
-        errors.append("Fjalekalimi duhet te kete te pakten 8 karaktere.")
+    errors.extend(validate_password_strength(password, label="Fjalekalimi"))
 
     if not birth_date:
         errors.append("Zgjedhe daten e lindjes.")
@@ -1974,6 +2166,24 @@ def validate_email_resend(data: dict[str, object]) -> tuple[list[str], str]:
     return errors, email
 
 
+def validate_password_strength(password: str, label: str = "Fjalekalimi") -> list[str]:
+    errors: list[str] = []
+    if len(password) < 8:
+        errors.append(f"{label} duhet te kete te pakten 8 karaktere.")
+        return errors
+
+    if not re.search(r"[A-Za-z]", password):
+        errors.append(f"{label} duhet te permbaje te pakten nje shkronje.")
+
+    if not re.search(r"\d", password):
+        errors.append(f"{label} duhet te permbaje te pakten nje numer.")
+
+    if not re.search(r"[^A-Za-z0-9]", password):
+        errors.append(f"{label} duhet te permbaje te pakten nje simbol.")
+
+    return errors
+
+
 def validate_password_reset(data: dict[str, str]) -> list[str]:
     errors: list[str] = []
     email = data.get("email", "").strip().lower()
@@ -1987,8 +2197,7 @@ def validate_password_reset(data: dict[str, str]) -> list[str]:
     if len(code) != PASSWORD_RESET_CODE_LENGTH:
         errors.append("Kodi per ndryshim te fjalekalimit duhet te kete 6 shifra.")
 
-    if len(new_password) < 8:
-        errors.append("Fjalekalimi i ri duhet te kete te pakten 8 karaktere.")
+    errors.extend(validate_password_strength(new_password, label="Fjalekalimi i ri"))
 
     if new_password != confirm_password:
         errors.append("Konfirmimi i fjalekalimit nuk perputhet.")
@@ -2005,8 +2214,7 @@ def validate_account_password_change(data: dict[str, str]) -> list[str]:
     if not current_password:
         errors.append("Shkruaje fjalekalimin aktual.")
 
-    if len(new_password) < 8:
-        errors.append("Fjalekalimi i ri duhet te kete te pakten 8 karaktere.")
+    errors.extend(validate_password_strength(new_password, label="Fjalekalimi i ri"))
 
     if new_password != confirm_password:
         errors.append("Konfirmimi i fjalekalimit nuk perputhet.")
@@ -2021,8 +2229,7 @@ def validate_admin_password_reset(data: dict[str, object]) -> list[str]:
     errors: list[str] = []
     new_password = str(data.get("newPassword", ""))
 
-    if len(new_password) < 8:
-        errors.append("Fjalekalimi i ri duhet te kete te pakten 8 karaktere.")
+    errors.extend(validate_password_strength(new_password, label="Fjalekalimi i ri"))
 
     return errors
 
@@ -2165,8 +2372,7 @@ def validate_admin_business_account_payload(
     if not EMAIL_RE.match(email):
         errors.append("Vendos nje email valid per biznesin.")
 
-    if len(password) < 8:
-        errors.append("Fjalekalimi duhet te kete te pakten 8 karaktere.")
+    errors.extend(validate_password_strength(password, label="Fjalekalimi"))
 
     business_errors, business_payload = validate_business_profile_payload(data)
     errors.extend(business_errors)
@@ -3154,6 +3360,65 @@ def parse_chat_message_body(
     return errors, message_body
 
 
+def parse_chat_message_id(
+    data: dict[str, object],
+) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_message_id = str(data.get("messageId", "")).strip()
+
+    try:
+        message_id = int(raw_message_id)
+        if message_id <= 0:
+            errors.append("Mesazhi i zgjedhur nuk eshte valid.")
+    except ValueError:
+        message_id = None
+        errors.append("Mesazhi i zgjedhur nuk eshte valid.")
+
+    return errors, message_id
+
+
+def parse_chat_typing_state(data: dict[str, object]) -> bool:
+    raw_value = str(data.get("isTyping", "1") or "1").strip().lower()
+    return raw_value not in {"0", "false", "no", "off", "jo"}
+
+
+def build_chat_attachment_payload_from_part(part) -> tuple[list[str], dict[str, object] | None]:
+    if not part or not part.get_filename():
+        return [], None
+
+    original_filename = str(part.get_filename() or "").strip()
+    content_type = str(part.get_content_type() or "").strip().lower()
+    file_bytes = part.get_payload(decode=True) or b""
+    errors: list[str] = []
+
+    if not content_type or content_type not in CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES:
+        errors.append("Chat supporton vetem foto, video, audio dhe PDF.")
+        return errors, None
+
+    if not file_bytes:
+        errors.append("Skedari i bashkelidhur eshte bosh.")
+        return errors, None
+
+    if len(file_bytes) > CHAT_ATTACHMENT_MAX_FILE_SIZE:
+        errors.append("Attachment-i i chat-it eshte shume i madh.")
+        return errors, None
+
+    extension = CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES.get(content_type, "")
+    if not extension:
+        extension = Path(original_filename).suffix.lower()
+
+    if not extension:
+        errors.append("Skedari i bashkelidhur nuk ka format valid.")
+        return errors, None
+
+    return errors, {
+        "original_filename": original_filename or f"attachment{extension}",
+        "content_type": content_type,
+        "file_bytes": file_bytes,
+        "extension": extension,
+    }
+
+
 def parse_product_ids(
     data: dict[str, object],
     field_name: str = "productIds",
@@ -3257,6 +3522,14 @@ def parse_products_pagination_query(
             errors.append("Offset-i i produkteve nuk eshte valid.")
 
     return errors, limit, offset
+
+
+def parse_include_facets_query(query_params: dict[str, list[str]]) -> bool:
+    raw_value = str(query_params.get("includeFacets", [""])[0]).strip().lower()
+    if not raw_value:
+        return False
+
+    return raw_value in {"1", "true", "yes", "on"}
 
 
 def parse_catalog_filters_query(
@@ -4157,6 +4430,13 @@ def heuristic_chat_reply_suggestions(
             "Nese doni, ju tregoj menjehere cilat variante i kemi aktualisht ne dispozicion.",
         ]
 
+    if viewer_role == "admin":
+        return [
+            "Pershendetje! Jam nga customer support. Me tregoni si mund t'ju ndihmoj.",
+            "Faleminderit qe na kontaktuat. Po e shqyrtojme kerkesen dhe ju ndihmojme menjehere.",
+            "Mund t'ju asistojme me kete ceshtje. Na dergoni pak me shume detaje, ju lutem.",
+        ]
+
     if any(keyword in last_message_body for keyword in {"pershendetje", "hello", "hi"}):
         return [
             "Pershendetje! A eshte ende ne stok ky produkt?",
@@ -4202,8 +4482,15 @@ def request_openai_chat_reply_suggestions(
         }
         for message in messages[-10:]
     ]
-    counterpart_role = "klient" if viewer_role == "business" else "biznes"
-    counterpart_name = str(conversation["counterpart_name"] or "").strip() or counterpart_role.title()
+    participant_one = extract_chat_participant(conversation, prefix="participant_one")
+    participant_two = extract_chat_participant(conversation, prefix="participant_two")
+    counterpart = (
+        participant_two
+        if int(participant_one["userId"]) == int(viewer_user_id)
+        else participant_one
+    )
+    counterpart_role = get_chat_role_label(str(counterpart["role"]))
+    counterpart_name = str(counterpart["displayName"] or "").strip() or counterpart_role.title()
 
     instructions = (
         "Ti gjeneron 3 pergjigje te shkurtra, natyrale dhe profesionale per nje chat marketplace ne shqip. "
@@ -5010,28 +5297,83 @@ def can_use_chat(user: sqlite3.Row | None) -> bool:
     return bool(user and str(user["role"] or "").strip() in CHAT_PARTICIPANT_ROLES)
 
 
+def is_user_online_from_last_seen(value: object) -> bool:
+    last_seen_at = parse_storage_datetime(value)
+    if not last_seen_at:
+        return False
+
+    return (utc_now() - last_seen_at).total_seconds() <= CHAT_ONLINE_WINDOW_SECONDS
+
+
+def get_chat_role_label(role: str | None) -> str:
+    normalized_role = str(role or "").strip().lower()
+    if normalized_role == "business":
+        return "biznes"
+    if normalized_role == "admin":
+        return "customer support"
+    return "klient"
+
+
+def get_chat_display_name(
+    *,
+    role: str | None,
+    full_name: str | None = None,
+    business_name: str | None = None,
+) -> str:
+    normalized_role = str(role or "").strip().lower()
+    normalized_full_name = str(full_name or "").strip()
+    normalized_business_name = str(business_name or "").strip()
+
+    if normalized_role == "business":
+        return normalized_business_name or normalized_full_name or "Biznes"
+    if normalized_role == "admin":
+        return "Customer Support"
+    return normalized_full_name or "Klient"
+
+
+def extract_chat_participant(
+    row: sqlite3.Row,
+    *,
+    prefix: str,
+) -> dict[str, object]:
+    role = str(row[f"{prefix}_role"] or "").strip().lower() or "client"
+    business_profile_id = 0
+    try:
+        business_profile_id = max(0, int(row[f"{prefix}_business_profile_id"] or 0))
+    except (TypeError, ValueError):
+        business_profile_id = 0
+
+    display_name = get_chat_display_name(
+        role=role,
+        full_name=str(row[f"{prefix}_full_name"] or "").strip(),
+        business_name=str(row[f"{prefix}_business_name"] or "").strip(),
+    )
+
+    image_path = normalize_image_path(
+        row[f"{prefix}_business_logo_path"] if role == "business" else row[f"{prefix}_profile_image_path"]
+    )
+
+    return {
+        "userId": int(row[f"{prefix}_user_id"]),
+        "role": role,
+        "displayName": display_name,
+        "imagePath": image_path,
+        "isOnline": is_user_online_from_last_seen(row[f"{prefix}_last_seen_at"]),
+        "lastSeenAt": str(row[f"{prefix}_last_seen_at"] or "").strip(),
+        "businessProfileId": business_profile_id,
+        "profileUrl": f"/profili-biznesit?id={business_profile_id}" if role == "business" and business_profile_id > 0 else "",
+    }
+
+
 def serialize_chat_conversation(
     row: sqlite3.Row,
     *,
     viewer_user_id: int,
 ) -> dict[str, object]:
-    business_profile_id = 0
-    for key in ("resolved_business_profile_id", "business_profile_id"):
-        if key in row.keys():
-            try:
-                business_profile_id = max(0, int(row[key] or 0))
-            except (TypeError, ValueError):
-                business_profile_id = 0
-            if business_profile_id > 0:
-                break
-
-    client_name = str(row["client_full_name"] or "").strip() or "Klient"
-    business_name = str(row["business_name"] or "").strip() or "Biznes"
-    is_business_view = int(row["business_user_id"]) == int(viewer_user_id)
-    counterpart_name = client_name if is_business_view else business_name
-    counterpart_image_path = normalize_image_path(
-        row["client_profile_image_path"] if is_business_view else row["business_logo_path"]
-    )
+    participant_one = extract_chat_participant(row, prefix="participant_one")
+    participant_two = extract_chat_participant(row, prefix="participant_two")
+    is_first_participant_view = int(participant_one["userId"]) == int(viewer_user_id)
+    counterpart = participant_two if is_first_participant_view else participant_one
     unread_count = 0
     messages_count = 0
 
@@ -5051,13 +5393,27 @@ def serialize_chat_conversation(
         "id": int(row["id"]),
         "clientUserId": int(row["client_user_id"]),
         "businessUserId": int(row["business_user_id"]),
-        "businessProfileId": business_profile_id,
-        "businessName": business_name,
-        "clientName": client_name,
-        "counterpartName": counterpart_name,
-        "counterpartRole": "client" if is_business_view else "business",
-        "counterpartImagePath": counterpart_image_path,
-        "profileUrl": f"/profili-biznesit?id={business_profile_id}" if business_profile_id > 0 else "",
+        "businessProfileId": int(counterpart["businessProfileId"]),
+        "businessName": (
+            str(participant_two["displayName"])
+            if str(participant_two["role"]) == "business"
+            else str(participant_one["displayName"])
+            if str(participant_one["role"]) == "business"
+            else ""
+        ),
+        "clientName": (
+            str(participant_two["displayName"])
+            if str(participant_two["role"]) == "client"
+            else str(participant_one["displayName"])
+            if str(participant_one["role"]) == "client"
+            else ""
+        ),
+        "counterpartName": str(counterpart["displayName"]),
+        "counterpartRole": str(counterpart["role"]),
+        "counterpartImagePath": str(counterpart["imagePath"]),
+        "counterpartIsOnline": bool(counterpart["isOnline"]),
+        "counterpartLastSeenAt": str(counterpart["lastSeenAt"]),
+        "profileUrl": str(counterpart["profileUrl"]),
         "lastMessagePreview": str(row["last_message_body"] or "").strip(),
         "messagesCount": messages_count,
         "unreadCount": unread_count,
@@ -5072,10 +5428,12 @@ def serialize_chat_message(
     *,
     viewer_user_id: int,
 ) -> dict[str, object]:
-    sender_name = str(row["sender_business_name"] or "").strip() or str(
-        row["sender_full_name"] or ""
-    ).strip() or "Perdorues"
     sender_role = str(row["sender_role"] or "").strip() or "client"
+    sender_name = get_chat_display_name(
+        role=sender_role,
+        full_name=str(row["sender_full_name"] or "").strip(),
+        business_name=str(row["sender_business_name"] or "").strip(),
+    )
 
     return {
         "id": int(row["id"]),
@@ -5083,7 +5441,12 @@ def serialize_chat_message(
         "senderUserId": int(row["sender_user_id"]),
         "recipientUserId": int(row["recipient_user_id"]),
         "body": str(row["body"] or "").strip(),
+        "attachmentPath": normalize_image_path(row["attachment_path"]) if str(row["attachment_path"] or "").startswith("/uploads/") else str(row["attachment_path"] or "").strip(),
+        "attachmentContentType": str(row["attachment_content_type"] or "").strip(),
+        "attachmentFileName": str(row["attachment_file_name"] or "").strip(),
         "createdAt": str(row["created_at"] or "").strip(),
+        "editedAt": str(row["edited_at"] or "").strip(),
+        "deletedAt": str(row["deleted_at"] or "").strip(),
         "readAt": str(row["read_at"] or "").strip(),
         "senderName": sender_name,
         "senderRole": sender_role,
@@ -5103,11 +5466,36 @@ def fetch_chat_conversations_for_user(user_id: int) -> list[sqlite3.Row]:
                 c.created_at,
                 c.updated_at,
                 c.last_message_at,
-                COALESCE(bp.id, c.business_profile_id, 0) AS resolved_business_profile_id,
-                COALESCE(bp.business_name, '') AS business_name,
-                COALESCE(bp.business_logo_path, '') AS business_logo_path,
-                COALESCE(client.full_name, 'Klient') AS client_full_name,
-                COALESCE(client.profile_image_path, '') AS client_profile_image_path,
+                c.client_user_id AS participant_one_user_id,
+                COALESCE(participant_one.role, 'client') AS participant_one_role,
+                COALESCE(participant_one.full_name, 'Klient') AS participant_one_full_name,
+                COALESCE(participant_one.profile_image_path, '') AS participant_one_profile_image_path,
+                COALESCE(participant_one.last_seen_at, '') AS participant_one_last_seen_at,
+                COALESCE(
+                    participant_one_business.id,
+                    CASE
+                        WHEN COALESCE(participant_one.role, '') = 'business' THEN c.business_profile_id
+                        ELSE 0
+                    END,
+                    0
+                ) AS participant_one_business_profile_id,
+                COALESCE(participant_one_business.business_name, '') AS participant_one_business_name,
+                COALESCE(participant_one_business.business_logo_path, '') AS participant_one_business_logo_path,
+                c.business_user_id AS participant_two_user_id,
+                COALESCE(participant_two.role, 'client') AS participant_two_role,
+                COALESCE(participant_two.full_name, 'Klient') AS participant_two_full_name,
+                COALESCE(participant_two.profile_image_path, '') AS participant_two_profile_image_path,
+                COALESCE(participant_two.last_seen_at, '') AS participant_two_last_seen_at,
+                COALESCE(
+                    participant_two_business.id,
+                    CASE
+                        WHEN COALESCE(participant_two.role, '') = 'business' THEN c.business_profile_id
+                        ELSE 0
+                    END,
+                    0
+                ) AS participant_two_business_profile_id,
+                COALESCE(participant_two_business.business_name, '') AS participant_two_business_name,
+                COALESCE(participant_two_business.business_logo_path, '') AS participant_two_business_logo_path,
                 COALESCE((
                     SELECT COUNT(*)
                     FROM chat_messages cm
@@ -5128,8 +5516,10 @@ def fetch_chat_conversations_for_user(user_id: int) -> list[sqlite3.Row]:
                     LIMIT 1
                 ), '') AS last_message_body
             FROM chat_conversations c
-            LEFT JOIN business_profiles bp ON bp.user_id = c.business_user_id
-            LEFT JOIN users client ON client.id = c.client_user_id
+            LEFT JOIN users participant_one ON participant_one.id = c.client_user_id
+            LEFT JOIN business_profiles participant_one_business ON participant_one_business.user_id = c.client_user_id
+            LEFT JOIN users participant_two ON participant_two.id = c.business_user_id
+            LEFT JOIN business_profiles participant_two_business ON participant_two_business.user_id = c.business_user_id
             WHERE c.client_user_id = ?
                OR c.business_user_id = ?
             ORDER BY c.last_message_at DESC, c.id DESC
@@ -5153,11 +5543,36 @@ def fetch_chat_conversation_for_user(
                 c.created_at,
                 c.updated_at,
                 c.last_message_at,
-                COALESCE(bp.id, c.business_profile_id, 0) AS resolved_business_profile_id,
-                COALESCE(bp.business_name, '') AS business_name,
-                COALESCE(bp.business_logo_path, '') AS business_logo_path,
-                COALESCE(client.full_name, 'Klient') AS client_full_name,
-                COALESCE(client.profile_image_path, '') AS client_profile_image_path,
+                c.client_user_id AS participant_one_user_id,
+                COALESCE(participant_one.role, 'client') AS participant_one_role,
+                COALESCE(participant_one.full_name, 'Klient') AS participant_one_full_name,
+                COALESCE(participant_one.profile_image_path, '') AS participant_one_profile_image_path,
+                COALESCE(participant_one.last_seen_at, '') AS participant_one_last_seen_at,
+                COALESCE(
+                    participant_one_business.id,
+                    CASE
+                        WHEN COALESCE(participant_one.role, '') = 'business' THEN c.business_profile_id
+                        ELSE 0
+                    END,
+                    0
+                ) AS participant_one_business_profile_id,
+                COALESCE(participant_one_business.business_name, '') AS participant_one_business_name,
+                COALESCE(participant_one_business.business_logo_path, '') AS participant_one_business_logo_path,
+                c.business_user_id AS participant_two_user_id,
+                COALESCE(participant_two.role, 'client') AS participant_two_role,
+                COALESCE(participant_two.full_name, 'Klient') AS participant_two_full_name,
+                COALESCE(participant_two.profile_image_path, '') AS participant_two_profile_image_path,
+                COALESCE(participant_two.last_seen_at, '') AS participant_two_last_seen_at,
+                COALESCE(
+                    participant_two_business.id,
+                    CASE
+                        WHEN COALESCE(participant_two.role, '') = 'business' THEN c.business_profile_id
+                        ELSE 0
+                    END,
+                    0
+                ) AS participant_two_business_profile_id,
+                COALESCE(participant_two_business.business_name, '') AS participant_two_business_name,
+                COALESCE(participant_two_business.business_logo_path, '') AS participant_two_business_logo_path,
                 COALESCE((
                     SELECT COUNT(*)
                     FROM chat_messages cm
@@ -5178,8 +5593,10 @@ def fetch_chat_conversation_for_user(
                     LIMIT 1
                 ), '') AS last_message_body
             FROM chat_conversations c
-            LEFT JOIN business_profiles bp ON bp.user_id = c.business_user_id
-            LEFT JOIN users client ON client.id = c.client_user_id
+            LEFT JOIN users participant_one ON participant_one.id = c.client_user_id
+            LEFT JOIN business_profiles participant_one_business ON participant_one_business.user_id = c.client_user_id
+            LEFT JOIN users participant_two ON participant_two.id = c.business_user_id
+            LEFT JOIN business_profiles participant_two_business ON participant_two_business.user_id = c.business_user_id
             WHERE c.id = ?
               AND (c.client_user_id = ? OR c.business_user_id = ?)
             LIMIT 1
@@ -5198,7 +5615,12 @@ def fetch_chat_messages_for_conversation(conversation_id: int) -> list[sqlite3.R
                 m.sender_user_id,
                 m.recipient_user_id,
                 m.body,
+                m.attachment_path,
+                m.attachment_content_type,
+                m.attachment_file_name,
                 m.created_at,
+                m.edited_at,
+                m.deleted_at,
                 m.read_at,
                 COALESCE(sender.full_name, 'Perdorues') AS sender_full_name,
                 COALESCE(sender.role, 'client') AS sender_role,
@@ -5211,6 +5633,74 @@ def fetch_chat_messages_for_conversation(conversation_id: int) -> list[sqlite3.R
             """,
             (conversation_id,),
         ).fetchall()
+
+
+def fetch_pending_chat_unread_reminder_rows(
+    *,
+    limit: int = CHAT_UNREAD_REMINDER_BATCH_LIMIT,
+) -> list[sqlite3.Row]:
+    normalized_limit = max(1, int(limit or CHAT_UNREAD_REMINDER_BATCH_LIMIT))
+    cutoff_value = datetime_to_storage_text(
+        utc_now() - timedelta(hours=CHAT_UNREAD_REMINDER_AFTER_HOURS)
+    )
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                m.id,
+                m.conversation_id,
+                m.sender_user_id,
+                m.recipient_user_id,
+                m.body,
+                m.created_at,
+                COALESCE(sender.full_name, '') AS sender_full_name,
+                COALESCE(sender.role, 'client') AS sender_role,
+                COALESCE(sender_business.business_name, '') AS sender_business_name,
+                COALESCE(recipient.first_name, '') AS recipient_first_name,
+                COALESCE(recipient.full_name, '') AS recipient_full_name,
+                COALESCE(recipient.email, '') AS recipient_email
+            FROM chat_messages m
+            INNER JOIN (
+                SELECT
+                    conversation_id,
+                    recipient_user_id,
+                    MAX(id) AS latest_unread_message_id
+                FROM chat_messages
+                WHERE COALESCE(TRIM(read_at), '') = ''
+                  AND COALESCE(TRIM(reminder_sent_at), '') = ''
+                  AND created_at <= ?
+                GROUP BY conversation_id, recipient_user_id
+            ) pending ON pending.latest_unread_message_id = m.id
+            LEFT JOIN users sender ON sender.id = m.sender_user_id
+            LEFT JOIN business_profiles sender_business ON sender_business.user_id = m.sender_user_id
+            LEFT JOIN users recipient ON recipient.id = m.recipient_user_id
+            WHERE COALESCE(TRIM(recipient.email), '') != ''
+              AND COALESCE(recipient.role, 'client') = 'client'
+              AND m.id = (
+                    SELECT latest_message.id
+                    FROM chat_messages latest_message
+                    WHERE latest_message.conversation_id = m.conversation_id
+                    ORDER BY latest_message.id DESC
+                    LIMIT 1
+              )
+            ORDER BY m.created_at ASC, m.id ASC
+            LIMIT ?
+            """,
+            (cutoff_value, normalized_limit),
+        ).fetchall()
+
+
+def mark_chat_unread_reminder_sent(message_id: int) -> None:
+    reminder_timestamp = datetime_to_storage_text(utc_now())
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE chat_messages
+            SET reminder_sent_at = ?
+            WHERE id = ?
+            """,
+            (reminder_timestamp, message_id),
+        )
 
 
 def mark_chat_messages_as_read(
@@ -5231,9 +5721,69 @@ def mark_chat_messages_as_read(
         )
 
 
-def ensure_chat_conversation_for_client(
-    client_user_id: int,
-    business_user_id: int,
+def set_chat_typing_state(
+    conversation_id: int,
+    user_id: int,
+    *,
+    is_typing: bool,
+) -> None:
+    with get_db_connection() as connection:
+        if not is_typing:
+            connection.execute(
+                """
+                DELETE FROM chat_typing_states
+                WHERE conversation_id = ? AND user_id = ?
+                """,
+                (conversation_id, user_id),
+            )
+            return
+
+        timestamp = datetime_to_storage_text(utc_now())
+        connection.execute(
+            """
+            DELETE FROM chat_typing_states
+            WHERE conversation_id = ? AND user_id = ?
+            """,
+            (conversation_id, user_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO chat_typing_states (
+                conversation_id,
+                user_id,
+                updated_at
+            )
+            VALUES (?, ?, ?)
+            """,
+            (conversation_id, user_id, timestamp),
+        )
+
+
+def is_counterpart_typing(
+    conversation_id: int,
+    viewer_user_id: int,
+) -> bool:
+    cutoff_value = datetime_to_storage_text(
+        utc_now() - timedelta(seconds=CHAT_TYPING_WINDOW_SECONDS)
+    )
+    with get_db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM chat_typing_states
+            WHERE conversation_id = ?
+              AND user_id != ?
+              AND updated_at >= ?
+            LIMIT 1
+            """,
+            (conversation_id, viewer_user_id, cutoff_value),
+        ).fetchone()
+        return bool(row)
+
+
+def ensure_chat_conversation_between_users(
+    first_user_id: int,
+    second_user_id: int,
     business_profile_id: int | None = None,
 ) -> int:
     with get_db_connection() as connection:
@@ -5241,11 +5791,11 @@ def ensure_chat_conversation_for_client(
             """
             SELECT id
             FROM chat_conversations
-            WHERE client_user_id = ?
-              AND business_user_id = ?
+            WHERE (client_user_id = ? AND business_user_id = ?)
+               OR (client_user_id = ? AND business_user_id = ?)
             LIMIT 1
             """,
-            (client_user_id, business_user_id),
+            (first_user_id, second_user_id, second_user_id, first_user_id),
         ).fetchone()
         if existing_row:
             return int(existing_row["id"])
@@ -5265,8 +5815,8 @@ def ensure_chat_conversation_for_client(
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                client_user_id,
-                business_user_id,
+                first_user_id,
+                second_user_id,
                 business_profile_id,
                 timestamp,
                 timestamp,
@@ -5280,6 +5830,10 @@ def insert_chat_message(
     sender_user_id: int,
     recipient_user_id: int,
     body: str,
+    *,
+    attachment_path: str = "",
+    attachment_content_type: str = "",
+    attachment_file_name: str = "",
 ) -> int:
     timestamp = datetime_to_storage_text(utc_now())
     with get_db_connection() as connection:
@@ -5291,16 +5845,24 @@ def insert_chat_message(
                 sender_user_id,
                 recipient_user_id,
                 body,
+                attachment_path,
+                attachment_content_type,
+                attachment_file_name,
                 created_at,
+                edited_at,
+                deleted_at,
                 read_at
             )
-            VALUES (?, ?, ?, ?, ?, '')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '')
             """,
             (
                 conversation_id,
                 sender_user_id,
                 recipient_user_id,
                 body,
+                str(attachment_path or "").strip(),
+                str(attachment_content_type or "").strip(),
+                str(attachment_file_name or "").strip(),
                 timestamp,
             ),
         )
@@ -5327,7 +5889,12 @@ def fetch_chat_message_by_id(message_id: int) -> sqlite3.Row | None:
                 m.sender_user_id,
                 m.recipient_user_id,
                 m.body,
+                m.attachment_path,
+                m.attachment_content_type,
+                m.attachment_file_name,
                 m.created_at,
+                m.edited_at,
+                m.deleted_at,
                 m.read_at,
                 COALESCE(sender.full_name, 'Perdorues') AS sender_full_name,
                 COALESCE(sender.role, 'client') AS sender_role,
@@ -5340,6 +5907,44 @@ def fetch_chat_message_by_id(message_id: int) -> sqlite3.Row | None:
             """,
             (message_id,),
         ).fetchone()
+
+
+def update_chat_message_content(
+    message_id: int,
+    *,
+    next_body: str,
+) -> None:
+    timestamp = datetime_to_storage_text(utc_now())
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE chat_messages
+            SET
+                body = ?,
+                edited_at = ?
+            WHERE id = ?
+            """,
+            (next_body, timestamp, message_id),
+        )
+
+
+def delete_chat_message(message_id: int) -> None:
+    timestamp = datetime_to_storage_text(utc_now())
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE chat_messages
+            SET
+                body = 'Mesazhi u fshi.',
+                attachment_path = '',
+                attachment_content_type = '',
+                attachment_file_name = '',
+                deleted_at = ?,
+                edited_at = ''
+            WHERE id = ?
+            """,
+            (timestamp, message_id),
+        )
 
 
 def fetch_user_by_email(email: str) -> sqlite3.Row | None:
@@ -5370,6 +5975,50 @@ def fetch_user_by_id(user_id: int) -> sqlite3.Row | None:
             """,
             (user_id,),
         ).fetchone()
+
+
+def fetch_support_admin_user(exclude_user_id: int | None = None) -> sqlite3.Row | None:
+    query = (
+        """
+        SELECT
+        """
+        + USER_AUTH_SELECT_COLUMNS
+        + """
+        FROM users
+        WHERE role = 'admin'
+        """
+    )
+    params: list[object] = []
+    if exclude_user_id is not None and int(exclude_user_id) > 0:
+        query += " AND id != ?"
+        params.append(int(exclude_user_id))
+
+    query += " ORDER BY id ASC LIMIT 1"
+
+    with get_db_connection() as connection:
+        return connection.execute(query, tuple(params)).fetchone()
+
+
+def touch_user_presence(user_id: int, known_last_seen_at: object = "") -> None:
+    normalized_user_id = int(user_id or 0)
+    if normalized_user_id <= 0:
+        return
+
+    parsed_last_seen_at = parse_storage_datetime(known_last_seen_at)
+    if parsed_last_seen_at and (
+        utc_now() - parsed_last_seen_at
+    ).total_seconds() < USER_PRESENCE_HEARTBEAT_SECONDS:
+        return
+
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET last_seen_at = ?
+            WHERE id = ?
+            """,
+            (datetime_to_storage_text(utc_now()), normalized_user_id),
+        )
 
 
 def fetch_email_verification_row(
@@ -5588,6 +6237,136 @@ def build_password_reset_message(
     }
 
 
+def build_chat_unread_reminder_message(
+    reminder_row: sqlite3.Row | dict[str, object],
+    *,
+    public_app_origin: str,
+) -> dict[str, str]:
+    recipient_first_name = str(
+        reminder_row["recipient_first_name"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("recipient_first_name", "")
+    ).strip()
+    recipient_full_name = str(
+        reminder_row["recipient_full_name"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("recipient_full_name", "")
+    ).strip()
+    sender_full_name = str(
+        reminder_row["sender_full_name"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("sender_full_name", "")
+    ).strip()
+    sender_business_name = str(
+        reminder_row["sender_business_name"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("sender_business_name", "")
+    ).strip()
+    sender_role = str(
+        reminder_row["sender_role"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("sender_role", "")
+    ).strip()
+    recipient_email = str(
+        reminder_row["recipient_email"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("recipient_email", "")
+    ).strip()
+    conversation_id = int(
+        reminder_row["conversation_id"]
+        if isinstance(reminder_row, sqlite3.Row)
+        else reminder_row.get("conversation_id", 0)
+    )
+
+    recipient_name = recipient_first_name or recipient_full_name or "perdorues"
+    sender_name = get_chat_display_name(
+        role=sender_role,
+        full_name=sender_full_name,
+        business_name=sender_business_name,
+    )
+    normalized_origin = public_app_origin.rstrip("/")
+    messages_url = f"{normalized_origin}/mesazhet?conversationId={conversation_id}"
+    logo_url = f"{normalized_origin}/trego-logo.webp"
+    preview_text = (
+        f"Keni nje mesazh te pa lexuar nga {sender_name}. "
+        f"Hapeni biseden ne TREGO."
+    )
+    body = (
+        f"Pershendetje {recipient_name},\n\n"
+        f"Hey {recipient_name} keni mesazh te pa lexuar nga {sender_name}.\n\n"
+        f"Hape biseden ketu:\n{messages_url}\n\n"
+        f"TREGO"
+    )
+    html_body = f"""
+    <style>
+      :root {{
+        color-scheme: light dark;
+        supported-color-schemes: light dark;
+      }}
+      @media (prefers-color-scheme: dark) {{
+        .trego-reminder-shell {{
+          background: #16181d !important;
+        }}
+        .trego-reminder-card {{
+          background: rgba(30, 33, 39, 0.96) !important;
+          border-color: rgba(255, 255, 255, 0.08) !important;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32) !important;
+        }}
+        .trego-reminder-text,
+        .trego-reminder-title,
+        .trego-reminder-note {{
+          color: #f5f2ee !important;
+        }}
+        .trego-reminder-muted {{
+          color: #d4cbc3 !important;
+        }}
+        .trego-reminder-info {{
+          background: linear-gradient(180deg, #2a2f38, #232831) !important;
+          border-color: rgba(255, 255, 255, 0.08) !important;
+          color: #ddd3ca !important;
+        }}
+        .trego-reminder-button {{
+          background: #4f8dff !important;
+          color: #ffffff !important;
+        }}
+      }}
+    </style>
+    <div class="trego-reminder-shell" style="margin:0;padding:32px 18px;background:#f6efe7;font-family:Arial,sans-serif;color:#33251f;">
+      <div class="trego-reminder-card" style="max-width:560px;margin:0 auto;padding:28px 24px;border-radius:28px;background:rgba(255,255,255,0.92);border:1px solid rgba(214,195,182,0.8);box-shadow:0 20px 50px rgba(120,88,70,0.12);">
+        <div style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all;">
+          {html.escape(preview_text)}
+        </div>
+        <div style="text-align:center;margin-bottom:20px;">
+          <img src="{html.escape(logo_url, quote=True)}" alt="TREGO" style="width:132px;max-width:100%;height:auto;display:inline-block;">
+        </div>
+        <p class="trego-reminder-text" style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#33251f;">Pershendetje {html.escape(recipient_name)},</p>
+        <h2 class="trego-reminder-title" style="margin:0 0 14px;font-size:28px;line-height:1.1;color:#2f201d;">Keni mesazh te pa lexuar</h2>
+        <p class="trego-reminder-muted" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#5f4b40;">
+          Hey {html.escape(recipient_name)}, keni mesazh te pa lexuar nga <strong style="color:#2f201d;">{html.escape(sender_name)}</strong>.
+        </p>
+        <div class="trego-reminder-info" style="margin:0 0 20px;padding:16px 18px;border-radius:18px;background:linear-gradient(180deg,#fffaf6,#f7efe8);border:1px solid rgba(221,203,191,0.88);color:#6e5649;font-size:14px;line-height:1.6;">
+          Hape biseden dhe ktheji pergjigje sa me shpejt.
+        </div>
+        <div style="text-align:center;margin:24px 0 12px;">
+          <a class="trego-reminder-button" href="{html.escape(messages_url, quote=True)}" style="display:inline-block;padding:14px 22px;border-radius:999px;background:#1f5eff;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+            Hap mesazhin
+          </a>
+        </div>
+        <p class="trego-reminder-note trego-reminder-muted" style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#8a7468;text-align:center;">
+          Ky email u dergua automatikisht nga TREGO per t'ju kujtuar nje mesazh te palexuar.
+        </p>
+      </div>
+    </div>
+    """.strip()
+
+    return {
+        "to_email": recipient_email,
+        "subject": "Keni nje mesazh qe po ju pret ne TREGO",
+        "body": body,
+        "html_body": html_body,
+    }
+
+
 def convert_email_body_to_html(body: str) -> str:
     escaped = html.escape(str(body or ""))
     return f"<p>{escaped.replace(chr(10), '<br>')}</p>"
@@ -5615,7 +6394,10 @@ def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
             "to": [{"email": message_payload["to_email"]}],
             "subject": message_payload["subject"],
             "textContent": message_payload["body"],
-            "htmlContent": convert_email_body_to_html(message_payload["body"]),
+            "htmlContent": str(
+                message_payload.get("html_body")
+                or convert_email_body_to_html(message_payload["body"])
+            ),
         }
 
         request = Request(
@@ -7827,6 +8609,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.handle_uploaded_file(path)
             return
 
+        if path == "/api/chat/unread-reminders":
+            self.handle_chat_unread_reminders()
+            return
         if path == "/api/stats":
             self.handle_stats()
             return
@@ -8062,8 +8847,17 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/chat/open":
             self.handle_chat_open()
             return
+        if path == "/api/chat/typing":
+            self.handle_chat_typing()
+            return
         if path == "/api/chat/messages":
             self.handle_chat_send_message()
+            return
+        if path == "/api/chat/messages/update":
+            self.handle_chat_update_message()
+            return
+        if path == "/api/chat/messages/delete":
+            self.handle_chat_delete_message()
             return
         if path == "/api/payments/stripe/checkout":
             self.handle_create_stripe_checkout_session()
@@ -8218,15 +9012,22 @@ class AppHandler(SimpleHTTPRequestHandler):
         password = payload["password"]
         user = fetch_user_by_email(email)
 
-        if not user or not verify_password(password, user["password_hash"]):
+        if not user:
             self.send_json(
                 401,
                 {
                     "ok": False,
-                    "message": (
-                        "Kerkojme falje, por llogaria nuk ekziston "
-                        "ose te dhenat nuk jane te sakta."
-                    ),
+                    "message": "Nuk ekziston nje llogari me kete email.",
+                },
+            )
+            return
+
+        if not verify_password(password, user["password_hash"]):
+            self.send_json(
+                401,
+                {
+                    "ok": False,
+                    "message": "Fjalekalimi nuk eshte i sakte.",
                 },
             )
             return
@@ -8453,6 +9254,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
             query_params
         )
+        include_facets = parse_include_facets_query(query_params)
         category = query_params.get("category", [""])[0].strip().lower() or None
         category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
@@ -8497,13 +9299,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                 offset=offset,
             )
         ]
-        facets = build_product_catalog_facets(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-        )
+        facets = None
+        if include_facets:
+            facets = build_product_catalog_facets(
+                category,
+                category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+            )
         self.send_json(
             200,
             {
@@ -8529,6 +9333,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
         raw_search_text = query_params.get("q", [""])[0].strip()
+        include_facets = parse_include_facets_query(query_params)
         scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
             query_params
         )
@@ -8619,15 +9424,17 @@ class AppHandler(SimpleHTTPRequestHandler):
                 offset=offset,
             )
         ]
-        facets = build_product_catalog_facets(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-            business_name_search=business_name,
-            search_text=search_text,
-        )
+        facets = None
+        if include_facets:
+            facets = build_product_catalog_facets(
+                category,
+                category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+                business_name_search=business_name,
+                search_text=search_text,
+            )
         self.send_json(
             200,
             {
@@ -8717,6 +9524,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             if not field_name or part.get_filename():
                 continue
             form_values[field_name] = str(part.get_content() or "").strip()
+        include_facets = str(form_values.get("includeFacets", "")).strip().lower() in {"1", "true", "yes", "on"}
 
         query_params = {
             key: [value]
@@ -8796,13 +9604,15 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         total_count = len(matched_products)
         visible_products = matched_products[offset : offset + limit]
-        facets = build_product_catalog_facets(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-        )
+        facets = None
+        if include_facets:
+            facets = build_product_catalog_facets(
+                category,
+                category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+            )
 
         self.send_json(
             200,
@@ -9271,14 +10081,18 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not can_use_chat(user):
             self.send_json(
                 403,
-                {"ok": False, "message": "Vetem klientet dhe bizneset kane inbox mesazhesh."},
+                {"ok": False, "message": "Ky rol nuk ka inbox mesazhesh."},
             )
             return
 
-        conversations = [
-            serialize_chat_conversation(row, viewer_user_id=int(user["id"]))
-            for row in fetch_chat_conversations_for_user(int(user["id"]))
-        ]
+        conversations = []
+        for row in fetch_chat_conversations_for_user(int(user["id"])):
+            serialized_conversation = serialize_chat_conversation(row, viewer_user_id=int(user["id"]))
+            serialized_conversation["counterpartTyping"] = is_counterpart_typing(
+                int(row["id"]),
+                int(user["id"]),
+            )
+            conversations.append(serialized_conversation)
         unread_count = sum(max(0, int(item.get("unreadCount", 0) or 0)) for item in conversations)
         self.send_json(
             200,
@@ -9305,7 +10119,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not can_use_chat(user):
             self.send_json(
                 403,
-                {"ok": False, "message": "Vetem klientet dhe bizneset kane qasje ne mesazhe."},
+                {"ok": False, "message": "Ky rol nuk ka qasje ne mesazhe."},
             )
             return
 
@@ -9322,20 +10136,74 @@ class AppHandler(SimpleHTTPRequestHandler):
         mark_chat_messages_as_read(conversation_id, int(user["id"]))
         updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
         message_rows = fetch_chat_messages_for_conversation(conversation_id)
+        counterpart_typing = is_counterpart_typing(conversation_id, int(user["id"]))
+        serialized_conversation = (
+            serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
+            if updated_conversation_row
+            else None
+        )
+        if serialized_conversation is not None:
+            serialized_conversation["counterpartTyping"] = counterpart_typing
 
         self.send_json(
             200,
             {
                 "ok": True,
-                "conversation": (
-                    serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
-                    if updated_conversation_row
-                    else None
-                ),
+                "conversation": serialized_conversation,
                 "messages": [
                     serialize_chat_message(row, viewer_user_id=int(user["id"]))
                     for row in message_rows
                 ],
+                "counterpartTyping": counterpart_typing,
+            },
+        )
+
+    def handle_chat_unread_reminders(self) -> None:
+        authorization_header = str(self.headers.get("Authorization", "")).strip()
+        expected_authorization = f"Bearer {CRON_SECRET}" if CRON_SECRET else ""
+
+        if CRON_SECRET and not secrets.compare_digest(authorization_header, expected_authorization):
+            self.send_json(
+                401,
+                {"ok": False, "message": "Cron authorization failed."},
+            )
+            return
+
+        reminder_rows = fetch_pending_chat_unread_reminder_rows()
+        if not reminder_rows:
+            self.send_json(
+                200,
+                {"ok": True, "processed": 0, "sent": 0, "warnings": []},
+            )
+            return
+
+        warnings: list[str] = []
+        sent_count = 0
+        public_app_origin = self.get_public_app_origin()
+
+        for reminder_row in reminder_rows:
+            reminder_message = build_chat_unread_reminder_message(
+                reminder_row,
+                public_app_origin=public_app_origin,
+            )
+            message_warnings = send_email_notifications([reminder_message])
+            if message_warnings:
+                reminder_id = int(reminder_row["id"])
+                warnings.extend(
+                    [f"Mesazhi #{reminder_id}: {warning}" for warning in message_warnings]
+                )
+                continue
+
+            mark_chat_unread_reminder_sent(int(reminder_row["id"]))
+            sent_count += 1
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "processed": len(reminder_rows),
+                "sent": sent_count,
+                "warnings": warnings,
             },
         )
 
@@ -9354,7 +10222,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not can_use_chat(user):
             self.send_json(
                 403,
-                {"ok": False, "message": "Vetem klientet dhe bizneset kane sugjerime te bisedes."},
+                {"ok": False, "message": "Ky rol nuk ka sugjerime te bisedes."},
             )
             return
 
@@ -9399,14 +10267,14 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not user:
             self.send_json(
                 401,
-                {"ok": False, "message": "Duhet te kyçesh per t'i derguar mesazh biznesit."},
+                {"ok": False, "message": "Duhet te kyçesh per ta hapur biseden."},
             )
             return
 
-        if str(user["role"] or "").strip() != "client":
+        if not can_use_chat(user):
             self.send_json(
                 403,
-                {"ok": False, "message": "Vetem klientet mund te nisin bisede te re me biznesin."},
+                {"ok": False, "message": "Ky rol nuk ka qasje ne chat."},
             )
             return
 
@@ -9416,27 +10284,61 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "message": str(error)})
             return
 
-        errors, business_id = parse_business_id(payload)
-        if errors or business_id is None:
-            self.send_json(400, {"ok": False, "errors": errors})
+        open_target = str(payload.get("target", "") or "").strip().lower()
+        business_profile_id: int | None = None
+        counterpart_user_id: int | None = None
+
+        if open_target == "support":
+            if str(user["role"] or "").strip() == "admin":
+                self.send_json(
+                    400,
+                    {"ok": False, "message": "Admini eshte vete customer support."},
+                )
+                return
+
+            support_user = fetch_support_admin_user(exclude_user_id=int(user["id"]))
+            if not support_user:
+                self.send_json(
+                    404,
+                    {"ok": False, "message": "Customer support nuk eshte i disponueshem per momentin."},
+                )
+                return
+
+            counterpart_user_id = int(support_user["id"])
+        else:
+            errors, business_id = parse_business_id(payload)
+            if errors or business_id is None:
+                self.send_json(400, {"ok": False, "errors": errors})
+                return
+
+            business_profile = fetch_public_business_profile_by_id(business_id)
+            if not business_profile:
+                self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
+                return
+
+            if int(business_profile["user_id"]) == int(user["id"]):
+                self.send_json(
+                    400,
+                    {"ok": False, "message": "Nuk mund ta hapesh biseden me profilin tend."},
+                )
+                return
+
+            business_profile_id = int(business_profile["id"])
+            counterpart_user_id = int(business_profile["user_id"])
+
+        if counterpart_user_id is None or counterpart_user_id <= 0:
+            self.send_json(400, {"ok": False, "message": "Pala e zgjedhur per bisede nuk eshte valide."})
             return
 
-        business_profile = fetch_public_business_profile_by_id(business_id)
-        if not business_profile:
-            self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
-            return
+        if str(user["role"] or "").strip() == "business":
+            own_business_profile = fetch_business_profile_for_user(int(user["id"]))
+            if own_business_profile and not business_profile_id:
+                business_profile_id = int(own_business_profile["id"])
 
-        if int(business_profile["user_id"]) == int(user["id"]):
-            self.send_json(
-                400,
-                {"ok": False, "message": "Nuk mund t'i dergosh mesazh biznesit tend."},
-            )
-            return
-
-        conversation_id = ensure_chat_conversation_for_client(
+        conversation_id = ensure_chat_conversation_between_users(
             int(user["id"]),
-            int(business_profile["user_id"]),
-            int(business_profile["id"]),
+            counterpart_user_id,
+            business_profile_id,
         )
         conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
 
@@ -9454,6 +10356,42 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def handle_chat_typing(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh per typing state."},
+            )
+            return
+
+        if not can_use_chat(user):
+            self.send_json(
+                403,
+                {"ok": False, "message": "Ky rol nuk ka qasje ne chat."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        conversation_errors, conversation_id = parse_conversation_id(payload)
+        if conversation_errors or conversation_id is None:
+            self.send_json(400, {"ok": False, "errors": conversation_errors})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        is_typing = parse_chat_typing_state(payload)
+        set_chat_typing_state(conversation_id, int(user["id"]), is_typing=is_typing)
+        self.send_json(200, {"ok": True, "isTyping": is_typing})
+
     def handle_chat_send_message(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -9466,18 +10404,50 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not can_use_chat(user):
             self.send_json(
                 403,
-                {"ok": False, "message": "Vetem klientet dhe bizneset mund te dergojne mesazhe."},
+                {"ok": False, "message": "Vetem perdoruesit me qasje ne chat mund te dergojne mesazhe."},
             )
             return
 
-        try:
-            payload = self.read_json()
-        except ValueError as error:
-            self.send_json(400, {"ok": False, "message": str(error)})
-            return
+        payload: dict[str, object] = {}
+        attachment_payload: dict[str, object] | None = None
+        is_multipart_request = "multipart/form-data" in str(self.headers.get("Content-Type", "")).lower()
+
+        if is_multipart_request:
+            try:
+                message = self.read_multipart_message()
+            except ValueError as error:
+                self.send_json(400, {"ok": False, "message": str(error)})
+                return
+
+            for part in message.iter_parts():
+                if part.get_content_disposition() != "form-data":
+                    continue
+
+                part_name = str(part.get_param("name", header="content-disposition") or "").strip()
+                if not part_name:
+                    continue
+
+                if part_name == "attachment" and part.get_filename():
+                    attachment_errors, next_attachment_payload = build_chat_attachment_payload_from_part(part)
+                    if attachment_errors:
+                        self.send_json(400, {"ok": False, "errors": attachment_errors})
+                        return
+                    attachment_payload = next_attachment_payload
+                    continue
+
+                payload[part_name] = str(part.get_payload(decode=True) or b"", "utf-8", errors="ignore")
+        else:
+            try:
+                payload = self.read_json()
+            except ValueError as error:
+                self.send_json(400, {"ok": False, "message": str(error)})
+                return
 
         conversation_errors, conversation_id = parse_conversation_id(payload)
         message_errors, message_body = parse_chat_message_body(payload)
+        if attachment_payload and not message_body:
+            message_errors = []
+            message_body = ""
         if conversation_errors or message_errors or conversation_id is None:
             self.send_json(400, {"ok": False, "errors": conversation_errors + message_errors})
             return
@@ -9492,14 +10462,41 @@ class AppHandler(SimpleHTTPRequestHandler):
         else:
             recipient_user_id = int(conversation_row["client_user_id"])
 
+        attachment_path = ""
+        attachment_content_type = ""
+        attachment_file_name = ""
+        if attachment_payload:
+            stored_name = f"{secrets.token_urlsafe(16)}{attachment_payload['extension']}"
+            store_uploaded_asset(
+                stored_name=stored_name,
+                original_filename=str(attachment_payload["original_filename"]),
+                content_type=str(attachment_payload["content_type"]),
+                file_bytes=bytes(attachment_payload["file_bytes"]),
+                created_by_user_id=int(user["id"]),
+            )
+            attachment_path = f"/uploads/{stored_name}"
+            attachment_content_type = str(attachment_payload["content_type"])
+            attachment_file_name = str(attachment_payload["original_filename"])
+
         message_id = insert_chat_message(
             conversation_id,
             int(user["id"]),
             recipient_user_id,
             message_body,
+            attachment_path=attachment_path,
+            attachment_content_type=attachment_content_type,
+            attachment_file_name=attachment_file_name,
         )
+        set_chat_typing_state(conversation_id, int(user["id"]), is_typing=False)
         message_row = fetch_chat_message_by_id(message_id)
         updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
+        serialized_conversation = (
+            serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
+            if updated_conversation_row
+            else None
+        )
+        if serialized_conversation is not None:
+            serialized_conversation["counterpartTyping"] = False
 
         self.send_json(
             201,
@@ -9510,9 +10507,112 @@ class AppHandler(SimpleHTTPRequestHandler):
                     if message_row
                     else None
                 ),
-                "conversation": (
-                    serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
-                    if updated_conversation_row
+                "conversation": serialized_conversation,
+            },
+        )
+
+    def handle_chat_update_message(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per ta ndryshuar mesazhin."})
+            return
+
+        if not can_use_chat(user):
+            self.send_json(403, {"ok": False, "message": "Ky rol nuk ka qasje ne chat."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        message_errors, message_id = parse_chat_message_id(payload)
+        body_errors, next_body = parse_chat_message_body(payload)
+        if message_errors or body_errors or message_id is None:
+            self.send_json(400, {"ok": False, "errors": message_errors + body_errors})
+            return
+
+        message_row = fetch_chat_message_by_id(message_id)
+        if not message_row:
+            self.send_json(404, {"ok": False, "message": "Mesazhi nuk u gjet."})
+            return
+
+        if int(message_row["sender_user_id"]) != int(user["id"]):
+            self.send_json(403, {"ok": False, "message": "Mund te ndryshosh vetem mesazhet e tua."})
+            return
+
+        if str(message_row["deleted_at"] or "").strip():
+            self.send_json(400, {"ok": False, "message": "Mesazhi i fshire nuk mund te ndryshohet."})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(int(message_row["conversation_id"]), int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        update_chat_message_content(message_id, next_body=next_body)
+        updated_message_row = fetch_chat_message_by_id(message_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": (
+                    serialize_chat_message(updated_message_row, viewer_user_id=int(user["id"]))
+                    if updated_message_row
+                    else None
+                ),
+            },
+        )
+
+    def handle_chat_delete_message(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per ta fshire mesazhin."})
+            return
+
+        if not can_use_chat(user):
+            self.send_json(403, {"ok": False, "message": "Ky rol nuk ka qasje ne chat."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        message_errors, message_id = parse_chat_message_id(payload)
+        if message_errors or message_id is None:
+            self.send_json(400, {"ok": False, "errors": message_errors})
+            return
+
+        message_row = fetch_chat_message_by_id(message_id)
+        if not message_row:
+            self.send_json(404, {"ok": False, "message": "Mesazhi nuk u gjet."})
+            return
+
+        if int(message_row["sender_user_id"]) != int(user["id"]):
+            self.send_json(403, {"ok": False, "message": "Mund te fshish vetem mesazhet e tua."})
+            return
+
+        if str(message_row["deleted_at"] or "").strip():
+            self.send_json(200, {"ok": True, "message": "Mesazhi eshte i fshire tashme."})
+            return
+
+        conversation_row = fetch_chat_conversation_for_user(int(message_row["conversation_id"]), int(user["id"]))
+        if not conversation_row:
+            self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
+            return
+
+        delete_chat_message(message_id)
+        updated_message_row = fetch_chat_message_by_id(message_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": (
+                    serialize_chat_message(updated_message_row, viewer_user_id=int(user["id"]))
+                    if updated_message_row
                     else None
                 ),
             },
@@ -11704,28 +12804,38 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         user = fetch_user_by_email(email)
-        email_warnings: list[str] = []
-        if user:
-            reset_code = generate_password_reset_code()
-            with get_db_connection() as connection:
-                save_password_reset_code(connection, user["id"], reset_code)
-            email_warnings = send_password_reset_code(user, reset_code)
-
-        message = (
-            "Nese ekziston nje llogari me kete email, kodi per ndryshim te fjalekalimit u dergua."
-        )
-        if user and email_warnings:
-            message = (
-                "Kodi u krijua, por email-i nuk u dergua. "
-                "Kontrollo SMTP-ne ose terminalin lokal te serverit."
+        if not user:
+            self.send_json(
+                404,
+                {"ok": False, "message": "Nuk ekziston nje llogari me kete email."},
             )
+            return
+
+        email_warnings: list[str] = []
+        reset_code = generate_password_reset_code()
+        with get_db_connection() as connection:
+            save_password_reset_code(connection, user["id"], reset_code)
+        email_warnings = send_password_reset_code(user, reset_code)
+
+        if email_warnings:
+            self.send_json(
+                503,
+                {
+                    "ok": False,
+                    "message": (
+                        "Kodi u krijua, por email-i nuk u dergua. "
+                        "Kontrollo SMTP-ne ose terminalin lokal te serverit."
+                    ),
+                    "warnings": email_warnings,
+                },
+            )
+            return
 
         self.send_json(
             200,
             {
                 "ok": True,
-                "message": message,
-                "warnings": email_warnings,
+                "message": "Kodi per ndryshim te fjalekalimit u dergua.",
                 "redirectTo": build_password_reset_redirect(email),
             },
         )
@@ -12510,6 +13620,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         if not user:
             delete_session(session_token)
             return None
+
+        touch_user_presence(int(user["id"]), user["last_seen_at"])
 
         return user
 

@@ -89,10 +89,12 @@ function handleTouchEnd(event) {
     clientX: touchLastX,
     clientY: touchLastY,
   };
+  const startX = touchStartX;
+  const startY = touchStartY;
   resetTouchState();
 
-  const deltaX = touch.clientX - touchStartX;
-  const deltaY = touch.clientY - touchStartY;
+  const deltaX = touch.clientX - startX;
+  const deltaY = touch.clientY - startY;
   if (Math.abs(deltaX) < 42 || Math.abs(deltaX) <= Math.abs(deltaY)) {
     restartAutoplay();
     return;
