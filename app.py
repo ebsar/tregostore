@@ -775,9 +775,15 @@ def initialize_database() -> None:
             schema_path = POSTGRES_SCHEMA_PATH if is_postgres_connection(connection) else SCHEMA_PATH
             current_schema_version = get_runtime_meta_value(connection, "schema_version")
             has_core_schema = table_exists(connection, "users") and table_exists(connection, "products")
-            if current_schema_version != APP_SCHEMA_VERSION or not has_core_schema:
+            needs_schema_bootstrap = not has_core_schema
+            needs_migration = current_schema_version != APP_SCHEMA_VERSION or needs_schema_bootstrap
+
+            if needs_schema_bootstrap:
                 connection.executescript(schema_path.read_text(encoding="utf-8"))
+
+            if needs_migration:
                 migrate_database(connection)
+                ensure_runtime_meta_table(connection)
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
             ensure_bootstrap_admin(connection)
         finally:
@@ -1100,6 +1106,8 @@ def ensure_bootstrap_admin(connection: DatabaseConnection) -> None:
 
 def migrate_database(connection: DatabaseConnection) -> None:
     now_text_value = datetime_to_storage_text(utc_now())
+
+    ensure_runtime_meta_table(connection)
 
     if not column_exists(connection, "users", "first_name"):
         connection.execute(
@@ -2625,6 +2633,29 @@ def get_runtime_meta_value(connection: DatabaseConnection, key: str) -> str:
         return ""
 
     return str(row["value"] or "").strip()
+
+
+def ensure_runtime_meta_table(connection: DatabaseConnection) -> None:
+    if table_exists(connection, "app_runtime_meta"):
+        return
+
+    connection.execute(
+        """
+        CREATE TABLE app_runtime_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
+        )
+        """
+        if is_postgres_connection(connection)
+        else """
+        CREATE TABLE app_runtime_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
 
 
 def set_runtime_meta_value(connection: DatabaseConnection, key: str, value: str) -> None:
