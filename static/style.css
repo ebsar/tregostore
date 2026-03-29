@@ -7278,7 +7278,7 @@ body[data-page="cart"] .saved-product-copy h3 {
 }
 
 .signup-hero::before {
-  inset: -3%;
+  inset: -3% -3% calc(-3% - env(safe-area-inset-bottom, 0px)) -3%;
   background:
     linear-gradient(180deg, rgba(18, 23, 48, 0.2), rgba(18, 23, 48, 0.32)),
     url("/signup-background-shopping.webp") center center / cover no-repeat;
