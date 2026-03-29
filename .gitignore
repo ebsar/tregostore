@@ -9,3 +9,5 @@ data/*.sqlite3
 .DS_Store
 .vercel/
 static/uploads/
+.vercel
+.env*.local
