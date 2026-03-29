@@ -27,6 +27,10 @@ export async function requestJson(url, options = {}, runtime = {}) {
   config.headers = { ...(options.headers || {}) };
   const method = normalizeMethod(config);
   const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
+  const timeoutMs = Math.max(
+    1500,
+    Number(runtime.timeoutMs || (method === "GET" ? 8000 : 15000)),
+  );
   const cacheKey = runtime.cacheKey || `${method}:${url}`;
   const canUseCache = method === "GET" && !config.body && cacheTtlMs > 0;
 
@@ -58,13 +62,36 @@ export async function requestJson(url, options = {}, runtime = {}) {
   }
 
   const pendingRequest = (async () => {
-    const response = await fetch(url, config);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
+    let response = null;
     let data = {};
 
     try {
-      data = await response.json();
+      response = await fetch(url, {
+        ...config,
+        signal: controller.signal,
+      });
+
+      try {
+        data = await response.json();
+      } catch (error) {
+        console.error(error);
+      }
     } catch (error) {
       console.error(error);
+      data = {
+        ok: false,
+        message:
+          error?.name === "AbortError"
+            ? "Serveri po vonon shume. Provoje perseri pas pak."
+            : "Lidhja me serverin deshtoi.",
+      };
+    } finally {
+      window.clearTimeout(timeoutId);
     }
 
     const result = {
@@ -72,7 +99,7 @@ export async function requestJson(url, options = {}, runtime = {}) {
       data,
     };
 
-    if (canUseCache && response.ok) {
+    if (canUseCache && response?.ok) {
       GET_REQUEST_CACHE.set(cacheKey, {
         expiresAt: Date.now() + cacheTtlMs,
         response: result.response,
@@ -80,7 +107,7 @@ export async function requestJson(url, options = {}, runtime = {}) {
       });
     }
 
-    if (method !== "GET" && response.ok) {
+    if (method !== "GET" && response?.ok) {
       invalidateRequestCache();
     }
 
