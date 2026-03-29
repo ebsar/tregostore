@@ -336,7 +336,7 @@ function updateSpeedInsightsRoute() {
         <div class="site-footer-brand">
           <img class="site-footer-logo" src="/trego-logo.webp" alt="TREGO" width="420" height="159">
           <p class="site-footer-copy">
-            TREGO lidh bizneset dhe bleresit ne nje eksperience te paster, moderne dhe te shpejte.
+            TREGO eshte nje platforme per prezantim, shitje dhe komunikim profesional mes bizneseve dhe bleresve.
           </p>
         </div>
 
@@ -348,8 +348,8 @@ function updateSpeedInsightsRoute() {
         </nav>
 
         <div class="site-footer-meta">
-          <p class="site-footer-note">Blerje me stil. Biznese me prezence te forte.</p>
-          <p class="site-footer-note">© TREGO</p>
+          <p class="site-footer-note">Katalog, komunikim dhe porosi ne nje eksperience te qarte dhe te besueshme.</p>
+          <p class="site-footer-note">© TREGO. Te gjitha te drejtat e rezervuara.</p>
         </div>
       </div>
     </footer>
