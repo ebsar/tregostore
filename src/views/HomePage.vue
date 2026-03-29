@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { RouterLink, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import PromoSlider from "../components/PromoSlider.vue";
+import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
@@ -69,21 +70,41 @@ const businessProductsCount = computed(() =>
     businessProducts.value.length || Number(businessProfile.value?.productsCount || 0),
   ),
 );
+const groupedPageSections = new Set(["clothing", "cosmetics"]);
+const { target: loadMoreSentinel, supportsAutoLoad } = useInfiniteScrollSentinel({
+  enabled: computed(() => !isBusinessUser.value),
+  hasMore: hasMoreProducts,
+  loading: loadingMoreProducts,
+  onLoadMore: loadMoreProducts,
+});
 
 const availablePageSectionOptions = computed(() => availableFilters.value.pageSections);
 const availableCategoryOptions = computed(() =>
-  availableFilters.value.categories.filter((option) =>
-    !filters.pageSection || String(option.pageSection || "") === filters.pageSection,
-  ),
+  !filters.pageSection || !groupedPageSections.has(filters.pageSection)
+    ? []
+    : availableFilters.value.categories.filter((option) =>
+        String(option.pageSection || "") === filters.pageSection,
+      ),
 );
 const availableProductTypeOptions = computed(() =>
-  availableFilters.value.productTypes.filter((option) =>
-    (!filters.pageSection || String(option.pageSection || "") === filters.pageSection)
-    && (!filters.category || String(option.category || "") === filters.category),
-  ),
+  !filters.pageSection
+    ? []
+    : availableFilters.value.productTypes.filter((option) => {
+        const matchesSection = String(option.pageSection || "") === filters.pageSection;
+        const hasNestedCategories = availableCategoryOptions.value.length > 0;
+        const matchesCategory = !hasNestedCategories || String(option.category || "") === filters.category;
+        return matchesSection && matchesCategory;
+      }),
 );
 const availableSizeOptions = computed(() => availableFilters.value.sizes);
 const availableColorOptions = computed(() => availableFilters.value.colors);
+const shouldShowProductTypeFilter = computed(() => {
+  if (!filters.pageSection || availableProductTypeOptions.value.length === 0) {
+    return false;
+  }
+
+  return availableCategoryOptions.value.length === 0 || Boolean(filters.category);
+});
 const shouldRequestFacets = computed(() =>
   filtersVisible.value
   || Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
@@ -587,7 +608,7 @@ async function handleCart(productId) {
     <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet ne faqen kryesore">
       <div class="search-filters-grid">
         <label v-if="availablePageSectionOptions.length > 0" class="field">
-          <span>Kategoria e faqes</span>
+          <span>Kategoria kryesore</span>
           <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
             <option value="">Te gjitha kategorite</option>
             <option
@@ -600,7 +621,7 @@ async function handleCart(productId) {
           </select>
         </label>
 
-        <label v-if="availableCategoryOptions.length > 0" class="field">
+        <label v-if="filters.pageSection && availableCategoryOptions.length > 0" class="field">
           <span>Nenkategoria</span>
           <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
             <option value="">Te gjitha nenkategorite</option>
@@ -614,8 +635,8 @@ async function handleCart(productId) {
           </select>
         </label>
 
-        <label v-if="availableProductTypeOptions.length > 0" class="field">
-          <span>Lloji i produktit</span>
+        <label v-if="shouldShowProductTypeFilter" class="field">
+          <span>Produkti</span>
           <select v-model="filters.productType" class="search-filter-select" @change="handleCatalogFilterChange">
             <option value="">Te gjitha llojet</option>
             <option
@@ -689,8 +710,17 @@ async function handleCart(productId) {
       />
     </section>
 
-    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
-      <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more" :class="{ 'is-auto-loading': supportsAutoLoad }">
+      <div
+        v-if="supportsAutoLoad"
+        ref="loadMoreSentinel"
+        class="collection-load-more-sentinel"
+        aria-hidden="true"
+      ></div>
+      <p v-if="loadingMoreProducts" class="collection-load-more-copy">
+        Duke ngarkuar edhe 6 produkte...
+      </p>
+      <button v-else-if="!supportsAutoLoad" class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
         {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
       </button>
     </div>

@@ -40,33 +40,22 @@ function createNavigationGroups(sectionValue) {
   if (audiences.length > 0) {
     return audiences.map((audience) => {
       const category = buildCategoryFromSelection(sectionValue, audience.value);
-      const productTypes = PRODUCT_TYPE_OPTIONS_BY_CATEGORY[category] || [];
 
       return {
         key: `${sectionValue}-${audience.value}`,
         label: audience.label,
         href: createSearchHref({ category }),
-        items: productTypes.map((productType) => ({
-          key: `${category}-${productType.value}`,
-          label: productType.label,
-          href: createSearchHref({ category, productType: productType.value }),
-        })),
       };
     });
   }
 
   const productTypes = PRODUCT_TYPE_OPTIONS_BY_CATEGORY[sectionValue] || [];
 
-  return [{
-    key: `${sectionValue}-group`,
-    label: `Te gjitha ${PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === sectionValue)?.label || sectionValue}`,
-    href: createSearchHref({ category: sectionValue }),
-    items: productTypes.map((productType) => ({
-      key: `${sectionValue}-${productType.value}`,
-      label: productType.label,
-      href: createSearchHref({ category: sectionValue, productType: productType.value }),
-    })),
-  }];
+  return productTypes.slice(0, 6).map((productType) => ({
+    key: `${sectionValue}-${productType.value}`,
+    label: productType.label,
+    href: createSearchHref({ category: sectionValue, productType: productType.value }),
+  }));
 }
 
 export const PRIMARY_NAVIGATION = PRODUCT_PAGE_SECTION_OPTIONS.map((section) => {

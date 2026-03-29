@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
+import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
@@ -23,6 +24,11 @@ const ui = reactive({
   type: "",
 });
 let stopProductsPageSizeSubscription = () => {};
+const { target: loadMoreSentinel, supportsAutoLoad } = useInfiniteScrollSentinel({
+  hasMore: hasMoreProducts,
+  loading: loadingMoreProducts,
+  onLoadMore: loadMoreProducts,
+});
 
 watch(
   () => route.fullPath,
@@ -510,8 +516,17 @@ async function handleCart(productId) {
         />
       </section>
 
-      <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more">
-        <button class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+      <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more" :class="{ 'is-auto-loading': supportsAutoLoad }">
+        <div
+          v-if="supportsAutoLoad"
+          ref="loadMoreSentinel"
+          class="collection-load-more-sentinel"
+          aria-hidden="true"
+        ></div>
+        <p v-if="loadingMoreProducts" class="collection-load-more-copy">
+          Duke ngarkuar edhe 6 produkte...
+        </p>
+        <button v-else-if="!supportsAutoLoad" class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
           {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
         </button>
       </div>

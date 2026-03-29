@@ -1,6 +1,6 @@
 const MOBILE_PRODUCTS_MEDIA_QUERY = "(max-width: 640px)";
-const MOBILE_PRODUCTS_PAGE_SIZE = 5;
-const DEFAULT_PRODUCTS_PAGE_SIZE = 10;
+const MOBILE_PRODUCTS_PAGE_SIZE = 6;
+const DEFAULT_PRODUCTS_PAGE_SIZE = 6;
 
 export function getProductsPageSize() {
   if (typeof window === "undefined") {

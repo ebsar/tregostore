@@ -671,31 +671,17 @@ onBeforeUnmount(() => {
               Shih te gjitha
             </RouterLink>
 
-            <section
-              v-for="group in section.groups"
-              :key="group.key"
-              class="nav-dropdown-group"
-            >
+            <div class="nav-dropdown-group-items nav-dropdown-shortcuts">
               <RouterLink
-                class="nav-dropdown-group-link"
+                v-for="group in section.groups"
+                :key="group.key"
+                class="nav-dropdown-item nav-dropdown-shortcut-link"
                 :to="group.href"
                 @click="closeExpandedPanels"
               >
                 {{ group.label }}
               </RouterLink>
-
-              <div class="nav-dropdown-group-items">
-                <RouterLink
-                  v-for="item in group.items"
-                  :key="item.key || item.href"
-                  class="nav-dropdown-item nav-dropdown-subitem"
-                  :to="item.href"
-                  @click="closeExpandedPanels"
-                >
-                  {{ item.label }}
-                </RouterLink>
-              </div>
-            </section>
+            </div>
           </div>
         </div>
 
