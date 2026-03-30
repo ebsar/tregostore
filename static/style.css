@@ -3906,12 +3906,16 @@ body[data-page="home"] .home-hero .home-hero-content {
 
   .home-marketplace-category-list,
   .home-marketplace-hero-stats,
-  .home-marketplace-products-grid,
-  .home-marketplace-products-grid.is-compact,
   .home-marketplace-trust-grid,
   .home-marketplace-brand-grid,
   .home-marketplace-category-grid {
     grid-template-columns: 1fr;
+  }
+
+  .home-marketplace-products-grid,
+  .home-marketplace-products-grid.is-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .home-marketplace-category-list {
@@ -4022,16 +4026,16 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .pet-product-content-shell {
-    padding: 9px 9px 10px;
+    padding: 7px 7px 8px;
   }
 
   .pet-product-title {
-    font-size: 0.94rem;
+    font-size: 0.78rem;
   }
 
   .pet-product-description {
-    font-size: 0.8rem;
-    line-height: 1.44;
+    font-size: 0.66rem;
+    line-height: 1.32;
   }
 
   .pet-product-business-name {
@@ -4041,14 +4045,14 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .pet-product-price {
-    font-size: 1.04rem;
+    font-size: 0.84rem;
   }
 
   .pet-product-rating-row {
     min-height: 20px;
-    padding: 4px 7px;
-    gap: 6px;
-    font-size: 0.72rem;
+    padding: 3px 6px;
+    gap: 4px;
+    font-size: 0.62rem;
   }
 
   .pet-product-rating-star {
@@ -4057,9 +4061,9 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .product-card-overlay-button {
-    width: 32px;
-    height: 32px;
-    bottom: 8px;
+    width: 28px;
+    height: 28px;
+    bottom: 6px;
   }
 
   .product-card-overlay-button .nav-icon {
