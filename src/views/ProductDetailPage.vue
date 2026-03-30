@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { readRecentlyViewedProducts, rememberRecentlyViewedProduct } from "../lib/recently-viewed";
@@ -19,12 +19,14 @@ import { compareState, ensureCompareItemsLoaded, toggleComparedProduct } from ".
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
+const router = useRouter();
 const currentProduct = ref(null);
 const currentImageIndex = ref(0);
 const wishlistIds = ref([]);
 const cartIds = ref([]);
 const selectedColor = ref("");
 const selectedSize = ref("");
+const selectedQuantity = ref(1);
 const productReviews = ref([]);
 const recentlyViewedProducts = ref([]);
 const canSubmitReview = ref(false);
@@ -43,6 +45,7 @@ const isCompared = computed(() =>
 );
 const isProductAvailable = computed(() => hasProductAvailableStock(currentProduct.value || {}));
 const outOfStockMessage = computed(() => getProductStockMessage(currentProduct.value || {}));
+const businessName = computed(() => String(currentProduct.value?.businessName || "").trim());
 
 const variantInventory = computed(() => {
   if (!Array.isArray(currentProduct.value?.variantInventory)) {
@@ -127,6 +130,115 @@ const imageGallery = computed(() => getProductImageGallery(currentProduct.value)
 const currentImagePath = computed(
   () => imageGallery.value[currentImageIndex.value] || currentProduct.value?.imagePath || "",
 );
+const currentPrice = computed(() => Number(currentProduct.value?.price || 0));
+const compareAtPrice = computed(() => {
+  const rawValue = Number(currentProduct.value?.compareAtPrice ?? currentProduct.value?.originalPrice ?? 0);
+  if (!Number.isFinite(rawValue) || rawValue <= currentPrice.value) {
+    return null;
+  }
+
+  return rawValue;
+});
+const discountPercent = computed(() => {
+  if (!compareAtPrice.value) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(((compareAtPrice.value - currentPrice.value) / compareAtPrice.value) * 100));
+});
+const averageRating = computed(() => {
+  const rawValue = Number(currentProduct.value?.averageRating ?? currentProduct.value?.ratingAverage ?? 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(5, rawValue));
+});
+const reviewCount = computed(() => {
+  const rawValue = Number(currentProduct.value?.reviewCount || productReviews.value.length || 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(rawValue));
+});
+const buyersCount = computed(() => {
+  const rawValue = Number(currentProduct.value?.buyersCount || 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(rawValue));
+});
+const filledStars = computed(() => {
+  if (averageRating.value <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(5, Math.round(averageRating.value)));
+});
+const shortDescription = computed(() => {
+  const rawValue = String(currentProduct.value?.description || "").trim();
+  if (!rawValue) {
+    return "Produkt i perzgjedhur me fokus te qarte ne cilesi, prezantim dhe blerje te shpejte.";
+  }
+
+  if (rawValue.length <= 180) {
+    return rawValue;
+  }
+
+  return `${rawValue.slice(0, 177).trim()}...`;
+});
+const selectedVariantStock = computed(() => {
+  if (selectedVariant.value) {
+    return maxAvailableQuantityForSelection(selectedVariant.value);
+  }
+
+  if (currentProduct.value?.requiresVariantSelection) {
+    return 0;
+  }
+
+  return maxAvailableQuantityForSelection(currentProduct.value || {});
+});
+const quantityMax = computed(() => Math.max(1, Math.min(12, selectedVariantStock.value || 1)));
+const breadcrumbItems = computed(() => ([
+  { label: "Home", to: "/" },
+  { label: formatCategoryLabel(currentProduct.value?.category || ""), to: getCategoryUrl(currentProduct.value?.category) },
+  { label: currentProduct.value?.title || "Produkt", to: "" },
+]));
+const specificationItems = computed(() => {
+  if (!currentProduct.value) {
+    return [];
+  }
+
+  return [
+    { label: "Kategoria", value: formatCategoryLabel(currentProduct.value.category) || "Marketplace" },
+    { label: "Lloji", value: formatProductTypeLabel(currentProduct.value.productType) || "Produkt" },
+    { label: "Ngjyra", value: currentProduct.value.color ? formatProductColorLabel(currentProduct.value.color) : "" },
+    { label: "Madhesia", value: currentProduct.value.size || "" },
+    {
+      label: "Permbajtja",
+      value: currentProduct.value.packageAmountValue && currentProduct.value.packageAmountUnit
+        ? `${currentProduct.value.packageAmountValue}${currentProduct.value.packageAmountUnit}`
+        : "",
+    },
+    { label: "Disponueshmeria", value: isProductAvailable.value ? "Ne stok" : "Pa stok" },
+  ].filter((item) => String(item.value || "").trim());
+});
+const trustHighlights = computed(() => ([
+  {
+    title: "Dergese e sigurt",
+    description: "Porosite trajtohen vetem kur produkti konfirmohet ne stok nga biznesi.",
+  },
+  {
+    title: "Kthime te qarta",
+    description: "Proces i kontrolluar per refund dhe kthime kur porosia nuk permbushet si duhet.",
+  },
+  {
+    title: "Pagese e sigurt",
+    description: "Checkout i qarte me ruajtje te kontrolluar te stokut dhe gjurmim te porosise.",
+  },
+]));
 const relatedViewedProducts = computed(() =>
   recentlyViewedProducts.value
     .filter((product) => Number(product?.id || 0) !== Number(currentProduct.value?.id || 0))
@@ -153,6 +265,13 @@ onMounted(async () => {
   ensureCompareItemsLoaded();
   recentlyViewedProducts.value = readRecentlyViewedProducts();
   await bootstrap();
+});
+
+watch(selectedVariantStock, (nextValue) => {
+  const maxAllowed = Math.max(1, Math.min(12, nextValue || 1));
+  if (selectedQuantity.value > maxAllowed) {
+    selectedQuantity.value = maxAllowed;
+  }
 });
 
 watch(
@@ -223,14 +342,21 @@ async function loadProduct() {
   currentProduct.value = data.product;
   recentlyViewedProducts.value = rememberRecentlyViewedProduct(currentProduct.value);
   currentImageIndex.value = 0;
+  selectedQuantity.value = 1;
   initializeVariantSelection();
-  await loadProductReviews(productId);
+  productReviews.value = [];
+  canSubmitReview.value = false;
+  void loadProductReviews(productId);
   ui.message = "";
   ui.type = "";
 }
 
 async function loadProductReviews(productId) {
-  const { response, data } = await requestJson(`/api/product/reviews?id=${encodeURIComponent(productId)}`);
+  const { response, data } = await requestJson(
+    `/api/product/reviews?id=${encodeURIComponent(productId)}`,
+    {},
+    { cacheTtlMs: 20000 },
+  );
   if (!response.ok || !data?.ok) {
     productReviews.value = [];
     canSubmitReview.value = false;
@@ -333,33 +459,69 @@ async function handleWishlist() {
 }
 
 async function handleCart() {
-  if (!currentProduct.value) {
+  await addCurrentProductToCart();
+}
+
+async function handleBuyNow() {
+  const added = await addCurrentProductToCart({ goToCart: true });
+  if (!added) {
     return;
+  }
+}
+
+function setCurrentImage(index) {
+  if (index < 0 || index >= imageGallery.value.length) {
+    return;
+  }
+
+  currentImageIndex.value = index;
+}
+
+function maxAvailableQuantityForSelection(target) {
+  const rawValue = Number(target?.quantity ?? target?.stockQuantity ?? 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(rawValue));
+}
+
+function decrementQuantity() {
+  selectedQuantity.value = Math.max(1, selectedQuantity.value - 1);
+}
+
+function incrementQuantity() {
+  selectedQuantity.value = Math.min(quantityMax.value, selectedQuantity.value + 1);
+}
+
+async function addCurrentProductToCart(options = {}) {
+  if (!currentProduct.value) {
+    return false;
   }
 
   if (!appState.user) {
     ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
     ui.type = "error";
-    return;
+    return false;
   }
 
   if (!isProductAvailable.value) {
     ui.message = outOfStockMessage.value;
     ui.type = "error";
-    return;
+    return false;
   }
 
   const productId = currentProduct.value.id;
   if (currentProduct.value.requiresVariantSelection && !selectedVariant.value) {
     ui.message = "Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne cart.";
     ui.type = "error";
-    return;
+    return false;
   }
 
   if (selectedVariant.value && Number(selectedVariant.value.quantity || 0) <= 0) {
     ui.message = "Na vjen keq, varianti i zgjedhur nuk eshte me ne stok.";
     ui.type = "error";
-    return;
+    return false;
   }
 
   if (!cartIds.value.includes(productId)) {
@@ -373,6 +535,7 @@ async function handleCart() {
       variantKey: selectedVariant.value?.key || "",
       selectedSize: selectedVariant.value?.size || selectedSize.value,
       selectedColor: selectedVariant.value?.color || selectedColor.value,
+      quantity: selectedQuantity.value,
     }),
   });
 
@@ -380,7 +543,7 @@ async function handleCart() {
     cartIds.value = cartIds.value.filter((id) => id !== productId);
     ui.message = resolveApiMessage(data, "Shporta nuk u perditesua.");
     ui.type = "error";
-    return;
+    return false;
   }
 
   const items = Array.isArray(data.items) ? data.items : [];
@@ -388,6 +551,10 @@ async function handleCart() {
   setCartItems(items);
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
+  if (options.goToCart) {
+    await router.push("/cart");
+  }
+  return true;
 }
 
 async function handleSubmitReview() {
@@ -484,6 +651,20 @@ function nextImage() {
     </div>
 
     <section v-if="currentProduct" class="product-detail-container">
+      <nav class="card glass-soft product-breadcrumbs" aria-label="Breadcrumb">
+        <template v-for="(item, index) in breadcrumbItems" :key="`${item.label}-${index}`">
+          <RouterLink
+            v-if="item.to && index < breadcrumbItems.length - 1"
+            class="product-breadcrumb-link"
+            :to="item.to"
+          >
+            {{ item.label }}
+          </RouterLink>
+          <span v-else class="product-breadcrumb-current">{{ item.label }}</span>
+          <span v-if="index < breadcrumbItems.length - 1" class="product-breadcrumb-separator" aria-hidden="true">/</span>
+        </template>
+      </nav>
+
       <article class="card product-detail-card" :aria-label="currentProduct.title">
         <div class="product-detail-media">
           <RouterLink class="product-detail-back-link" :to="backTarget">
@@ -507,12 +688,55 @@ function nextImage() {
               Next
             </button>
           </div>
+
+          <div v-if="imageGallery.length > 1" class="product-gallery-thumbnails" aria-label="Fotot e produktit">
+            <button
+              v-for="(imagePath, index) in imageGallery"
+              :key="`${imagePath}-${index}`"
+              class="product-gallery-thumbnail"
+              :class="{ active: index === currentImageIndex }"
+              type="button"
+              @click="setCurrentImage(index)"
+            >
+              <img :src="imagePath" :alt="`${currentProduct.title} ${index + 1}`" loading="lazy" decoding="async">
+            </button>
+          </div>
         </div>
 
         <div class="product-detail-copy">
-          <p class="product-detail-category">{{ formatCategoryLabel(currentProduct.category) }}</p>
+          <div class="product-detail-kicker-row">
+            <p class="product-detail-category">{{ formatCategoryLabel(currentProduct.category) }}</p>
+            <p v-if="businessName" class="product-detail-brand">{{ businessName }}</p>
+          </div>
           <h1>{{ currentProduct.title }}</h1>
-          <p class="product-detail-description">{{ currentProduct.description }}</p>
+          <div class="product-detail-rating-row">
+            <div class="product-detail-rating-stars" :aria-label="averageRating > 0 ? `Vleresimi ${averageRating.toFixed(1)}` : 'Pa vleresime'">
+              <svg
+                v-for="index in 5"
+                :key="`star-${index}`"
+                class="product-detail-rating-star"
+                :class="{ 'is-filled': index <= filledStars }"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
+              </svg>
+            </div>
+            <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "Pa vleresime" }}</strong>
+            <span>{{ reviewCount }} review</span>
+            <span v-if="buyersCount > 0" class="product-detail-rating-dot" aria-hidden="true"></span>
+            <span v-if="buyersCount > 0">{{ buyersCount }} blerje</span>
+          </div>
+
+          <div class="product-detail-price-block">
+            <strong class="product-detail-price">{{ formatPrice(currentProduct.price) }}</strong>
+            <div v-if="compareAtPrice || discountPercent > 0" class="product-detail-price-side">
+              <span v-if="compareAtPrice" class="product-detail-price-compare">{{ formatPrice(compareAtPrice) }}</span>
+              <span v-if="discountPercent > 0" class="product-detail-discount">-{{ discountPercent }}%</span>
+            </div>
+          </div>
+
+          <p class="product-detail-description">{{ shortDescription }}</p>
 
           <div class="product-detail-tags">
             <span v-for="detail in details" :key="detail" class="product-detail-tag">
@@ -554,7 +778,24 @@ function nextImage() {
             </div>
           </div>
 
-          <strong class="product-detail-price">{{ formatPrice(currentProduct.price) }}</strong>
+          <div class="product-detail-purchase-row">
+            <div class="product-detail-quantity">
+              <p class="product-detail-variant-label">Sasia</p>
+              <div class="cart-quantity-control product-detail-quantity-control">
+                <button class="cart-quantity-button" type="button" :disabled="selectedQuantity <= 1" @click="decrementQuantity">
+                  -
+                </button>
+                <span class="product-detail-quantity-value">{{ selectedQuantity }}</span>
+                <button class="cart-quantity-button" type="button" :disabled="selectedQuantity >= quantityMax" @click="incrementQuantity">
+                  +
+                </button>
+              </div>
+            </div>
+            <div class="product-detail-availability-note">
+              <span>{{ isProductAvailable ? "Gati per porosi" : "Pa stok" }}</span>
+              <strong v-if="isProductAvailable && selectedVariantStock > 0">{{ selectedVariantStock }} cope te lira</strong>
+            </div>
+          </div>
 
           <div v-if="!isProductAvailable" class="product-detail-stock-state" role="status" aria-live="polite">
             <strong>Na vjen keq, ky produkt nuk eshte me ne stok.</strong>
@@ -562,18 +803,6 @@ function nextImage() {
           </div>
 
           <div class="product-detail-actions">
-            <button
-              class="product-action-button wishlist-action"
-              :class="{ active: wishlistIds.includes(currentProduct.id) }"
-              type="button"
-              @click="handleWishlist"
-            >
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-              </svg>
-              <span>{{ wishlistIds.includes(currentProduct.id) ? "Ne wishlist" : "Wishlist" }}</span>
-            </button>
-
             <button
               class="product-action-button cart-action"
               :class="{ active: cartIds.includes(currentProduct.id) }"
@@ -587,6 +816,27 @@ function nextImage() {
                 <circle cx="18" cy="19" r="1.4"></circle>
               </svg>
               <span>{{ isProductAvailable ? (cartIds.includes(currentProduct.id) ? "Ne cart" : "Shto ne cart") : "Nuk ka ne stok" }}</span>
+            </button>
+
+            <button
+              class="product-action-button buy-now-action"
+              type="button"
+              :disabled="!isProductAvailable"
+              @click="handleBuyNow"
+            >
+              <span>Bli tani</span>
+            </button>
+
+            <button
+              class="product-action-button wishlist-action"
+              :class="{ active: wishlistIds.includes(currentProduct.id) }"
+              type="button"
+              @click="handleWishlist"
+            >
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+              </svg>
+              <span>{{ wishlistIds.includes(currentProduct.id) ? "Ne wishlist" : "Wishlist" }}</span>
             </button>
 
             <button
@@ -611,18 +861,64 @@ function nextImage() {
               Raporto
             </button>
           </div>
+
+          <div class="product-detail-trust-grid" aria-label="Arsye per te blere me besim">
+            <article v-for="highlight in trustHighlights" :key="highlight.title" class="product-detail-trust-card">
+              <p class="section-label">{{ highlight.title }}</p>
+              <p class="product-detail-trust-copy">{{ highlight.description }}</p>
+            </article>
+          </div>
         </div>
       </article>
 
-      <section class="card product-reviews-card" aria-label="Review-t e produktit">
+      <section class="card glass-strong product-description-card" aria-label="Pershkrimi i produktit">
+        <div class="product-description-layout">
+          <div class="product-description-block">
+            <div class="product-reviews-header product-description-header">
+              <div>
+                <p class="section-label">Detaje te produktit</p>
+                <h2>Pershkrimi</h2>
+              </div>
+            </div>
+
+            <p class="product-description-content">
+              {{ currentProduct.description }}
+            </p>
+          </div>
+
+          <div class="product-description-specs">
+            <div class="product-reviews-header product-description-header">
+              <div>
+                <p class="section-label">Specifikime</p>
+                <h2>Materiale dhe detaje</h2>
+              </div>
+            </div>
+
+            <div class="product-spec-grid">
+              <article v-for="item in specificationItems" :key="item.label" class="product-spec-item">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card glass-strong product-reviews-card" aria-label="Review-t e produktit">
         <div class="product-reviews-header">
           <div>
             <p class="section-label">Marketplace trust</p>
             <h2>Review-t e bleresve</h2>
           </div>
-          <div class="summary-chip">
-            <span>Mesatarja</span>
-            <strong>{{ Number(currentProduct.averageRating || 0).toFixed(1) }}</strong>
+          <div class="product-reviews-summary">
+            <div class="summary-chip">
+              <span>Mesatarja</span>
+              <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "0.0" }}</strong>
+            </div>
+            <div class="summary-chip">
+              <span>Total review</span>
+              <strong>{{ reviewCount }}</strong>
+            </div>
           </div>
         </div>
 
@@ -696,6 +992,7 @@ function nextImage() {
             :key="`recent-${product.id}`"
             :product="product"
             :show-overlay-actions="false"
+            :show-description="true"
           />
         </section>
       </section>

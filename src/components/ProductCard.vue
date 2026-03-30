@@ -36,7 +36,11 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-});
+  showDescription: {
+    type: Boolean,
+    default: false,
+  },
+  });
 
 const emit = defineEmits(["wishlist", "cart", "compare"]);
 const route = useRoute();
@@ -109,6 +113,14 @@ const ratingSummary = computed(() => {
   }
 
   return "Pa vleresime";
+});
+const shortDescription = computed(() => {
+  const rawValue = String(props.product?.description || "").trim();
+  if (rawValue) {
+    return rawValue;
+  }
+
+  return businessName.value ? `Nga ${businessName.value}` : "Produkt i perzgjedhur ne marketplace.";
 });
 </script>
 
@@ -186,6 +198,10 @@ const ratingSummary = computed(() => {
 
         <p v-if="showBusinessName && businessName" class="pet-product-business-name">
           {{ businessName }}
+        </p>
+
+        <p v-if="showDescription" class="pet-product-description">
+          {{ shortDescription }}
         </p>
 
         <div class="pet-product-price-row">

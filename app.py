@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import textwrap
 import time
 import unicodedata
@@ -77,6 +78,12 @@ SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 PRODUCT_IMAGE_METADATA_CACHE_TTL_SECONDS = 6 * 60 * 60
 PRODUCT_IMAGE_METADATA_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+PUBLIC_FACETS_CACHE_TTL_SECONDS = 30
+PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS = 15
+PUBLIC_BUSINESSES_ENDPOINT_CACHE_TTL_SECONDS = 45
+PUBLIC_DETAIL_ENDPOINT_CACHE_TTL_SECONDS = 20
+RUNTIME_PUBLIC_CACHE: dict[str, tuple[float, object]] = {}
+RUNTIME_PUBLIC_CACHE_LOCK = threading.Lock()
 SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
@@ -428,7 +435,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-30-marketplace-5"
+APP_SCHEMA_VERSION = "2026-03-30-marketplace-6"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -438,6 +445,43 @@ PUBLIC_BUSINESSES_CACHE_HEADERS = {
 PUBLIC_STATS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=30, s-maxage=90, stale-while-revalidate=180"
 }
+
+
+def build_runtime_public_cache_key(prefix: str, payload: object) -> str:
+    serialized_payload = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha1(f"{prefix}:{serialized_payload}".encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest}"
+
+
+def read_runtime_public_cache(key: str) -> object | None:
+    now_timestamp = time.time()
+    with RUNTIME_PUBLIC_CACHE_LOCK:
+        cached_entry = RUNTIME_PUBLIC_CACHE.get(key)
+        if not cached_entry:
+            return None
+        expires_at, payload = cached_entry
+        if expires_at <= now_timestamp:
+            RUNTIME_PUBLIC_CACHE.pop(key, None)
+            return None
+        return payload
+
+
+def write_runtime_public_cache(
+    key: str,
+    payload: object,
+    *,
+    ttl_seconds: int,
+) -> None:
+    with RUNTIME_PUBLIC_CACHE_LOCK:
+        RUNTIME_PUBLIC_CACHE[key] = (
+            time.time() + max(1, int(ttl_seconds)),
+            payload,
+        )
 POSTGRES_MIGRATION_LOCK_ID = 90422117
 CHAT_ONLINE_WINDOW_SECONDS = 180
 USER_PRESENCE_HEARTBEAT_SECONDS = 45
@@ -523,29 +567,32 @@ PRODUCT_SELECT_COLUMNS = """
     show_stock_public,
     created_by_user_id,
     created_at,
-    COALESCE((
-        SELECT COUNT(DISTINCT oi.order_id)
-        FROM order_items oi
-        WHERE oi.product_id = products.id
-    ), 0) AS buyers_count,
-    COALESCE((
-        SELECT ROUND(AVG(pr.rating), 2)
-        FROM product_reviews pr
-        WHERE pr.product_id = products.id
-          AND pr.status = 'published'
-    ), 0) AS average_rating,
-    COALESCE((
-        SELECT COUNT(*)
-        FROM product_reviews pr
-        WHERE pr.product_id = products.id
-          AND pr.status = 'published'
-    ), 0) AS review_count,
-    COALESCE((
-        SELECT bp.business_name
-        FROM business_profiles bp
-        WHERE bp.user_id = products.created_by_user_id
-        LIMIT 1
-    ), '') AS business_name
+    COALESCE(order_totals.buyers_count, 0) AS buyers_count,
+    COALESCE(review_totals.average_rating, 0) AS average_rating,
+    COALESCE(review_totals.review_count, 0) AS review_count,
+    COALESCE(product_business_profile.business_name, '') AS business_name
+"""
+PRODUCT_SELECT_RELATION_JOINS = """
+    LEFT JOIN (
+        SELECT
+            product_id,
+            COUNT(DISTINCT order_id) AS buyers_count
+        FROM order_items
+        WHERE product_id IS NOT NULL
+        GROUP BY product_id
+    ) order_totals ON order_totals.product_id = products.id
+    LEFT JOIN (
+        SELECT
+            product_id,
+            ROUND(AVG(rating), 2) AS average_rating,
+            COUNT(*) AS review_count
+        FROM product_reviews
+        WHERE product_id IS NOT NULL
+          AND status = 'published'
+        GROUP BY product_id
+    ) review_totals ON review_totals.product_id = products.id
+    LEFT JOIN business_profiles product_business_profile
+        ON product_business_profile.user_id = products.created_by_user_id
 """
 ORDER_SELECT_COLUMNS = """
     id,
@@ -1952,6 +1999,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
     )
     connection.execute(
         """
+        CREATE INDEX IF NOT EXISTS idx_products_public_stock_id
+        ON products(is_public, stock_quantity, id DESC)
+        """
+    )
+    connection.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_products_public_creator_id
         ON products(is_public, created_by_user_id, id DESC)
         """
@@ -1969,6 +2022,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
             ON products ((LOWER(title)))
             """
         )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_business_profiles_name_lower
+            ON business_profiles ((LOWER(business_name)))
+            """
+        )
     else:
         connection.execute(
             """
@@ -1976,6 +2035,19 @@ def migrate_database(connection: DatabaseConnection) -> None:
             ON products(title)
             """
         )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_business_profiles_name
+            ON business_profiles(business_name)
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_business_profiles_updated_at
+        ON business_profiles(updated_at DESC)
+        """
+    )
 
     connection.execute(
         """
@@ -2400,6 +2472,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_product_reviews_product_created
         ON product_reviews(product_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_reviews_product_status_created
+        ON product_reviews(product_id, status, created_at DESC)
         """
     )
     connection.execute(
@@ -8900,6 +8978,9 @@ def fetch_public_products_for_business(
             + PRODUCT_SELECT_COLUMNS
             + """
             FROM products
+            """
+            + PRODUCT_SELECT_RELATION_JOINS
+            + """
             INNER JOIN business_profiles bp ON bp.user_id = products.created_by_user_id
             WHERE bp.id = ?
               AND products.is_public = 1
@@ -8985,6 +9066,9 @@ def fetch_products(
             + PRODUCT_SELECT_COLUMNS
             + """
             FROM products
+            """
+            + PRODUCT_SELECT_RELATION_JOINS
+            + """
             """
             + where_clause
             + """
@@ -9115,6 +9199,24 @@ def build_product_catalog_facets(
     created_by_user_id: int | None = None,
     search_text: str | None = None,
 ) -> dict[str, list[dict[str, object]]]:
+    cache_key = build_runtime_public_cache_key(
+        "catalog:facets",
+        {
+            "category": category or "",
+            "categoryGroup": category_group or "",
+            "productType": product_type or "",
+            "size": size or "",
+            "color": color or "",
+            "businessName": business_name_search or "",
+            "includeHidden": bool(include_hidden),
+            "createdByUserId": int(created_by_user_id or 0),
+            "searchText": search_text or "",
+        },
+    )
+    cached_facets = read_runtime_public_cache(cache_key)
+    if isinstance(cached_facets, dict):
+        return cached_facets
+
     with get_db_connection() as connection:
         where_clause, parameters = build_product_query_filters(
             category,
@@ -9254,13 +9356,19 @@ def build_product_catalog_facets(
         key=lambda item: (color_order.get(str(item["value"]), 999), str(item["label"])),
     )
 
-    return {
+    facets_payload = {
         "pageSections": sorted_page_sections,
         "categories": sorted_categories,
         "productTypes": sorted_product_types,
         "sizes": sorted_sizes,
         "colors": sorted_colors,
     }
+    write_runtime_public_cache(
+        cache_key,
+        facets_payload,
+        ttl_seconds=PUBLIC_FACETS_CACHE_TTL_SECONDS,
+    )
+    return facets_payload
 
 
 def build_catalog_autocomplete_matches(
@@ -9427,6 +9535,9 @@ def fetch_visual_search_candidates(
             + """
             FROM products
             """
+            + PRODUCT_SELECT_RELATION_JOINS
+            + """
+            """
             + where_clause
             + """
             ORDER BY id DESC
@@ -9477,6 +9588,9 @@ def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
             + PRODUCT_SELECT_COLUMNS
             + """
             FROM products
+            """
+            + PRODUCT_SELECT_RELATION_JOINS
+            + """
             WHERE id = ?
             """,
             (product_id,),
@@ -9794,6 +9908,9 @@ def fetch_products_for_checkout_records(
         + PRODUCT_SELECT_COLUMNS
         + """
         FROM products
+        """
+        + PRODUCT_SELECT_RELATION_JOINS
+        + """
         WHERE id IN ("""
         + placeholders
         + """)
@@ -13083,6 +13200,26 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
             return
 
+        cache_key = build_runtime_public_cache_key(
+            "products:list",
+            {
+                "category": category or "",
+                "categoryGroup": category_group or "",
+                "pageSection": scoped_page_section or "",
+                "audience": scoped_audience or "",
+                "productType": product_type or "",
+                "size": size or "",
+                "color": color or "",
+                "limit": limit,
+                "offset": offset,
+                "includeFacets": bool(include_facets),
+            },
+        )
+        cached_payload = read_runtime_public_cache(cache_key)
+        if isinstance(cached_payload, dict):
+            self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+            return
+
         product_rows, has_more = fetch_products_page(
             category,
             category_group=category_group,
@@ -13105,28 +13242,30 @@ class AppHandler(SimpleHTTPRequestHandler):
                 size=size,
                 color=color,
             )
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "products": products,
-                "facets": facets,
-                "activeFilters": {
-                    "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
-                    "audience": scoped_audience or derive_audience_from_category(category) or "",
-                    "category": category or "",
-                    "categoryGroup": category_group or "",
-                    "productType": product_type or "",
-                    "size": size or "",
-                    "color": color or "",
-                },
-                "limit": limit,
-                "offset": offset,
-                "total": None,
-                "hasMore": has_more,
+        payload = {
+            "ok": True,
+            "products": products,
+            "facets": facets,
+            "activeFilters": {
+                "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
+                "audience": scoped_audience or derive_audience_from_category(category) or "",
+                "category": category or "",
+                "categoryGroup": category_group or "",
+                "productType": product_type or "",
+                "size": size or "",
+                "color": color or "",
             },
-            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+            "limit": limit,
+            "offset": offset,
+            "total": None,
+            "hasMore": has_more,
+        }
+        write_runtime_public_cache(
+            cache_key,
+            payload,
+            ttl_seconds=PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS,
         )
+        self.send_json(200, payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
         raw_search_text = query_params.get("q", [""])[0].strip()
@@ -13166,6 +13305,25 @@ class AppHandler(SimpleHTTPRequestHandler):
         business_name = str(interpreted_intent.get("businessName") or "").strip() or None
         search_text = str(interpreted_intent.get("searchText", "") or raw_search_text).strip()
 
+        cache_key = build_runtime_public_cache_key(
+            "products:search",
+            {
+                "q": raw_search_text,
+                "category": category or "",
+                "categoryGroup": category_group or "",
+                "pageSection": scoped_page_section or "",
+                "audience": scoped_audience or "",
+                "productType": product_type or "",
+                "size": size or "",
+                "color": color or "",
+                "businessName": business_name or "",
+                "searchText": search_text,
+                "limit": limit,
+                "offset": offset,
+                "includeFacets": bool(include_facets),
+            },
+        )
+
         if not raw_search_text and not any([category, category_group, product_type, size, color, business_name]):
             self.send_json(
                 200,
@@ -13198,6 +13356,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        cached_payload = read_runtime_public_cache(cache_key)
+        if isinstance(cached_payload, dict):
+            self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+            return
+
         product_rows, has_more = fetch_products_page(
             category,
             category_group=category_group,
@@ -13224,38 +13387,40 @@ class AppHandler(SimpleHTTPRequestHandler):
                 business_name_search=business_name,
                 search_text=search_text,
             )
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "products": products,
-                "query": raw_search_text,
-                "interpretedQuery": search_text,
-                "searchIntent": {
-                    "category": category,
-                    "categoryGroup": category_group,
-                    "productType": product_type,
-                    "size": size,
-                    "color": color,
-                    "businessName": business_name,
-                },
-                "facets": facets,
-                "activeFilters": {
-                    "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
-                    "audience": scoped_audience or derive_audience_from_category(category) or "",
-                    "category": category or "",
-                    "categoryGroup": category_group or "",
-                    "productType": product_type or "",
-                    "size": size or "",
-                    "color": color or "",
-                },
-                "limit": limit,
-                "offset": offset,
-                "total": None,
-                "hasMore": has_more,
+        payload = {
+            "ok": True,
+            "products": products,
+            "query": raw_search_text,
+            "interpretedQuery": search_text,
+            "searchIntent": {
+                "category": category,
+                "categoryGroup": category_group,
+                "productType": product_type,
+                "size": size,
+                "color": color,
+                "businessName": business_name,
             },
-            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+            "facets": facets,
+            "activeFilters": {
+                "pageSection": scoped_page_section or derive_section_from_category(category) or category_group or "",
+                "audience": scoped_audience or derive_audience_from_category(category) or "",
+                "category": category or "",
+                "categoryGroup": category_group or "",
+                "productType": product_type or "",
+                "size": size or "",
+                "color": color or "",
+            },
+            "limit": limit,
+            "offset": offset,
+            "total": None,
+            "hasMore": has_more,
+        }
+        write_runtime_public_cache(
+            cache_key,
+            payload,
+            ttl_seconds=PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS,
         )
+        self.send_json(200, payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
 
     def handle_search_autocomplete(self, query_params: dict[str, list[str]]) -> None:
         raw_query = str(query_params.get("q", [""])[0] or "").strip()
@@ -13277,6 +13442,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                 },
                 headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
             )
+            return
+
+        cache_key = build_runtime_public_cache_key(
+            "search:autocomplete",
+            {
+                "q": raw_query,
+                "limit": safe_limit,
+            },
+        )
+        cached_payload = read_runtime_public_cache(cache_key)
+        if isinstance(cached_payload, dict):
+            self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
             return
 
         interpreted_intent = interpret_search_query(raw_query)
@@ -13305,17 +13482,19 @@ class AppHandler(SimpleHTTPRequestHandler):
         ]
         categories = build_catalog_autocomplete_matches(raw_query, limit=safe_limit)
 
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "query": raw_query,
-                "products": [serialize_product(row) for row in product_rows],
-                "businesses": businesses,
-                "categories": categories,
-            },
-            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+        payload = {
+            "ok": True,
+            "query": raw_query,
+            "products": [serialize_product(row) for row in product_rows],
+            "businesses": businesses,
+            "categories": categories,
+        }
+        write_runtime_public_cache(
+            cache_key,
+            payload,
+            ttl_seconds=PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS,
         )
+        self.send_json(200, payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
 
     def handle_products_visual_search(self) -> None:
         if not PILLOW_AVAILABLE:
@@ -13498,12 +13677,22 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        current_user = self.get_current_user()
+        cache_key = build_runtime_public_cache_key(
+            "product:detail",
+            {"productId": product_id},
+        )
+        if not current_user:
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+                return
+
         product = fetch_product_by_id(product_id)
         if not product:
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
-        current_user = self.get_current_user()
         can_view_hidden = bool(
             current_user and can_manage_product(current_user, product)
         )
@@ -13511,9 +13700,16 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
+        payload = {"ok": True, "product": serialize_product(product)}
+        if bool(product["is_public"]):
+            write_runtime_public_cache(
+                cache_key,
+                payload,
+                ttl_seconds=PUBLIC_DETAIL_ENDPOINT_CACHE_TTL_SECONDS,
+            )
         self.send_json(
             200,
-            {"ok": True, "product": serialize_product(product)},
+            payload,
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS if bool(product["is_public"]) else None,
         )
 
@@ -13528,8 +13724,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
-        reviews = [serialize_product_review(row) for row in fetch_product_reviews(product_id)]
         current_user = self.get_current_user()
+        cache_key = build_runtime_public_cache_key(
+            "product:reviews",
+            {"productId": product_id},
+        )
+        if not current_user:
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+                return
+
+        reviews = [serialize_product_review(row) for row in fetch_product_reviews(product_id)]
         can_submit_review = False
         if current_user:
             with get_db_connection() as connection:
@@ -13541,21 +13747,28 @@ class AppHandler(SimpleHTTPRequestHandler):
                     )
                 )
 
+        payload = {
+            "ok": True,
+            "reviews": reviews,
+            "canSubmitReview": can_submit_review,
+            "stats": {
+                "averageRating": round(float(product["average_rating"] or 0), 2)
+                if "average_rating" in product.keys()
+                else 0,
+                "reviewCount": max(0, int(product["review_count"] or 0))
+                if "review_count" in product.keys()
+                else len(reviews),
+            },
+        }
+        if not current_user:
+            write_runtime_public_cache(
+                cache_key,
+                payload,
+                ttl_seconds=PUBLIC_DETAIL_ENDPOINT_CACHE_TTL_SECONDS,
+            )
         self.send_json(
             200,
-            {
-                "ok": True,
-                "reviews": reviews,
-                "canSubmitReview": can_submit_review,
-                "stats": {
-                    "averageRating": round(float(product["average_rating"] or 0), 2)
-                    if "average_rating" in product.keys()
-                    else 0,
-                    "reviewCount": max(0, int(product["review_count"] or 0))
-                    if "review_count" in product.keys()
-                    else len(reviews),
-                },
-            },
+            payload,
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS if not current_user else None,
         )
 
@@ -13631,15 +13844,23 @@ class AppHandler(SimpleHTTPRequestHandler):
         )
 
     def handle_public_businesses_list(self) -> None:
+        cache_key = build_runtime_public_cache_key("businesses:list", {"scope": "public"})
+        cached_payload = read_runtime_public_cache(cache_key)
+        if isinstance(cached_payload, dict):
+            self.send_json(200, cached_payload, headers=PUBLIC_BUSINESSES_CACHE_HEADERS)
+            return
+
         businesses = [
             serialize_public_business_profile(row)
             for row in fetch_public_business_profiles()
         ]
-        self.send_json(
-            200,
-            {"ok": True, "businesses": businesses},
-            headers=PUBLIC_BUSINESSES_CACHE_HEADERS,
+        payload = {"ok": True, "businesses": businesses}
+        write_runtime_public_cache(
+            cache_key,
+            payload,
+            ttl_seconds=PUBLIC_BUSINESSES_ENDPOINT_CACHE_TTL_SECONDS,
         )
+        self.send_json(200, payload, headers=PUBLIC_BUSINESSES_CACHE_HEADERS)
 
     def handle_public_business_detail(
         self,
@@ -13650,25 +13871,42 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        current_user = self.get_current_user()
+        cache_key = build_runtime_public_cache_key(
+            "business:detail",
+            {"businessId": business_id},
+        )
+        if not current_user:
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_BUSINESSES_CACHE_HEADERS)
+                return
+
         business_profile = fetch_public_business_profile_by_id(business_id)
         if not business_profile:
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
-        current_user = self.get_current_user()
         is_followed = bool(
             current_user
             and is_business_followed_by_user(business_id, int(current_user["id"]))
         )
+        payload = {
+            "ok": True,
+            "business": serialize_public_business_detail(
+                business_profile,
+                is_followed=is_followed,
+            ),
+        }
+        if not current_user:
+            write_runtime_public_cache(
+                cache_key,
+                payload,
+                ttl_seconds=PUBLIC_BUSINESSES_ENDPOINT_CACHE_TTL_SECONDS,
+            )
         self.send_json(
             200,
-            {
-                "ok": True,
-                "business": serialize_public_business_detail(
-                    business_profile,
-                    is_followed=is_followed,
-                ),
-            },
+            payload,
             headers=PUBLIC_BUSINESSES_CACHE_HEADERS if not current_user else None,
         )
 
@@ -13690,6 +13928,19 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
             return
 
+        cache_key = build_runtime_public_cache_key(
+            "business:products",
+            {
+                "businessId": business_id,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        cached_payload = read_runtime_public_cache(cache_key)
+        if isinstance(cached_payload, dict):
+            self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+            return
+
         product_rows, has_more = fetch_public_products_page_for_business(
             business_id,
             limit=limit,
@@ -13699,18 +13950,20 @@ class AppHandler(SimpleHTTPRequestHandler):
             serialize_product(row)
             for row in product_rows
         ]
-        self.send_json(
-            200,
-            {
-                "ok": True,
-                "products": products,
-                "limit": limit,
-                "offset": offset,
-                "total": None,
-                "hasMore": has_more,
-            },
-            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+        payload = {
+            "ok": True,
+            "products": products,
+            "limit": limit,
+            "offset": offset,
+            "total": None,
+            "hasMore": has_more,
+        }
+        write_runtime_public_cache(
+            cache_key,
+            payload,
+            ttl_seconds=PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS,
         )
+        self.send_json(200, payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
 
     def handle_business_profile(self) -> None:
         user = self.get_current_user()
@@ -13865,6 +14118,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                     + PRODUCT_SELECT_COLUMNS
                     + """
                     FROM products
+                    """
+                    + PRODUCT_SELECT_RELATION_JOINS
+                    + """
                     WHERE id = ?
                     """,
                     (product_id,),
@@ -15455,6 +15711,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                 + PRODUCT_SELECT_COLUMNS
                 + """
                 FROM products
+                """
+                + PRODUCT_SELECT_RELATION_JOINS
+                + """
                 WHERE id = ?
                 """,
                 (product_id,),
@@ -15597,6 +15856,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                 + PRODUCT_SELECT_COLUMNS
                 + """
                 FROM products
+                """
+                + PRODUCT_SELECT_RELATION_JOINS
+                + """
                 WHERE id = ?
                 """,
                 (product_id,),

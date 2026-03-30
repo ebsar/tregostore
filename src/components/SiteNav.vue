@@ -820,7 +820,11 @@ async function fetchNavSearchResult() {
     const params = new URLSearchParams();
     params.set("limit", "4");
     params.set("q", query);
-    const { response, data } = await requestJson(`/api/search/autocomplete?${params.toString()}`);
+    const { response, data } = await requestJson(
+      `/api/search/autocomplete?${params.toString()}`,
+      {},
+      { cacheTtlMs: 3000 },
+    );
     if (!response.ok || !data?.ok) {
       navSearchMessage.value = resolveApiMessage(data, "Kerkimi nuk u ngarkua.");
       return;

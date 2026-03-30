@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS business_profiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_business_profiles_user_id ON business_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_business_profiles_name ON business_profiles(business_name);
+CREATE INDEX IF NOT EXISTS idx_business_profiles_updated_at ON business_profiles(updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS business_followers (
     business_id INTEGER NOT NULL,
@@ -195,6 +197,7 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_public_category_id ON products(is_public, category, id DESC);
+CREATE INDEX IF NOT EXISTS idx_products_public_stock_id ON products(is_public, stock_quantity, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public, created_by_user_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title ON products(title);
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
@@ -347,6 +350,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_order_item_user
 
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product_created
     ON product_reviews(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product_status_created
+    ON product_reviews(product_id, status, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_product_reviews_business_created
     ON product_reviews(business_user_id, created_at DESC);
