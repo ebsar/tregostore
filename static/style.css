@@ -3848,8 +3848,18 @@ body[data-page="home"] .home-hero .home-hero-content {
 }
 
 @media (max-width: 640px) {
+  .home-marketplace-masthead,
+  .home-marketplace-hero-surface,
+  .home-marketplace-proof-layout,
+  .home-marketplace-section,
+  .pet-product-card {
+    min-width: 0;
+  }
+
   .home-marketplace-page {
-    gap: 10px;
+    gap: 14px;
+    min-width: 0;
+    overflow-x: clip;
   }
 
   .home-marketplace-quick-chips {
@@ -3858,7 +3868,7 @@ body[data-page="home"] .home-hero .home-hero-content {
     justify-content: flex-start;
     overflow-x: auto;
     margin: 0 -2px;
-    padding: 0 2px 2px;
+    padding: 0 2px 4px;
     scrollbar-width: none;
   }
 
@@ -3869,9 +3879,9 @@ body[data-page="home"] .home-hero .home-hero-content {
   .home-marketplace-quick-chip {
     flex: 0 0 auto;
     width: auto;
-    min-height: 32px;
-    padding: 0 10px;
-    font-size: 0.62rem;
+    min-height: 34px;
+    padding: 0 11px;
+    font-size: 0.7rem;
     letter-spacing: 0.05em;
   }
 
@@ -3888,8 +3898,10 @@ body[data-page="home"] .home-hero .home-hero-content {
   .home-marketplace-trust-card,
   .home-marketplace-brand-card,
   .home-marketplace-proof-column {
-    padding: 10px;
-    border-radius: 18px;
+    padding: 12px;
+    border-radius: 20px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .home-marketplace-category-list,
@@ -3899,7 +3911,7 @@ body[data-page="home"] .home-hero .home-hero-content {
   .home-marketplace-trust-grid,
   .home-marketplace-brand-grid,
   .home-marketplace-category-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .home-marketplace-category-list {
@@ -3913,28 +3925,31 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .home-marketplace-hero-copy h1 {
-    max-width: 10ch;
-    font-size: clamp(1.32rem, 6.4vw, 1.86rem);
-    line-height: 1.04;
-    letter-spacing: -0.04em;
+    max-width: 12ch;
+    font-size: clamp(1.58rem, 7.2vw, 2.06rem);
+    line-height: 1.06;
+    letter-spacing: -0.03em;
   }
 
   .home-marketplace-hero-copy > p:last-of-type,
   .home-marketplace-section-head p:not(.section-label),
   .home-marketplace-column-head p:not(.section-label) {
-    font-size: 0.72rem;
-    line-height: 1.42;
+    font-size: 0.82rem;
+    line-height: 1.5;
     margin-top: 6px;
   }
 
   .home-marketplace-hero-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
   .home-marketplace-hero-actions .nav-action {
-    min-height: 36px;
-    padding: 0 12px;
-    font-size: 0.72rem;
+    width: auto;
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 0.78rem;
   }
 
   .home-marketplace-hero-actions .nav-action-secondary {
@@ -3947,11 +3962,11 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .home-marketplace-stat strong {
-    font-size: 0.92rem;
+    font-size: 1rem;
   }
 
   .home-marketplace-stat span {
-    font-size: 0.62rem;
+    font-size: 0.72rem;
   }
 
   .home-marketplace-section {
@@ -3960,12 +3975,12 @@ body[data-page="home"] .home-hero .home-hero-content {
 
   .home-marketplace-section-head h2,
   .home-marketplace-column-head h2 {
-    font-size: clamp(0.94rem, 4.2vw, 1.2rem);
+    font-size: clamp(1.06rem, 4.6vw, 1.32rem);
     margin-top: 2px;
   }
 
   .home-marketplace-section-link {
-    font-size: 0.66rem;
+    font-size: 0.74rem;
   }
 
   .home-marketplace-product-column {
@@ -3973,7 +3988,7 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .home-marketplace-spotlight-media {
-    min-height: 150px;
+    min-height: 180px;
   }
 
   .home-marketplace-spotlight-copy {
@@ -3982,11 +3997,11 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .home-marketplace-spotlight-copy h2 {
-    font-size: 0.98rem;
+    font-size: 1.08rem;
   }
 
   .home-marketplace-spotlight-copy p {
-    font-size: 0.62rem;
+    font-size: 0.72rem;
   }
 
   .home-marketplace-mini-card {
@@ -4011,34 +4026,34 @@ body[data-page="home"] .home-hero .home-hero-content {
   }
 
   .pet-product-title {
-    font-size: 0.82rem;
+    font-size: 0.94rem;
   }
 
   .pet-product-description {
-    font-size: 0.7rem;
-    line-height: 1.36;
+    font-size: 0.8rem;
+    line-height: 1.44;
   }
 
   .pet-product-business-name {
     min-height: 20px;
-    font-size: 0.62rem;
+    font-size: 0.68rem;
     padding: 0 6px;
   }
 
   .pet-product-price {
-    font-size: 0.94rem;
+    font-size: 1.04rem;
   }
 
   .pet-product-rating-row {
     min-height: 20px;
     padding: 4px 7px;
     gap: 6px;
-    font-size: 0.66rem;
+    font-size: 0.72rem;
   }
 
   .pet-product-rating-star {
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
   }
 
   .product-card-overlay-button {
