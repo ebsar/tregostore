@@ -60,6 +60,7 @@ const businessUi = reactive({
   type: "",
 });
 let stopProductsPageSizeSubscription = () => {};
+let productsFailureCooldownUntil = 0;
 const isBusinessUser = computed(() => appState.user?.role === "business");
 const homeAnnouncementItems = [
   {
@@ -459,6 +460,11 @@ async function refreshCollectionState() {
 
 async function loadProducts(options = {}) {
   const { append = false, forceFacets = false } = options;
+  if (!append && Date.now() < productsFailureCooldownUntil) {
+    statusText.value = "Po provojme perseri pas pak. Serveri po vonon perkohesisht.";
+    return;
+  }
+
   const offset = append ? products.value.length : 0;
   const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
@@ -489,6 +495,7 @@ async function loadProducts(options = {}) {
     { cacheTtlMs: append ? 0 : 15000 },
   );
   if (!response.ok || !data?.ok) {
+    productsFailureCooldownUntil = Date.now() + 4000;
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     if (!append) {
       products.value = [];
@@ -499,6 +506,7 @@ async function loadProducts(options = {}) {
     return;
   }
 
+  productsFailureCooldownUntil = 0;
   const nextProducts = Array.isArray(data.products) ? data.products : [];
   const visibleProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
   products.value = append ? [...products.value, ...visibleProducts] : visibleProducts;
@@ -536,6 +544,10 @@ async function loadBusinesses() {
 }
 
 async function loadHomeCatalogProducts() {
+  if (Date.now() < productsFailureCooldownUntil) {
+    return;
+  }
+
   const { response, data } = await requestJson(
     "/api/products?limit=24&offset=0",
     {},

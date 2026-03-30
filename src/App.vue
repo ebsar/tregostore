@@ -1,15 +1,16 @@
 <script setup>
 import { computeRoute, injectSpeedInsights } from "@vercel/speed-insights";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
-import ProductCompareTray from "./components/ProductCompareTray.vue";
 import SiteNav from "./components/SiteNav.vue";
-import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
 import { getTrackingConsentState, setTrackingConsent } from "./lib/tracking";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
+
+const ProductCompareTray = defineAsyncComponent(() => import("./components/ProductCompareTray.vue"));
+const VoiceAssistantWidget = defineAsyncComponent(() => import("./components/VoiceAssistantWidget.vue"));
 
 const route = useRoute();
 const router = useRouter();
@@ -27,6 +28,8 @@ const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_B
 const safeArea = useScreenSafeArea();
 let sessionWarmupTimeoutId = 0;
 const showTrackingConsentBanner = ref(false);
+const showDeferredWidgets = ref(false);
+let deferredWidgetsTimeoutId = 0;
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -113,6 +116,9 @@ onMounted(() => {
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startFormMessageObserver();
   initializeTrackingConsent();
+  deferredWidgetsTimeoutId = window.setTimeout(() => {
+    showDeferredWidgets.value = true;
+  }, 800);
 });
 
 onBeforeUnmount(() => {
@@ -129,6 +135,10 @@ onBeforeUnmount(() => {
   if (sessionWarmupTimeoutId) {
     window.clearTimeout(sessionWarmupTimeoutId);
     sessionWarmupTimeoutId = 0;
+  }
+  if (deferredWidgetsTimeoutId) {
+    window.clearTimeout(deferredWidgetsTimeoutId);
+    deferredWidgetsTimeoutId = 0;
   }
   document.body.classList.remove("app-loading");
   document.body.style.position = "";
@@ -380,8 +390,8 @@ function declineTrackingConsent() {
       </button>
     </div>
   </div>
-  <VoiceAssistantWidget />
-  <ProductCompareTray />
+  <VoiceAssistantWidget v-if="showDeferredWidgets" />
+  <ProductCompareTray v-if="showDeferredWidgets" />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
