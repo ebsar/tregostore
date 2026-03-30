@@ -183,6 +183,28 @@ async function handleVerificationUpdate({ businessId, verificationStatus }) {
   ui.listMessage = data.message || "Verifikimi u ruajt.";
   ui.listType = "success";
 }
+
+async function handleEditAccessUpdate({ businessId, editAccessStatus }) {
+  const { response, data } = await requestJson("/api/admin/businesses/edit-access", {
+    method: "POST",
+    body: JSON.stringify({
+      businessId,
+      editAccessStatus,
+    }),
+  });
+
+  if (!response.ok || !data?.ok || !data.business) {
+    ui.listMessage = resolveApiMessage(data, "Leja per editim nuk u perditesua.");
+    ui.listType = "error";
+    return;
+  }
+
+  businesses.value = businesses.value.map((business) =>
+    Number(business.id) === Number(businessId) ? data.business : business,
+  );
+  ui.listMessage = data.message || "Leja per editim u ruajt.";
+  ui.listType = "success";
+}
 </script>
 
 <template>
@@ -308,13 +330,14 @@ async function handleVerificationUpdate({ businessId, verificationStatus }) {
           <RegisteredBusinessCard
             v-for="business in filteredBusinesses"
             v-else
-            :key="business.id"
-            :business="business"
-            @upload-logo="handleUploadLogo"
-            @save-edit="handleSaveEdit"
-            @update-verification="handleVerificationUpdate"
-          />
-        </div>
+          :key="business.id"
+          :business="business"
+          @upload-logo="handleUploadLogo"
+          @save-edit="handleSaveEdit"
+          @update-verification="handleVerificationUpdate"
+          @update-edit-access="handleEditAccessUpdate"
+        />
+      </div>
       </section>
     </div>
   </section>

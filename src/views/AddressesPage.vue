@@ -1,24 +1,25 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { createEmptyAddress, normalizeAddress } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
-const router = useRouter();
 const savedAddress = ref(null);
 const initialAddress = ref(createEmptyAddress());
 const formState = reactive(createEmptyAddress());
 const ui = reactive({
   message: "",
   type: "",
+  guest: false,
 });
 
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
     if (!user) {
-      router.replace("/login");
+      ui.guest = true;
+      ui.message = "Per te perdorur adresat duhet te kyçesh ose te krijosh llogari.";
+      ui.type = "error";
       return;
     }
 
@@ -80,7 +81,20 @@ async function handleSave() {
       </div>
     </header>
 
-    <section class="card address-card">
+    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+      <h2>Per te perdorur adresat duhet te kyçesh.</h2>
+      <p>Krijo llogari ose hyni ne llogarine tende per te ruajtur adresen default dhe per ta perdorur ne porosi.</p>
+      <div class="collection-guest-gate-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fadresat">
+          Login
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fadresat">
+          Sign Up
+        </RouterLink>
+      </div>
+    </section>
+
+    <section v-else class="card address-card">
       <div class="profile-card-header">
         <div>
           <p class="section-label">Adresa aktuale</p>

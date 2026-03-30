@@ -13,19 +13,28 @@ const mobileMenuOpen = ref(false);
 const openDropdownKey = ref("");
 const userMenuOpen = ref(false);
 const searchMenuOpen = ref(false);
+const mobileQuickSearchOpen = ref(false);
 const isMobileViewport = ref(false);
 const isMobileSearchOnly = ref(false);
 const searchQuery = ref("");
+const mobileQuickSearchQuery = ref("");
 const searchInputElement = ref(null);
+const mobileQuickSearchInputElement = ref(null);
 const navVisualSearchInputElement = ref(null);
 const navSearchResult = ref(null);
 const navSearchLoading = ref(false);
 const navSearchMessage = ref("");
+const mobileQuickSearchProducts = ref([]);
+const mobileQuickSearchLoading = ref(false);
+const mobileQuickSearchMessage = ref("");
+const mobileQuickSearchRecent = ref([]);
 const unreadMessagesCount = ref(0);
 const unreadNotificationsCount = ref(0);
 let lastScrollY = 0;
 let unreadMessagesPollIntervalId = 0;
+let mobileQuickSearchTimeoutId = 0;
 const UNREAD_MESSAGES_POLL_MS = 3000;
+const MOBILE_QUICK_SEARCH_RECENT_KEY = "trego-mobile-quick-search-recent";
 const AI_SEARCH_PROMPTS = [
   "me trego maica te kuqe",
   "dua pantallona te gjera",
@@ -35,6 +44,116 @@ const AI_SEARCH_PROMPTS = [
 function resetNavSearchPreview() {
   navSearchResult.value = null;
   navSearchMessage.value = "";
+}
+
+function resetMobileQuickSearchProducts() {
+  mobileQuickSearchProducts.value = [];
+  mobileQuickSearchMessage.value = "";
+  mobileQuickSearchLoading.value = false;
+}
+
+function loadRecentMobileQuickSearches() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MOBILE_QUICK_SEARCH_RECENT_KEY) || "[]");
+    mobileQuickSearchRecent.value = Array.isArray(parsed)
+      ? parsed.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 6)
+      : [];
+  } catch (error) {
+    console.error(error);
+    mobileQuickSearchRecent.value = [];
+  }
+}
+
+function persistRecentMobileQuickSearches() {
+  try {
+    window.localStorage.setItem(
+      MOBILE_QUICK_SEARCH_RECENT_KEY,
+      JSON.stringify(mobileQuickSearchRecent.value.slice(0, 6)),
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function clearRecentMobileQuickSearches() {
+  mobileQuickSearchRecent.value = [];
+  try {
+    window.localStorage.removeItem(MOBILE_QUICK_SEARCH_RECENT_KEY);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function removeRecentMobileQuickSearch(term) {
+  const normalizedTerm = normalizeQuickSearchValue(term);
+  mobileQuickSearchRecent.value = mobileQuickSearchRecent.value.filter(
+    (item) => normalizeQuickSearchValue(item) !== normalizedTerm,
+  );
+  persistRecentMobileQuickSearches();
+}
+
+function rememberMobileQuickSearch(term) {
+  const nextTerm = String(term || "").trim();
+  if (!nextTerm) {
+    return;
+  }
+
+  mobileQuickSearchRecent.value = [
+    nextTerm,
+    ...mobileQuickSearchRecent.value.filter((item) => normalizeQuickSearchValue(item) !== normalizeQuickSearchValue(nextTerm)),
+  ].slice(0, 6);
+  persistRecentMobileQuickSearches();
+}
+
+async function fetchMobileQuickSearchProducts(query) {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery || normalizedQuery.length < 2) {
+    resetMobileQuickSearchProducts();
+    return;
+  }
+
+  mobileQuickSearchLoading.value = true;
+  mobileQuickSearchMessage.value = "";
+
+  try {
+    const params = new URLSearchParams();
+    params.set("limit", "5");
+    params.set("q", normalizedQuery);
+    const { response, data } = await requestJson(`/api/products/search?${params.toString()}`, {}, { cacheTtlMs: 4000 });
+    if (!response.ok || !data?.ok) {
+      mobileQuickSearchProducts.value = [];
+      mobileQuickSearchMessage.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
+      return;
+    }
+
+    mobileQuickSearchProducts.value = Array.isArray(data.products) ? data.products.slice(0, 5) : [];
+    if (mobileQuickSearchProducts.value.length === 0) {
+      mobileQuickSearchMessage.value = "Nuk u gjet asnje produkt me kete kerkim.";
+    }
+  } catch (error) {
+    console.error(error);
+    mobileQuickSearchProducts.value = [];
+    mobileQuickSearchMessage.value = "Serveri nuk po pergjigjet.";
+  } finally {
+    mobileQuickSearchLoading.value = false;
+  }
+}
+
+function applyMobileQuickSearchTerm(term) {
+  mobileQuickSearchQuery.value = String(term || "").trim();
+  nextTick(() => {
+    mobileQuickSearchInputElement.value?.focus();
+    mobileQuickSearchInputElement.value?.select?.();
+  });
+}
+
+function getMobileQuickSearchProductImage(product) {
+  return (
+    product?.imagePath
+    || product?.image_path
+    || product?.image
+    || "/bujqesia.webp"
+  );
 }
 
 const cartBadgeLabel = computed(() => {
@@ -64,6 +183,31 @@ const unreadNotificationsBadgeLabel = computed(() => {
 
   return unreadNotificationsCount.value > 99 ? "99+" : String(unreadNotificationsCount.value);
 });
+
+function normalizeQuickSearchValue(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quickSearchTargetKey(target) {
+  return typeof target === "string" ? target : JSON.stringify(target);
+}
+
+function matchesQuickSearchAction(action, normalizedQuery) {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return normalizeQuickSearchValue([
+    action.label,
+    action.description,
+    ...(Array.isArray(action.keywords) ? action.keywords : []),
+  ].join(" ")).includes(normalizedQuery);
+}
 
 const userMenuLinks = computed(() => {
   if (!appState.user) {
@@ -99,6 +243,250 @@ const userMenuLinks = computed(() => {
     { label: "Njoftimet", href: "/njoftimet", showUnreadNotifications: true },
     { label: "Te dhenat personale", href: "/te-dhenat-personale" },
   ];
+});
+
+const mobileQuickSearchActions = computed(() => {
+  if (!appState.user) {
+    return [];
+  }
+
+  const actions = [];
+  const seen = new Set();
+  const pushAction = (action) => {
+    const key = JSON.stringify(action.to);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    actions.push(action);
+  };
+
+  pushAction({
+    label: "Llogaria ime",
+    description: "Hape qendren kryesore te llogarise.",
+    to: "/llogaria",
+    keywords: ["llogaria", "account", "menu", "profili"],
+  });
+  pushAction({
+    label: "Mesazhet",
+    description: "Shih bisedat, support-in dhe mesazhet e reja.",
+    to: "/mesazhet",
+    keywords: ["mesazhe", "chat", "biseda", "support"],
+  });
+  pushAction({
+    label: "Njoftimet",
+    description: "Kontrollo njoftimet dhe perditesimet.",
+    to: "/njoftimet",
+    keywords: ["njoftime", "notification", "alerts", "updates"],
+  });
+  pushAction({
+    label: "Te dhenat personale",
+    description: "Ndrysho foton, emrin, emailin ose te dhenat e profilit.",
+    to: "/te-dhenat-personale",
+    keywords: ["foto", "profili", "avatar", "emer", "email", "te dhena"],
+  });
+  pushAction({
+    label: "Ndrysho fjalekalimin",
+    description: "Hape sigurine dhe ndryshimin e fjalekalimit.",
+    to: "/ndrysho-fjalekalimin",
+    keywords: ["fjalekalim", "password", "siguri", "kod", "reset"],
+  });
+
+  if (appState.user.role === "admin") {
+    pushAction({
+      label: "Artikujt e adminit",
+      description: "Menaxho artikujt, perdoruesit dhe raportimet.",
+      to: "/admin-products",
+      keywords: ["admin", "produkte", "artikuj", "raportime", "perdoruesit", "users"],
+    });
+    pushAction({
+      label: "Bizneset e regjistruara",
+      description: "Kontrollo verifikimet dhe editimet e bizneseve.",
+      to: "/bizneset-e-regjistruara",
+      keywords: ["bizneset", "verifikim", "editim", "approval", "registered businesses"],
+    });
+    pushAction({
+      label: "Porosite e adminit",
+      description: "Kerko ose kontrollo porosite ne nivel administrimi.",
+      to: "/admin-porosite",
+      keywords: ["porosi", "order", "admin orders", "status"],
+    });
+  } else if (appState.user.role === "business") {
+    pushAction({
+      label: "Biznesi juaj",
+      description: "Hape dashboard-in, profilin dhe katalogun e biznesit.",
+      to: "/biznesi-juaj",
+      keywords: ["biznesi", "dashboard", "logo", "edit biznesin", "profili biznesit"],
+    });
+    pushAction({
+      label: "Shto produkt",
+      description: "Shko direkt te formulari per shtimin e produktit.",
+      to: { path: "/biznesi-juaj", query: { view: "add-product" } },
+      keywords: ["shto produkt", "artikull i ri", "new product", "katalogu"],
+    });
+    pushAction({
+      label: "Porosite e biznesit",
+      description: "Kontrollo porosite qe kane ardhur per biznesin tend.",
+      to: "/porosite-e-biznesit",
+      keywords: ["porosi", "orders", "status", "kerko porosine"],
+    });
+    if (String(appState.user.businessProfileUrl || "").trim()) {
+      pushAction({
+        label: "Profili publik",
+        description: "Shih faqen publike te biznesit.",
+        to: String(appState.user.businessProfileUrl || "").trim(),
+        keywords: ["profili publik", "business page", "shop page"],
+      });
+    }
+  } else {
+    pushAction({
+      label: "Porosite",
+      description: "Shih porosite e tua dhe statusin e tyre.",
+      to: "/porosite",
+      keywords: ["porosi", "orders", "status", "kerko porosine"],
+    });
+    pushAction({
+      label: "Adresat",
+      description: "Shto ose ndrysho adresat e ruajtura.",
+      to: "/adresat",
+      keywords: ["adresa", "shipping", "delivery", "vendbanimi"],
+    });
+    pushAction({
+      label: "Refund / Returne",
+      description: "Kontrollo kthimet dhe kerkesat e refund-it.",
+      to: "/refund-returne",
+      keywords: ["refund", "returne", "kthim", "rikthim"],
+    });
+    pushAction({
+      label: "Wishlist",
+      description: "Hape artikujt e ruajtur.",
+      to: "/wishlist",
+      keywords: ["wishlist", "favoritet", "ruajtur"],
+    });
+    pushAction({
+      label: "Shporta",
+      description: "Shih produktet ne shporte dhe vazhdo porosine.",
+      to: "/cart",
+      keywords: ["cart", "shporta", "checkout", "porosi"],
+    });
+  }
+
+  return actions;
+});
+
+const mobileQuickSearchPublicActions = computed(() => {
+  const actions = [];
+  const seen = new Set();
+  const pushAction = (action) => {
+    const key = quickSearchTargetKey(action.to);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    actions.push(action);
+  };
+
+  pushAction({
+    label: "Home",
+    description: "Kthehu ne faqen kryesore te marketplace-it.",
+    to: "/",
+    keywords: ["home", "kryefaqja", "faqja kryesore", "ballina"],
+  });
+  pushAction({
+    label: "Kerko produktet",
+    description: "Hape faqen publike te kerkimit dhe filtrave.",
+    to: "/kerko",
+    keywords: ["kerko", "search", "produkte", "filter", "kategorite"],
+  });
+
+  PRIMARY_NAVIGATION.forEach((section) => {
+    pushAction({
+      label: section.label,
+      description: `Shih produktet publike te seksionit ${section.label}.`,
+      to: section.href,
+      keywords: ["kategori", "seksion", "produkte", section.key, section.label],
+    });
+
+    (Array.isArray(section.groups) ? section.groups : []).forEach((group) => {
+      pushAction({
+        label: group.label,
+        description: `Hape nenkategorine ${group.label}.`,
+        to: group.href,
+        keywords: ["nenkategori", "kategori", group.key, section.label, group.label],
+      });
+    });
+  });
+
+  pushAction({
+    label: "Wishlist",
+    description: "Shih produktet e ruajtura.",
+    to: "/wishlist",
+    keywords: ["wishlist", "favoritet", "ruajtur"],
+  });
+  pushAction({
+    label: "Shporta",
+    description: "Hape shporten dhe checkout-in.",
+    to: "/cart",
+    keywords: ["shporta", "cart", "checkout", "pagese"],
+  });
+
+  return actions;
+});
+
+const filteredMobileQuickSearchActions = computed(() => {
+  const query = normalizeQuickSearchValue(mobileQuickSearchQuery.value);
+  const actions = mobileQuickSearchActions.value;
+
+  if (!query) {
+    return actions.slice(0, 8);
+  }
+
+  return actions
+    .filter((action) => normalizeQuickSearchValue([
+      action.label,
+      action.description,
+      ...(Array.isArray(action.keywords) ? action.keywords : []),
+    ].join(" ")).includes(query))
+    .slice(0, 12);
+});
+
+const filteredMobileQuickSearchPublicActions = computed(() => {
+  const query = normalizeQuickSearchValue(mobileQuickSearchQuery.value);
+  const usedTargets = new Set(filteredMobileQuickSearchActions.value.map((action) => quickSearchTargetKey(action.to)));
+  const matches = mobileQuickSearchPublicActions.value.filter((action) => {
+    if (usedTargets.has(quickSearchTargetKey(action.to))) {
+      return false;
+    }
+    return matchesQuickSearchAction(action, query);
+  });
+
+  if (!query) {
+    return matches.slice(0, 6);
+  }
+
+  return matches.slice(0, 8);
+});
+
+const mobileQuickSearchHasQuery = computed(() => normalizeQuickSearchValue(mobileQuickSearchQuery.value).length > 0);
+
+const mobileQuickSearchSuggestions = computed(() => {
+  const labelsByRole = appState.user?.role === "admin"
+    ? ["Artikujt e adminit", "Bizneset e regjistruara", "Porosite e adminit", "Ndrysho fjalekalimin"]
+    : appState.user?.role === "business"
+      ? ["Biznesi juaj", "Mesazhet", "Porosite e biznesit", "Ndrysho fjalekalimin"]
+      : ["Mesazhet", "Porosite", "Adresat", "Ndrysho fjalekalimin"];
+
+  return labelsByRole
+    .map((label) => mobileQuickSearchActions.value.find((action) => action.label === label))
+    .filter(Boolean);
+});
+
+const mobileQuickSearchPublicSuggestions = computed(() => {
+  const labels = ["Home", "Kerko produktet", "Veshje", "Teknologji"];
+
+  return labels
+    .map((label) => mobileQuickSearchPublicActions.value.find((action) => action.label === label))
+    .filter(Boolean);
 });
 
 const userDisplayName = computed(() => {
@@ -203,6 +591,9 @@ function closeExpandedPanels() {
   openDropdownKey.value = "";
   userMenuOpen.value = false;
   searchMenuOpen.value = false;
+  mobileQuickSearchOpen.value = false;
+  mobileQuickSearchQuery.value = "";
+  resetMobileQuickSearchProducts();
 }
 
 function toggleMobileMenu() {
@@ -215,12 +606,14 @@ function toggleMobileMenu() {
 function toggleDropdown(key) {
   userMenuOpen.value = false;
   searchMenuOpen.value = false;
+  mobileQuickSearchOpen.value = false;
   openDropdownKey.value = openDropdownKey.value === key ? "" : key;
 }
 
 async function toggleSearchPanel() {
   userMenuOpen.value = false;
   openDropdownKey.value = "";
+  mobileQuickSearchOpen.value = false;
   const shouldOpen = !searchMenuOpen.value;
 
   if (shouldOpen && isMobileViewport.value && isMobileSearchOnly.value) {
@@ -235,6 +628,54 @@ async function toggleSearchPanel() {
     searchInputElement.value?.focus();
     searchInputElement.value?.select?.();
   }
+}
+
+async function toggleMobileQuickSearch() {
+  if (!isMobileViewport.value || !mobileMenuOpen.value || !appState.user) {
+    return;
+  }
+
+  userMenuOpen.value = false;
+  openDropdownKey.value = "";
+  searchMenuOpen.value = false;
+  const shouldOpen = !mobileQuickSearchOpen.value;
+  mobileQuickSearchOpen.value = shouldOpen;
+
+  if (!shouldOpen) {
+    mobileQuickSearchQuery.value = "";
+    resetMobileQuickSearchProducts();
+    return;
+  }
+
+  await nextTick();
+  mobileQuickSearchInputElement.value?.focus();
+  mobileQuickSearchInputElement.value?.select?.();
+}
+
+async function openMobileQuickAction(action) {
+  if (!action?.to) {
+    return;
+  }
+
+  rememberMobileQuickSearch(mobileQuickSearchQuery.value || action.label);
+  mobileQuickSearchOpen.value = false;
+  mobileQuickSearchQuery.value = "";
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push(action.to);
+}
+
+async function openMobileQuickProduct(product) {
+  if (!product?.id) {
+    return;
+  }
+
+  rememberMobileQuickSearch(mobileQuickSearchQuery.value || product.title || product.productName);
+  mobileQuickSearchOpen.value = false;
+  mobileQuickSearchQuery.value = "";
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push(getProductDetailUrl(product.id, route.fullPath));
 }
 
 function handleMessagesClick() {
@@ -273,6 +714,7 @@ function handleMessagesClick() {
 
 function handleUserTrigger() {
   if (isMobileViewport.value) {
+    mobileQuickSearchOpen.value = false;
     mobileMenuOpen.value = false;
     router.push("/llogaria");
     return;
@@ -460,6 +902,8 @@ watch(
 watch(
   () => appState.user?.id,
   () => {
+    mobileQuickSearchQuery.value = "";
+    mobileQuickSearchOpen.value = false;
     void loadUnreadMessagesCount();
     void loadUnreadNotificationsCount();
   },
@@ -471,9 +915,36 @@ watch(searchQuery, (nextValue) => {
   }
 });
 
+watch(mobileQuickSearchQuery, (nextValue) => {
+  if (mobileQuickSearchTimeoutId) {
+    window.clearTimeout(mobileQuickSearchTimeoutId);
+    mobileQuickSearchTimeoutId = 0;
+  }
+
+  const query = String(nextValue || "").trim();
+  if (!query) {
+    resetMobileQuickSearchProducts();
+    return;
+  }
+
+  if (query.length < 2) {
+    mobileQuickSearchProducts.value = [];
+    mobileQuickSearchMessage.value = "";
+    mobileQuickSearchLoading.value = false;
+    return;
+  }
+
+  mobileQuickSearchLoading.value = true;
+  mobileQuickSearchMessage.value = "";
+  mobileQuickSearchTimeoutId = window.setTimeout(() => {
+    void fetchMobileQuickSearchProducts(query);
+  }, 220);
+});
+
 onMounted(async () => {
   updateViewportState();
   lastScrollY = window.scrollY || window.pageYOffset || 0;
+  loadRecentMobileQuickSearches();
   window.addEventListener("resize", updateViewportState);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
   window.addEventListener("focus", handleWindowFocus);
@@ -498,6 +969,10 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
+  if (mobileQuickSearchTimeoutId) {
+    window.clearTimeout(mobileQuickSearchTimeoutId);
+    mobileQuickSearchTimeoutId = 0;
+  }
   if (unreadMessagesPollIntervalId) {
     window.clearInterval(unreadMessagesPollIntervalId);
     unreadMessagesPollIntervalId = 0;
@@ -586,6 +1061,20 @@ onBeforeUnmount(() => {
       </button>
 
       <button
+        v-if="mobileMenuOpen && isMobileViewport && appState.user"
+        class="nav-icon-button nav-mobile-menu-search-trigger"
+        type="button"
+        aria-label="Kerko ne menune tende"
+        :aria-expanded="mobileQuickSearchOpen ? 'true' : 'false'"
+        @click="toggleMobileQuickSearch"
+      >
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6"></circle>
+          <path d="m20 20-4.2-4.2"></path>
+        </svg>
+      </button>
+
+      <button
         class="nav-mobile-toggle"
         type="button"
         :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
@@ -601,6 +1090,197 @@ onBeforeUnmount(() => {
         </svg>
       </button>
     </div>
+
+    <Transition name="nav-floating-panel">
+      <div
+        v-if="mobileMenuOpen && isMobileViewport && appState.user && mobileQuickSearchOpen"
+        class="nav-mobile-menu-search-panel"
+        @click.stop
+      >
+        <label class="nav-mobile-menu-search-field" for="nav-mobile-menu-search-input">
+          <svg class="nav-mobile-menu-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6"></circle>
+            <path d="m20 20-4.2-4.2"></path>
+          </svg>
+          <input
+            id="nav-mobile-menu-search-input"
+            ref="mobileQuickSearchInputElement"
+            v-model="mobileQuickSearchQuery"
+            class="nav-mobile-menu-search-input"
+            type="search"
+            autocomplete="off"
+            placeholder="Kerko mesazhe, porosi, adresa..."
+          >
+        </label>
+
+        <div class="nav-mobile-menu-search-results" aria-live="polite">
+          <template v-if="!mobileQuickSearchHasQuery">
+            <section v-if="mobileQuickSearchRecent.length > 0" class="nav-mobile-menu-search-group">
+              <div class="nav-mobile-menu-search-group-head">
+                <p class="nav-mobile-menu-search-group-title">Kerkuar se fundi</p>
+                <button
+                  class="nav-mobile-menu-search-clear"
+                  type="button"
+                  @click="clearRecentMobileQuickSearches"
+                >
+                  Pastro
+                </button>
+              </div>
+              <div class="nav-mobile-menu-search-chip-list">
+                <div
+                  v-for="term in mobileQuickSearchRecent"
+                  :key="term"
+                  class="nav-mobile-menu-search-chip-wrap"
+                >
+                  <button
+                    class="nav-mobile-menu-search-chip"
+                    type="button"
+                    @click="applyMobileQuickSearchTerm(term)"
+                  >
+                    {{ term }}
+                  </button>
+                  <button
+                    class="nav-mobile-menu-search-chip-remove"
+                    type="button"
+                    :aria-label="`Hiq ${term} nga historiku`"
+                    @click.stop="removeRecentMobileQuickSearch(term)"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="mobileQuickSearchSuggestions.length > 0" class="nav-mobile-menu-search-group">
+              <p class="nav-mobile-menu-search-group-title">Sugjerime per ty</p>
+              <button
+                v-for="action in mobileQuickSearchSuggestions"
+                :key="JSON.stringify(action.to)"
+                class="nav-mobile-menu-search-result"
+                type="button"
+                @click="openMobileQuickAction(action)"
+              >
+                <span class="nav-mobile-menu-search-result-copy">
+                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
+                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                </span>
+                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6"></path>
+                </svg>
+              </button>
+            </section>
+
+            <section v-if="mobileQuickSearchPublicSuggestions.length > 0" class="nav-mobile-menu-search-group">
+              <p class="nav-mobile-menu-search-group-title">Faqe publike</p>
+              <div class="nav-mobile-menu-search-chip-list">
+                <button
+                  v-for="action in mobileQuickSearchPublicSuggestions"
+                  :key="JSON.stringify(action.to)"
+                  class="nav-mobile-menu-search-chip"
+                  type="button"
+                  @click="openMobileQuickAction(action)"
+                >
+                  {{ action.label }}
+                </button>
+              </div>
+            </section>
+          </template>
+
+          <template v-else>
+            <section v-if="filteredMobileQuickSearchActions.length > 0" class="nav-mobile-menu-search-group">
+              <p class="nav-mobile-menu-search-group-title">Opsionet e llogarise</p>
+              <button
+                v-for="action in filteredMobileQuickSearchActions"
+                :key="JSON.stringify(action.to)"
+                class="nav-mobile-menu-search-result"
+                type="button"
+                @click="openMobileQuickAction(action)"
+              >
+                <span class="nav-mobile-menu-search-result-copy">
+                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
+                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                </span>
+                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6"></path>
+                </svg>
+              </button>
+            </section>
+
+            <section v-if="filteredMobileQuickSearchPublicActions.length > 0" class="nav-mobile-menu-search-group">
+              <p class="nav-mobile-menu-search-group-title">Faqe publike</p>
+              <button
+                v-for="action in filteredMobileQuickSearchPublicActions"
+                :key="JSON.stringify(action.to)"
+                class="nav-mobile-menu-search-result"
+                type="button"
+                @click="openMobileQuickAction(action)"
+              >
+                <span class="nav-mobile-menu-search-result-copy">
+                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
+                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                </span>
+                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6"></path>
+                </svg>
+              </button>
+            </section>
+
+            <section
+              v-if="mobileQuickSearchLoading || mobileQuickSearchProducts.length > 0 || mobileQuickSearchMessage"
+              class="nav-mobile-menu-search-group"
+            >
+              <p class="nav-mobile-menu-search-group-title">Produkte</p>
+              <div v-if="mobileQuickSearchLoading" class="nav-mobile-menu-search-loading">
+                Po kerkohet ne katalog...
+              </div>
+
+              <template v-else-if="mobileQuickSearchProducts.length > 0">
+                <button
+                  v-for="product in mobileQuickSearchProducts"
+                  :key="product.id"
+                  class="nav-mobile-menu-search-product"
+                  type="button"
+                  @click="openMobileQuickProduct(product)"
+                >
+                  <span class="nav-mobile-menu-search-product-image-wrap">
+                    <img
+                      class="nav-mobile-menu-search-product-image"
+                      :src="getMobileQuickSearchProductImage(product)"
+                      :alt="product.title || product.productName || 'Produkt'"
+                      loading="lazy"
+                    >
+                  </span>
+                  <span class="nav-mobile-menu-search-product-copy">
+                    <strong class="nav-mobile-menu-search-product-title">
+                      {{ product.title || product.productName || "Produkt" }}
+                    </strong>
+                    <span class="nav-mobile-menu-search-product-price">
+                      {{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}
+                    </span>
+                  </span>
+                  <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 6l6 6-6 6"></path>
+                  </svg>
+                </button>
+              </template>
+
+              <p v-else class="nav-mobile-menu-search-empty">
+                {{ mobileQuickSearchMessage }}
+              </p>
+            </section>
+
+            <p
+              v-if="!mobileQuickSearchLoading && !filteredMobileQuickSearchActions.length && !filteredMobileQuickSearchPublicActions.length && !mobileQuickSearchProducts.length && !mobileQuickSearchMessage"
+              class="nav-mobile-menu-search-empty"
+            >
+              Nuk u gjet asnje opsion ose produkt me kete kerkim.
+            </p>
+          </template>
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="nav-floating-panel">
       <form

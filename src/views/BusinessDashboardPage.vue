@@ -45,6 +45,7 @@ const productFormSection = ref(null);
 const productTitleInput = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
+const showVerifiedProfileEditor = ref(false);
 const promotionForm = reactive({
   code: "",
   title: "",
@@ -158,6 +159,35 @@ const promotionCategoryOptions = computed(() => {
   );
 });
 
+const isBusinessVerified = computed(
+  () => String(businessProfile.value?.verificationStatus || "").trim().toLowerCase() === "verified",
+);
+const profileEditAccessStatus = computed(
+  () => String(businessProfile.value?.profileEditAccessStatus || "locked").trim().toLowerCase(),
+);
+const canManageCatalog = computed(() => Boolean(businessProfile.value) && isBusinessVerified.value);
+const shouldShowProfileCard = computed(
+  () => !businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value,
+);
+const dashboardSingleColumn = computed(
+  () => !canManageCatalog.value || !shouldShowProfileCard.value,
+);
+const editBusinessHelperText = computed(() => {
+  if (!businessProfile.value || !isBusinessVerified.value) {
+    return "";
+  }
+
+  if (profileEditAccessStatus.value === "approved") {
+    return "Admini e ka aprovuar editimin. Kliko butonin per ta hapur formen.";
+  }
+
+  if (profileEditAccessStatus.value === "pending") {
+    return "Kerkesa per editim eshte ne pritje te admini.";
+  }
+
+  return "Klikimi dergon kerkese te admini. Pasi te aprovohet, forma hapet vetem kur ta klikosh perseri.";
+});
+
 function formatPromotionSectionLabel(sectionValue) {
   const match = PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === String(sectionValue || "").trim().toLowerCase());
   return match?.label || String(sectionValue || "").trim();
@@ -181,8 +211,13 @@ onMounted(async () => {
       return;
     }
 
-    ui.accessNote = "Je kyçur si biznes. Ketu mund ta regjistrosh biznesin dhe t'i menaxhosh vetem artikujt e tu.";
-    await Promise.all([loadBusinessProfile(), loadProducts(), loadBusinessAnalytics(), loadPromotions()]);
+    ui.accessNote = "Je kyçur si biznes. Ketu mund ta menaxhosh profilin dhe katalogun tend sipas statusit te verifikimit.";
+    await loadBusinessProfile();
+    await Promise.all([
+      loadBusinessAnalytics(),
+      canManageCatalog.value ? loadProducts() : Promise.resolve(),
+      canManageCatalog.value ? loadPromotions() : Promise.resolve(),
+    ]);
     await handleRouteView();
   } finally {
     markRouteReady();
@@ -239,6 +274,9 @@ async function loadBusinessProfile() {
 
   businessProfile.value = data.profile || null;
   hydrateProfileForm(businessProfile.value);
+  if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
+    showVerifiedProfileEditor.value = false;
+  }
 }
 
 async function requestVerificationReview() {
@@ -258,6 +296,42 @@ async function requestVerificationReview() {
   }
   ui.profileMessage = data.message || "Kerkesa per verifikim u dergua.";
   ui.profileType = "success";
+}
+
+async function requestBusinessProfileEditAccess() {
+  const { response, data } = await requestJson("/api/business-profile/edit-request", {
+    method: "POST",
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.profileMessage = resolveApiMessage(data, "Kerkesa per editim nuk u dergua.");
+    ui.profileType = "error";
+    return;
+  }
+
+  businessProfile.value = data.profile || businessProfile.value;
+  if (businessProfile.value) {
+    hydrateProfileForm(businessProfile.value);
+  }
+  ui.profileMessage = data.message || "Kerkesa per editim u dergua te admini.";
+  ui.profileType = "success";
+}
+
+async function handleBusinessEditButton() {
+  if (!businessProfile.value || !isBusinessVerified.value) {
+    return;
+  }
+
+  if (profileEditAccessStatus.value === "approved") {
+    showVerifiedProfileEditor.value = true;
+    ui.profileMessage = "Admini e ka aprovuar editimin. Tani mund t'i ruash ndryshimet.";
+    ui.profileType = "success";
+    await nextTick();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    return;
+  }
+
+  await requestBusinessProfileEditAccess();
 }
 
 function hydrateProfileForm(profile) {
@@ -307,6 +381,7 @@ async function saveBusinessProfile() {
 
   businessProfile.value = data.profile;
   hydrateProfileForm(data.profile);
+  showVerifiedProfileEditor.value = false;
   ui.profileMessage = data.message || "Biznesi u ruajt me sukses.";
   ui.profileType = "success";
 }
@@ -381,6 +456,10 @@ async function handleRouteView() {
     return;
   }
 
+  if (!canManageCatalog.value) {
+    return;
+  }
+
   resetProductForm();
   await nextTick();
 
@@ -429,8 +508,8 @@ async function downloadImportTemplate() {
 }
 
 async function submitImportProducts() {
-  if (!businessProfile.value) {
-    ui.importMessage = "Regjistroje fillimisht biznesin para se te importosh artikuj.";
+  if (!canManageCatalog.value) {
+    ui.importMessage = "Biznesi duhet te verifikohet nga admini para se te importosh artikuj.";
     ui.importType = "error";
     return;
   }
@@ -458,6 +537,12 @@ async function submitImportProducts() {
 }
 
 async function suggestProductWithAi() {
+  if (!canManageCatalog.value) {
+    ui.productMessage = "Biznesi duhet te verifikohet nga admini para se te shtosh produkte.";
+    ui.productTypeMessage = "error";
+    return;
+  }
+
   ui.productMessage = "";
   ui.productTypeMessage = "";
   ui.productAiBusy = true;
@@ -514,8 +599,8 @@ async function submitProduct() {
   await nextTick();
   syncProductFormCatalogState(productForm);
 
-  if (!businessProfile.value) {
-    ui.productMessage = "Regjistroje fillimisht biznesin para se te shtosh artikuj.";
+  if (!canManageCatalog.value) {
+    ui.productMessage = "Biznesi duhet te verifikohet nga admini para se te shtosh produkte.";
     ui.productTypeMessage = "error";
     return;
   }
@@ -578,6 +663,12 @@ async function submitProduct() {
 }
 
 async function savePromotion() {
+  if (!canManageCatalog.value) {
+    ui.promotionMessage = "Biznesi duhet te verifikohet nga admini para se te ruash promocione.";
+    ui.promotionType = "error";
+    return;
+  }
+
   if (promotionForm.pageSection && promotionForm.category) {
     const categoryStillMatches = promotionCategoryOptions.value.some((option) => option.value === promotionForm.category);
     if (!categoryStillMatches) {
@@ -626,6 +717,11 @@ async function submitProductAction(url, payload, fallbackMessage) {
 }
 
 async function handleDeleteProduct(product) {
+  if (!canManageCatalog.value) {
+    ui.listMessage = "Katalogu eshte i ngrire deri ne verifikimin e biznesit.";
+    ui.listType = "error";
+    return;
+  }
   if (!window.confirm("A do ta fshish kete produkt?")) {
     return;
   }
@@ -636,6 +732,11 @@ async function handleDeleteProduct(product) {
 }
 
 async function handleToggleVisibility(product) {
+  if (!canManageCatalog.value) {
+    ui.listMessage = "Katalogu eshte i ngrire deri ne verifikimin e biznesit.";
+    ui.listType = "error";
+    return;
+  }
   const ok = await submitProductAction(
     "/api/products/public-visibility",
     { productId: product.id, isPublic: !product.isPublic },
@@ -647,6 +748,11 @@ async function handleToggleVisibility(product) {
 }
 
 async function handleToggleStock(product) {
+  if (!canManageCatalog.value) {
+    ui.listMessage = "Katalogu eshte i ngrire deri ne verifikimin e biznesit.";
+    ui.listType = "error";
+    return;
+  }
   const ok = await submitProductAction(
     "/api/products/public-stock",
     { productId: product.id, showStockPublic: !(product.showStockPublic && Number(product.stockQuantity) > 0) },
@@ -666,16 +772,33 @@ async function handleToggleStock(product) {
         <p class="section-label">Paneli i biznesit</p>
         <h1>Biznesi juaj</h1>
         <p class="admin-products-intro">
-          Nga kjo faqe mund ta regjistrosh biznesin, te shtosh artikuj dhe te kontrollosh vetem artikujt qe i ke publikuar ti.
+          Nga kjo faqe mund ta menaxhosh profilin e biznesit dhe katalogun vetem pasi biznesi te verifikohet nga admini.
         </p>
       </div>
-      <div class="admin-user-chip">
-        <span>Sesioni aktiv</span>
-        <strong>{{ appState.user ? `${appState.user.fullName} • ${formatRoleLabel(appState.user.role)}` : "Duke u kontrolluar..." }}</strong>
+      <div class="business-dashboard-header-actions">
+        <div v-if="businessProfile && isBusinessVerified" class="business-dashboard-edit-access">
+          <button class="nav-action nav-action-secondary" type="button" @click="handleBusinessEditButton">
+            Edito biznesin
+          </button>
+          <p class="business-dashboard-edit-copy">{{ editBusinessHelperText }}</p>
+        </div>
+        <div class="admin-user-chip">
+          <span>Sesioni aktiv</span>
+          <strong>{{ appState.user ? `${appState.user.fullName} • ${formatRoleLabel(appState.user.role)}` : "Duke u kontrolluar..." }}</strong>
+        </div>
       </div>
     </header>
 
     <p class="admin-access-note">{{ ui.accessNote }}</p>
+    <div
+      v-if="!shouldShowProfileCard && ui.profileMessage"
+      class="form-message"
+      :class="ui.profileType"
+      role="status"
+      aria-live="polite"
+    >
+      {{ ui.profileMessage }}
+    </div>
 
     <section v-if="analytics" class="business-dashboard-analytics-grid" aria-label="Analytics e biznesit">
       <article class="summary-chip">
@@ -716,11 +839,15 @@ async function handleToggleStock(product) {
       </article>
     </section>
 
-    <div class="business-dashboard-layout">
-      <section class="card business-profile-card">
-        <h2>Regjistrimi i biznesit</h2>
+    <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">
+      <section v-if="shouldShowProfileCard" class="card business-profile-card">
+        <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
         <p class="section-text">
-          Ploteso te dhenat e biznesit. Pasi ta ruash, do te kesh akses per t'i shtuar dhe menaxhuar artikujt e biznesit tend.
+          {{
+            businessProfile && isBusinessVerified
+              ? "Admini e ka hapur perkohesisht editimin. Pasi t'i ruash ndryshimet, forma mbyllet perseri."
+              : "Ploteso te dhenat e biznesit. Katalogu i produkteve aktivizohet vetem pasi admini ta verifikoje biznesin."
+          }}
         </p>
 
         <form class="auth-form" @submit.prevent="saveBusinessProfile">
@@ -782,7 +909,11 @@ async function handleToggleStock(product) {
               <p class="section-label">Verifikimi</p>
               <strong>{{ formatVerificationStatusLabel(businessProfile.verificationStatus) }}</strong>
               <p class="section-text">
-                Pasi verifikohet biznesi, profili yt shfaqet me badge me te besueshme per bleresit.
+                {{
+                  isBusinessVerified
+                    ? "Biznesi eshte i verifikuar. Editimi i ketij profili hapet vetem me aprovimin e adminit."
+                    : "Pasi verifikohet biznesi, hapet katalogu i produkteve dhe profili shfaqet me badge me te besueshme."
+                }}
               </p>
             </div>
             <button
@@ -795,7 +926,17 @@ async function handleToggleStock(product) {
             </button>
           </div>
 
-          <button type="submit">Ruaje biznesin</button>
+          <div class="auth-form-actions">
+            <button type="submit">{{ businessProfile && isBusinessVerified ? "Ruaj ndryshimet" : "Ruaje biznesin" }}</button>
+            <button
+              v-if="businessProfile && isBusinessVerified"
+              class="button-secondary"
+              type="button"
+              @click="showVerifiedProfileEditor = false"
+            >
+              Mbylle
+            </button>
+          </div>
         </form>
 
         <div class="form-message" :class="ui.profileType" role="status" aria-live="polite">
@@ -803,7 +944,7 @@ async function handleToggleStock(product) {
         </div>
       </section>
 
-      <section v-if="businessProfile" ref="productFormSection" class="card admin-form-card">
+      <section v-if="canManageCatalog" ref="productFormSection" class="card admin-form-card">
         <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
         <p class="section-text">
           Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.
@@ -879,7 +1020,15 @@ async function handleToggleStock(product) {
       </section>
     </div>
 
-    <section v-if="businessProfile" class="card admin-list-card" aria-label="Importo artikuj nga Excel">
+    <section v-if="businessProfile && !canManageCatalog" class="card business-dashboard-freeze-card" aria-label="Katalogu i ngrire">
+      <p class="section-label">Katalogu i ngrire</p>
+      <h2>Produktet hapen pasi admini ta verifikoje biznesin</h2>
+      <p class="section-text">
+        Deri atehere nuk mund te shtosh, editosh, importosh apo publikosh produkte. Ploteso profilin dhe dergo kerkese per verifikim.
+      </p>
+    </section>
+
+    <section v-if="canManageCatalog" class="card admin-list-card" aria-label="Importo artikuj nga Excel">
       <div class="admin-list-header">
         <div>
           <p class="section-label">Import ne Excel</p>
@@ -923,7 +1072,7 @@ async function handleToggleStock(product) {
       </div>
     </section>
 
-    <section v-if="businessProfile" class="card admin-list-card" aria-label="Promocionet e biznesit">
+    <section v-if="canManageCatalog" class="card admin-list-card" aria-label="Promocionet e biznesit">
       <div class="admin-list-header">
         <div>
           <p class="section-label">Promocionet</p>
@@ -1075,7 +1224,7 @@ async function handleToggleStock(product) {
       </div>
     </section>
 
-    <section class="card admin-list-card">
+    <section v-if="canManageCatalog" class="card admin-list-card">
       <div class="admin-list-header">
         <div>
           <p class="section-label">Artikujt e biznesit tend</p>

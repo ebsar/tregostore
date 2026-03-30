@@ -9,7 +9,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["upload-logo", "save-edit", "update-verification"]);
+const emit = defineEmits(["upload-logo", "save-edit", "update-verification", "update-edit-access"]);
 
 const editing = ref(false);
 const formState = ref(createFormState(props.business));
@@ -51,6 +51,17 @@ function handleSave() {
       editing.value = false;
     },
   });
+}
+
+function formatEditAccessLabel(status) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (normalizedStatus === "approved") {
+    return "I lejuar";
+  }
+  if (normalizedStatus === "pending") {
+    return "Ne pritje";
+  }
+  return "I mbyllur";
 }
 </script>
 
@@ -106,6 +117,9 @@ function handleSave() {
         <div class="registered-business-number-chip">
           Verifikimi: <strong>{{ formatVerificationStatusLabel(business.verificationStatus) }}</strong>
         </div>
+        <div v-if="business.verificationStatus === 'verified'" class="registered-business-number-chip">
+          Editimi: <strong>{{ formatEditAccessLabel(business.profileEditAccessStatus) }}</strong>
+        </div>
         <button
           class="registered-business-edit-toggle"
           type="button"
@@ -119,6 +133,22 @@ function handleSave() {
           @click="emit('update-verification', { businessId: business.id, verificationStatus: 'rejected' })"
         >
           Refuzo
+        </button>
+        <button
+          v-if="business.verificationStatus === 'verified' && business.profileEditAccessStatus === 'pending'"
+          class="registered-business-edit-toggle"
+          type="button"
+          @click="emit('update-edit-access', { businessId: business.id, editAccessStatus: 'approved' })"
+        >
+          Lejo editimin
+        </button>
+        <button
+          v-if="business.verificationStatus === 'verified' && business.profileEditAccessStatus === 'approved'"
+          class="ghost-button registered-business-cancel-button"
+          type="button"
+          @click="emit('update-edit-access', { businessId: business.id, editAccessStatus: 'locked' })"
+        >
+          Mbylle editimin
         </button>
       </div>
     </div>

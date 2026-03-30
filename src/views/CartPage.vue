@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
@@ -256,7 +257,20 @@ function syncHeight() {
       {{ ui.message }}
     </div>
 
-    <div class="cart-layout">
+    <div v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+      <h2>Per te perdorur shporten duhet te kyçesh.</h2>
+      <p>Krijo llogari ose hyni ne llogarine tende per te ruajtur produktet dhe per te vazhduar me porosite.</p>
+      <div class="collection-guest-gate-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fcart">
+          Login
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fcart">
+          Sign Up
+        </RouterLink>
+      </div>
+    </div>
+
+    <div v-else class="cart-layout">
       <div ref="productsPanel" class="cart-products-panel">
         <div v-if="selectionEnabled" class="saved-products-toolbar">
           <div class="saved-products-toolbar-left">
@@ -292,7 +306,7 @@ function syncHeight() {
         </section>
 
         <div v-else class="collection-empty-state">
-          {{ ui.guest ? "Per te perdorur shporten duhet te kyçesh ose te krijosh llogari." : "Shporta jote eshte bosh. Shto produkte nga faqet e dyqanit dhe pastaj vazhdo me porosine." }}
+          Shporta jote eshte bosh. Shto produkte nga faqet e dyqanit dhe pastaj vazhdo me porosine.
         </div>
       </div>
 

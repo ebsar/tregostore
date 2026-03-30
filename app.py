@@ -270,6 +270,7 @@ ORDER_ITEM_FULFILLMENT_STATUSES = {
 }
 RETURN_REQUEST_STATUSES = {"requested", "approved", "rejected", "received", "refunded"}
 BUSINESS_VERIFICATION_STATUSES = {"unverified", "pending", "verified", "rejected"}
+BUSINESS_PROFILE_EDIT_ACCESS_STATUSES = {"locked", "pending", "approved"}
 REPORT_TARGET_TYPES = {"product", "business", "user", "message"}
 REPORT_STATUSES = {"open", "reviewing", "resolved", "dismissed"}
 PROMO_CODE_TYPES = {"percent", "fixed"}
@@ -829,7 +830,7 @@ def normalize_uploaded_image_payload(
     normalized_extension = str(extension or "").strip().lower()
     normalized_content_type = str(content_type or "").strip().lower()
 
-    if normalized_extension in {".webp", ".gif", ".avif"}:
+    if normalized_extension in {".webp", ".gif"}:
         if not normalized_content_type.startswith("image/"):
             normalized_content_type = guess_content_type_for_extension(normalized_extension)
         return file_bytes, normalized_extension, normalized_content_type
@@ -1275,6 +1276,26 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE business_profiles ADD COLUMN verification_notes TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "business_profiles", "profile_edit_access_status"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN profile_edit_access_status TEXT NOT NULL DEFAULT 'locked'"
+        )
+
+    if not column_exists(connection, "business_profiles", "profile_edit_requested_at"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN profile_edit_requested_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "profile_edit_approved_at"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN profile_edit_approved_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "profile_edit_notes"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN profile_edit_notes TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE business_profiles
@@ -1288,7 +1309,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
             END,
             verification_requested_at = COALESCE(verification_requested_at, ''),
             verification_verified_at = COALESCE(verification_verified_at, ''),
-            verification_notes = COALESCE(verification_notes, '')
+            verification_notes = COALESCE(verification_notes, ''),
+            profile_edit_access_status = CASE
+                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) <> 'verified' THEN 'locked'
+                WHEN LOWER(TRIM(COALESCE(profile_edit_access_status, ''))) IN ('pending', 'approved')
+                    THEN LOWER(TRIM(COALESCE(profile_edit_access_status, '')))
+                ELSE 'locked'
+            END,
+            profile_edit_requested_at = COALESCE(profile_edit_requested_at, ''),
+            profile_edit_approved_at = COALESCE(profile_edit_approved_at, ''),
+            profile_edit_notes = COALESCE(profile_edit_notes, '')
         """
     )
 
@@ -5724,6 +5754,16 @@ def parse_business_verification_status(
     return [], status
 
 
+def parse_business_profile_edit_access_status(
+    data: dict[str, object],
+    field_name: str = "editAccessStatus",
+) -> tuple[list[str], str | None]:
+    status = str(data.get(field_name, "")).strip().lower()
+    if status not in BUSINESS_PROFILE_EDIT_ACCESS_STATUSES:
+        return ["Statusi i editimit te biznesit nuk eshte valid."], None
+    return [], status
+
+
 def parse_stripe_session_id(
     data: dict[str, object],
     field_name: str = "stripeSessionId",
@@ -5833,6 +5873,26 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
             if "verification_notes" in row.keys()
             else ""
         ),
+        "profileEditAccessStatus": (
+            str(row["profile_edit_access_status"] or "").strip().lower()
+            if "profile_edit_access_status" in row.keys()
+            else "locked"
+        ),
+        "profileEditRequestedAt": (
+            str(row["profile_edit_requested_at"] or "").strip()
+            if "profile_edit_requested_at" in row.keys()
+            else ""
+        ),
+        "profileEditApprovedAt": (
+            str(row["profile_edit_approved_at"] or "").strip()
+            if "profile_edit_approved_at" in row.keys()
+            else ""
+        ),
+        "profileEditNotes": (
+            str(row["profile_edit_notes"] or "").strip()
+            if "profile_edit_notes" in row.keys()
+            else ""
+        ),
         "phoneNumber": row["phone_number"],
         "city": row["city"],
         "addressLine": row["address_line"],
@@ -5926,6 +5986,26 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "verificationNotes": (
             str(row["verification_notes"] or "").strip()
             if "verification_notes" in row.keys()
+            else ""
+        ),
+        "profileEditAccessStatus": (
+            str(row["profile_edit_access_status"] or "").strip().lower()
+            if "profile_edit_access_status" in row.keys()
+            else "locked"
+        ),
+        "profileEditRequestedAt": (
+            str(row["profile_edit_requested_at"] or "").strip()
+            if "profile_edit_requested_at" in row.keys()
+            else ""
+        ),
+        "profileEditApprovedAt": (
+            str(row["profile_edit_approved_at"] or "").strip()
+            if "profile_edit_approved_at" in row.keys()
+            else ""
+        ),
+        "profileEditNotes": (
+            str(row["profile_edit_notes"] or "").strip()
+            if "profile_edit_notes" in row.keys()
             else ""
         ),
         "city": row["city"],
@@ -7522,6 +7602,10 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 bp.verification_requested_at,
                 bp.verification_verified_at,
                 bp.verification_notes,
+                bp.profile_edit_access_status,
+                bp.profile_edit_requested_at,
+                bp.profile_edit_approved_at,
+                bp.profile_edit_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -7590,6 +7674,10 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 bp.verification_requested_at,
                 bp.verification_verified_at,
                 bp.verification_notes,
+                bp.profile_edit_access_status,
+                bp.profile_edit_requested_at,
+                bp.profile_edit_approved_at,
+                bp.profile_edit_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -7649,6 +7737,10 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 bp.verification_requested_at,
                 bp.verification_verified_at,
                 bp.verification_notes,
+                bp.profile_edit_access_status,
+                bp.profile_edit_requested_at,
+                bp.profile_edit_approved_at,
+                bp.profile_edit_notes,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -8879,7 +8971,7 @@ def create_order_from_checkout_items(
                 payout_status,
                 payout_due_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order_id,
@@ -9564,12 +9656,14 @@ def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, obje
             """
             + ORDER_SELECT_COLUMNS
             + """
-            FROM orders o
-            INNER JOIN order_items oi ON oi.order_id = o.id
-            WHERE oi.business_user_id = ?
-            GROUP BY o.id
-            ORDER BY o.id DESC
-            FROM orders o
+            FROM orders
+            WHERE EXISTS (
+                SELECT 1
+                FROM order_items oi
+                WHERE oi.order_id = orders.id
+                  AND oi.business_user_id = ?
+            )
+            ORDER BY id DESC
             """,
             (business_user_id,),
         ).fetchall()
@@ -10478,6 +10572,24 @@ def can_create_products(user: sqlite3.Row) -> bool:
     return user["role"] in {"admin", "business"}
 
 
+def is_business_profile_verified(profile: sqlite3.Row | dict[str, object] | None) -> bool:
+    if not profile:
+        return False
+    raw_status = profile["verification_status"] if hasattr(profile, "__getitem__") and "verification_status" in profile.keys() else profile.get("verificationStatus")  # type: ignore[union-attr]
+    return str(raw_status or "").strip().lower() == "verified"
+
+
+def is_business_profile_edit_unlocked(profile: sqlite3.Row | dict[str, object] | None) -> bool:
+    if not profile:
+        return False
+    raw_status = (
+        profile["profile_edit_access_status"]
+        if hasattr(profile, "__getitem__") and "profile_edit_access_status" in profile.keys()
+        else profile.get("profileEditAccessStatus")  # type: ignore[union-attr]
+    )
+    return str(raw_status or "").strip().lower() == "approved"
+
+
 def can_manage_product(user: sqlite3.Row, product: sqlite3.Row) -> bool:
     if user["role"] == "admin":
         return True
@@ -10486,6 +10598,27 @@ def can_manage_product(user: sqlite3.Row, product: sqlite3.Row) -> bool:
         return product["created_by_user_id"] == user["id"]
 
     return False
+
+
+def fetch_verified_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
+    business_profile = fetch_business_profile_for_user(user_id)
+    if not business_profile or not is_business_profile_verified(business_profile):
+        return None
+    return business_profile
+
+
+def require_verified_business_catalog_profile(user: sqlite3.Row) -> tuple[list[str], sqlite3.Row | None]:
+    if user["role"] != "business":
+        return [], None
+
+    business_profile = fetch_business_profile_for_user(int(user["id"]))
+    if not business_profile:
+        return ["Regjistroje fillimisht biznesin para se te menaxhosh produktet."], None
+
+    if not is_business_profile_verified(business_profile):
+        return ["Biznesi duhet te verifikohet nga admini para se te menaxhosh produktet."], None
+
+    return [], business_profile
 
 
 def create_session(user_id: int) -> str:
@@ -10825,6 +10958,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/business-profile/verification-request":
             self.handle_business_verification_request()
             return
+        if path == "/api/business-profile/edit-request":
+            self.handle_business_profile_edit_request()
+            return
         if path == "/api/admin/users/role":
             self.handle_admin_user_role()
             return
@@ -10842,6 +10978,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/admin/businesses/verification":
             self.handle_admin_update_business_verification()
+            return
+        if path == "/api/admin/businesses/edit-access":
+            self.handle_admin_update_business_edit_access()
             return
         if path == "/api/admin/businesses/logo":
             self.handle_admin_update_business_logo()
@@ -12005,11 +12144,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if not fetch_business_profile_for_user(user["id"]):
-            self.send_json(
-                400,
-                {"ok": False, "message": "Regjistroje fillimisht biznesin para se te importosh artikuj."},
-            )
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -12743,7 +12880,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             with get_db_connection() as connection:
                 existing_profile = connection.execute(
                     """
-                    SELECT id
+                    SELECT id, verification_status, profile_edit_access_status
                     FROM business_profiles
                     WHERE user_id = ?
                     """,
@@ -12751,6 +12888,22 @@ class AppHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
 
                 if existing_profile:
+                    is_verified_profile = (
+                        str(existing_profile["verification_status"] or "").strip().lower() == "verified"
+                    )
+                    is_edit_unlocked = (
+                        str(existing_profile["profile_edit_access_status"] or "").strip().lower() == "approved"
+                    )
+                    if is_verified_profile and not is_edit_unlocked:
+                        self.send_json(
+                            403,
+                            {
+                                "ok": False,
+                                "message": "Per biznes te verifikuar, editimi duhet te aprovohet fillimisht nga admini.",
+                            },
+                        )
+                        return
+
                     connection.execute(
                         """
                         UPDATE business_profiles
@@ -12762,6 +12915,22 @@ class AppHandler(SimpleHTTPRequestHandler):
                             phone_number = ?,
                             city = ?,
                             address_line = ?,
+                            profile_edit_access_status = CASE
+                                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) = 'verified' THEN 'locked'
+                                ELSE COALESCE(profile_edit_access_status, 'locked')
+                            END,
+                            profile_edit_requested_at = CASE
+                                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) = 'verified' THEN ''
+                                ELSE COALESCE(profile_edit_requested_at, '')
+                            END,
+                            profile_edit_approved_at = CASE
+                                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) = 'verified' THEN ''
+                                ELSE COALESCE(profile_edit_approved_at, '')
+                            END,
+                            profile_edit_notes = CASE
+                                WHEN LOWER(TRIM(COALESCE(verification_status, ''))) = 'verified' THEN ''
+                                ELSE COALESCE(profile_edit_notes, '')
+                            END,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE user_id = ?
                         """,
@@ -12825,7 +12994,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {
                 "ok": True,
-                "message": "Biznesi u ruajt me sukses.",
+                "message": (
+                    "Biznesi u ruajt me sukses dhe editimi u mbyll."
+                    if is_business_profile_verified(saved_profile)
+                    else "Biznesi u ruajt me sukses."
+                ),
                 "profile": serialize_business_profile(saved_profile),
             },
         )
@@ -13365,14 +13538,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if user["role"] == "business" and not fetch_business_profile_for_user(user["id"]):
-            self.send_json(
-                400,
-                {
-                    "ok": False,
-                    "message": "Regjistroje fillimisht biznesin para se te perdoresh AI draft.",
-                },
-            )
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -13507,14 +13675,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if user["role"] == "business" and not fetch_business_profile_for_user(user["id"]):
-            self.send_json(
-                400,
-                {
-                    "ok": False,
-                    "message": "Regjistroje fillimisht biznesin para se te shtosh artikuj.",
-                },
-            )
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -13573,6 +13736,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "message": "Vetem admin ose biznes mund ta editoje produktin.",
                 },
             )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -15034,6 +15202,107 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def handle_business_profile_edit_request(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si biznes."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te kerkojne editim te profilit."})
+            return
+
+        with get_db_connection() as connection:
+            business_profile = connection.execute(
+                """
+                SELECT
+                    id,
+                    verification_status,
+                    profile_edit_access_status
+                FROM business_profiles
+                WHERE user_id = ?
+                LIMIT 1
+                """,
+                (user["id"],),
+            ).fetchone()
+            if not business_profile:
+                self.send_json(404, {"ok": False, "message": "Ruaje fillimisht profilin e biznesit."})
+                return
+
+            if str(business_profile["verification_status"] or "").strip().lower() != "verified":
+                self.send_json(
+                    403,
+                    {"ok": False, "message": "Vetem biznesi i verifikuar mund te kerkoje editim te profilit."},
+                )
+                return
+
+            current_edit_status = str(business_profile["profile_edit_access_status"] or "").strip().lower()
+            if current_edit_status == "approved":
+                updated_profile = fetch_business_profile_for_user(int(user["id"]))
+                self.send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "message": "Admini e ka lejuar tashme editimin e profilit.",
+                        "profile": serialize_business_profile(updated_profile) if updated_profile else None,
+                    },
+                )
+                return
+
+            if current_edit_status == "pending":
+                updated_profile = fetch_business_profile_for_user(int(user["id"]))
+                self.send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "message": "Kerkesa per editim eshte ne pritje te admini.",
+                        "profile": serialize_business_profile(updated_profile) if updated_profile else None,
+                    },
+                )
+                return
+
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    profile_edit_access_status = 'pending',
+                    profile_edit_requested_at = CURRENT_TIMESTAMP,
+                    profile_edit_approved_at = '',
+                    profile_edit_notes = '',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (business_profile["id"],),
+            )
+
+            admin_rows = connection.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE role = 'admin'
+                """
+            ).fetchall()
+            for admin_row in admin_rows:
+                create_notification(
+                    connection,
+                    user_id=int(admin_row["id"]),
+                    notification_type="business-edit",
+                    title="Biznesi kerkon editim te profilit",
+                    body="Nje biznes i verifikuar ka kerkuar leje per editim te profilit.",
+                    href="/bizneset-e-regjistruara",
+                    metadata={"businessId": int(business_profile["id"])},
+                )
+
+        updated_profile = fetch_business_profile_for_user(int(user["id"]))
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Kerkesa per editim u dergua te admini.",
+                "profile": serialize_business_profile(updated_profile) if updated_profile else None,
+            },
+        )
+
     def handle_admin_update_business_verification(self) -> None:
         current_user = self.get_current_user()
         if not current_user:
@@ -15071,8 +15340,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                     verification_status = ?,
                     verification_verified_at = CASE
                         WHEN ? = 'verified' THEN CURRENT_TIMESTAMP
-                        ELSE ''
+                        ELSE NULL
                     END,
+                    profile_edit_access_status = 'locked',
+                    profile_edit_requested_at = '',
+                    profile_edit_approved_at = '',
+                    profile_edit_notes = '',
                     verification_notes = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -15101,6 +15374,105 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "message": "Statusi i verifikimit u ruajt.",
+                "business": serialize_admin_business_profile(updated_business) if updated_business else None,
+            },
+        )
+
+    def handle_admin_update_business_edit_access(self) -> None:
+        current_user = self.get_current_user()
+        if not current_user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if current_user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admin mund te aprovoje editimin e biznesit."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        id_errors, business_id = parse_business_id(payload)
+        status_errors, edit_access_status = parse_business_profile_edit_access_status(payload)
+        edit_notes = re.sub(r"\s+", " ", str(payload.get("editAccessNotes", "")).strip())[:500]
+        combined_errors = id_errors + status_errors
+        if combined_errors or business_id is None or edit_access_status is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
+            return
+
+        if edit_access_status not in {"approved", "locked"}:
+            self.send_json(400, {"ok": False, "message": "Admini mund ta lejoje ose ta mbylle editimin."})
+            return
+
+        business_row = fetch_business_profile_for_admin_by_id(business_id)
+        if not business_row:
+            self.send_json(404, {"ok": False, "message": "Biznesi nuk u gjet."})
+            return
+
+        if str(business_row["verification_status"] or "").strip().lower() != "verified":
+            self.send_json(400, {"ok": False, "message": "Editimi mund te aprovohet vetem per biznes te verifikuar."})
+            return
+
+        now_text = datetime_to_storage_text(utc_now())
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    profile_edit_access_status = ?,
+                    profile_edit_requested_at = CASE
+                        WHEN ? = 'approved' THEN COALESCE(NULLIF(TRIM(profile_edit_requested_at), ''), ?)
+                        ELSE ''
+                    END,
+                    profile_edit_approved_at = CASE
+                        WHEN ? = 'approved' THEN ?
+                        ELSE ''
+                    END,
+                    profile_edit_notes = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    edit_access_status,
+                    edit_access_status,
+                    now_text,
+                    edit_access_status,
+                    now_text,
+                    edit_notes,
+                    business_id,
+                ),
+            )
+
+            create_notification(
+                connection,
+                user_id=int(business_row["user_id"]),
+                notification_type="business-edit",
+                title=(
+                    "Admini e lejoi editimin e biznesit"
+                    if edit_access_status == "approved"
+                    else "Kerkesa per editim u mbyll"
+                ),
+                body=(
+                    "Tani mund ta editosh profilin e biznesit."
+                    if edit_access_status == "approved"
+                    else "Editimi i profilit nuk eshte i hapur. Provo perseri me kerkese te re."
+                ),
+                href="/biznesi-juaj",
+                metadata={"businessId": business_id},
+            )
+
+        updated_business = fetch_business_profile_for_admin_by_id(business_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": (
+                    "Editimi i biznesit u aprovua."
+                    if edit_access_status == "approved"
+                    else "Editimi i biznesit u mbyll."
+                ),
                 "business": serialize_admin_business_profile(updated_business) if updated_business else None,
             },
         )
@@ -15523,6 +15895,11 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
         try:
             payload = self.read_json()
         except ValueError as error:
@@ -15565,6 +15942,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 403,
                 {"ok": False, "message": "Vetem admin ose biznes mund ta ndryshoje dukshmerine."},
             )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -15630,6 +16012,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 403,
                 {"ok": False, "message": "Vetem admin ose biznes mund ta ndryshoje stokun publik."},
             )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -15705,6 +16092,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 403,
                 {"ok": False, "message": "Vetem admin ose biznes mund te shtoje stok."},
             )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:
@@ -15807,6 +16199,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 403,
                 {"ok": False, "message": "Vetem admin ose biznes mund te heqe stok."},
             )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
             return
 
         try:

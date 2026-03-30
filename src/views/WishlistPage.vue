@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
@@ -190,7 +191,20 @@ async function bulkAddToCart() {
       {{ ui.message }}
     </div>
 
-    <div v-if="selectionEnabled" class="saved-products-toolbar">
+    <div v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+      <h2>Per te perdorur wishlist duhet te kyçesh.</h2>
+      <p>Krijo llogari ose hyni ne llogarine tende per te ruajtur produktet e preferuara dhe per t'i gjetur me vone.</p>
+      <div class="collection-guest-gate-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fwishlist">
+          Login
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fwishlist">
+          Sign Up
+        </RouterLink>
+      </div>
+    </div>
+
+    <div v-else-if="selectionEnabled" class="saved-products-toolbar">
       <div class="saved-products-toolbar-left">
         <label class="saved-products-select-all" for="wishlist-select-all">
           <input
@@ -231,7 +245,7 @@ async function bulkAddToCart() {
     </section>
 
     <div v-else class="collection-empty-state">
-      {{ ui.guest ? "Per te perdorur wishlist duhet te kyçesh ose te krijosh llogari." : "Wishlist-i yt eshte bosh. Shto produkte nga faqet e dyqanit dhe ruaji me zemren." }}
+      Wishlist-i yt eshte bosh. Shto produkte nga faqet e dyqanit dhe ruaji me zemren.
     </div>
   </section>
 </template>

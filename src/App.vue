@@ -17,6 +17,7 @@ const globalToastMessage = ref("");
 const globalToastType = ref("success");
 const globalToastActions = ref([]);
 let formMessageObserver = null;
+const formMessageDismissTimers = new Map();
 let lastGlobalToastKey = "";
 let speedInsightsHandle = null;
 const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG || "").trim();
@@ -113,6 +114,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("trego:toast", handleGlobalToastEvent);
   stopFormMessageObserver();
+  formMessageDismissTimers.forEach((timeoutId) => {
+    window.clearTimeout(timeoutId);
+  });
+  formMessageDismissTimers.clear();
   if (globalToastTimeoutId) {
     window.clearTimeout(globalToastTimeoutId);
     globalToastTimeoutId = 0;
@@ -209,6 +214,30 @@ function triggerToastFromFormMessage(element) {
       type,
     },
   });
+
+  scheduleFormMessageDismiss(element, type);
+}
+
+function scheduleFormMessageDismiss(element, type = "info") {
+  if (!(element instanceof HTMLElement) || type === "success") {
+    return;
+  }
+
+  const currentTimer = formMessageDismissTimers.get(element);
+  if (currentTimer) {
+    window.clearTimeout(currentTimer);
+  }
+
+  element.style.removeProperty("display");
+
+  const timeoutId = window.setTimeout(() => {
+    if (element.isConnected) {
+      element.style.display = "none";
+    }
+    formMessageDismissTimers.delete(element);
+  }, 5000);
+
+  formMessageDismissTimers.set(element, timeoutId);
 }
 
 function scanVisibleFormMessages() {

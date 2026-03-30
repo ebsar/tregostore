@@ -1,22 +1,23 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { formatDateLabel } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
-const router = useRouter();
 const notifications = ref([]);
 const ui = reactive({
   message: "",
   type: "",
+  guest: false,
 });
 
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
     if (!user) {
-      router.replace("/login");
+      ui.guest = true;
+      ui.message = "Per te pare njoftimet duhet te kyçesh ose te krijosh llogari.";
+      ui.type = "error";
       return;
     }
 
@@ -58,7 +59,20 @@ async function loadNotifications() {
       {{ ui.message }}
     </div>
 
-    <div v-if="notifications.length === 0" class="card account-section orders-empty-card">
+    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+      <h2>Per te pare njoftimet duhet te kyçesh.</h2>
+      <p>Krijo llogari ose hyni ne llogarine tende per te marre perditesimet per porosite, verifikimet dhe mesazhet.</p>
+      <div class="collection-guest-gate-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fnjoftimet">
+          Login
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fnjoftimet">
+          Sign Up
+        </RouterLink>
+      </div>
+    </section>
+
+    <div v-else-if="notifications.length === 0" class="card account-section orders-empty-card">
       <h2>Ende nuk ka njoftime.</h2>
     </div>
 
