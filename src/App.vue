@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
+import ProductCompareTray from "./components/ProductCompareTray.vue";
 import SiteNav from "./components/SiteNav.vue";
 import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
@@ -356,6 +357,7 @@ function updateSpeedInsightsRoute() {
     </div>
   </div>
   <VoiceAssistantWidget />
+  <ProductCompareTray />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>

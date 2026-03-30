@@ -24,6 +24,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isCompared: {
+    type: Boolean,
+    default: false,
+  },
   showOverlayActions: {
     type: Boolean,
     default: true,
@@ -34,7 +38,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["wishlist", "cart"]);
+const emit = defineEmits(["wishlist", "cart", "compare"]);
 const route = useRoute();
 
 const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
@@ -51,6 +55,7 @@ const cartLabel = computed(() => {
 
   return "Shto ne shporte";
 });
+const compareLabel = computed(() => (props.isCompared ? "Hiqe nga krahasimi" : "Shto ne krahasim"));
 const currentPrice = computed(() => Number(props.product.price || 0));
 const compareAtPrice = computed(() => {
   const rawValue = Number(props.product.compareAtPrice ?? props.product.originalPrice ?? 0);
@@ -138,6 +143,20 @@ const ratingSummary = computed(() => {
             <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
             <circle cx="10" cy="19" r="1.4"></circle>
             <circle cx="18" cy="19" r="1.4"></circle>
+          </svg>
+        </button>
+
+        <button
+          class="product-card-overlay-button product-card-compare-button compare-action"
+          :class="{ active: isCompared }"
+          type="button"
+          :aria-label="compareLabel"
+          :aria-pressed="isCompared"
+          @click.stop="emit('compare', product)"
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4.5" y="5.5" width="6.5" height="13" rx="1.8"></rect>
+            <rect x="13" y="7.5" width="6.5" height="11" rx="1.8"></rect>
           </svg>
         </button>
 

@@ -26,6 +26,7 @@ import {
   formatPrice,
   formatRoleLabel,
   formatVerificationStatusLabel,
+  formatStockQuantity,
   getProductImageGallery,
 } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
@@ -62,6 +63,7 @@ const promotionForm = reactive({
   endsAt: "",
   isActive: true,
 });
+const STOCK_ALERT_THRESHOLD = 5;
 
 function createDefaultShippingForm() {
   const standardOption = DELIVERY_METHOD_OPTIONS.find((option) => option.value === "standard");
@@ -183,6 +185,18 @@ const filteredProducts = computed(() => {
     .map((entry) => entry.product);
 });
 
+const lowStockProducts = computed(() =>
+  products.value.filter((product) => {
+    const stockQuantity = Number(product.stockQuantity || 0);
+    return stockQuantity > 0 && stockQuantity <= STOCK_ALERT_THRESHOLD;
+  }),
+);
+const outOfStockProducts = computed(() =>
+  products.value.filter((product) => Number(product.stockQuantity || 0) <= 0),
+);
+const stockAlertProducts = computed(() => [...outOfStockProducts.value, ...lowStockProducts.value].slice(0, 6));
+const stockAlertCount = computed(() => outOfStockProducts.value.length + lowStockProducts.value.length);
+
 const promotionCategoryOptions = computed(() => {
   if (!promotionForm.pageSection) {
     return PRODUCT_SECTION_OPTIONS;
@@ -225,6 +239,19 @@ const editBusinessHelperText = computed(() => {
 function formatPromotionSectionLabel(sectionValue) {
   const match = PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === String(sectionValue || "").trim().toLowerCase());
   return match?.label || String(sectionValue || "").trim();
+}
+
+function getStockAlertLabel(product) {
+  const stockQuantity = Number(product?.stockQuantity || 0);
+  if (stockQuantity <= 0) {
+    return "Stok i mbaruar";
+  }
+
+  if (stockQuantity <= STOCK_ALERT_THRESHOLD) {
+    return `Stok i ulet • ${formatStockQuantity(stockQuantity)}`;
+  }
+
+  return `Stok • ${formatStockQuantity(stockQuantity)}`;
 }
 
 onMounted(async () => {
@@ -950,6 +977,44 @@ async function handleToggleStock(product) {
         <span>Review / Returne</span>
         <strong>{{ analytics.reviewCount }} / {{ analytics.openReturns }}</strong>
       </article>
+    </section>
+
+    <section v-if="stockAlertCount > 0" class="card business-stock-alerts-card" aria-label="Alertet e stokut">
+      <div class="profile-card-header">
+        <div>
+          <p class="section-label">Stock alerts</p>
+          <h2>Produktet qe kerkojne vemendje</h2>
+          <p class="section-text">
+            Ketu shfaqen artikujt me stok te ulet ose te mbaruar qe te mos mbeten pa u kontrolluar.
+          </p>
+        </div>
+        <div class="summary-chip">
+          <span>Ne veshtrim</span>
+          <strong>{{ stockAlertCount }}</strong>
+        </div>
+      </div>
+
+      <div class="business-stock-alerts-grid">
+        <article
+          v-for="product in stockAlertProducts"
+          :key="`stock-alert-${product.id}`"
+          class="business-stock-alert-card"
+          :class="{ 'is-out-of-stock': Number(product.stockQuantity || 0) <= 0 }"
+        >
+          <div class="business-stock-alert-copy">
+            <p class="business-stock-alert-category">{{ formatCategoryLabel(product.category) }}</p>
+            <strong>{{ product.title }}</strong>
+            <p>{{ getStockAlertLabel(product) }}</p>
+          </div>
+          <button class="nav-action nav-action-secondary business-stock-alert-action" type="button" @click="beginProductEdit(product)">
+            Edito artikullin
+          </button>
+        </article>
+      </div>
+
+      <p v-if="stockAlertCount > stockAlertProducts.length" class="business-stock-alerts-note">
+        Po shfaqen {{ stockAlertProducts.length }} nga {{ stockAlertCount }} produkte me stok te ulet ose te mbaruar.
+      </p>
     </section>
 
     <section v-if="canManageCatalog" class="card business-shipping-card" aria-label="Transporti i biznesit">

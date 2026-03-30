@@ -89,7 +89,7 @@ async function handleReturnRequest(item) {
         <p class="section-label">Porosite</p>
         <h1>Produktet e porositura</h1>
         <p class="section-text">
-          Ketu shfaqen te gjitha porosite qe i ke konfirmuar nga checkout-i.
+          Ketu shfaqen porosite qe jane derguar per konfirmim nga checkout-i dhe statusi i tyre i fundit.
         </p>
       </div>
     </header>

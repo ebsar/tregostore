@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
-import { getProductDetailUrl } from "../lib/shop";
+import { getProductDetailUrl, getProductStockMessage, hasProductAvailableStock } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
@@ -25,6 +25,10 @@ const selectedItems = computed(() => {
 
   return items.value.filter((item) => selectedIds.value.includes(item.id));
 });
+const unavailableItems = computed(() => items.value.filter((item) => !hasProductAvailableStock(item)));
+const selectedUnavailableItems = computed(() =>
+  selectedItems.value.filter((item) => !hasProductAvailableStock(item)),
+);
 
 const allSelected = computed(() =>
   items.value.length > 0 && selectedItems.value.length === items.value.length,
@@ -120,6 +124,12 @@ async function removeItem(productId) {
 
 async function addToCart(productId) {
   const product = items.value.find((item) => Number(item.id) === Number(productId));
+  if (product && !hasProductAvailableStock(product)) {
+    ui.message = getProductStockMessage(product);
+    ui.type = "error";
+    return;
+  }
+
   if (product?.requiresVariantSelection) {
     router.push(getProductDetailUrl(productId, "/wishlist"));
     return;
@@ -145,6 +155,15 @@ async function addToCart(productId) {
 async function bulkAddToCart() {
   if (selectedItems.value.length === 0) {
     ui.message = "Zgjidh te pakten nje produkt per te vazhduar me blerje.";
+    ui.type = "error";
+    return;
+  }
+
+  if (selectedUnavailableItems.value.length > 0) {
+    const firstUnavailable = selectedUnavailableItems.value[0];
+    ui.message =
+      getProductStockMessage(firstUnavailable)
+      || "Na vjen keq, disa produkte ne wishlist nuk jane me ne stok.";
     ui.type = "error";
     return;
   }
@@ -204,48 +223,55 @@ async function bulkAddToCart() {
       </div>
     </div>
 
-    <div v-else-if="selectionEnabled" class="saved-products-toolbar">
-      <div class="saved-products-toolbar-left">
-        <label class="saved-products-select-all" for="wishlist-select-all">
-          <input
-            id="wishlist-select-all"
-            type="checkbox"
-            :checked="allSelected"
-            :indeterminate.prop="isIndeterminate"
-            @change="toggleAll"
-          >
-          <span>Zgjidh produktet per blerje</span>
-        </label>
-        <span class="saved-products-selected-count">
-          {{ selectedItems.length }} produkte te zgjedhura
-        </span>
+    <template v-else>
+      <div v-if="unavailableItems.length > 0" class="wishlist-stock-warning" role="status" aria-live="polite">
+        <strong>{{ unavailableItems.length }} produkte ne wishlist nuk jane me ne stok.</strong>
+        <p>Produktet e zbehura nuk mund te shtohen ne cart derisa biznesi t'i riktheje ne stok.</p>
       </div>
-      <button
-        class="product-action-button cart-action saved-products-toolbar-button"
-        type="button"
-        :disabled="selectedItems.length === 0"
-        @click="bulkAddToCart"
-      >
-        <span>Vazhdo me blerje</span>
-      </button>
-    </div>
 
-    <section v-if="items.length > 0" class="saved-products-grid" aria-label="Wishlist grid">
-      <SavedProductCard
-        v-for="item in items"
-        :key="item.id"
-        :product="item"
-        mode="wishlist"
-        :selection-enabled="selectionEnabled"
-        :selected="selectedIds.includes(item.id)"
-        @toggle-select="toggleItem"
-        @remove="removeItem"
-        @add-to-cart="addToCart"
-      />
-    </section>
+      <div v-if="selectionEnabled" class="saved-products-toolbar">
+        <div class="saved-products-toolbar-left">
+          <label class="saved-products-select-all" for="wishlist-select-all">
+            <input
+              id="wishlist-select-all"
+              type="checkbox"
+              :checked="allSelected"
+              :indeterminate.prop="isIndeterminate"
+              @change="toggleAll"
+            >
+            <span>Zgjidh produktet per blerje</span>
+          </label>
+          <span class="saved-products-selected-count">
+            {{ selectedItems.length }} produkte te zgjedhura
+          </span>
+        </div>
+        <button
+          class="product-action-button cart-action saved-products-toolbar-button"
+          type="button"
+          :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
+          @click="bulkAddToCart"
+        >
+          <span>Vazhdo me blerje</span>
+        </button>
+      </div>
 
-    <div v-else class="collection-empty-state">
-      Wishlist-i yt eshte bosh. Shto produkte nga faqet e dyqanit dhe ruaji me zemren.
-    </div>
+      <section v-if="items.length > 0" class="saved-products-grid" aria-label="Wishlist grid">
+        <SavedProductCard
+          v-for="item in items"
+          :key="item.id"
+          :product="item"
+          mode="wishlist"
+          :selection-enabled="selectionEnabled"
+          :selected="selectedIds.includes(item.id)"
+          @toggle-select="toggleItem"
+          @remove="removeItem"
+          @add-to-cart="addToCart"
+        />
+      </section>
+
+      <div v-else class="collection-empty-state">
+        Wishlist-i yt eshte bosh. Shto produkte nga faqet e dyqanit dhe ruaji me zemren.
+      </div>
+    </template>
   </section>
 </template>

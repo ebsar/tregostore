@@ -2,6 +2,7 @@
 import OrderItemCard from "./OrderItemCard.vue";
 import {
   buildFulfillmentTimeline,
+  formatOrderStatusBadgeLabel,
   formatDateLabel,
   formatDeliveryMethodLabel,
   formatEstimatedDeliveryLabel,
@@ -9,6 +10,7 @@ import {
   formatPaymentMethodLabel,
   formatPrice,
   formatReturnRequestStatusLabel,
+  getAutomaticRefundNotice,
   getFulfillmentTerminalEvent,
 } from "../lib/shop";
 
@@ -40,6 +42,17 @@ function terminalEventFor(item) {
       <div>
         <p class="section-label">Porosia #{{ order.id || "-" }}</p>
         <h2>{{ formatFulfillmentStatusLabel(order.fulfillmentStatus || order.status) }}</h2>
+        <div v-if="formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status)" class="order-status-badges">
+          <span
+            class="order-status-badge"
+            :class="{
+              'is-pending': (order.fulfillmentStatus || order.status) === 'pending_confirmation',
+              'is-partial': (order.fulfillmentStatus || order.status) === 'partially_confirmed',
+            }"
+          >
+            {{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) }}
+          </span>
+        </div>
       </div>
       <div class="order-card-meta">
         <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
@@ -122,6 +135,10 @@ function terminalEventFor(item) {
               <span>Kthimi</span>
               <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
             </span>
+          </div>
+          <div v-if="getAutomaticRefundNotice(item)" class="order-refund-notice">
+            <strong>Refund automatik</strong>
+            <span>{{ getAutomaticRefundNotice(item) }}</span>
           </div>
         </div>
       </div>

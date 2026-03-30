@@ -73,7 +73,7 @@ async function handleUpdateStatus(payload) {
         <p class="section-label">Biznesi juaj</p>
         <h1>Porosite e biznesit</h1>
         <p class="section-text">
-          Ketu shfaqen produktet qe jane porositur nga klientet per biznesin tend, bashke me adresen dhe te dhenat e pranimit.
+          Ketu shfaqen porosite qe presin konfirmimin e biznesit tend, bashke me adresen dhe hapat e pranimit.
         </p>
       </div>
     </header>

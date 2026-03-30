@@ -35,6 +35,30 @@ const stockLabel = computed(() =>
     ? "Fshehe stokun"
     : "Shfaqe si ne stok",
 );
+const stockStateLabel = computed(() => {
+  const stockQuantity = Number(props.product.stockQuantity || 0);
+  if (stockQuantity <= 0) {
+    return "Stok i mbaruar";
+  }
+
+  if (stockQuantity <= 5) {
+    return `Stok i ulet • ${formatStockQuantity(stockQuantity)}`;
+  }
+
+  return `Stok • ${formatStockQuantity(stockQuantity)}`;
+});
+const stockStateClass = computed(() => {
+  const stockQuantity = Number(props.product.stockQuantity || 0);
+  if (stockQuantity <= 0) {
+    return "is-out-of-stock";
+  }
+
+  if (stockQuantity <= 5) {
+    return "is-low-stock";
+  }
+
+  return "";
+});
 
 const details = computed(() =>
   [
@@ -51,7 +75,14 @@ const details = computed(() =>
 </script>
 
 <template>
-  <article class="admin-product-item" :class="{ 'is-hidden': !product.isPublic }">
+  <article
+    class="admin-product-item"
+    :class="{
+      'is-hidden': !product.isPublic,
+      'is-out-of-stock': stockStateClass === 'is-out-of-stock',
+      'is-low-stock': stockStateClass === 'is-low-stock',
+    }"
+  >
     <RouterLink class="admin-product-link" :to="detailUrl">
       <div class="admin-product-thumb-wrap">
         <img
@@ -76,6 +107,9 @@ const details = computed(() =>
           {{ product.title }}
         </RouterLink>
       </h3>
+      <p class="admin-product-stock-state" :class="stockStateClass">
+        {{ stockStateLabel }}
+      </p>
       <p>{{ product.description }}</p>
       <div class="product-detail-tags product-detail-tags-admin">
         <span

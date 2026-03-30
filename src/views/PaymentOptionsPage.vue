@@ -206,8 +206,8 @@ async function submitCashOrder() {
       ? data.notificationWarnings.filter(Boolean)
       : [];
     const confirmationMessage = notificationWarnings.length > 0
-      ? `${data.message || "Porosia u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
-      : (data.message || "Porosia u konfirmua me sukses.");
+      ? `${data.message || "Porosia u dergua per konfirmim."} ${notificationWarnings.join(" ")}`
+      : (data.message || "Porosia u dergua per konfirmim.");
     persistOrderConfirmationMessage(confirmationMessage);
     clearCheckoutFlowState();
     router.push("/porosite");
@@ -274,8 +274,8 @@ async function confirmStripePayment(stripeSessionId) {
       ? data.notificationWarnings.filter(Boolean)
       : [];
     const confirmationMessage = notificationWarnings.length > 0
-      ? `${data.message || "Pagesa u konfirmua me sukses."} ${notificationWarnings.join(" ")}`
-      : (data.message || "Pagesa u konfirmua me sukses.");
+      ? `${data.message || "Pagesa u konfirmua me sukses, porosia u dergua per konfirmim."} ${notificationWarnings.join(" ")}`
+      : (data.message || "Pagesa u konfirmua me sukses, porosia u dergua per konfirmim.");
     persistOrderConfirmationMessage(confirmationMessage);
     clearCheckoutFlowState();
     await router.replace({ path: route.path, query: {} });

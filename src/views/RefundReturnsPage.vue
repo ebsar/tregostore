@@ -2,7 +2,12 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
-import { formatDateLabel, formatReturnRequestStatusLabel } from "../lib/shop";
+import {
+  formatDateLabel,
+  formatReturnRequestStatusLabel,
+  getAutomaticRefundNotice,
+  isAutomaticRefundRequest,
+} from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const requests = ref([]);
@@ -107,6 +112,9 @@ async function updateReturnStatus(request, status) {
           <div>
             <p class="section-label">Kerkesa #{{ request.id }}</p>
             <h2>{{ formatReturnRequestStatusLabel(request.status) }}</h2>
+            <div v-if="isAutomaticRefundRequest(request)" class="order-status-badges">
+              <span class="order-status-badge is-returned">Refund automatik</span>
+            </div>
           </div>
           <div class="order-card-meta">
             <span>{{ request.productTitle || "Produkt" }}</span>
@@ -127,6 +135,10 @@ async function updateReturnStatus(request, status) {
             <div class="summary-chip" v-if="request.resolutionNotes">
               <span>Vendimi</span>
               <strong>{{ request.resolutionNotes }}</strong>
+            </div>
+            <div v-if="getAutomaticRefundNotice(request)" class="order-refund-notice">
+              <strong>Refund automatik</strong>
+              <span>{{ getAutomaticRefundNotice(request) }}</span>
             </div>
           </div>
 

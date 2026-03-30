@@ -4,13 +4,23 @@ import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
-import { formatPrice, persistCheckoutSelectedCartIds } from "../lib/shop";
+import {
+  clearSavedForLaterItems,
+  formatPrice,
+  persistCheckoutSelectedCartIds,
+  readSavedForLaterItems,
+  rememberSavedForLaterItem,
+  removeSavedForLaterItem,
+  getProductStockMessage,
+  hasProductAvailableStock,
+} from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
 const productsPanel = ref(null);
 const summaryCard = ref(null);
 const items = ref([]);
+const savedLaterItems = ref([]);
 const selectedIds = ref([]);
 const selectionInitialized = ref(false);
 const ui = reactive({
@@ -30,6 +40,10 @@ const selectedItems = computed(() => {
 
   return items.value.filter((item) => selectedIds.value.includes(item.id));
 });
+const unavailableItems = computed(() => items.value.filter((item) => !hasProductAvailableStock(item)));
+const selectedUnavailableItems = computed(() =>
+  selectedItems.value.filter((item) => !hasProductAvailableStock(item)),
+);
 
 const totalItems = computed(() =>
   selectedItems.value.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0),
@@ -41,6 +55,8 @@ const totalPrice = computed(() =>
     0,
   ),
 );
+
+const savedLaterCount = computed(() => savedLaterItems.value.length);
 
 const allSelected = computed(() =>
   items.value.length > 0 && selectedItems.value.length === items.value.length,
@@ -61,6 +77,7 @@ onMounted(async () => {
     }
 
     await loadItems();
+    loadSavedLaterItems();
     setupHeightSync();
   } finally {
     markRouteReady();
@@ -94,6 +111,10 @@ async function loadItems() {
   ui.type = "";
   await nextTick();
   scheduleHeightSync();
+}
+
+function loadSavedLaterItems() {
+  savedLaterItems.value = readSavedForLaterItems();
 }
 
 function syncSelectionState() {
@@ -149,6 +170,32 @@ async function removeItem(productId) {
   await loadItems();
 }
 
+async function saveForLater(cartLine) {
+  const currentItem =
+    cartLine && typeof cartLine === "object"
+      ? cartLine
+      : items.value.find((item) => item.id === Number(cartLine));
+  if (!currentItem) {
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/cart/remove", {
+    method: "POST",
+    body: JSON.stringify({ productId: currentItem.id }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Shporta nuk u perditesua.");
+    ui.type = "error";
+    return;
+  }
+
+  savedLaterItems.value = rememberSavedForLaterItem(currentItem);
+  ui.message = "Artikulli u ruajt per me vone.";
+  ui.type = "success";
+  await loadItems();
+}
+
 async function increaseQuantity(productId) {
   const { response, data } = await requestJson("/api/cart/add", {
     method: "POST",
@@ -190,9 +237,73 @@ async function decreaseQuantity(productId) {
   await loadItems();
 }
 
+async function restoreSavedLaterItem(savedItem) {
+  const item =
+    savedItem && typeof savedItem === "object"
+      ? savedItem
+      : savedLaterItems.value.find((entry) => entry.id === Number(savedItem));
+
+  if (!item) {
+    return;
+  }
+
+  if (!hasProductAvailableStock(item)) {
+    ui.message = getProductStockMessage(item);
+    ui.type = "error";
+    return;
+  }
+
+  const { response, data } = await requestJson("/api/cart/add", {
+    method: "POST",
+    body: JSON.stringify({
+      productId: item.productId || item.id,
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      variantKey: item.variantKey || "",
+      selectedSize: item.selectedSize || "",
+      selectedColor: item.selectedColor || "",
+    }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Produkti nuk u rikthye ne shporte.");
+    ui.type = "error";
+    return;
+  }
+
+  savedLaterItems.value = removeSavedForLaterItem(item);
+  ui.message = "Artikulli u rikthye ne shporte.";
+  ui.type = "success";
+  await loadItems();
+}
+
+function removeSavedLaterItem(savedItem) {
+  savedLaterItems.value = removeSavedForLaterItem(savedItem);
+  ui.message = "Artikulli u hoq nga te ruajturat per me vone.";
+  ui.type = "success";
+}
+
+function clearSavedLater() {
+  if (savedLaterCount.value <= 0) {
+    return;
+  }
+
+  savedLaterItems.value = clearSavedForLaterItems();
+  ui.message = "U pastruan artikujt e ruajtur per me vone.";
+  ui.type = "success";
+}
+
 function handleCheckout() {
   if (selectedItems.value.length === 0) {
     ui.message = "Zgjidh te pakten nje produkt per te vazhduar me porosi.";
+    ui.type = "error";
+    return;
+  }
+
+  if (selectedUnavailableItems.value.length > 0) {
+    const firstUnavailable = selectedUnavailableItems.value[0];
+    ui.message =
+      getProductStockMessage(firstUnavailable)
+      || "Na vjen keq, disa produkte ne shporte nuk jane me ne stok. Hiqi ose ruaji per me vone.";
     ui.type = "error";
     return;
   }
@@ -290,6 +401,11 @@ function syncHeight() {
           </div>
         </div>
 
+        <div v-if="unavailableItems.length > 0" class="cart-stock-warning" role="status" aria-live="polite">
+          <strong>{{ unavailableItems.length }} produkte ne shporte nuk jane me ne stok.</strong>
+          <p>Artikujt e prekur jane zbehur. Hiqi ose ruaji per me vone para se te vazhdosh me porosi.</p>
+        </div>
+
         <section v-if="items.length > 0" id="cart-products-grid" class="saved-products-grid" aria-label="Cart grid">
           <SavedProductCard
             v-for="item in items"
@@ -300,6 +416,7 @@ function syncHeight() {
             :selected="selectedIds.includes(item.id)"
             @toggle-select="toggleItem"
             @remove="removeItem"
+            @save-for-later="saveForLater"
             @increase-quantity="increaseQuantity"
             @decrease-quantity="decreaseQuantity"
           />
@@ -336,12 +453,41 @@ function syncHeight() {
         <button
           class="cart-checkout-button"
           type="button"
-          :disabled="selectedItems.length === 0"
+          :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
           @click="handleCheckout"
         >
           Vazhdo me porosi
         </button>
       </aside>
     </div>
+
+    <section v-if="savedLaterItems.length > 0" class="cart-saved-later-section" aria-label="Saved for later">
+      <div class="saved-products-toolbar cart-saved-later-toolbar">
+        <div class="saved-products-toolbar-left">
+          <div>
+            <p class="section-label">Ruajtur</p>
+            <h2>Per me vone</h2>
+          </div>
+          <span class="saved-products-selected-count">
+            {{ savedLaterCount }} produkte te ruajtura
+          </span>
+        </div>
+
+        <button class="saved-products-toolbar-button cart-saved-later-clear" type="button" @click="clearSavedLater">
+          Pastro te gjitha
+        </button>
+      </div>
+
+      <section class="saved-products-grid cart-saved-later-grid" aria-label="Saved for later grid">
+        <SavedProductCard
+          v-for="item in savedLaterItems"
+          :key="`${item.productId}-${item.variantKey || item.selectedSize || 'default'}-${item.selectedColor || 'default'}`"
+          :product="item"
+          mode="later"
+          @add-to-cart="restoreSavedLaterItem"
+          @remove="removeSavedLaterItem"
+        />
+      </section>
+    </section>
   </section>
 </template>

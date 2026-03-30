@@ -3,6 +3,7 @@ import { reactive } from "vue";
 import OrderItemCard from "./OrderItemCard.vue";
 import {
   buildFulfillmentTimeline,
+  formatOrderStatusBadgeLabel,
   formatDateLabel,
   formatDeliveryMethodLabel,
   formatEstimatedDeliveryLabel,
@@ -38,7 +39,7 @@ function draftFor(item) {
   const itemId = Number(item?.id || 0);
   if (!draftByItemId[itemId]) {
     draftByItemId[itemId] = {
-      fulfillmentStatus: String(item?.fulfillmentStatus || "confirmed"),
+      fulfillmentStatus: String(item?.fulfillmentStatus || "pending_confirmation"),
       trackingCode: String(item?.trackingCode || ""),
       trackingUrl: String(item?.trackingUrl || ""),
     };
@@ -47,14 +48,22 @@ function draftFor(item) {
   return draftByItemId[itemId];
 }
 
-function submitStatus(item) {
+function submitStatus(item, nextStatus = "") {
   const draft = draftFor(item);
   emit("update-status", {
     orderItemId: item.id,
-    fulfillmentStatus: draft.fulfillmentStatus,
+    fulfillmentStatus: String(nextStatus || draft.fulfillmentStatus || "").trim() || "confirmed",
     trackingCode: draft.trackingCode,
     trackingUrl: draft.trackingUrl,
   });
+}
+
+function confirmPendingItem(item) {
+  submitStatus(item, "confirmed");
+}
+
+function cancelPendingItem(item) {
+  submitStatus(item, "cancelled");
 }
 
 function timelineFor(item) {
@@ -73,6 +82,17 @@ function terminalEventFor(item) {
           <p class="section-label">Porosia #{{ order.id || "-" }}</p>
           <h2>{{ order.customerName || "Klient" }}</h2>
           <p class="section-text">{{ order.customerEmail || "-" }}</p>
+          <div v-if="formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status)" class="order-status-badges">
+            <span
+              class="order-status-badge"
+              :class="{
+                'is-pending': (order.fulfillmentStatus || order.status) === 'pending_confirmation',
+                'is-partial': (order.fulfillmentStatus || order.status) === 'partially_confirmed',
+              }"
+            >
+              {{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) }}
+            </span>
+          </div>
         </div>
         <div class="order-card-meta">
           <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
@@ -125,6 +145,10 @@ function terminalEventFor(item) {
               <span>Statusi</span>
               <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
             </span>
+            <span v-if="item.fulfillmentStatus === 'pending_confirmation' && item.confirmationDueAt" class="summary-chip">
+              <span>Afati</span>
+              <strong>{{ formatDateLabel(item.confirmationDueAt) }}</strong>
+            </span>
             <span v-if="showAdminFinance" class="summary-chip">
               <span>Komisioni</span>
               <strong>{{ formatPrice(item.commissionAmount || 0) }}</strong>
@@ -139,7 +163,30 @@ function terminalEventFor(item) {
             </span>
           </div>
 
-          <div v-if="canManageStatus" class="order-item-management-grid">
+          <div v-if="canManageStatus && item.fulfillmentStatus === 'pending_confirmation'" class="order-item-management-grid is-pending-confirmation">
+            <div class="summary-chip">
+              <span>Pret konfirmim</span>
+              <strong>Porosia nuk vazhdon pa pranim nga biznesi</strong>
+            </div>
+            <button
+              class="nav-action nav-action-primary"
+              type="button"
+              :disabled="busyOrderItemId === Number(item.id)"
+              @click="confirmPendingItem(item)"
+            >
+              {{ busyOrderItemId === Number(item.id) ? "Duke konfirmuar..." : "Konfirmo porosine" }}
+            </button>
+            <button
+              class="nav-action nav-action-secondary"
+              type="button"
+              :disabled="busyOrderItemId === Number(item.id)"
+              @click="cancelPendingItem(item)"
+            >
+              {{ busyOrderItemId === Number(item.id) ? "Duke anuluar..." : "Anulo porosine" }}
+            </button>
+          </div>
+
+          <div v-else-if="canManageStatus" class="order-item-management-grid">
             <label class="field">
               <span>Fulfillment</span>
               <select v-model="draftFor(item).fulfillmentStatus">

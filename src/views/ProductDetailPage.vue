@@ -12,7 +12,10 @@ import {
   formatProductTypeLabel,
   getCategoryUrl,
   getProductImageGallery,
+  getProductStockMessage,
+  hasProductAvailableStock,
 } from "../lib/shop";
+import { compareState, ensureCompareItemsLoaded, toggleComparedProduct } from "../stores/product-compare";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
@@ -35,6 +38,11 @@ const ui = reactive({
   message: "",
   type: "",
 });
+const isCompared = computed(() =>
+  compareState.items.some((item) => Number(item.id || item.productId || 0) === Number(currentProduct.value?.id || 0)),
+);
+const isProductAvailable = computed(() => hasProductAvailableStock(currentProduct.value || {}));
+const outOfStockMessage = computed(() => getProductStockMessage(currentProduct.value || {}));
 
 const variantInventory = computed(() => {
   if (!Array.isArray(currentProduct.value?.variantInventory)) {
@@ -122,6 +130,7 @@ const currentImagePath = computed(
 const relatedViewedProducts = computed(() =>
   recentlyViewedProducts.value
     .filter((product) => Number(product?.id || 0) !== Number(currentProduct.value?.id || 0))
+    .filter((product) => hasProductAvailableStock(product))
     .slice(0, 4),
 );
 const backTarget = computed(() => {
@@ -141,6 +150,7 @@ watch(
 );
 
 onMounted(async () => {
+  ensureCompareItemsLoaded();
   recentlyViewedProducts.value = readRecentlyViewedProducts();
   await bootstrap();
 });
@@ -254,6 +264,14 @@ function initializeVariantSelection() {
   }
 }
 
+function handleCompareProduct() {
+  if (!currentProduct.value) {
+    return;
+  }
+
+  toggleComparedProduct(currentProduct.value);
+}
+
 function chooseColor(colorValue) {
   selectedColor.value = colorValue;
 
@@ -325,9 +343,21 @@ async function handleCart() {
     return;
   }
 
+  if (!isProductAvailable.value) {
+    ui.message = outOfStockMessage.value;
+    ui.type = "error";
+    return;
+  }
+
   const productId = currentProduct.value.id;
   if (currentProduct.value.requiresVariantSelection && !selectedVariant.value) {
     ui.message = "Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne cart.";
+    ui.type = "error";
+    return;
+  }
+
+  if (selectedVariant.value && Number(selectedVariant.value.quantity || 0) <= 0) {
+    ui.message = "Na vjen keq, varianti i zgjedhur nuk eshte me ne stok.";
     ui.type = "error";
     return;
   }
@@ -526,6 +556,11 @@ function nextImage() {
 
           <strong class="product-detail-price">{{ formatPrice(currentProduct.price) }}</strong>
 
+          <div v-if="!isProductAvailable" class="product-detail-stock-state" role="status" aria-live="polite">
+            <strong>Na vjen keq, ky produkt nuk eshte me ne stok.</strong>
+            <p>Shfleto produkte te tjera ose kthehu me vone nese biznesi e rikthen ne stok.</p>
+          </div>
+
           <div class="product-detail-actions">
             <button
               class="product-action-button wishlist-action"
@@ -543,6 +578,7 @@ function nextImage() {
               class="product-action-button cart-action"
               :class="{ active: cartIds.includes(currentProduct.id) }"
               type="button"
+              :disabled="!isProductAvailable"
               @click="handleCart"
             >
               <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -550,7 +586,21 @@ function nextImage() {
                 <circle cx="10" cy="19" r="1.4"></circle>
                 <circle cx="18" cy="19" r="1.4"></circle>
               </svg>
-              <span>{{ cartIds.includes(currentProduct.id) ? "Ne cart" : "Shto ne cart" }}</span>
+              <span>{{ isProductAvailable ? (cartIds.includes(currentProduct.id) ? "Ne cart" : "Shto ne cart") : "Nuk ka ne stok" }}</span>
+            </button>
+
+            <button
+              class="product-action-button compare-action"
+              :class="{ active: isCompared }"
+              type="button"
+              :aria-pressed="isCompared"
+              @click="handleCompareProduct"
+            >
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4.5" y="5.5" width="6.5" height="13" rx="1.8"></rect>
+                <rect x="13" y="7.5" width="6.5" height="11" rx="1.8"></rect>
+              </svg>
+              <span>{{ isCompared ? "Ne krahasim" : "Krahaso" }}</span>
             </button>
 
             <button

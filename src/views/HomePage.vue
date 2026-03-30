@@ -2,12 +2,23 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import PromoSlider from "../components/PromoSlider.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { readRecentlyViewedProducts } from "../lib/recently-viewed";
-import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
+import {
+  formatCategoryLabel,
+  formatPrice,
+  getBusinessInitials,
+  getBusinessProfileUrl,
+  getProductDetailUrl,
+  hasProductAvailableStock,
+} from "../lib/shop";
+import {
+  compareState,
+  ensureCompareItemsLoaded,
+  toggleComparedProduct,
+} from "../stores/product-compare";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
@@ -124,7 +135,26 @@ const filteredProducts = computed(() => {
   return nextProducts;
 });
 
-const visibleRecentlyViewedProducts = computed(() => recentlyViewedProducts.value.slice(0, 4));
+const visibleRecentlyViewedProducts = computed(() =>
+  recentlyViewedProducts.value.filter((product) => hasProductAvailableStock(product)).slice(0, 4),
+);
+const heroFeaturedProducts = computed(() => {
+  const items = filteredProducts.value.slice(0, 4);
+  while (items.length < 4) {
+    items.push(null);
+  }
+
+  return items;
+});
+const heroProductTagLabels = ["Trending", "Best Seller", "New In", "Hot Offer"];
+const heroProductTagClasses = ["is-trending", "is-best-seller", "is-new-in", "is-hot-offer"];
+const comparedProductIds = computed(() =>
+  compareState.items
+    .map((item) => Number(item.id || item.productId || 0))
+    .filter((id) => Number.isFinite(id) && id > 0),
+);
+const curatedProductsDisplay = computed(() => formatMarketplaceMetric(totalProductsCount.value, 250));
+const localBrandsDisplay = computed(() => formatMarketplaceMetric(businesses.value.length, Number.POSITIVE_INFINITY));
 
 const collectionLabel = computed(() => {
   if (!products.value.length) {
@@ -143,6 +173,7 @@ const collectionLabel = computed(() => {
 });
 
 onMounted(async () => {
+  ensureCompareItemsLoaded();
   recentlyViewedProducts.value = readRecentlyViewedProducts();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
     if (nextPageSize === productsPageSize.value) {
@@ -266,7 +297,8 @@ async function loadProducts(options = {}) {
   }
 
   const nextProducts = Array.isArray(data.products) ? data.products : [];
-  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  const visibleProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
+  products.value = append ? [...products.value, ...visibleProducts] : visibleProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
   if (data.facets) {
@@ -341,6 +373,10 @@ function setMessage(message, type = "") {
   ui.type = type;
 }
 
+function handleCompare(product) {
+  toggleComparedProduct(product);
+}
+
 function createEmptyProductFacets() {
   return {
     pageSections: [],
@@ -349,6 +385,23 @@ function createEmptyProductFacets() {
     sizes: [],
     colors: [],
   };
+}
+
+function formatMarketplaceMetric(value, cap) {
+  const count = Math.max(0, Math.trunc(Number(value) || 0));
+  if (count >= cap) {
+    return `${cap}+`;
+  }
+
+  return String(count);
+}
+
+function heroProductTag(index) {
+  return heroProductTagLabels[index % heroProductTagLabels.length];
+}
+
+function heroProductTagClass(index) {
+  return heroProductTagClasses[index % heroProductTagClasses.length];
 }
 
 function normalizeProductFacets(rawFacets) {
@@ -601,7 +654,113 @@ async function handleCart(productId) {
   </section>
 
   <section v-else class="collection-page home-collection-page" aria-label="Faqja kryesore">
-    <PromoSlider :slides="HOME_PROMO_SLIDES" />
+    <section class="card home-landing-hero" aria-label="Hero kryesor">
+      <div class="home-landing-hero-copy">
+        <p class="home-landing-kicker">
+          <span class="home-landing-kicker-dot"></span>
+          Premium për marka lokale
+        </p>
+
+        <h1 class="home-landing-title">
+          Një marketplace i rafinuar që i bën markat lokale
+          <span>të ndihen premium</span>
+        </h1>
+
+        <p class="home-landing-lead">
+          Trego i bashkon produktet më të dalluara, zbulimin elegant dhe një përvojë moderne
+          blerjeje në një platformë të lëmuar. I ndërtuar për të frymëzuar blerësit dhe për
+          të krijuar besim me bizneset që nga vizita e parë.
+        </p>
+
+        <div class="home-landing-actions">
+          <RouterLink class="nav-action nav-action-primary home-landing-button" to="/kerko">
+            Shiko produktet
+          </RouterLink>
+          <RouterLink class="nav-action nav-action-secondary home-landing-button" to="/bizneset-e-regjistruara">
+            Shiko markat lokale
+          </RouterLink>
+        </div>
+
+        <div class="home-landing-stats">
+          <article class="home-landing-stat">
+            <strong>{{ curatedProductsDisplay }}</strong>
+            <span>Produkte të kuruara</span>
+          </article>
+
+          <article class="home-landing-stat">
+            <strong>{{ localBrandsDisplay }}</strong>
+            <span>Marka lokale</span>
+          </article>
+
+          <article class="home-landing-stat">
+            <strong>24/7</strong>
+            <span>Shfletim pa ndërprerje</span>
+          </article>
+        </div>
+      </div>
+
+      <div class="home-landing-showcase">
+        <div class="home-landing-showcase-head">
+          <div>
+            <p class="section-label">Artikujt e ditës</p>
+          </div>
+          <span class="home-landing-offer-badge">Oferta të kufizuara</span>
+        </div>
+
+        <div class="home-landing-showcase-grid">
+          <article
+            v-for="(product, index) in heroFeaturedProducts"
+            :key="product ? product.id : `hero-placeholder-${index}`"
+            class="home-landing-product-card"
+            :class="{ 'is-placeholder': !product }"
+          >
+            <template v-if="product">
+              <RouterLink
+                class="home-landing-product-media"
+                :to="getProductDetailUrl(product.id, '/')"
+                :aria-label="`Hape produktin ${product.title}`"
+              >
+                <img
+                  class="home-landing-product-image"
+                  :src="product.imagePath"
+                  :alt="product.title"
+                  width="640"
+                  height="640"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <span class="home-landing-product-tag" :class="heroProductTagClass(index)">{{ heroProductTag(index) }}</span>
+              </RouterLink>
+
+              <div class="home-landing-product-copy">
+                <p class="home-landing-product-meta">{{ formatCategoryLabel(product.category) }}</p>
+                <h3>{{ product.title }}</h3>
+                <div class="home-landing-product-footer">
+                  <strong>{{ formatPrice(product.price) }}</strong>
+                  <RouterLink class="home-landing-product-view" :to="getProductDetailUrl(product.id, '/')">
+                    Shiko
+                  </RouterLink>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="home-landing-product-media is-placeholder-media">
+                <span class="home-landing-product-tag" :class="heroProductTagClass(index)">{{ heroProductTag(index) }}</span>
+              </div>
+              <div class="home-landing-product-copy">
+                <p class="home-landing-product-meta">Marketplace</p>
+                <h3>Po ngarkohet katalogu</h3>
+                <div class="home-landing-product-footer">
+                  <strong>—</strong>
+                  <span class="home-landing-product-view is-disabled">Shiko</span>
+                </div>
+              </div>
+            </template>
+          </article>
+        </div>
+      </div>
+    </section>
 
     <section
       v-if="visibleRecentlyViewedProducts.length > 0"
@@ -739,8 +898,10 @@ async function handleCart(productId) {
         :is-in-cart="cartIds.includes(product.id)"
         :wishlist-busy="busyWishlistIds.includes(product.id)"
         :cart-busy="busyCartIds.includes(product.id)"
+        :is-compared="comparedProductIds.includes(product.id)"
         @wishlist="handleWishlist"
         @cart="handleCart"
+        @compare="handleCompare"
       />
     </section>
 

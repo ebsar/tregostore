@@ -11,7 +11,13 @@ import {
   getBusinessInitials,
   getBusinessProfileUrl,
   getProductDetailUrl,
+  hasProductAvailableStock,
 } from "../lib/shop";
+import {
+  compareState,
+  ensureCompareItemsLoaded,
+  toggleComparedProduct,
+} from "../stores/product-compare";
 
 const route = useRoute();
 const router = useRouter();
@@ -43,6 +49,7 @@ watch(
 );
 
 onMounted(async () => {
+  ensureCompareItemsLoaded();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
     if (nextPageSize === productsPageSize.value) {
       return;
@@ -117,6 +124,12 @@ const messageActionLabel = computed(() => {
 
   return "Message";
 });
+
+const comparedProductIds = computed(() =>
+  compareState.items
+    .map((item) => Number(item.id || item.productId || 0))
+    .filter((id) => Number.isFinite(id) && id > 0),
+);
 
 async function bootstrap() {
   try {
@@ -229,9 +242,14 @@ async function loadProducts(options = {}) {
   }
 
   const nextProducts = Array.isArray(data.products) ? data.products : [];
-  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  const availableProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
+  products.value = append ? [...products.value, ...availableProducts] : availableProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
+}
+
+function handleCompare(product) {
+  toggleComparedProduct(product);
 }
 
 async function loadMoreProducts() {
@@ -384,6 +402,12 @@ async function handleCart(productId) {
   }
 
   const product = products.value.find((entry) => Number(entry.id) === Number(productId));
+  if (product && !hasProductAvailableStock(product)) {
+    ui.message = "Na vjen keq, ky produkt nuk eshte me ne stok.";
+    ui.type = "error";
+    return;
+  }
+
   if (product?.requiresVariantSelection) {
     router.push(getProductDetailUrl(productId, route.fullPath));
     return;
@@ -570,8 +594,10 @@ async function handleReportBusiness() {
           :product="product"
           :is-wishlisted="wishlistIds.includes(product.id)"
           :is-in-cart="cartIds.includes(product.id)"
+          :is-compared="comparedProductIds.includes(product.id)"
           @wishlist="handleWishlist"
           @cart="handleCart"
+          @compare="handleCompare"
         />
       </section>
 

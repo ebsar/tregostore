@@ -337,6 +337,7 @@ SHIPPING_DISCOUNT_THRESHOLDS = {
     "free": 180.0,
 }
 ORDER_ITEM_FULFILLMENT_STATUSES = {
+    "pending_confirmation",
     "confirmed",
     "packed",
     "shipped",
@@ -344,6 +345,7 @@ ORDER_ITEM_FULFILLMENT_STATUSES = {
     "cancelled",
     "returned",
 }
+ORDER_BUSINESS_CONFIRMATION_TIMEOUT_DAYS = 3
 RETURN_REQUEST_STATUSES = {"requested", "approved", "rejected", "received", "refunded"}
 BUSINESS_VERIFICATION_STATUSES = {"unverified", "pending", "verified", "rejected"}
 BUSINESS_PROFILE_EDIT_ACCESS_STATUSES = {"locked", "pending", "approved"}
@@ -426,7 +428,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-30-marketplace-4"
+APP_SCHEMA_VERSION = "2026-03-30-marketplace-5"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -588,6 +590,8 @@ ORDER_ITEM_SELECT_COLUMNS = """
     unit_price,
     quantity,
     fulfillment_status,
+    confirmed_at,
+    confirmation_due_at,
     tracking_code,
     tracking_url,
     shipped_at,
@@ -598,6 +602,20 @@ ORDER_ITEM_SELECT_COLUMNS = """
     seller_earnings_amount,
     payout_status,
     payout_due_at,
+    COALESCE((
+        SELECT rr.reason
+        FROM return_requests rr
+        WHERE rr.order_item_id = order_items.id
+        ORDER BY rr.id DESC
+        LIMIT 1
+    ), '') AS return_request_reason,
+    COALESCE((
+        SELECT rr.details
+        FROM return_requests rr
+        WHERE rr.order_item_id = order_items.id
+        ORDER BY rr.id DESC
+        LIMIT 1
+    ), '') AS return_request_details,
     COALESCE((
         SELECT rr.status
         FROM return_requests rr
@@ -2195,7 +2213,17 @@ def migrate_database(connection: DatabaseConnection) -> None:
 
     if not column_exists(connection, "order_items", "fulfillment_status"):
         connection.execute(
-            "ALTER TABLE order_items ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'confirmed'"
+            "ALTER TABLE order_items ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'pending_confirmation'"
+        )
+
+    if not column_exists(connection, "order_items", "confirmed_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN confirmed_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "order_items", "confirmation_due_at"):
+        connection.execute(
+            "ALTER TABLE order_items ADD COLUMN confirmation_due_at TEXT NOT NULL DEFAULT ''"
         )
 
     if not column_exists(connection, "order_items", "tracking_code"):
@@ -2253,10 +2281,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
         UPDATE order_items
         SET
             fulfillment_status = CASE
-                WHEN LOWER(TRIM(COALESCE(fulfillment_status, ''))) IN ('packed', 'shipped', 'delivered', 'cancelled', 'returned')
+                WHEN LOWER(TRIM(COALESCE(fulfillment_status, ''))) IN ('pending_confirmation', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled', 'returned')
                     THEN LOWER(TRIM(COALESCE(fulfillment_status, '')))
-                ELSE 'confirmed'
+                ELSE 'pending_confirmation'
             END,
+            confirmed_at = COALESCE(confirmed_at, ''),
+            confirmation_due_at = COALESCE(confirmation_due_at, ''),
             tracking_code = COALESCE(tracking_code, ''),
             tracking_url = COALESCE(tracking_url, ''),
             shipped_at = COALESCE(shipped_at, ''),
@@ -2283,6 +2313,28 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """,
         (MARKETPLACE_COMMISSION_RATE, MARKETPLACE_COMMISSION_RATE, MARKETPLACE_COMMISSION_RATE),
     )
+
+    order_items_with_deadlines = connection.execute(
+        """
+        SELECT id, created_at, confirmation_due_at
+        FROM order_items
+        """
+    ).fetchall()
+    for order_item_row in order_items_with_deadlines:
+        created_at_value = parse_storage_datetime(order_item_row["created_at"])
+        expected_confirmation_due_at = build_order_item_confirmation_due_at(created_at_value)
+        normalized_confirmation_due_at = (
+            str(order_item_row["confirmation_due_at"] or "").strip() or expected_confirmation_due_at
+        )
+        if normalized_confirmation_due_at != str(order_item_row["confirmation_due_at"] or "").strip():
+            connection.execute(
+                """
+                UPDATE order_items
+                SET confirmation_due_at = ?
+                WHERE id = ?
+                """,
+                (normalized_confirmation_due_at, order_item_row["id"]),
+            )
 
     connection.execute(
         """
@@ -5870,6 +5922,18 @@ def parse_positive_quantity(
     return errors, quantity
 
 
+def parse_optional_positive_quantity(
+    data: dict[str, object],
+    field_name: str = "quantity",
+    default: int = 1,
+) -> tuple[list[str], int | None]:
+    raw_value = str(data.get(field_name, "")).strip()
+    if not raw_value:
+        return [], max(1, int(default))
+
+    return parse_positive_quantity(data, field_name)
+
+
 def parse_boolean_flag(
     data: dict[str, object],
     field_name: str,
@@ -7001,6 +7065,12 @@ def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
             if "fulfillment_status" in row.keys()
             else "confirmed"
         ),
+        "confirmedAt": str(row["confirmed_at"] or "").strip()
+        if "confirmed_at" in row.keys()
+        else "",
+        "confirmationDueAt": str(row["confirmation_due_at"] or "").strip()
+        if "confirmation_due_at" in row.keys()
+        else "",
         "trackingCode": str(row["tracking_code"] or "").strip()
         if "tracking_code" in row.keys()
         else "",
@@ -7031,6 +7101,12 @@ def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
         "payoutDueAt": str(row["payout_due_at"] or "").strip()
         if "payout_due_at" in row.keys()
         else "",
+        "returnRequestReason": str(row["return_request_reason"] or "").strip()
+        if "return_request_reason" in row.keys()
+        else "",
+        "returnRequestDetails": str(row["return_request_details"] or "").strip()
+        if "return_request_details" in row.keys()
+        else "",
         "returnRequestStatus": str(row["return_request_status"] or "").strip().lower()
         if "return_request_status" in row.keys()
         else "",
@@ -7041,18 +7117,29 @@ def serialize_order_item(row: sqlite3.Row) -> dict[str, object]:
 def summarize_order_fulfillment_status(items: list[dict[str, object]]) -> str:
     statuses = [str(item.get("fulfillmentStatus") or "").strip().lower() for item in items if str(item.get("fulfillmentStatus") or "").strip()]
     if not statuses:
-        return "confirmed"
+        return "pending_confirmation"
     unique_statuses = set(statuses)
+    if "pending_confirmation" in unique_statuses:
+        return "pending_confirmation"
     if unique_statuses == {"returned"}:
         return "returned"
     if unique_statuses == {"cancelled"}:
         return "cancelled"
+    if "cancelled" in unique_statuses and len(unique_statuses) > 1:
+        return "partially_confirmed"
     if unique_statuses.issubset({"delivered", "returned"}):
         return "delivered"
     if unique_statuses.issubset({"shipped", "delivered", "returned"}):
         return "shipped"
     if unique_statuses.issubset({"packed", "shipped", "delivered", "returned"}):
         return "packed"
+    if unique_statuses.issubset({"confirmed", "packed", "shipped", "delivered", "returned"}):
+        if "delivered" in unique_statuses:
+            return "delivered"
+        if "shipped" in unique_statuses:
+            return "shipped"
+        if "packed" in unique_statuses:
+            return "packed"
     return "confirmed"
 
 
@@ -8792,6 +8879,7 @@ def count_public_products_for_business(business_id: int) -> int:
             INNER JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
             WHERE bp.id = ?
               AND p.is_public = 1
+              AND p.stock_quantity > 0
             """,
             (business_id,),
         ).fetchone()
@@ -8815,6 +8903,7 @@ def fetch_public_products_for_business(
             INNER JOIN business_profiles bp ON bp.user_id = products.created_by_user_id
             WHERE bp.id = ?
               AND products.is_public = 1
+              AND products.stock_quantity > 0
             ORDER BY products.id DESC
         """
         )
@@ -9005,6 +9094,7 @@ def build_product_query_filters(
 
     if not include_hidden:
         conditions.append("is_public = 1")
+        conditions.append("stock_quantity > 0")
 
     where_clause = ""
     if conditions:
@@ -9891,7 +9981,7 @@ def create_order_from_checkout_items(
             delivery_label,
             estimated_delivery_text
         )
-        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'pending_confirmation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["id"],
@@ -9962,7 +10052,7 @@ def create_order_from_checkout_items(
                 payout_status,
                 payout_due_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order_id,
@@ -9993,7 +10083,9 @@ def create_order_from_checkout_items(
                 str(item["packageAmountUnit"] or "").strip().lower(),
                 unit_price,
                 quantity,
-                "confirmed",
+                "pending_confirmation",
+                "",
+                build_order_item_confirmation_due_at(),
                 commission_rate,
                 commission_amount,
                 seller_earnings_amount,
@@ -10531,6 +10623,12 @@ def build_order_item_payout_due_at(base_time: datetime | None = None) -> str:
     return datetime_to_storage_text((base_time or utc_now()) + timedelta(days=PAYOUT_HOLD_DAYS))
 
 
+def build_order_item_confirmation_due_at(base_time: datetime | None = None) -> str:
+    return datetime_to_storage_text(
+        (base_time or utc_now()) + timedelta(days=ORDER_BUSINESS_CONFIRMATION_TIMEOUT_DAYS)
+    )
+
+
 def update_order_item_fulfillment_state(
     connection: DatabaseConnection,
     *,
@@ -10544,15 +10642,19 @@ def update_order_item_fulfillment_state(
     normalized_tracking_code = str(tracking_code or "").strip()
     normalized_tracking_url = str(tracking_url or "").strip()
 
+    confirmed_at = ""
     shipped_at = ""
     delivered_at = ""
     cancelled_at = ""
     payout_status = "pending"
     payout_due_at = ""
 
+    if normalized_status == "confirmed":
+        confirmed_at = now_text
     if normalized_status == "shipped":
         shipped_at = now_text
     elif normalized_status == "delivered":
+        confirmed_at = now_text
         shipped_at = now_text
         delivered_at = now_text
         payout_status = "ready"
@@ -10569,6 +10671,13 @@ def update_order_item_fulfillment_state(
         UPDATE order_items
         SET
             fulfillment_status = ?,
+            confirmed_at = CASE
+                WHEN ? = 'confirmed' THEN CASE
+                    WHEN COALESCE(confirmed_at, '') = '' THEN ?
+                    ELSE COALESCE(confirmed_at, '')
+                END
+                ELSE COALESCE(confirmed_at, '')
+            END,
             tracking_code = CASE
                 WHEN ? <> '' THEN ?
                 ELSE COALESCE(tracking_code, '')
@@ -10604,6 +10713,8 @@ def update_order_item_fulfillment_state(
         """,
         (
             normalized_status,
+            normalized_status,
+            now_text,
             normalized_tracking_code,
             normalized_tracking_code,
             normalized_tracking_url,
@@ -10626,8 +10737,182 @@ def update_order_item_fulfillment_state(
     )
 
 
+def refresh_order_status_from_items(
+    connection: DatabaseConnection,
+    order_id: int,
+) -> str:
+    item_rows = connection.execute(
+        """
+        SELECT fulfillment_status
+        FROM order_items
+        WHERE order_id = ?
+        ORDER BY id ASC
+        """,
+        (order_id,),
+    ).fetchall()
+    next_status = summarize_order_fulfillment_status(
+        [{"fulfillmentStatus": row["fulfillment_status"]} for row in item_rows]
+    )
+    connection.execute(
+        """
+        UPDATE orders
+        SET status = ?
+        WHERE id = ?
+        """,
+        (next_status, order_id),
+    )
+    return next_status
+
+
+def create_timeout_refund_request_for_order_item(
+    connection: DatabaseConnection,
+    order_item_row: sqlite3.Row,
+) -> int | None:
+    existing_request = connection.execute(
+        """
+        SELECT id
+        FROM return_requests
+        WHERE order_item_id = ?
+          AND status IN ('requested', 'approved', 'received')
+        LIMIT 1
+        """,
+        (int(order_item_row["id"]),),
+    ).fetchone()
+    if existing_request:
+        return None
+
+    reason = "Refund automatik: biznesi nuk e konfirmoi porosine brenda afatit."
+    product_title = str(order_item_row["product_title"] or "").strip() or "Produkti"
+    business_name = str(order_item_row["business_name_snapshot"] or "").strip() or "Biznesi"
+    confirmation_due_at = str(order_item_row["confirmation_due_at"] or "").strip()
+    details = (
+        f"Artikulli `{product_title}` nga `{business_name}` u anulua automatikisht dhe kaloi ne refund "
+        f"sepse nuk u konfirmua brenda afatit{f' deri me {confirmation_due_at}' if confirmation_due_at else ''}."
+    )
+
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO return_requests (
+            order_id,
+            order_item_id,
+            user_id,
+            business_user_id,
+            reason,
+            details,
+            status,
+            created_at,
+            updated_at,
+            resolved_at,
+            resolution_notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'requested', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '', '')
+        """,
+        (
+            int(order_item_row["order_id"]),
+            int(order_item_row["id"]),
+            int(order_item_row["customer_user_id"] or 0),
+            int(order_item_row["business_user_id"] or 0) or None,
+            reason,
+            details,
+        ),
+    )
+
+
+def process_expired_order_confirmations(connection: DatabaseConnection) -> dict[str, int]:
+    now_text = datetime_to_storage_text(utc_now())
+    expired_order_items = connection.execute(
+        """
+        SELECT
+            oi.id,
+            oi.order_id,
+            oi.business_user_id,
+            oi.business_name_snapshot,
+            oi.product_title,
+            oi.fulfillment_status,
+            oi.confirmation_due_at,
+            oi.created_at,
+            o.user_id AS customer_user_id,
+            o.customer_full_name,
+            o.customer_email
+        FROM order_items oi
+        INNER JOIN orders o ON o.id = oi.order_id
+        WHERE LOWER(TRIM(COALESCE(oi.fulfillment_status, ''))) = 'pending_confirmation'
+          AND TRIM(COALESCE(oi.confirmation_due_at, '')) <> ''
+          AND oi.confirmation_due_at <= ?
+        ORDER BY oi.confirmation_due_at ASC, oi.created_at ASC, oi.id ASC
+        """,
+        (now_text,),
+    ).fetchall()
+
+    if not expired_order_items:
+        return {"expiredItems": 0, "refundedRequests": 0, "refreshedOrders": 0}
+
+    refreshed_order_ids: set[int] = set()
+    created_refund_requests = 0
+
+    for order_item_row in expired_order_items:
+        refund_request_id = create_timeout_refund_request_for_order_item(connection, order_item_row)
+        if refund_request_id is not None:
+            created_refund_requests += 1
+
+        update_order_item_fulfillment_state(
+            connection,
+            order_item_id=int(order_item_row["id"]),
+            fulfillment_status="cancelled",
+        )
+
+        customer_user_id = int(order_item_row["customer_user_id"] or 0)
+        business_user_id = int(order_item_row["business_user_id"] or 0)
+        product_title = str(order_item_row["product_title"] or "").strip() or "Produkti"
+        business_name = str(order_item_row["business_name_snapshot"] or "").strip() or "Biznesi"
+        if customer_user_id > 0:
+            create_notification(
+                connection,
+                user_id=customer_user_id,
+                notification_type="refund",
+                title="Refund automatik po shqyrtohet",
+                body=(
+                    f"`{product_title}` nga `{business_name}` nuk u konfirmua brenda afatit dhe refund "
+                    "procedura u hap automatikisht."
+                ),
+                href="/refund-returne",
+                metadata={
+                    "orderId": int(order_item_row["order_id"]),
+                    "orderItemId": int(order_item_row["id"]),
+                },
+            )
+        if business_user_id > 0:
+            create_notification(
+                connection,
+                user_id=business_user_id,
+                notification_type="order",
+                title="Porosia u anulua automatikisht",
+                body=(
+                    f"`{product_title}` nuk u konfirmua brenda afatit dhe kaloi ne refund automatik per klientin."
+                ),
+                href="/porosite-e-biznesit",
+                metadata={
+                    "orderId": int(order_item_row["order_id"]),
+                    "orderItemId": int(order_item_row["id"]),
+                },
+            )
+
+        refreshed_order_ids.add(int(order_item_row["order_id"]))
+
+    for order_id in refreshed_order_ids:
+        refresh_order_status_from_items(connection, order_id)
+
+    return {
+        "expiredItems": len(expired_order_items),
+        "refundedRequests": created_refund_requests,
+        "refreshedOrders": len(refreshed_order_ids),
+    }
+
+
 def fetch_orders_for_user(user_id: int) -> list[sqlite3.Row]:
     with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
         return connection.execute(
             """
             SELECT
@@ -10649,6 +10934,7 @@ def fetch_order_items_for_orders(order_ids: list[int]) -> list[sqlite3.Row]:
     placeholders = ", ".join("?" for _ in order_ids)
 
     with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
         return connection.execute(
             """
             SELECT
@@ -10681,6 +10967,7 @@ def fetch_order_row_by_id(
     connection: DatabaseConnection,
     order_id: int,
 ) -> sqlite3.Row | None:
+    process_expired_order_confirmations(connection)
     return connection.execute(
         """
         SELECT
@@ -10699,6 +10986,7 @@ def fetch_order_items_for_order_id(
     connection: DatabaseConnection,
     order_id: int,
 ) -> list[sqlite3.Row]:
+    process_expired_order_confirmations(connection)
     return connection.execute(
         """
         SELECT
@@ -10743,6 +11031,7 @@ def user_can_access_order_invoice(
 
 def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, object]]:
     with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
         order_rows = connection.execute(
             """
             SELECT
@@ -10779,6 +11068,7 @@ def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, obje
 
 def fetch_all_orders_for_admin() -> list[dict[str, object]]:
     with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
         order_rows = connection.execute(
             """
             SELECT
@@ -10955,6 +11245,7 @@ def mark_notifications_as_read(connection: DatabaseConnection, *, user_id: int) 
 def fetch_return_requests_for_user(user: sqlite3.Row) -> list[sqlite3.Row]:
     normalized_role = str(user["role"] or "").strip().lower()
     with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
         if normalized_role == "admin":
             return connection.execute(
                 """
@@ -11442,8 +11733,8 @@ def create_order_notifications(
             connection,
             user_id=customer_id,
             notification_type="order",
-            title=f"Porosia #{order_id} u krijua",
-            body="Porosia juaj u regjistrua me sukses dhe po pergatitet nga shitësi.",
+            title=f"Porosia #{order_id} pret konfirmim",
+            body="Porosia juaj u regjistrua me sukses dhe tani pret konfirmimin e biznesit.",
             href="/porosite",
             metadata={"orderId": order_id},
         )
@@ -11458,8 +11749,8 @@ def create_order_notifications(
             connection,
             user_id=business_user_id,
             notification_type="order",
-            title="Keni porosi te re",
-            body=f"Porosia #{order_id} permban artikuj nga biznesi juaj.",
+            title="Keni porosi te re per konfirmim",
+            body=f"Porosia #{order_id} permban artikuj nga biznesi juaj dhe pret konfirmim.",
             href="/porosite-e-biznesit",
             metadata={"orderId": order_id},
         )
@@ -11515,6 +11806,8 @@ def fetch_order_item_by_id(order_item_id: int) -> sqlite3.Row | None:
                 oi.product_title,
                 oi.product_image_path,
                 oi.fulfillment_status,
+                oi.confirmed_at,
+                oi.confirmation_due_at,
                 oi.tracking_code,
                 oi.tracking_url,
                 oi.shipped_at,
@@ -11546,6 +11839,7 @@ def fetch_return_request_by_id(return_request_id: int) -> sqlite3.Row | None:
                 oi.product_title,
                 oi.product_image_path,
                 oi.business_name_snapshot,
+                oi.fulfillment_status,
                 o.customer_full_name
             FROM return_requests rr
             INNER JOIN order_items oi ON oi.id = rr.order_item_id
@@ -11621,7 +11915,7 @@ def build_business_notification_messages(
 
         body = (
             f"Pershendetje {business_name},\n\n"
-            f"U krijua nje porosi e re ne TREGO.\n\n"
+            f"U krijua nje porosi e re ne TREGO qe pret konfirmimin tuaj.\n\n"
             f"Porosia #{first_row['order_id']}\n"
             f"Data: {created_at}\n"
             f"Menyra e pageses: {payment_method}\n\n"
@@ -13765,11 +14059,21 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        order_confirmation_summary = {"expiredItems": 0, "refundedRequests": 0, "refreshedOrders": 0}
+        with get_db_connection() as connection:
+            order_confirmation_summary = process_expired_order_confirmations(connection)
+
         reminder_rows = fetch_pending_chat_unread_reminder_rows()
         if not reminder_rows:
             self.send_json(
                 200,
-                {"ok": True, "processed": 0, "sent": 0, "warnings": []},
+                {
+                    "ok": True,
+                    "processed": 0,
+                    "sent": 0,
+                    "warnings": [],
+                    "orderConfirmationSummary": order_confirmation_summary,
+                },
             )
             return
 
@@ -13800,6 +14104,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "processed": len(reminder_rows),
                 "sent": sent_count,
                 "warnings": warnings,
+                "orderConfirmationSummary": order_confirmation_summary,
             },
         )
 
@@ -15608,7 +15913,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 200,
                 {
                     "ok": True,
-                    "message": "Pagesa ishte konfirmuar tashme dhe porosia ekziston.",
+                    "message": "Pagesa ishte konfirmuar tashme dhe porosia pret konfirmim nga biznesi.",
                     "order": (
                         serialize_order(
                             saved_order,
@@ -15708,7 +16013,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {
                 "ok": True,
-                "message": "Pagesa u konfirmua me sukses dhe porosia u krijua.",
+                "message": "Pagesa u konfirmua me sukses dhe porosia u dergua per konfirmim.",
                 "order": (
                     serialize_order(
                         saved_order,
@@ -16559,11 +16864,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
 
             if next_status == "refunded":
+                current_fulfillment_status = str(return_request_row["fulfillment_status"] or "").strip().lower()
+                next_fulfillment_status = (
+                    "returned"
+                    if current_fulfillment_status in {"delivered", "returned"}
+                    else "cancelled"
+                )
                 update_order_item_fulfillment_state(
                     connection,
                     order_item_id=int(return_request_row["order_item_id"]),
-                    fulfillment_status="returned",
+                    fulfillment_status=next_fulfillment_status,
                 )
+                refresh_order_status_from_items(connection, int(return_request_row["order_id"]))
 
             create_notification(
                 connection,
@@ -16611,6 +16923,17 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"ok": False, "message": "Nuk ke akses mbi kete porosi."})
             return
 
+        current_status = str(order_item_row["fulfillment_status"] or "").strip().lower()
+        if current_status == "pending_confirmation" and next_status not in {"confirmed", "cancelled"}:
+            self.send_json(
+                409,
+                {
+                    "ok": False,
+                    "message": "Porosia duhet te konfirmohet fillimisht nga biznesi para se te vazhdoje ne statuset e tjera.",
+                },
+            )
+            return
+
         with get_db_connection() as connection:
             update_order_item_fulfillment_state(
                 connection,
@@ -16619,6 +16942,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 tracking_code=tracking_code,
                 tracking_url=tracking_url,
             )
+            refresh_order_status_from_items(connection, int(order_item_row["order_id"]))
 
             customer_user_id = int(order_item_row["customer_user_id"] or 0)
             if customer_user_id > 0:
@@ -17078,8 +17402,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         variant_errors, selected_variant = resolve_requested_product_variant(product, payload)
-        if variant_errors or not selected_variant:
-            self.send_json(400, {"ok": False, "errors": variant_errors})
+        quantity_errors, quantity = parse_optional_positive_quantity(payload, "quantity")
+        combined_errors = variant_errors + quantity_errors
+        if combined_errors or not selected_variant or quantity is None:
+            self.send_json(400, {"ok": False, "errors": combined_errors})
             return
 
         updated_at_value = datetime_to_storage_text(utc_now())
@@ -17095,7 +17421,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             ).fetchone()
             existing_quantity = max(0, int(existing_row["quantity"] or 0)) if existing_row else 0
             available_quantity = max(0, int(selected_variant.get("quantity") or 0))
-            if existing_quantity + 1 > available_quantity:
+            if existing_quantity + quantity > available_quantity:
                 self.send_json(
                     400,
                     {
@@ -17118,7 +17444,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, product_id, variant_key)
                 DO UPDATE SET
                     quantity = cart_lines.quantity + EXCLUDED.quantity,
@@ -17131,6 +17457,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     selected_variant["label"],
                     selected_variant["size"],
                     selected_variant["color"],
+                    quantity,
                     updated_at_value,
                     updated_at_value,
                     updated_at_value,
@@ -17378,7 +17705,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             201,
             {
                 "ok": True,
-                "message": (pricing_summary.get("message") or "").strip() or "Porosia u konfirmua me sukses.",
+                "message": (pricing_summary.get("message") or "").strip() or "Porosia u dergua per konfirmim.",
                 "order": (
                     serialize_order(
                         saved_order,

@@ -7,8 +7,17 @@ import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProduct
 import { deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
-import { formatCategoryLabel, getProductDetailUrl } from "../lib/shop";
+import {
+  formatCategoryLabel,
+  getProductDetailUrl,
+  hasProductAvailableStock,
+} from "../lib/shop";
 import { consumePendingVisualSearchFile } from "../lib/visual-search-transfer";
+import {
+  compareState,
+  ensureCompareItemsLoaded,
+  toggleComparedProduct,
+} from "../stores/product-compare";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const route = useRoute();
@@ -95,6 +104,11 @@ const shouldRequestFacets = computed(() =>
 );
 const hasActiveCatalogFilters = computed(() =>
   Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
+);
+const comparedProductIds = computed(() =>
+  compareState.items
+    .map((item) => Number(item.id || item.productId || 0))
+    .filter((id) => Number.isFinite(id) && id > 0),
 );
 
 const filteredProducts = computed(() => {
@@ -211,6 +225,7 @@ watch(draftQuery, (nextValue) => {
 });
 
 onMounted(async () => {
+  ensureCompareItemsLoaded();
   recentSearches.value = readRecentSearches();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
     if (nextPageSize === productsPageSize.value) {
@@ -470,7 +485,8 @@ async function loadProducts(options = {}) {
   }
 
   const nextProducts = Array.isArray(data.products) ? data.products : [];
-  products.value = append ? [...products.value, ...nextProducts] : nextProducts;
+  const visibleProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
+  products.value = append ? [...products.value, ...visibleProducts] : visibleProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
   if (data.facets) {
@@ -790,6 +806,10 @@ async function handleCart(productId) {
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
 }
+
+function handleCompare(product) {
+  toggleComparedProduct(product);
+}
 </script>
 
 <template>
@@ -1015,8 +1035,10 @@ async function handleCart(productId) {
         :is-in-cart="cartIds.includes(product.id)"
         :wishlist-busy="busyWishlistIds.includes(product.id)"
         :cart-busy="busyCartIds.includes(product.id)"
+        :is-compared="comparedProductIds.includes(product.id)"
         @wishlist="handleWishlist"
         @cart="handleCart"
+        @compare="handleCompare"
       />
     </section>
 

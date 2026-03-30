@@ -18,7 +18,9 @@ export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_DELIVERY_METHOD_KEY = "trego_checkout_delivery_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
+export const SAVED_FOR_LATER_ITEMS_KEY = "trego_saved_for_later_items";
 export const APP_LOADER_MIN_DURATION_MS = 160;
+const MAX_SAVED_FOR_LATER_ITEMS = 24;
 export const DELIVERY_METHOD_OPTIONS = [
   {
     value: "standard",
@@ -83,6 +85,72 @@ function createNavigationGroups(sectionValue) {
     label: productType.label,
     href: createSearchHref({ category: sectionValue, productType: productType.value }),
   }));
+}
+
+function buildSavedForLaterItemKey(item = {}) {
+  const productId = Number(item?.productId ?? item?.id ?? 0);
+  if (!Number.isFinite(productId) || productId <= 0) {
+    return "";
+  }
+
+  const variantKey = String(item?.variantKey || "").trim();
+  const selectedSize = String(item?.selectedSize || item?.size || "").trim().toUpperCase();
+  const selectedColor = String(item?.selectedColor || item?.color || "").trim().toLowerCase();
+
+  return [productId, variantKey || selectedSize || "-", selectedColor || "-"].join(":");
+}
+
+function sanitizeSavedForLaterItem(item) {
+  const productId = Number(item?.productId ?? item?.id ?? 0);
+  if (!Number.isFinite(productId) || productId <= 0) {
+    return null;
+  }
+
+  return {
+    id: productId,
+    productId,
+    title: String(item?.title || item?.productName || "").trim() || "Produkt",
+    description: String(item?.description || "").trim(),
+    price: Number(item?.price || 0),
+    imagePath:
+      String(item?.imagePath || item?.image_path || item?.image || "").trim() || "/bujqesia.webp",
+    category: String(item?.category || "").trim(),
+    productType: String(item?.productType || "").trim(),
+    businessName: String(item?.businessName || "").trim(),
+    quantity: Math.max(1, Math.trunc(Number(item?.quantity || 1) || 1)),
+    variantKey: String(item?.variantKey || "").trim(),
+    variantLabel: String(item?.variantLabel || "").trim(),
+    selectedSize: String(item?.selectedSize || item?.size || "").trim().toUpperCase(),
+    selectedColor: String(item?.selectedColor || item?.color || "").trim().toLowerCase(),
+    showStockPublic: Boolean(item?.showStockPublic),
+    stockQuantity: Number(item?.stockQuantity || 0),
+  };
+}
+
+function normalizeSavedForLaterItems(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const nextItems = [];
+  const seenKeys = new Set();
+
+  items.forEach((item) => {
+    const snapshot = sanitizeSavedForLaterItem(item);
+    if (!snapshot) {
+      return;
+    }
+
+    const key = buildSavedForLaterItemKey(snapshot);
+    if (!key || seenKeys.has(key)) {
+      return;
+    }
+
+    seenKeys.add(key);
+    nextItems.push(snapshot);
+  });
+
+  return nextItems.slice(0, MAX_SAVED_FOR_LATER_ITEMS);
 }
 
 export const PRIMARY_NAVIGATION = PRODUCT_PAGE_SECTION_OPTIONS.map((section) => {
@@ -310,6 +378,93 @@ export function clearCheckoutFlowState() {
   }
 }
 
+export function readSavedForLaterItems() {
+  try {
+    const rawValue = window.localStorage.getItem(SAVED_FOR_LATER_ITEMS_KEY);
+    if (!rawValue) {
+      return [];
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    if (!Array.isArray(parsedValue)) {
+      return [];
+    }
+
+    return normalizeSavedForLaterItems(parsedValue);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+export function persistSavedForLaterItems(items) {
+  try {
+    const normalizedItems = normalizeSavedForLaterItems(items);
+    window.localStorage.setItem(SAVED_FOR_LATER_ITEMS_KEY, JSON.stringify(normalizedItems));
+    return normalizedItems;
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+export function rememberSavedForLaterItem(item) {
+  try {
+    const snapshot = sanitizeSavedForLaterItem(item);
+    if (!snapshot) {
+      return readSavedForLaterItems();
+    }
+
+    const snapshotKey = buildSavedForLaterItemKey(snapshot);
+    const nextItems = [
+      snapshot,
+      ...readSavedForLaterItems().filter((entry) => buildSavedForLaterItemKey(entry) !== snapshotKey),
+    ].slice(0, MAX_SAVED_FOR_LATER_ITEMS);
+
+    window.localStorage.setItem(SAVED_FOR_LATER_ITEMS_KEY, JSON.stringify(nextItems));
+    return nextItems;
+  } catch (error) {
+    console.error(error);
+    return readSavedForLaterItems();
+  }
+}
+
+export function removeSavedForLaterItem(itemOrId, variantKey = "", selectedSize = "", selectedColor = "") {
+  try {
+    const targetKey =
+      itemOrId && typeof itemOrId === "object"
+        ? buildSavedForLaterItemKey(itemOrId)
+        : buildSavedForLaterItemKey({
+            id: itemOrId,
+            variantKey,
+            selectedSize,
+            selectedColor,
+          });
+    if (!targetKey) {
+      return readSavedForLaterItems();
+    }
+
+    const nextItems = readSavedForLaterItems().filter(
+      (entry) => buildSavedForLaterItemKey(entry) !== targetKey,
+    );
+    window.localStorage.setItem(SAVED_FOR_LATER_ITEMS_KEY, JSON.stringify(nextItems));
+    return nextItems;
+  } catch (error) {
+    console.error(error);
+    return readSavedForLaterItems();
+  }
+}
+
+export function clearSavedForLaterItems() {
+  try {
+    window.localStorage.removeItem(SAVED_FOR_LATER_ITEMS_KEY);
+  } catch (error) {
+    console.error(error);
+  }
+
+  return [];
+}
+
 export function formatPrice(value) {
   const number = Number(value);
   if (Number.isNaN(number)) {
@@ -363,6 +518,51 @@ export function formatStockQuantity(value) {
   }
 
   return `${Math.max(0, Math.trunc(number))} cope`;
+}
+
+export function hasProductAvailableStock(product = {}) {
+  const variantInventory = Array.isArray(product?.variantInventory) ? product.variantInventory : [];
+  if (variantInventory.length > 0) {
+    const selectedVariantKey = String(
+      product?.variantKey
+      || product?.selectedVariantKey
+      || product?.variantId
+      || "",
+    ).trim();
+    const selectedSize = String(product?.selectedSize || product?.size || "").trim().toUpperCase();
+    const selectedColor = String(product?.selectedColor || product?.color || "").trim().toLowerCase();
+
+    if (selectedVariantKey) {
+      const selectedVariant = variantInventory.find((entry) => String(entry?.key || entry?.variantKey || entry?.id || "").trim() === selectedVariantKey);
+      if (selectedVariant) {
+        return Number(selectedVariant?.quantity || 0) > 0;
+      }
+    }
+
+    if (selectedSize || selectedColor) {
+      const selectedVariant = variantInventory.find((entry) => {
+        const entrySize = String(entry?.size || "").trim().toUpperCase();
+        const entryColor = String(entry?.color || "").trim().toLowerCase();
+        const sizeMatches = !selectedSize || entrySize === selectedSize;
+        const colorMatches = !selectedColor || entryColor === selectedColor;
+        return sizeMatches && colorMatches;
+      });
+
+      if (selectedVariant) {
+        return Number(selectedVariant?.quantity || 0) > 0;
+      }
+    }
+
+    return variantInventory.some((entry) => Number(entry?.quantity || 0) > 0);
+  }
+
+  return Number(product?.stockQuantity || 0) > 0;
+}
+
+export function getProductStockMessage(product = {}) {
+  return hasProductAvailableStock(product)
+    ? ""
+    : "Na vjen keq, ky produkt nuk eshte me ne stok.";
 }
 
 export function formatDateLabel(value) {
@@ -516,7 +716,9 @@ export function formatEstimatedDeliveryLabel(deliveryMethod, fallbackText = "") 
 
 export function formatOrderStatusLabel(status) {
   const labels = {
+    pending_confirmation: "Porosia pret konfirmim",
     confirmed: "Porosia u konfirmua",
+    partially_confirmed: "Porosia pjeserisht u konfirmua",
     pending: "Ne pritje",
     packed: "Po pergatitet",
     shipped: "Ne transport",
@@ -528,9 +730,20 @@ export function formatOrderStatusLabel(status) {
   return labels[String(status || "").trim()] || "Porosia";
 }
 
+export function formatOrderStatusBadgeLabel(status) {
+  const labels = {
+    pending_confirmation: "Pret konfirmim",
+    partially_confirmed: "Pjeserisht e konfirmuar",
+  };
+
+  return labels[String(status || "").trim()] || "";
+}
+
 export function formatFulfillmentStatusLabel(status) {
   const labels = {
+    pending_confirmation: "Ne pritje te konfirmimit",
     confirmed: "E konfirmuar",
+    partially_confirmed: "Pjeserisht e konfirmuar",
     packed: "E paketuar",
     shipped: "Ne dergese",
     delivered: "E dorezuar",
@@ -544,16 +757,19 @@ export function formatFulfillmentStatusLabel(status) {
 export function buildFulfillmentTimeline(item = {}) {
   const normalizedStatus = String(item?.fulfillmentStatus || item?.status || "confirmed")
     .trim()
-    .toLowerCase() || "confirmed";
-  const progressSteps = ["confirmed", "packed", "shipped", "delivered"];
+    .toLowerCase() || "pending_confirmation";
+  const progressSteps = ["pending_confirmation", "confirmed", "packed", "shipped", "delivered"];
   const indexedStatus = progressSteps.indexOf(normalizedStatus);
-  const fallbackIndex = normalizedStatus === "returned" ? 3 : 0;
+  const fallbackIndex = normalizedStatus === "returned" ? 4 : 0;
   const resolvedIndex = indexedStatus >= 0 ? indexedStatus : fallbackIndex;
 
   return progressSteps.map((stepKey, index) => {
     let meta = "";
-    if (stepKey === "confirmed") {
-      const confirmedAt = item?.createdAt || item?.confirmedAt || "";
+    if (stepKey === "pending_confirmation") {
+      const confirmationDueAt = item?.confirmationDueAt || "";
+      meta = confirmationDueAt ? `Afati: ${formatDateLabel(confirmationDueAt)}` : "";
+    } else if (stepKey === "confirmed") {
+      const confirmedAt = item?.confirmedAt || item?.createdAt || "";
       meta = confirmedAt ? formatDateLabel(confirmedAt) : "";
     } else if (stepKey === "shipped") {
       meta = item?.shippedAt ? formatDateLabel(item.shippedAt) : "";
@@ -606,6 +822,31 @@ export function formatReturnRequestStatusLabel(status) {
   };
 
   return labels[String(status || "").trim()] || "Ne shqyrtim";
+}
+
+export function isAutomaticRefundRequest(request = {}) {
+  const haystack = [
+    request?.reason,
+    request?.details,
+    request?.returnRequestReason,
+    request?.returnRequestDetails,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+
+  return (
+    haystack.includes("refund automatik")
+    || haystack.includes("u anulua automatikisht")
+    || haystack.includes("nuk u konfirmua brenda afatit")
+  );
+}
+
+export function getAutomaticRefundNotice(request = {}) {
+  if (!isAutomaticRefundRequest(request)) {
+    return "";
+  }
+
+  return "Na vjen keq, ky artikull nuk u konfirmua nga biznesi brenda afatit dhe kaloi ne refund automatik.";
 }
 
 export function formatVerificationStatusLabel(status) {

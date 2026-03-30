@@ -26,6 +26,7 @@ const PaymentOptionsPage = () => import("../views/PaymentOptionsPage.vue");
 const AdminProductsPage = () => import("../views/AdminProductsPage.vue");
 const BusinessDashboardPage = () => import("../views/BusinessDashboardPage.vue");
 const RegisteredBusinessesPage = () => import("../views/RegisteredBusinessesPage.vue");
+const ProductComparePage = () => import("../views/ProductComparePage.vue");
 
 const routes = [
   {
@@ -296,6 +297,16 @@ const routes = [
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
       routeLoader: true,
+    },
+  },
+  {
+    path: "/krahaso-produkte",
+    component: ProductComparePage,
+    meta: {
+      pageKey: "product-compare",
+      title: "TREGO | Krahaso produktet",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-collection",
     },
   },
   {
