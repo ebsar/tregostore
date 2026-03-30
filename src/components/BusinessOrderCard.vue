@@ -2,10 +2,12 @@
 import { reactive } from "vue";
 import OrderItemCard from "./OrderItemCard.vue";
 import {
+  buildFulfillmentTimeline,
   formatDateLabel,
   formatFulfillmentStatusLabel,
   formatPaymentMethodLabel,
   formatPrice,
+  getFulfillmentTerminalEvent,
 } from "../lib/shop";
 
 const props = defineProps({
@@ -52,6 +54,14 @@ function submitStatus(item) {
     trackingUrl: draft.trackingUrl,
   });
 }
+
+function timelineFor(item) {
+  return buildFulfillmentTimeline(item);
+}
+
+function terminalEventFor(item) {
+  return getFulfillmentTerminalEvent(item);
+}
 </script>
 
 <template>
@@ -75,6 +85,31 @@ function submitStatus(item) {
             :item="item"
             :show-business-name="false"
           />
+          <div class="order-item-timeline" aria-label="Rrjedha e porosise">
+            <div
+              v-for="step in timelineFor(item)"
+              :key="`${item.id}-${step.key}`"
+              class="order-timeline-step"
+              :class="{
+                'is-completed': step.isCompleted || step.isDelivered,
+                'is-current': step.isCurrent,
+              }"
+            >
+              <span class="order-timeline-dot"></span>
+              <span class="order-timeline-copy">
+                <strong>{{ step.label }}</strong>
+                <span v-if="step.meta">{{ step.meta }}</span>
+              </span>
+            </div>
+          </div>
+          <div
+            v-if="terminalEventFor(item)"
+            class="order-terminal-event"
+            :class="`is-${terminalEventFor(item).tone}`"
+          >
+            <strong>{{ terminalEventFor(item).label }}</strong>
+            <span v-if="terminalEventFor(item).meta">{{ terminalEventFor(item).meta }}</span>
+          </div>
           <div class="order-item-marketplace-meta is-management">
             <span class="summary-chip">
               <span>Statusi</span>

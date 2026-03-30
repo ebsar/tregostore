@@ -6,12 +6,14 @@ import PromoSlider from "../components/PromoSlider.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
+import { readRecentlyViewedProducts } from "../lib/recently-viewed";
 import { HOME_PROMO_SLIDES, getBusinessInitials, getBusinessProfileUrl, getProductDetailUrl } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
 const products = ref([]);
 const businesses = ref([]);
+const recentlyViewedProducts = ref([]);
 const businessProfile = ref(null);
 const businessProducts = ref([]);
 const wishlistIds = ref([]);
@@ -122,6 +124,8 @@ const filteredProducts = computed(() => {
   return nextProducts;
 });
 
+const visibleRecentlyViewedProducts = computed(() => recentlyViewedProducts.value.slice(0, 4));
+
 const collectionLabel = computed(() => {
   if (!products.value.length) {
     return "Nuk ka produkte publike ende.";
@@ -139,6 +143,7 @@ const collectionLabel = computed(() => {
 });
 
 onMounted(async () => {
+  recentlyViewedProducts.value = readRecentlyViewedProducts();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
     if (nextPageSize === productsPageSize.value) {
       return;
@@ -597,6 +602,27 @@ async function handleCart(productId) {
 
   <section v-else class="collection-page home-collection-page" aria-label="Faqja kryesore">
     <PromoSlider :slides="HOME_PROMO_SLIDES" />
+
+    <section
+      v-if="visibleRecentlyViewedProducts.length > 0"
+      class="card home-recently-viewed-section"
+      aria-label="Produktet e pare se fundi"
+    >
+      <header class="collection-page-header home-recently-viewed-header">
+        <p class="section-label">Pare se fundi</p>
+        <h2>Rikthehu te artikujt qe i pe</h2>
+        <p>Marketplace-i e mban mend katalogun qe po shikon qe ta vazhdosh me shpejt.</p>
+      </header>
+
+      <section class="pet-products-grid home-recently-viewed-grid">
+        <ProductCard
+          v-for="product in visibleRecentlyViewedProducts"
+          :key="`home-recent-${product.id}`"
+          :product="product"
+          :show-overlay-actions="false"
+        />
+      </section>
+    </section>
 
     <header class="collection-page-header home-collection-header">
       <p class="section-label">Produktet</p>

@@ -471,6 +471,61 @@ export function formatFulfillmentStatusLabel(status) {
   return labels[String(status || "").trim()] || "Ne proces";
 }
 
+export function buildFulfillmentTimeline(item = {}) {
+  const normalizedStatus = String(item?.fulfillmentStatus || item?.status || "confirmed")
+    .trim()
+    .toLowerCase() || "confirmed";
+  const progressSteps = ["confirmed", "packed", "shipped", "delivered"];
+  const indexedStatus = progressSteps.indexOf(normalizedStatus);
+  const fallbackIndex = normalizedStatus === "returned" ? 3 : 0;
+  const resolvedIndex = indexedStatus >= 0 ? indexedStatus : fallbackIndex;
+
+  return progressSteps.map((stepKey, index) => {
+    let meta = "";
+    if (stepKey === "confirmed") {
+      const confirmedAt = item?.createdAt || item?.confirmedAt || "";
+      meta = confirmedAt ? formatDateLabel(confirmedAt) : "";
+    } else if (stepKey === "shipped") {
+      meta = item?.shippedAt ? formatDateLabel(item.shippedAt) : "";
+    } else if (stepKey === "delivered") {
+      meta = item?.deliveredAt ? formatDateLabel(item.deliveredAt) : "";
+    }
+
+    return {
+      key: stepKey,
+      label: formatOrderStatusLabel(stepKey),
+      meta,
+      isCompleted: index < resolvedIndex || (index === resolvedIndex && normalizedStatus === "delivered"),
+      isCurrent: index === resolvedIndex && !["delivered", "cancelled", "returned"].includes(normalizedStatus),
+      isDelivered: stepKey === "delivered" && ["delivered", "returned"].includes(normalizedStatus),
+    };
+  });
+}
+
+export function getFulfillmentTerminalEvent(item = {}) {
+  const normalizedStatus = String(item?.fulfillmentStatus || item?.status || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizedStatus === "cancelled") {
+    return {
+      label: formatFulfillmentStatusLabel(normalizedStatus),
+      meta: item?.cancelledAt ? formatDateLabel(item.cancelledAt) : "",
+      tone: "cancelled",
+    };
+  }
+
+  if (normalizedStatus === "returned") {
+    return {
+      label: formatFulfillmentStatusLabel(normalizedStatus),
+      meta: item?.deliveredAt ? formatDateLabel(item.deliveredAt) : "",
+      tone: "returned",
+    };
+  }
+
+  return null;
+}
+
 export function formatReturnRequestStatusLabel(status) {
   const labels = {
     requested: "Kerkese e derguar",

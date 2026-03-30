@@ -54,6 +54,7 @@ const composer = reactive({
 const ui = reactive({
   message: "",
   type: "",
+  guest: false,
   loadingConversations: false,
   loadingMessages: false,
   loadingSuggestions: false,
@@ -1424,9 +1425,13 @@ async function bootstrap() {
   try {
     const user = await ensureSessionLoaded();
     if (!user) {
-      await router.replace("/login");
+      ui.guest = true;
+      ui.message = "Per te pare mesazhet duhet te kyçesh ose te krijosh llogari.";
+      ui.type = "error";
       return;
     }
+
+    ui.guest = false;
 
     if (!["client", "business", "admin"].includes(String(user.role || "").trim())) {
       await router.replace(user.role === "admin" ? "/admin-products" : "/");
@@ -1517,7 +1522,20 @@ onBeforeUnmount(() => {
       {{ ui.message }}
     </div>
 
-    <div class="messages-layout">
+    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+      <h2>Per te pare mesazhet duhet te kyçesh.</h2>
+      <p>Krijo llogari ose hyni ne llogarine tende per te hapur bisedat me bizneset dhe support-in.</p>
+      <div class="collection-guest-gate-actions">
+        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fmesazhet">
+          Login
+        </RouterLink>
+        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fmesazhet">
+          Sign Up
+        </RouterLink>
+      </div>
+    </section>
+
+    <div v-else class="messages-layout">
       <aside class="card messages-sidebar">
         <div class="messages-sidebar-head" :class="{ 'is-search-open': conversationSearchOpen }">
           <div class="messages-sidebar-head-copy">

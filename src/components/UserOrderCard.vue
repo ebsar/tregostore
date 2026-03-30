@@ -1,12 +1,13 @@
 <script setup>
 import OrderItemCard from "./OrderItemCard.vue";
 import {
+  buildFulfillmentTimeline,
   formatDateLabel,
   formatFulfillmentStatusLabel,
-  formatOrderStatusLabel,
   formatPaymentMethodLabel,
   formatPrice,
   formatReturnRequestStatusLabel,
+  getFulfillmentTerminalEvent,
 } from "../lib/shop";
 
 defineProps({
@@ -21,6 +22,14 @@ defineProps({
 });
 
 const emit = defineEmits(["request-return"]);
+
+function timelineFor(item) {
+  return buildFulfillmentTimeline(item);
+}
+
+function terminalEventFor(item) {
+  return getFulfillmentTerminalEvent(item);
+}
 </script>
 
 <template>
@@ -51,6 +60,31 @@ const emit = defineEmits(["request-return"]);
       <div class="order-items-list">
         <div v-for="item in order.items || []" :key="item.id" class="order-item-shell">
           <OrderItemCard :item="item" />
+          <div class="order-item-timeline" aria-label="Rrjedha e porosise">
+            <div
+              v-for="step in timelineFor(item)"
+              :key="`${item.id}-${step.key}`"
+              class="order-timeline-step"
+              :class="{
+                'is-completed': step.isCompleted || step.isDelivered,
+                'is-current': step.isCurrent,
+              }"
+            >
+              <span class="order-timeline-dot"></span>
+              <span class="order-timeline-copy">
+                <strong>{{ step.label }}</strong>
+                <span v-if="step.meta">{{ step.meta }}</span>
+              </span>
+            </div>
+          </div>
+          <div
+            v-if="terminalEventFor(item)"
+            class="order-terminal-event"
+            :class="`is-${terminalEventFor(item).tone}`"
+          >
+            <strong>{{ terminalEventFor(item).label }}</strong>
+            <span v-if="terminalEventFor(item).meta">{{ terminalEventFor(item).meta }}</span>
+          </div>
           <div class="order-item-marketplace-meta">
             <span class="summary-chip">
               <span>Statusi</span>

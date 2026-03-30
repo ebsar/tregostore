@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
 import { PRIMARY_NAVIGATION, formatPrice, getProductDetailUrl } from "../lib/shop";
 import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
@@ -22,8 +23,10 @@ const searchInputElement = ref(null);
 const mobileQuickSearchInputElement = ref(null);
 const navVisualSearchInputElement = ref(null);
 const navSearchResult = ref(null);
+const navSearchProducts = ref([]);
 const navSearchLoading = ref(false);
 const navSearchMessage = ref("");
+const navSearchRecent = ref([]);
 const mobileQuickSearchProducts = ref([]);
 const mobileQuickSearchLoading = ref(false);
 const mobileQuickSearchMessage = ref("");
@@ -33,6 +36,7 @@ const unreadNotificationsCount = ref(0);
 let lastScrollY = 0;
 let unreadMessagesPollIntervalId = 0;
 let mobileQuickSearchTimeoutId = 0;
+let navSearchTimeoutId = 0;
 const UNREAD_MESSAGES_POLL_MS = 3000;
 const MOBILE_QUICK_SEARCH_RECENT_KEY = "trego-mobile-quick-search-recent";
 const AI_SEARCH_PROMPTS = [
@@ -43,7 +47,9 @@ const AI_SEARCH_PROMPTS = [
 
 function resetNavSearchPreview() {
   navSearchResult.value = null;
+  navSearchProducts.value = [];
   navSearchMessage.value = "";
+  navSearchLoading.value = false;
 }
 
 function resetMobileQuickSearchProducts() {
@@ -489,6 +495,13 @@ const mobileQuickSearchPublicSuggestions = computed(() => {
     .filter(Boolean);
 });
 
+const navSearchBrowseSuggestions = computed(() =>
+  PRIMARY_NAVIGATION.slice(0, 4).map((section) => ({
+    label: section.label,
+    to: section.href,
+  })),
+);
+
 const userDisplayName = computed(() => {
   if (!appState.user) {
     return "";
@@ -527,31 +540,6 @@ const userPanelLabel = computed(() => {
   }
 
   return "Llogaria ime";
-});
-
-const navSearchResultLink = computed(() => {
-  if (!navSearchResult.value) {
-    const query = searchQuery.value.trim();
-    return {
-      path: "/kerko",
-      query: query ? { q: query } : {},
-    };
-  }
-
-  return getProductDetailUrl(navSearchResult.value.id, route.fullPath);
-});
-
-const navSearchResultImage = computed(() => {
-  if (!navSearchResult.value) {
-    return "";
-  }
-
-  return (
-    navSearchResult.value.imagePath
-    || navSearchResult.value.image_path
-    || navSearchResult.value.image
-    || "/bujqesia.webp"
-  );
 });
 
 function updateViewportState() {
@@ -624,9 +612,15 @@ async function toggleSearchPanel() {
   searchMenuOpen.value = shouldOpen;
 
   if (shouldOpen) {
+    loadRecentNavSearches();
     await nextTick();
     searchInputElement.value?.focus();
     searchInputElement.value?.select?.();
+    if (searchQuery.value.trim().length >= 2) {
+      void fetchNavSearchResult();
+    } else if (searchQuery.value.trim()) {
+      navSearchMessage.value = "Shkruaj se paku 2 shkronja.";
+    }
   }
 }
 
@@ -804,24 +798,23 @@ async function handleLogout() {
 }
 
 async function submitNavSearch() {
-  mobileMenuOpen.value = false;
-  await fetchNavSearchResult();
+  await openSearchResultsPage();
 }
 
 async function fetchNavSearchResult() {
   const query = searchQuery.value.trim();
   if (!query) {
-    navSearchResult.value = null;
-    navSearchMessage.value = "";
+    resetNavSearchPreview();
     return;
   }
 
   navSearchLoading.value = true;
   resetNavSearchPreview();
+  navSearchLoading.value = true;
 
   try {
     const params = new URLSearchParams();
-    params.set("limit", "1");
+    params.set("limit", "5");
     params.set("q", query);
     const { response, data } = await requestJson(`/api/products/search?${params.toString()}`);
     if (!response.ok || !data?.ok) {
@@ -829,13 +822,14 @@ async function fetchNavSearchResult() {
       return;
     }
 
-    const first = Array.isArray(data.products) ? data.products[0] : null;
-    if (!first) {
+    const nextProducts = Array.isArray(data.products) ? data.products.slice(0, 5) : [];
+    if (nextProducts.length === 0) {
       navSearchMessage.value = "Nuk u gjet asnje produkt per kete kerkim.";
       return;
     }
 
-    navSearchResult.value = first;
+    navSearchProducts.value = nextProducts;
+    navSearchResult.value = nextProducts[0];
   } catch (error) {
     console.error(error);
     navSearchMessage.value = "Serveri nuk po pergjigjet.";
@@ -846,7 +840,67 @@ async function fetchNavSearchResult() {
 
 function applySearchPrompt(prompt) {
   searchQuery.value = String(prompt || "").trim();
-  fetchNavSearchResult();
+  nextTick(() => {
+    searchInputElement.value?.focus();
+    searchInputElement.value?.select?.();
+  });
+}
+
+function loadRecentNavSearches() {
+  navSearchRecent.value = readRecentSearches();
+}
+
+function applyNavSearchTerm(term) {
+  searchQuery.value = String(term || "").trim();
+  nextTick(() => {
+    searchInputElement.value?.focus();
+    searchInputElement.value?.select?.();
+  });
+}
+
+function clearNavSearchHistory() {
+  navSearchRecent.value = clearRecentSearches();
+}
+
+function removeNavSearchHistoryEntry(term) {
+  navSearchRecent.value = removeRecentSearch(term);
+}
+
+async function openSearchResultsPage(queryValue = searchQuery.value) {
+  const normalizedQuery = String(queryValue || "").trim();
+  if (!normalizedQuery) {
+    return;
+  }
+
+  navSearchRecent.value = rememberRecentSearch(normalizedQuery);
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push({
+    path: "/kerko",
+    query: { q: normalizedQuery },
+  });
+}
+
+async function openNavSearchProduct(product) {
+  if (!product?.id) {
+    await openSearchResultsPage();
+    return;
+  }
+
+  navSearchRecent.value = rememberRecentSearch(searchQuery.value || product.title || product.productName);
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push(getProductDetailUrl(product.id, route.fullPath));
+}
+
+async function openNavSearchSuggestion(target) {
+  if (!target) {
+    return;
+  }
+
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push(target);
 }
 
 function openNavVisualSearchPicker() {
@@ -867,6 +921,7 @@ async function handleNavVisualSearchSelection(event) {
     const result = await searchProductsByImage(nextFile, { limit: 1 });
     if (result.ok && Array.isArray(result.products) && result.products.length) {
       navSearchResult.value = result.products[0];
+      navSearchProducts.value = result.products.slice(0, 1);
       navSearchMessage.value = "";
     } else {
       navSearchMessage.value = result.message || "Nuk u gjet asnje produkt i ngjashem.";
@@ -892,8 +947,8 @@ watch(
     isMobileSearchOnly.value = false;
     closeExpandedPanels();
     searchQuery.value = String(route.query.q || "").trim();
-    navSearchResult.value = null;
-    navSearchMessage.value = "";
+    resetNavSearchPreview();
+    loadRecentNavSearches();
     void loadUnreadMessagesCount();
     void loadUnreadNotificationsCount();
   },
@@ -910,9 +965,33 @@ watch(
 );
 
 watch(searchQuery, (nextValue) => {
-  if (!String(nextValue || "").trim()) {
-    resetNavSearchPreview();
+  if (navSearchTimeoutId) {
+    window.clearTimeout(navSearchTimeoutId);
+    navSearchTimeoutId = 0;
   }
+
+  const normalizedQuery = String(nextValue || "").trim();
+  if (!normalizedQuery) {
+    resetNavSearchPreview();
+    return;
+  }
+
+  if (!searchMenuOpen.value) {
+    return;
+  }
+
+  if (normalizedQuery.length < 2) {
+    navSearchProducts.value = [];
+    navSearchMessage.value = "Shkruaj se paku 2 shkronja.";
+    navSearchLoading.value = false;
+    return;
+  }
+
+  navSearchLoading.value = true;
+  navSearchMessage.value = "";
+  navSearchTimeoutId = window.setTimeout(() => {
+    void fetchNavSearchResult();
+  }, 220);
 });
 
 watch(mobileQuickSearchQuery, (nextValue) => {
@@ -945,6 +1024,7 @@ onMounted(async () => {
   updateViewportState();
   lastScrollY = window.scrollY || window.pageYOffset || 0;
   loadRecentMobileQuickSearches();
+  loadRecentNavSearches();
   window.addEventListener("resize", updateViewportState);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
   window.addEventListener("focus", handleWindowFocus);
@@ -972,6 +1052,10 @@ onBeforeUnmount(() => {
   if (mobileQuickSearchTimeoutId) {
     window.clearTimeout(mobileQuickSearchTimeoutId);
     mobileQuickSearchTimeoutId = 0;
+  }
+  if (navSearchTimeoutId) {
+    window.clearTimeout(navSearchTimeoutId);
+    navSearchTimeoutId = 0;
   }
   if (unreadMessagesPollIntervalId) {
     window.clearInterval(unreadMessagesPollIntervalId);
@@ -1316,42 +1400,112 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="nav-search-preview" v-if="navSearchLoading || navSearchResult || navSearchMessage">
-          <div class="nav-search-loading" v-if="navSearchLoading">
-            Po ngarkohet produkti...
-          </div>
+        <div class="nav-search-preview">
+          <template v-if="!searchQuery.trim()">
+            <div v-if="navSearchRecent.length > 0" class="nav-search-group">
+              <div class="nav-search-group-head">
+                <p class="nav-search-group-title">Kerkuar se fundi</p>
+                <button class="nav-search-clear" type="button" @click="clearNavSearchHistory">
+                  Pastro
+                </button>
+              </div>
+              <div class="nav-search-chip-row">
+                <div
+                  v-for="term in navSearchRecent"
+                  :key="term"
+                  class="nav-search-chip-wrap"
+                >
+                  <button class="nav-search-chip" type="button" @click="applyNavSearchTerm(term)">
+                    {{ term }}
+                  </button>
+                  <button
+                    class="nav-search-chip-remove"
+                    type="button"
+                    :aria-label="`Hiq ${term} nga historiku`"
+                    @click.stop="removeNavSearchHistoryEntry(term)"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
 
-          <div
-            v-else-if="navSearchResult"
-            class="nav-search-preview-card nav-search-mini-card"
-          >
-            <div class="nav-search-product-image">
-              <img
-                v-if="navSearchResultImage"
-                :src="navSearchResultImage"
-                alt="Produkt i rekomanduar"
-                loading="lazy"
+            <div class="nav-search-group">
+              <p class="nav-search-group-title">Kerkime te shpejta</p>
+              <div class="nav-search-chip-row">
+                <button
+                  v-for="prompt in AI_SEARCH_PROMPTS"
+                  :key="prompt"
+                  class="nav-search-chip"
+                  type="button"
+                  @click="applySearchPrompt(prompt)"
+                >
+                  {{ prompt }}
+                </button>
+              </div>
+            </div>
+
+            <div class="nav-search-group">
+              <p class="nav-search-group-title">Shfleto kategorite</p>
+              <div class="nav-search-chip-row">
+                <button
+                  v-for="item in navSearchBrowseSuggestions"
+                  :key="item.label"
+                  class="nav-search-chip"
+                  type="button"
+                  @click="openNavSearchSuggestion(item.to)"
+                >
+                  {{ item.label }}
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="nav-search-loading" v-if="navSearchLoading">
+              Po kerkohet ne katalog...
+            </div>
+
+            <div v-else-if="navSearchProducts.length > 0" class="nav-search-suggestion-list">
+              <button
+                v-for="product in navSearchProducts"
+                :key="product.id"
+                class="nav-search-suggestion-item"
+                type="button"
+                @click="openNavSearchProduct(product)"
               >
+                <span class="nav-search-suggestion-image">
+                  <img
+                    :src="product.imagePath || product.image_path || product.image || '/bujqesia.webp'"
+                    :alt="product.title || product.productName || 'Produkt'"
+                    loading="lazy"
+                  >
+                </span>
+                <span class="nav-search-suggestion-copy">
+                  <strong>{{ product.title || product.productName || "Produkt" }}</strong>
+                  <span>{{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}</span>
+                </span>
+                <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6"></path>
+                </svg>
+              </button>
             </div>
-            <div class="nav-search-product-info">
-              <p class="nav-search-preview-title">
-                {{ navSearchResult.title || navSearchResult.productName || "Produkti i kerkuar" }}
-              </p>
-              <p class="nav-search-preview-subtitle">
-                {{ navSearchResult.price ? formatPrice(navSearchResult.price) : "Çmimi i disponueshëm" }}
-              </p>
-              <p class="nav-search-preview-description">
-                {{ navSearchResult.description || navSearchResult.tagline || "" }}
-              </p>
-              <RouterLink class="nav-search-more" :to="navSearchResultLink">
-                Shiko me shum
-              </RouterLink>
-            </div>
-          </div>
 
-          <p v-else class="nav-search-no-results">
-            {{ navSearchMessage || "Nuk ka ne stok ky produkt." }}
-          </p>
+            <p v-else class="nav-search-no-results">
+              {{ navSearchMessage || "Nuk u gjet asnje produkt per kete kerkim." }}
+            </p>
+
+            <button
+              v-if="searchQuery.trim()"
+              class="nav-search-see-all"
+              type="button"
+              @click="openSearchResultsPage()"
+            >
+              Shih te gjitha rezultatet per “{{ searchQuery.trim() }}”
+            </button>
+          </template>
         </div>
 
         <input

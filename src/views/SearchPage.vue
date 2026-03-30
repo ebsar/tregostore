@@ -6,6 +6,7 @@ import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSenti
 import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
 import { deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
+import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
 import { formatCategoryLabel, getProductDetailUrl } from "../lib/shop";
 import { consumePendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
@@ -15,8 +16,14 @@ const router = useRouter();
 const SEARCH_INPUT_DEBOUNCE_MS = 320;
 const SMART_SEARCH_MARKERS = new Set(["dua", "doja", "kerkoj", "kerko", "trego", "shfaq", "gjej"]);
 const GROUPED_PAGE_SECTIONS = new Set(["clothing", "cosmetics"]);
+const SEARCH_PROMPT_SUGGESTIONS = [
+  "me trego maica te kuqe",
+  "dua atlete te bardha",
+  "kerkoj produkte per shtepi",
+];
 
 const draftQuery = ref("");
+const recentSearches = ref([]);
 const products = ref([]);
 const availableFilters = ref(createEmptyProductFacets());
 const wishlistIds = ref([]);
@@ -204,6 +211,7 @@ watch(draftQuery, (nextValue) => {
 });
 
 onMounted(async () => {
+  recentSearches.value = readRecentSearches();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
     if (nextPageSize === productsPageSize.value) {
       return;
@@ -495,7 +503,23 @@ async function loadMoreProducts() {
 function submitSearch() {
   window.clearTimeout(searchDebounceTimeoutId);
   clearVisualSearchState();
+  if (String(draftQuery.value || "").trim()) {
+    recentSearches.value = rememberRecentSearch(draftQuery.value);
+  }
   updateSearchRouteFromFilters(draftQuery.value);
+}
+
+function applyRecentSearch(term) {
+  draftQuery.value = String(term || "").trim();
+  submitSearch();
+}
+
+function clearSearchHistory() {
+  recentSearches.value = clearRecentSearches();
+}
+
+function removeRecentSearchEntry(term) {
+  recentSearches.value = removeRecentSearch(term);
 }
 
 function looksLikeNaturalLanguageSearch(value) {
@@ -789,6 +813,55 @@ async function handleCart(productId) {
       >
       <button class="search-submit-button" type="submit">Kerko</button>
     </form>
+
+    <section
+      v-if="!draftQuery.trim()"
+      class="search-assist-panel"
+      aria-label="Kerkimet e fundit dhe sugjerimet"
+    >
+      <div v-if="recentSearches.length > 0" class="search-assist-group">
+        <div class="search-assist-group-head">
+          <p class="search-assist-title">Kerkuar se fundi</p>
+          <button class="search-assist-clear" type="button" @click="clearSearchHistory">Pastro</button>
+        </div>
+        <div class="search-assist-chip-list">
+          <div
+            v-for="term in recentSearches"
+            :key="term"
+            class="search-assist-chip-wrap"
+          >
+            <button class="search-assist-chip" type="button" @click="applyRecentSearch(term)">
+              {{ term }}
+            </button>
+            <button
+              class="search-assist-chip-remove"
+              type="button"
+              :aria-label="`Hiq ${term} nga historiku`"
+              @click.stop="removeRecentSearchEntry(term)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-assist-group">
+        <p class="search-assist-title">Provoje keto kerkime</p>
+        <div class="search-assist-chip-list">
+          <button
+            v-for="prompt in SEARCH_PROMPT_SUGGESTIONS"
+            :key="prompt"
+            class="search-assist-chip"
+            type="button"
+            @click="applyRecentSearch(prompt)"
+          >
+            {{ prompt }}
+          </button>
+        </div>
+      </div>
+    </section>
 
     <div class="collection-toolbar">
       <div class="collection-toolbar-group">

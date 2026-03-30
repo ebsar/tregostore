@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
+import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { readRecentlyViewedProducts, rememberRecentlyViewedProduct } from "../lib/recently-viewed";
 import {
   formatCategoryLabel,
   formatDateLabel,
@@ -21,6 +23,7 @@ const cartIds = ref([]);
 const selectedColor = ref("");
 const selectedSize = ref("");
 const productReviews = ref([]);
+const recentlyViewedProducts = ref([]);
 const canSubmitReview = ref(false);
 const reviewBusy = ref(false);
 const reviewForm = reactive({
@@ -116,6 +119,11 @@ const imageGallery = computed(() => getProductImageGallery(currentProduct.value)
 const currentImagePath = computed(
   () => imageGallery.value[currentImageIndex.value] || currentProduct.value?.imagePath || "",
 );
+const relatedViewedProducts = computed(() =>
+  recentlyViewedProducts.value
+    .filter((product) => Number(product?.id || 0) !== Number(currentProduct.value?.id || 0))
+    .slice(0, 4),
+);
 const backTarget = computed(() => {
   const candidate = String(route.query.back || "").trim();
   if (candidate.startsWith("/")) {
@@ -133,6 +141,7 @@ watch(
 );
 
 onMounted(async () => {
+  recentlyViewedProducts.value = readRecentlyViewedProducts();
   await bootstrap();
 });
 
@@ -202,6 +211,7 @@ async function loadProduct() {
   }
 
   currentProduct.value = data.product;
+  recentlyViewedProducts.value = rememberRecentlyViewedProduct(currentProduct.value);
   currentImageIndex.value = 0;
   initializeVariantSelection();
   await loadProductReviews(productId);
@@ -613,6 +623,31 @@ function nextImage() {
         <div v-else class="product-review-empty-note">
           Ende nuk ka review per kete produkt.
         </div>
+      </section>
+
+      <section
+        v-if="relatedViewedProducts.length > 0"
+        class="card product-recently-viewed-card"
+        aria-label="Produktet e pare se fundi"
+      >
+        <header class="product-recently-viewed-header">
+          <div>
+            <p class="section-label">Pare se fundi</p>
+            <h2>Vazhdo aty ku e le</h2>
+          </div>
+          <RouterLink class="nav-action nav-action-secondary" to="/kerko">
+            Shih katalogun
+          </RouterLink>
+        </header>
+
+        <section class="pet-products-grid product-recently-viewed-grid">
+          <ProductCard
+            v-for="product in relatedViewedProducts"
+            :key="`recent-${product.id}`"
+            :product="product"
+            :show-overlay-actions="false"
+          />
+        </section>
       </section>
     </section>
 
