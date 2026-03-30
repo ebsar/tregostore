@@ -79,6 +79,7 @@ function createDefaultShippingForm() {
     pickupEta: String(pickupOption?.estimatedDeliveryText || "Gati per terheqje brenda 24 oresh"),
     pickupAddress: "",
     pickupHours: "Kontakto biznesin per orarin",
+    pickupMapUrl: "",
     cityRates: [],
     halfOffThreshold: "120",
     freeShippingThreshold: "180",
@@ -394,6 +395,7 @@ function hydrateShippingForm(settings, profile = null) {
   shippingForm.pickupEta = String(settings?.pickupEta ?? defaults.pickupEta);
   shippingForm.pickupAddress = String(settings?.pickupAddress || profile?.addressLine || defaults.pickupAddress);
   shippingForm.pickupHours = String(settings?.pickupHours ?? defaults.pickupHours);
+  shippingForm.pickupMapUrl = String(settings?.pickupMapUrl ?? defaults.pickupMapUrl);
   shippingForm.cityRates = Array.isArray(settings?.cityRates) && settings.cityRates.length > 0
     ? settings.cityRates.map((rate) => createEmptyCityRate(rate))
     : [createEmptyCityRate()];
@@ -470,6 +472,7 @@ async function saveShippingSettings() {
       pickupEta: shippingForm.pickupEta.trim(),
       pickupAddress: shippingForm.pickupAddress.trim(),
       pickupHours: shippingForm.pickupHours.trim(),
+      pickupMapUrl: shippingForm.pickupMapUrl.trim(),
       cityRates: shippingForm.cityRates.map((rate) => ({
         city: String(rate.city || "").trim(),
         surcharge: String(rate.surcharge ?? "").trim(),
@@ -1039,6 +1042,15 @@ async function handleToggleStock(product) {
                 :disabled="!shippingForm.pickupEnabled"
                 type="text"
                 placeholder="p.sh. Hene-Shtune, 09:00 - 18:00"
+              >
+            </label>
+            <label class="field">
+              <span>Pickup map location</span>
+              <input
+                v-model="shippingForm.pickupMapUrl"
+                :disabled="!shippingForm.pickupEnabled"
+                type="url"
+                placeholder="https://maps.google.com/..."
               >
             </label>
           </article>

@@ -5003,6 +5003,13 @@ body[data-page="cart"] .saved-product-copy h3 {
   line-height: 1.45;
 }
 
+.checkout-shipping-map-link {
+  color: #2f6f52;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .payment-options-page {
   width: min(100%, 920px);
 }

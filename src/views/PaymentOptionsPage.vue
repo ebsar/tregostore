@@ -386,6 +386,15 @@ async function confirmStripePayment(stripeSessionId) {
             <span v-if="entry.pickupAddress && entry.pickupHours"> · </span>
             <span v-if="entry.pickupHours">{{ entry.pickupHours }}</span>
           </small>
+          <a
+            v-if="entry.pickupMapUrl"
+            class="checkout-shipping-map-link"
+            :href="entry.pickupMapUrl"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Hap lokacionin ne maps
+          </a>
         </article>
       </div>
 

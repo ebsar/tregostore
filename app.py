@@ -290,6 +290,7 @@ DEFAULT_BUSINESS_SHIPPING_SETTINGS = {
     "pickupEta": str(DELIVERY_METHODS["pickup"]["estimated_delivery_text"]),
     "pickupAddress": "",
     "pickupHours": "Kontakto biznesin per orarin",
+    "pickupMapUrl": "",
     "cityRates": [],
     "halfOffThreshold": 120.0,
     "freeShippingThreshold": 180.0,
@@ -425,7 +426,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-30-marketplace-3"
+APP_SCHEMA_VERSION = "2026-03-30-marketplace-4"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -6025,6 +6026,7 @@ def normalize_business_shipping_settings(
         "pickupEta": coerce_text("pickupEta", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupEta"])),
         "pickupAddress": coerce_text("pickupAddress", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupAddress"]), 180),
         "pickupHours": coerce_text("pickupHours", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupHours"]), 120),
+        "pickupMapUrl": coerce_text("pickupMapUrl", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupMapUrl"]), 500),
         "cityRates": coerce_city_rates(parsed_settings.get("cityRates", DEFAULT_BUSINESS_SHIPPING_SETTINGS["cityRates"])),
         "halfOffThreshold": coerce_threshold("halfOffThreshold", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["halfOffThreshold"])),
         "freeShippingThreshold": coerce_threshold("freeShippingThreshold", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["freeShippingThreshold"])),
@@ -6075,6 +6077,11 @@ def validate_business_shipping_settings_payload(
             errors.append("Vendos adresen e terheqjes per pickup.")
         if len(str(normalized_settings["pickupHours"] or "").strip()) < 4:
             errors.append("Vendos orarin e terheqjes per pickup.")
+        pickup_map_url = str(normalized_settings["pickupMapUrl"] or "").strip()
+        if pickup_map_url:
+            parsed_pickup_url = urlparse(pickup_map_url)
+            if parsed_pickup_url.scheme not in {"http", "https"} or not parsed_pickup_url.netloc:
+                errors.append("Linku i maps per pickup duhet te jete URL valide me http ose https.")
 
     return errors, normalize_business_shipping_settings(normalized_settings)
 
@@ -6168,6 +6175,7 @@ def build_business_shipping_quote(
             "ruleMessage": "Terheqja ne biznes nuk ka kosto transporti dhe varet nga disponueshmeria e biznesit.",
             "pickupAddress": str(normalized_settings.get("pickupAddress") or "").strip(),
             "pickupHours": str(normalized_settings.get("pickupHours") or "").strip(),
+            "pickupMapUrl": str(normalized_settings.get("pickupMapUrl") or "").strip(),
         }
 
     city_zone = resolve_business_delivery_city_rule(destination_city, normalized_settings)
