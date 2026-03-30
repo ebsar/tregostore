@@ -366,6 +366,27 @@ function declineTrackingConsent() {
 </script>
 
 <template>
+  <svg class="nav-liquid-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="nav-liquid-refraction" x="-24%" y="-24%" width="148%" height="148%">
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.01 0.032"
+          numOctaves="1"
+          seed="7"
+          result="noise"
+        />
+        <feGaussianBlur in="noise" stdDeviation="0.4" result="softNoise" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="softNoise"
+          scale="22"
+          xChannelSelector="R"
+          yChannelSelector="G"
+        />
+      </filter>
+    </defs>
+  </svg>
   <LoaderOverlay v-if="appState.loaderVisible" />
   <LoginGreetingToast v-if="appState.loginGreeting" :message="appState.loginGreeting" />
   <div
