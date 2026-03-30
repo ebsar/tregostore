@@ -14,10 +14,12 @@ import {
 import {
   buildVariantInventoryFromForm,
   createEmptyProductFormState,
+  deriveAudienceFromCategory,
   deriveSectionFromCategory,
   hydrateProductFormFromProduct,
   PRODUCT_PAGE_SECTION_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
+  PRODUCT_TYPE_OPTIONS_BY_CATEGORY,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
 import {
@@ -47,7 +49,30 @@ const productFormSection = ref(null);
 const productTitleInput = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
+const importPreviewRows = ref([]);
+const importPreviewHeaders = ref([]);
+const importDetectedHeaders = ref([]);
+const importIsPreviewLoading = ref(false);
+const importMapping = reactive({
+  productName: "",
+  description: "",
+  price: "",
+  sku: "",
+  stock: "",
+  category: "",
+  imageUrl: "",
+  size: "",
+  color: "",
+});
 const showVerifiedProfileEditor = ref(false);
+const selectedProductIds = ref([]);
+const productCategoryFilter = ref("");
+const productStockFilter = ref("all");
+const productStatusFilter = ref("all");
+const productSort = ref("updated-desc");
+const productViewMode = ref("rows");
+const bulkCategoryValue = ref("");
+const bulkStockValue = ref("");
 const promotionForm = reactive({
   code: "",
   title: "",
@@ -123,6 +148,12 @@ const ui = reactive({
   shippingMessage: "",
   shippingType: "",
 });
+const importSummary = reactive({
+  totalRows: 0,
+  validRows: 0,
+  invalidRows: 0,
+  warnings: [],
+});
 
 const productPreviewItems = computed(() => {
   if (previewUrls.value.length > 0) {
@@ -139,10 +170,7 @@ const productPreviewItems = computed(() => {
 const businessLogoPreview = computed(() => logoPreviewUrl.value || profileForm.businessLogoPath || "");
 const filteredProducts = computed(() => {
   const normalizedQuery = String(productSearchQuery.value || "").trim().toLowerCase();
-  const nextProducts = [...products.value];
-  if (!normalizedQuery) {
-    return nextProducts;
-  }
+  let nextProducts = [...products.value];
 
   const scoreProductMatch = (product) => {
     const articleNumber = String(product.articleNumber || "").trim().toLowerCase();
@@ -175,14 +203,84 @@ const filteredProducts = computed(() => {
     return 99;
   };
 
-  return nextProducts
-    .map((product) => ({ product, score: scoreProductMatch(product) }))
-    .filter((entry) => entry.score < 99)
-    .sort((left, right) =>
-      left.score - right.score
-      || String(left.product.title || "").localeCompare(String(right.product.title || ""))
-    )
-    .map((entry) => entry.product);
+  if (normalizedQuery) {
+    nextProducts = nextProducts
+      .map((product) => ({ product, score: scoreProductMatch(product) }))
+      .filter((entry) => entry.score < 99)
+      .sort((left, right) =>
+        left.score - right.score
+        || String(left.product.title || "").localeCompare(String(right.product.title || ""))
+      )
+      .map((entry) => entry.product);
+  }
+
+  if (productCategoryFilter.value) {
+    nextProducts = nextProducts.filter((product) =>
+      String(product.category || "").trim().toLowerCase() === productCategoryFilter.value,
+    );
+  }
+
+  if (productStockFilter.value === "in-stock") {
+    nextProducts = nextProducts.filter((product) => Number(product.stockQuantity || 0) > 0);
+  } else if (productStockFilter.value === "low-stock") {
+    nextProducts = nextProducts.filter((product) => {
+      const stock = Number(product.stockQuantity || 0);
+      return stock > 0 && stock <= STOCK_ALERT_THRESHOLD;
+    });
+  } else if (productStockFilter.value === "out-of-stock") {
+    nextProducts = nextProducts.filter((product) => Number(product.stockQuantity || 0) <= 0);
+  }
+
+  if (productStatusFilter.value === "public") {
+    nextProducts = nextProducts.filter((product) => Boolean(product.isPublic));
+  } else if (productStatusFilter.value === "hidden") {
+    nextProducts = nextProducts.filter((product) => !product.isPublic);
+  }
+
+  nextProducts.sort((left, right) => {
+    const leftPrice = Number(left.price || 0);
+    const rightPrice = Number(right.price || 0);
+    const leftStock = Number(left.stockQuantity || 0);
+    const rightStock = Number(right.stockQuantity || 0);
+    const leftTitle = String(left.title || "");
+    const rightTitle = String(right.title || "");
+    const leftDate = Date.parse(String(left.createdAt || left.updatedAt || 0));
+    const rightDate = Date.parse(String(right.createdAt || right.updatedAt || 0));
+
+    if (productSort.value === "price-asc") {
+      return leftPrice - rightPrice || leftTitle.localeCompare(rightTitle);
+    }
+    if (productSort.value === "price-desc") {
+      return rightPrice - leftPrice || leftTitle.localeCompare(rightTitle);
+    }
+    if (productSort.value === "stock-asc") {
+      return leftStock - rightStock || leftTitle.localeCompare(rightTitle);
+    }
+    if (productSort.value === "stock-desc") {
+      return rightStock - leftStock || leftTitle.localeCompare(rightTitle);
+    }
+    if (productSort.value === "title-asc") {
+      return leftTitle.localeCompare(rightTitle);
+    }
+    if (productSort.value === "title-desc") {
+      return rightTitle.localeCompare(leftTitle);
+    }
+    return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
+  });
+
+  return nextProducts;
+});
+const selectedProducts = computed(() => {
+  const selectedIds = new Set(selectedProductIds.value);
+  return products.value.filter((product) => selectedIds.has(Number(product.id || 0)));
+});
+const hasSelectedProducts = computed(() => selectedProducts.value.length > 0);
+const productCategoryOptions = computed(() => {
+  const categories = new Map();
+  PRODUCT_SECTION_OPTIONS.forEach((option) => {
+    categories.set(String(option.value || "").trim().toLowerCase(), option.label);
+  });
+  return Array.from(categories.entries()).map(([value, label]) => ({ value, label }));
 });
 
 const lowStockProducts = computed(() =>
@@ -544,6 +642,8 @@ async function loadProducts() {
   }
 
   products.value = Array.isArray(data.products) ? data.products : [];
+  const nextIds = new Set(products.value.map((product) => Number(product.id || 0)));
+  selectedProductIds.value = selectedProductIds.value.filter((id) => nextIds.has(id));
   ui.listMessage = "";
   ui.listType = "";
 }
@@ -614,6 +714,22 @@ async function handleRouteView() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+async function openAddProductForm() {
+  if (!canManageCatalog.value) {
+    return;
+  }
+
+  resetProductForm();
+  await nextTick();
+
+  if (productFormSection.value) {
+    productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      productTitleInput.value?.focus?.();
+    }, 220);
+  }
+}
+
 function beginProductEdit(product) {
   editingProduct.value = product;
   hydrateProductFormFromProduct(productForm, {
@@ -639,6 +755,120 @@ function handleImportFileChange(event) {
     ? `U zgjodh skedari ${importFile.value.name}.`
     : "";
   ui.importType = importFile.value ? "success" : "";
+  importPreviewRows.value = [];
+  importPreviewHeaders.value = [];
+  importDetectedHeaders.value = [];
+  importSummary.totalRows = 0;
+  importSummary.validRows = 0;
+  importSummary.invalidRows = 0;
+  importSummary.warnings = [];
+  if (!importFile.value) {
+    return;
+  }
+  void prepareImportPreview(importFile.value);
+}
+
+function normalizeHeaderKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function autoMapImportColumns(headers = []) {
+  const normalized = headers.map((header) => ({
+    original: header,
+    key: normalizeHeaderKey(header),
+  }));
+  const pick = (...patterns) => {
+    const match = normalized.find((header) => patterns.some((pattern) => header.key.includes(pattern)));
+    return match?.original || "";
+  };
+  importMapping.productName = pick("title", "name", "productname", "emri");
+  importMapping.description = pick("description", "pershkrim", "desc");
+  importMapping.price = pick("price", "cmim");
+  importMapping.sku = pick("articlenumber", "sku", "productcode", "kod");
+  importMapping.stock = pick("stock", "quantity", "sasia");
+  importMapping.category = pick("category", "kategori");
+  importMapping.imageUrl = pick("imagegallery", "imagepath", "imageurl", "foto");
+  importMapping.size = pick("size", "madhesia");
+  importMapping.color = pick("color", "ngjyra");
+}
+
+function parseCsvLine(line = "") {
+  const result = [];
+  let value = "";
+  let quoteOpen = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      const escaped = quoteOpen && line[index + 1] === '"';
+      if (escaped) {
+        value += '"';
+        index += 1;
+      } else {
+        quoteOpen = !quoteOpen;
+      }
+      continue;
+    }
+    if (character === "," && !quoteOpen) {
+      result.push(value.trim());
+      value = "";
+      continue;
+    }
+    value += character;
+  }
+  result.push(value.trim());
+  return result;
+}
+
+async function prepareImportPreview(file) {
+  const fileName = String(file?.name || "").trim().toLowerCase();
+  const isCsvFile = fileName.endsWith(".csv") || String(file?.type || "").includes("csv");
+  if (!isCsvFile) {
+    importSummary.warnings = ["Preview automatik dhe column mapping jane aktive per CSV. Per XLSX mund ta importosh direkt."];
+    return;
+  }
+
+  importIsPreviewLoading.value = true;
+  try {
+    const content = await file.text();
+    const rows = String(content || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (rows.length === 0) {
+      importSummary.warnings = ["Skedari CSV duket bosh."];
+      return;
+    }
+
+    const headers = parseCsvLine(rows[0]);
+    importDetectedHeaders.value = headers;
+    importPreviewHeaders.value = headers.slice(0, 9);
+    autoMapImportColumns(headers);
+    const dataRows = rows.slice(1).map((line) => parseCsvLine(line));
+    importPreviewRows.value = dataRows.slice(0, 6).map((row) => {
+      const mapped = {};
+      importPreviewHeaders.value.forEach((header, index) => {
+        mapped[header] = String(row[index] || "").trim();
+      });
+      return mapped;
+    });
+    importSummary.totalRows = dataRows.length;
+    importSummary.validRows = dataRows.filter((row) =>
+      String(row[headers.indexOf(importMapping.productName)] || "").trim()
+      && String(row[headers.indexOf(importMapping.price)] || "").trim(),
+    ).length;
+    importSummary.invalidRows = Math.max(0, importSummary.totalRows - importSummary.validRows);
+    importSummary.warnings = importSummary.invalidRows > 0
+      ? ["Disa rreshta duken pa emer produkti ose pa cmim. Backend-i do i ktheje si gabime ne import."]
+      : [];
+  } catch (error) {
+    console.error(error);
+    importSummary.warnings = ["Preview nuk u lexua. Mund ta importosh direkt dhe sistemi do ta validoje."];
+  } finally {
+    importIsPreviewLoading.value = false;
+  }
 }
 
 async function downloadImportTemplate() {
@@ -668,12 +898,41 @@ async function submitImportProducts() {
     return;
   }
 
+  importSummary.totalRows = Math.max(importSummary.totalRows, Number(result.count || 0));
+  importSummary.validRows = Number(result.count || 0);
+  importSummary.invalidRows = Math.max(0, importSummary.totalRows - importSummary.validRows);
   importFile.value = null;
   if (importFileInput.value) {
     importFileInput.value.value = "";
   }
+  importPreviewRows.value = [];
+  importPreviewHeaders.value = [];
+  importDetectedHeaders.value = [];
   await loadProducts();
   await loadBusinessAnalytics();
+}
+
+function clearImportSelection() {
+  importFile.value = null;
+  importPreviewRows.value = [];
+  importPreviewHeaders.value = [];
+  importDetectedHeaders.value = [];
+  importSummary.totalRows = 0;
+  importSummary.validRows = 0;
+  importSummary.invalidRows = 0;
+  importSummary.warnings = [];
+  Object.keys(importMapping).forEach((key) => {
+    importMapping[key] = "";
+  });
+  if (importFileInput.value) {
+    importFileInput.value.value = "";
+  }
+  ui.importMessage = "";
+  ui.importType = "";
+}
+
+function triggerImportPicker() {
+  importFileInput.value?.click?.();
 }
 
 async function suggestProductWithAi() {
@@ -901,6 +1160,166 @@ async function handleToggleStock(product) {
   if (ok) {
     await loadProducts();
   }
+}
+
+function toggleProductSelection(productId) {
+  const normalizedId = Number(productId || 0);
+  if (!normalizedId) {
+    return;
+  }
+  if (selectedProductIds.value.includes(normalizedId)) {
+    selectedProductIds.value = selectedProductIds.value.filter((id) => id !== normalizedId);
+    return;
+  }
+  selectedProductIds.value = [...selectedProductIds.value, normalizedId];
+}
+
+function toggleSelectAllVisibleProducts() {
+  const visibleIds = filteredProducts.value.map((product) => Number(product.id || 0)).filter(Boolean);
+  const selectedIds = new Set(selectedProductIds.value);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  if (allSelected) {
+    selectedProductIds.value = selectedProductIds.value.filter((id) => !visibleIds.includes(id));
+    return;
+  }
+  selectedProductIds.value = Array.from(new Set([...selectedProductIds.value, ...visibleIds]));
+}
+
+function clearSelectedProducts() {
+  selectedProductIds.value = [];
+}
+
+function buildProductUpdatePayload(product, overrides = {}) {
+  const categoryValue = String(overrides.category ?? product.category ?? "").trim().toLowerCase();
+  const pageSection = deriveSectionFromCategory(categoryValue);
+  const audience = deriveAudienceFromCategory(categoryValue);
+  const productTypeOptions = PRODUCT_TYPE_OPTIONS_BY_CATEGORY[categoryValue] || [];
+  const fallbackProductType = productTypeOptions[0]?.value || "";
+  const nextProductType = String(overrides.productType ?? product.productType ?? fallbackProductType).trim().toLowerCase()
+    || fallbackProductType;
+
+  return {
+    productId: Number(product.id || 0),
+    articleNumber: String(product.articleNumber || "").trim(),
+    title: String(product.title || "").trim(),
+    price: Number(product.price || 0),
+    description: String(product.description || "").trim(),
+    pageSection,
+    audience,
+    category: categoryValue,
+    productType: nextProductType,
+    stockQuantity: Number(overrides.stockQuantity ?? product.stockQuantity ?? 0),
+    packageAmountValue: Number(product.packageAmountValue || 0),
+    packageAmountUnit: String(product.packageAmountUnit || "").trim().toLowerCase(),
+    variantInventory: Array.isArray(product.variantInventory) ? product.variantInventory : [],
+    imageGallery: getProductImageGallery(product),
+    imagePath: getProductImageGallery(product)[0] || String(product.imagePath || "").trim(),
+  };
+}
+
+async function applyBulkDelete() {
+  if (!hasSelectedProducts.value) {
+    return;
+  }
+  if (!window.confirm(`A do t'i fshish ${selectedProducts.value.length} produkte?`)) {
+    return;
+  }
+  let successCount = 0;
+  for (const product of selectedProducts.value) {
+    const ok = await submitProductAction(
+      "/api/products/delete",
+      { productId: product.id },
+      "Bulk delete deshtoi per disa produkte.",
+    );
+    if (ok) {
+      successCount += 1;
+    }
+  }
+  ui.listMessage = successCount > 0
+    ? `${successCount} produkte u fshine me sukses.`
+    : "Asnje produkt nuk u fshi.";
+  ui.listType = successCount > 0 ? "success" : "error";
+  clearSelectedProducts();
+  await loadProducts();
+}
+
+async function applyBulkVisibility(isPublic) {
+  if (!hasSelectedProducts.value) {
+    return;
+  }
+  let successCount = 0;
+  for (const product of selectedProducts.value) {
+    const ok = await submitProductAction(
+      "/api/products/public-visibility",
+      { productId: product.id, isPublic },
+      "Bulk update i dukshmerise deshtoi.",
+    );
+    if (ok) {
+      successCount += 1;
+    }
+  }
+  ui.listMessage = successCount > 0
+    ? `${successCount} produkte u perditesuan.`
+    : "Nuk pati ndryshime ne dukshmeri.";
+  ui.listType = successCount > 0 ? "success" : "error";
+  clearSelectedProducts();
+  await loadProducts();
+}
+
+async function applyBulkCategory() {
+  const nextCategory = String(bulkCategoryValue.value || "").trim().toLowerCase();
+  if (!nextCategory || !hasSelectedProducts.value) {
+    return;
+  }
+  let successCount = 0;
+  for (const product of selectedProducts.value) {
+    const payload = buildProductUpdatePayload(product, { category: nextCategory });
+    const { response, data } = await requestJson("/api/products/update", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (response.ok && data?.ok) {
+      successCount += 1;
+    }
+  }
+  ui.listMessage = successCount > 0
+    ? `${successCount} produkte u kaluan ne kategorine e re.`
+    : "Nuk u perditesua asnje kategori.";
+  ui.listType = successCount > 0 ? "success" : "error";
+  bulkCategoryValue.value = "";
+  clearSelectedProducts();
+  await loadProducts();
+}
+
+async function applyBulkStockUpdate() {
+  if (!hasSelectedProducts.value) {
+    return;
+  }
+  const nextStock = Math.max(0, Math.trunc(Number(bulkStockValue.value || 0)));
+  let successCount = 0;
+  let skippedVariants = 0;
+  for (const product of selectedProducts.value) {
+    const hasMultipleVariants = Array.isArray(product.variantInventory) && product.variantInventory.length > 1;
+    if (hasMultipleVariants) {
+      skippedVariants += 1;
+      continue;
+    }
+    const payload = buildProductUpdatePayload(product, { stockQuantity: nextStock });
+    const { response, data } = await requestJson("/api/products/update", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (response.ok && data?.ok) {
+      successCount += 1;
+    }
+  }
+  ui.listMessage = successCount > 0
+    ? `${successCount} produkte u perditesuan me stokun ${nextStock}.${skippedVariants > 0 ? ` ${skippedVariants} produkte me variante u anashkaluan.` : ""}`
+    : "Nuk u perditesua asnje stok.";
+  ui.listType = successCount > 0 ? "success" : "error";
+  bulkStockValue.value = "";
+  clearSelectedProducts();
+  await loadProducts();
 }
 
 </script>
@@ -1382,42 +1801,151 @@ async function handleToggleStock(product) {
       </p>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card" aria-label="Importo artikuj nga Excel">
+    <section v-if="canManageCatalog" class="card admin-list-card bulk-import-surface" aria-label="Importo artikuj nga Excel">
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Import ne Excel</p>
-          <h2>Ngarko liste artikujsh</h2>
+          <p class="section-label">Bulk import</p>
+          <h2>Import Products</h2>
+          <p class="admin-compact-copy">Ngarko CSV / Excel dhe shto produkte ne katalog me nje proces te qarte.</p>
         </div>
       </div>
 
-      <p class="section-text">
-        Shkarko template-n XLSX, hape ne Excel, ploteso artikujt dhe pastaj ngarkoje prape ketu.
-        Kolonat e kerkuara jane te perfshira ne template, perfshire kategorine, llojin, ngjyren,
-        stokun, numrin e artikullit dhe fotot. Per fotot perdor path-et ekzistuese si <code>/uploads/...</code>.
-      </p>
+      <div class="bulk-import-grid">
+        <article class="bulk-import-upload glass-strong">
+          <h3>Upload file</h3>
+          <p class="section-text">Formatet e lejuara: CSV, XLSX. Ne CSV mund te shohesh preview dhe mapping para importit.</p>
+          <label class="bulk-import-dropzone">
+            <input
+              ref="importFileInput"
+              type="file"
+              accept=".xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              @change="handleImportFileChange"
+            >
+            <strong>{{ importFile ? importFile.name : "Zvarrit skedarin ketu ose kliko per upload" }}</strong>
+            <span>{{ importFile ? "Skedari eshte gati per import." : "CSV / Excel per artikujt e biznesit" }}</span>
+          </label>
+          <div class="auth-form-actions">
+            <button type="button" @click="downloadImportTemplate">Download Template</button>
+          </div>
+        </article>
 
-      <div class="auth-form-actions">
-        <button type="button" @click="downloadImportTemplate">Shkarko template XLSX per Excel</button>
+        <article class="bulk-import-instructions glass-soft">
+          <h3>Kolonat e rekomanduara</h3>
+          <p class="section-text">Sigurohu qe skedari te kete te pakten emrin e produktit dhe cmimin.</p>
+          <div class="product-detail-tags product-detail-tags-admin">
+            <span class="product-detail-tag">Product Name</span>
+            <span class="product-detail-tag">Description</span>
+            <span class="product-detail-tag">Price</span>
+            <span class="product-detail-tag">SKU</span>
+            <span class="product-detail-tag">Stock</span>
+            <span class="product-detail-tag">Category</span>
+            <span class="product-detail-tag">Image URL</span>
+            <span class="product-detail-tag">Size</span>
+            <span class="product-detail-tag">Color</span>
+          </div>
+        </article>
+      </div>
+
+      <article v-if="importDetectedHeaders.length > 0" class="bulk-import-mapping glass-strong">
+        <div class="bulk-import-section-head">
+          <h3>Column mapping</h3>
+          <p class="section-text">Përshtat kolonat e skedarit me fushat e produktit.</p>
+        </div>
+        <div class="bulk-import-mapping-grid">
+          <label class="field">
+            <span>Product Name</span>
+            <select v-model="importMapping.productName">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-name-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Description</span>
+            <select v-model="importMapping.description">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-desc-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Price</span>
+            <select v-model="importMapping.price">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-price-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>SKU</span>
+            <select v-model="importMapping.sku">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-sku-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Stock</span>
+            <select v-model="importMapping.stock">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-stock-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Category</span>
+            <select v-model="importMapping.category">
+              <option value="">Zgjidh kolonen</option>
+              <option v-for="header in importDetectedHeaders" :key="`map-category-${header}`" :value="header">{{ header }}</option>
+            </select>
+          </label>
+        </div>
+      </article>
+
+      <article class="bulk-import-summary">
+        <div class="summary-chip glass-soft">
+          <span>Total rows</span>
+          <strong>{{ importSummary.totalRows }}</strong>
+        </div>
+        <div class="summary-chip glass-soft">
+          <span>Valid rows</span>
+          <strong>{{ importSummary.validRows }}</strong>
+        </div>
+        <div class="summary-chip glass-soft">
+          <span>Invalid rows</span>
+          <strong>{{ importSummary.invalidRows }}</strong>
+        </div>
+      </article>
+
+      <article class="bulk-import-preview glass-soft">
+        <div class="bulk-import-section-head">
+          <h3>Preview</h3>
+          <p class="section-text">Shfaqen rreshtat e pare per kontroll para importit.</p>
+        </div>
+        <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke lexuar skedarin...</div>
+        <div v-else-if="importPreviewRows.length === 0" class="admin-empty-state">
+          Nuk ka preview. Ngarko nje skedar CSV per te pare rreshtat para importit.
+        </div>
+        <div v-else class="bulk-import-table-wrap">
+          <table class="bulk-import-table">
+            <thead>
+              <tr>
+                <th v-for="header in importPreviewHeaders" :key="`head-${header}`">{{ header }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, rowIndex) in importPreviewRows" :key="`row-${rowIndex}`">
+                <td v-for="header in importPreviewHeaders" :key="`cell-${rowIndex}-${header}`">{{ row[header] || "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <div v-if="importSummary.warnings.length > 0" class="form-message error" role="status" aria-live="polite">
+        {{ importSummary.warnings.join(" ") }}
       </div>
 
       <form class="auth-form" @submit.prevent="submitImportProducts">
-        <label class="field">
-          <span>Skedari CSV i artikujve</span>
-          <input
-            ref="importFileInput"
-            type="file"
-            accept=".xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            @change="handleImportFileChange"
-          >
-        </label>
-
-        <p class="product-upload-help">
-          XLSX ose CSV hapen direkt ne Excel. Kolona <code>imageGallery</code> pranon disa foto te ndara me <code>;</code>,
-          ndersa <code>articleNumber</code> ruan numrin unik te artikullit.
-        </p>
-
         <div class="auth-form-actions">
-          <button type="submit">Importo artikujt</button>
+          <button type="submit">Import Products</button>
+          <button class="button-secondary" type="button" @click="clearImportSelection">Cancel</button>
+          <button class="button-secondary" type="button" @click="downloadImportTemplate">Download Template</button>
         </div>
       </form>
 
@@ -1578,49 +2106,182 @@ async function handleToggleStock(product) {
       </div>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card">
+    <section v-if="canManageCatalog" class="card admin-list-card products-management-surface">
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Artikujt e biznesit tend</p>
-          <h2>Lista e artikujve</h2>
+          <p class="section-label">Products</p>
+          <h2>Products Management</h2>
           <p class="admin-compact-copy">{{ filteredProducts.length }} / {{ products.length }} artikuj</p>
+        </div>
+        <div class="auth-form-actions">
+          <button type="button" @click="openAddProductForm">Add Product</button>
+          <button class="button-secondary" type="button" @click="triggerImportPicker">Import Products</button>
         </div>
       </div>
 
-      <label class="admin-compact-search" aria-label="Kerko produktin e biznesit">
-        <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7"></circle>
-          <path d="m20 20-3.5-3.5"></path>
-        </svg>
-        <input
-          v-model="productSearchQuery"
-          type="search"
-          placeholder="Kerko produkt me numer, emer, kategori..."
-        >
-      </label>
+      <div class="products-controls glass-strong">
+        <label class="admin-compact-search" aria-label="Kerko produktin e biznesit">
+          <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-3.5-3.5"></path>
+          </svg>
+          <input
+            v-model="productSearchQuery"
+            type="search"
+            placeholder="Kerko produkt me numer, emer, kategori..."
+          >
+        </label>
+        <label class="field">
+          <span>Kategoria</span>
+          <select v-model="productCategoryFilter">
+            <option value="">Te gjitha</option>
+            <option v-for="option in productCategoryOptions" :key="`filter-category-${option.value}`" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Stoku</span>
+          <select v-model="productStockFilter">
+            <option value="all">Te gjitha</option>
+            <option value="in-stock">Ne stok</option>
+            <option value="low-stock">Stok i ulet</option>
+            <option value="out-of-stock">Pa stok</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Statusi</span>
+          <select v-model="productStatusFilter">
+            <option value="all">Te gjitha</option>
+            <option value="public">Publik</option>
+            <option value="hidden">I fshehur</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Sort</span>
+          <select v-model="productSort">
+            <option value="updated-desc">Me te rejat</option>
+            <option value="title-asc">Titulli A-Z</option>
+            <option value="title-desc">Titulli Z-A</option>
+            <option value="price-asc">Cmimi ne rritje</option>
+            <option value="price-desc">Cmimi ne ulje</option>
+            <option value="stock-asc">Stoku ne rritje</option>
+            <option value="stock-desc">Stoku ne ulje</option>
+          </select>
+        </label>
+        <div class="products-view-toggle">
+          <button type="button" :class="{ active: productViewMode === 'rows' }" @click="productViewMode = 'rows'">Rows</button>
+          <button type="button" :class="{ active: productViewMode === 'cards' }" @click="productViewMode = 'cards'">Cards</button>
+        </div>
+      </div>
+
+      <div v-if="hasSelectedProducts" class="products-bulk-actions glass-medium">
+        <p>{{ selectedProducts.length }} produkte te zgjedhura</p>
+        <div class="products-bulk-actions-grid">
+          <button class="button-secondary" type="button" @click="applyBulkVisibility(true)">Bulk activate</button>
+          <button class="button-secondary" type="button" @click="applyBulkVisibility(false)">Bulk deactivate</button>
+          <label class="field">
+            <span>Bulk category</span>
+            <select v-model="bulkCategoryValue">
+              <option value="">Zgjidh kategorine</option>
+              <option v-for="option in productCategoryOptions" :key="`bulk-category-${option.value}`" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <button class="button-secondary" type="button" :disabled="!bulkCategoryValue" @click="applyBulkCategory">Bulk change category</button>
+          <label class="field">
+            <span>Bulk stock</span>
+            <input v-model="bulkStockValue" type="number" min="0" step="1" placeholder="0">
+          </label>
+          <button class="button-secondary" type="button" :disabled="bulkStockValue === ''" @click="applyBulkStockUpdate">Bulk stock update</button>
+          <button class="button-danger" type="button" @click="applyBulkDelete">Bulk delete</button>
+          <button class="button-secondary" type="button" @click="clearSelectedProducts">Clear</button>
+        </div>
+      </div>
 
       <div class="form-message" :class="ui.listType" role="status" aria-live="polite">
         {{ ui.listMessage }}
       </div>
 
-      <div class="admin-products-list admin-products-list-scroll">
+      <div class="admin-products-list admin-products-list-scroll" :class="{ 'is-row-view': productViewMode === 'rows' }">
         <div v-if="products.length === 0" class="admin-empty-state">
-          Ende nuk ke artikuj te publikuar nga ky biznes.
+          Ende nuk ke artikuj. Shto nje produkt ose importo nje skedar.
         </div>
 
         <div v-else-if="filteredProducts.length === 0" class="admin-empty-state">
           Nuk u gjet asnje produkt per kete kerkim.
         </div>
 
-        <ManagedProductCard
-          v-for="product in filteredProducts"
-          :key="product.id"
-          :product="product"
-          @edit="beginProductEdit"
-          @delete="handleDeleteProduct"
-          @toggle-visibility="handleToggleVisibility"
-          @toggle-stock-public="handleToggleStock"
-        />
+        <template v-else>
+          <article v-if="productViewMode === 'rows'" class="products-table-shell">
+            <table class="products-table">
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      :checked="filteredProducts.length > 0 && filteredProducts.every((item) => selectedProductIds.includes(item.id))"
+                      @change="toggleSelectAllVisibleProducts"
+                    >
+                  </th>
+                  <th>Produkti</th>
+                  <th>Cmimi</th>
+                  <th>Stoku</th>
+                  <th>Kategoria</th>
+                  <th>Statusi</th>
+                  <th>Aksione</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="product in filteredProducts" :key="`row-${product.id}`">
+                  <td>
+                    <input
+                      type="checkbox"
+                      :checked="selectedProductIds.includes(product.id)"
+                      @change="toggleProductSelection(product.id)"
+                    >
+                  </td>
+                  <td class="products-table-product">
+                    <img :src="product.imagePath" :alt="product.title" loading="lazy" decoding="async">
+                    <div>
+                      <strong>{{ product.title }}</strong>
+                      <p>{{ product.description }}</p>
+                    </div>
+                  </td>
+                  <td><strong>{{ formatPrice(product.price) }}</strong></td>
+                  <td>{{ formatStockQuantity(product.stockQuantity) }}</td>
+                  <td>{{ formatCategoryLabel(product.category) }}</td>
+                  <td>
+                    <span class="summary-chip">
+                      <strong>{{ product.isPublic ? "Publik" : "I fshehur" }}</strong>
+                    </span>
+                  </td>
+                  <td>
+                    <div class="products-row-actions">
+                      <button class="button-secondary" type="button" @click="beginProductEdit(product)">Edito</button>
+                      <button class="button-secondary" type="button" @click="handleToggleVisibility(product)">
+                        {{ product.isPublic ? "Fsheh" : "Publiko" }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+
+          <template v-else>
+            <ManagedProductCard
+              v-for="product in filteredProducts"
+              :key="product.id"
+              :product="product"
+              @edit="beginProductEdit"
+              @delete="handleDeleteProduct"
+              @toggle-visibility="handleToggleVisibility"
+              @toggle-stock-public="handleToggleStock"
+            />
+          </template>
+        </template>
       </div>
     </section>
   </section>

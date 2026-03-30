@@ -1,5 +1,6 @@
-const RECENTLY_VIEWED_PRODUCTS_KEY = "trego-recently-viewed-products";
-const MAX_RECENTLY_VIEWED_PRODUCTS = 6;
+const RECENTLY_VIEWED_PRODUCTS_KEY = "recently_viewed_products";
+const LEGACY_RECENTLY_VIEWED_PRODUCTS_KEY = "trego-recently-viewed-products";
+const MAX_RECENTLY_VIEWED_PRODUCTS = 10;
 
 function sanitizeProductSnapshot(product) {
   const productId = Number(product?.id || 0);
@@ -28,7 +29,10 @@ export function readRecentlyViewedProducts() {
   }
 
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(RECENTLY_VIEWED_PRODUCTS_KEY) || "[]");
+    const rawValue = window.localStorage.getItem(RECENTLY_VIEWED_PRODUCTS_KEY)
+      || window.localStorage.getItem(LEGACY_RECENTLY_VIEWED_PRODUCTS_KEY)
+      || "[]";
+    const parsed = JSON.parse(rawValue);
     if (!Array.isArray(parsed)) {
       return [];
     }
@@ -65,4 +69,17 @@ export function rememberRecentlyViewedProduct(product) {
   }
 
   return nextProducts;
+}
+
+export function clearRecentlyViewedProducts() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(RECENTLY_VIEWED_PRODUCTS_KEY);
+    window.localStorage.removeItem(LEGACY_RECENTLY_VIEWED_PRODUCTS_KEY);
+  } catch (error) {
+    console.error(error);
+  }
 }

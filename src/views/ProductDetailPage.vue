@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { readRecentlyViewedProducts, rememberRecentlyViewedProduct } from "../lib/recently-viewed";
+import { trackAddToCart, trackProductView } from "../lib/tracking";
 import {
   formatCategoryLabel,
   formatDateLabel,
@@ -341,6 +342,7 @@ async function loadProduct() {
 
   currentProduct.value = data.product;
   recentlyViewedProducts.value = rememberRecentlyViewedProduct(currentProduct.value);
+  trackProductView(currentProduct.value);
   currentImageIndex.value = 0;
   selectedQuantity.value = 1;
   initializeVariantSelection();
@@ -549,6 +551,7 @@ async function addCurrentProductToCart(options = {}) {
   const items = Array.isArray(data.items) ? data.items : [];
   cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
+  trackAddToCart(currentProduct.value, { quantity: selectedQuantity.value });
   ui.message = data.message || "Produkti u shtua ne shporte.";
   ui.type = "success";
   if (options.goToCart) {
