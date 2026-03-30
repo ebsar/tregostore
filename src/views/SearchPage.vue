@@ -7,6 +7,7 @@ import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProduct
 import { deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
+import { trackSearchResults } from "../lib/tracking";
 import {
   formatCategoryLabel,
   getProductDetailUrl,
@@ -494,6 +495,11 @@ async function loadProducts(options = {}) {
   }
   if (!append) {
     applyServerActiveFilters(data.activeFilters);
+    trackSearchResults({
+      query: buildTrackingSearchTerm(),
+      products: visibleProducts,
+      total: Number(data.total || visibleProducts.length || 0),
+    });
   }
   ui.message = "";
   ui.type = "";
@@ -550,6 +556,22 @@ function looksLikeNaturalLanguageSearch(value) {
   }
 
   return tokens.some((token) => SMART_SEARCH_MARKERS.has(token)) && tokens.length >= 2;
+}
+
+function buildTrackingSearchTerm() {
+  if (activeQuery.value) {
+    return activeQuery.value;
+  }
+
+  const scopeParts = [filters.pageSection, filters.category, filters.productType, filters.size, filters.color]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  if (visualSearchActive.value) {
+    return scopeParts.length > 0 ? `image:${scopeParts.join(" ")}` : "image-search";
+  }
+
+  return scopeParts.join(" ");
 }
 
 function openVisualSearchPicker() {
@@ -634,6 +656,11 @@ async function runVisualSearch(options = {}) {
   }
   if (!append) {
     applyServerActiveFilters(result.activeFilters);
+    trackSearchResults({
+      query: buildTrackingSearchTerm() || `image:${visualSearchFileName.value || "search"}`,
+      products: nextProducts,
+      total: Number(result.total || nextProducts.length || 0),
+    });
   }
   ui.message = result.message || "U gjeten produkte te ngjashme sipas fotos.";
   ui.type = "success";

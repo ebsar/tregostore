@@ -82,11 +82,14 @@ export async function requestJson(url, options = {}, runtime = {}) {
         console.error(error);
       }
     } catch (error) {
-      console.error(error);
+      const isAbortError = error?.name === "AbortError";
+      if (!isAbortError) {
+        console.error(error);
+      }
       data = {
         ok: false,
         message:
-          error?.name === "AbortError"
+          isAbortError
             ? "Serveri po vonon shume. Provoje perseri pas pak."
             : "Lidhja me serverin deshtoi.",
       };

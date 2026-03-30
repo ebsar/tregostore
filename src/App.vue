@@ -8,6 +8,7 @@ import ProductCompareTray from "./components/ProductCompareTray.vue";
 import SiteNav from "./components/SiteNav.vue";
 import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
+import { getTrackingConsentState, setTrackingConsent } from "./lib/tracking";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
 const route = useRoute();
@@ -25,6 +26,7 @@ const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILI
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
 const safeArea = useScreenSafeArea();
 let sessionWarmupTimeoutId = 0;
+const showTrackingConsentBanner = ref(false);
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -110,6 +112,7 @@ onMounted(() => {
   initializeSpeedInsights();
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startFormMessageObserver();
+  initializeTrackingConsent();
 });
 
 onBeforeUnmount(() => {
@@ -329,6 +332,27 @@ function initializeSpeedInsights() {
 function updateSpeedInsightsRoute() {
   speedInsightsHandle?.setRoute?.(computeRoute(route.path, route.params));
 }
+
+function initializeTrackingConsent() {
+  const consentState = getTrackingConsentState();
+  showTrackingConsentBanner.value = consentState === "unset";
+}
+
+function acceptTrackingConsent() {
+  setTrackingConsent(true);
+  showTrackingConsentBanner.value = false;
+  window.dispatchEvent(new CustomEvent("trego:toast", {
+    detail: { message: "Faleminderit. Tracking per personalizim u aktivizua.", type: "success" },
+  }));
+}
+
+function declineTrackingConsent() {
+  setTrackingConsent(false);
+  showTrackingConsentBanner.value = false;
+  window.dispatchEvent(new CustomEvent("trego:toast", {
+    detail: { message: "Tracking per personalizim u refuzua. Mund ta ndryshosh me vone.", type: "info" },
+  }));
+}
 </script>
 
 <template>
@@ -361,6 +385,25 @@ function updateSpeedInsightsRoute() {
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
+
+  <section
+    v-if="showTrackingConsentBanner"
+    class="tracking-consent-banner"
+    role="dialog"
+    aria-live="polite"
+    aria-label="Njoftim per cookies dhe tracking"
+  >
+    <div class="tracking-consent-copy">
+      <strong>Privatesia dhe personalizimi</strong>
+      <p>
+        Perdorin cookies/localStorage per recently viewed dhe reklama me relevante (Meta/Google) vetem nese e pranon.
+      </p>
+    </div>
+    <div class="tracking-consent-actions">
+      <button type="button" class="button-secondary" @click="declineTrackingConsent">Refuzoj</button>
+      <button type="button" @click="acceptTrackingConsent">Pranoj</button>
+    </div>
+  </section>
 
   <div :class="shellClass">
     <SiteNav />

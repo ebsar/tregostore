@@ -16567,6 +16567,53 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "message": str(error)})
             return
 
+        delete_requested = str(payload.get("action", "")).strip().lower() == "delete" or bool(payload.get("deletePromotion"))
+        if delete_requested:
+            try:
+                promotion_id = int(str(payload.get("promotionId", "")).strip() or 0)
+            except ValueError:
+                promotion_id = 0
+            promo_code = str(payload.get("code", "")).strip().upper()
+
+            if promotion_id <= 0 and not promo_code:
+                self.send_json(400, {"ok": False, "message": "Promocioni per fshirje nuk eshte valid."})
+                return
+
+            with get_db_connection() as connection:
+                promo_row = None
+                if promotion_id > 0:
+                    promo_row = connection.execute(
+                        """
+                        SELECT *
+                        FROM promo_codes
+                        WHERE id = ?
+                        LIMIT 1
+                        """,
+                        (promotion_id,),
+                    ).fetchone()
+                if not promo_row and promo_code:
+                    promo_row = fetch_promo_code_by_code(connection, promo_code)
+
+                if not promo_row:
+                    self.send_json(404, {"ok": False, "message": "Promocioni nuk u gjet."})
+                    return
+
+                if user["role"] == "business" and int(promo_row["business_user_id"] or 0) != int(user["id"]):
+                    self.send_json(403, {"ok": False, "message": "Nuk ke leje te fshish kete promocion."})
+                    return
+
+                connection.execute(
+                    """
+                    DELETE FROM promo_codes
+                    WHERE id = ?
+                    """,
+                    (int(promo_row["id"]),),
+                )
+
+            promotions = [serialize_promo_code(row) for row in fetch_business_promotions(user)]
+            self.send_json(200, {"ok": True, "message": "Promocioni u fshi me sukses.", "promotions": promotions})
+            return
+
         promo_code_errors, promo_code = parse_promo_code(payload, field_name="code")
         discount_type_errors, discount_type = parse_promo_code_type(payload)
         title = re.sub(r"\s+", " ", str(payload.get("title", "")).strip())[:120]

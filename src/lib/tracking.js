@@ -1,23 +1,35 @@
 const TRACKING_CONSENT_STORAGE_KEY = "trego_tracking_consent";
 const DEFAULT_CURRENCY = "EUR";
+const MAX_TRACKING_ITEMS = 20;
+const FIRED_EVENT_KEYS = new Set();
 
 function safeWindow() {
   return typeof window !== "undefined" ? window : null;
 }
 
-export function hasTrackingConsent() {
+export function getTrackingConsentState() {
   const win = safeWindow();
   if (!win) {
-    return false;
+    return "unset";
   }
 
   try {
     const consentValue = String(win.localStorage.getItem(TRACKING_CONSENT_STORAGE_KEY) || "").trim().toLowerCase();
-    return consentValue === "granted" || consentValue === "true" || consentValue === "1";
+    if (consentValue === "granted" || consentValue === "true" || consentValue === "1") {
+      return "granted";
+    }
+    if (consentValue === "denied" || consentValue === "false" || consentValue === "0") {
+      return "denied";
+    }
+    return "unset";
   } catch (error) {
     console.error(error);
-    return false;
+    return "unset";
   }
+}
+
+export function hasTrackingConsent() {
+  return getTrackingConsentState() === "granted";
 }
 
 export function setTrackingConsent(enabled) {
@@ -69,6 +81,37 @@ function safeCallGtag(eventName, payload) {
   } catch (error) {
     console.error(error);
   }
+}
+
+function normalizeTrackingItems(products = [], currency = DEFAULT_CURRENCY) {
+  if (!Array.isArray(products)) {
+    return [];
+  }
+  return products
+    .map((product) => buildProductTrackingPayload(product, { currency }))
+    .filter((item) => item.id)
+    .slice(0, MAX_TRACKING_ITEMS)
+    .map((item) => ({
+      item_id: item.id,
+      item_name: item.title,
+      item_category: item.category || undefined,
+      price: item.price,
+    }));
+}
+
+function shouldSkipDuplicateEvent(eventKey = "") {
+  const normalizedKey = String(eventKey || "").trim();
+  if (!normalizedKey) {
+    return false;
+  }
+  if (FIRED_EVENT_KEYS.has(normalizedKey)) {
+    return true;
+  }
+  FIRED_EVENT_KEYS.add(normalizedKey);
+  if (FIRED_EVENT_KEYS.size > 400) {
+    FIRED_EVENT_KEYS.clear();
+  }
+  return false;
 }
 
 export function trackProductView(product, options = {}) {
@@ -135,5 +178,39 @@ export function trackAddToCart(product, options = {}) {
         quantity,
       },
     ],
+  });
+}
+
+export function trackSearchResults(options = {}) {
+  if (!hasTrackingConsent()) {
+    return;
+  }
+
+  const query = String(options.query || "").trim();
+  const currency = String(options.currency || DEFAULT_CURRENCY).trim().toUpperCase() || DEFAULT_CURRENCY;
+  const items = normalizeTrackingItems(options.products, currency);
+  const totalValue = options.total ?? items.length ?? 0;
+  const numberOfResults = Math.max(0, Math.trunc(Number(totalValue)));
+  if (!query && items.length === 0) {
+    return;
+  }
+
+  const contentIds = items.map((item) => item.item_id).filter(Boolean);
+  const eventKey = `search:${query}:${numberOfResults}:${contentIds.join(",")}`;
+  if (shouldSkipDuplicateEvent(eventKey)) {
+    return;
+  }
+
+  safeCallFbq("Search", {
+    search_string: query || undefined,
+    content_ids: contentIds,
+    content_type: "product",
+  });
+
+  safeCallGtag("view_search_results", {
+    search_term: query || undefined,
+    currency,
+    number_of_results: numberOfResults,
+    items,
   });
 }

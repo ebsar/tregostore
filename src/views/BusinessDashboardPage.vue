@@ -25,7 +25,6 @@ import {
 import {
   DELIVERY_METHOD_OPTIONS,
   formatCategoryLabel,
-  formatDateLabel,
   formatPrice,
   formatRoleLabel,
   formatVerificationStatusLabel,
@@ -148,6 +147,7 @@ const ui = reactive({
   promotionMessage: "",
   promotionType: "",
   promotionBusy: false,
+  promotionDeleteBusyId: 0,
   shippingMessage: "",
   shippingType: "",
 });
@@ -340,6 +340,21 @@ const editBusinessHelperText = computed(() => {
 function formatPromotionSectionLabel(sectionValue) {
   const match = PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === String(sectionValue || "").trim().toLowerCase());
   return match?.label || String(sectionValue || "").trim();
+}
+
+function formatPromotionDateLabel(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsedDate = new Date(String(value).replace(" ", "T"));
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value);
+  }
+  return parsedDate.toLocaleDateString("sq-AL", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 function getStockAlertLabel(product) {
@@ -1139,6 +1154,47 @@ async function savePromotion() {
     ui.promotionType = "error";
   } finally {
     ui.promotionBusy = false;
+  }
+}
+
+async function deletePromotion(promotion) {
+  if (!promotion || !promotion.id) {
+    return;
+  }
+  if (ui.promotionDeleteBusyId) {
+    return;
+  }
+  if (!window.confirm(`A do ta fshish promocionin ${promotion.code || ""}?`)) {
+    return;
+  }
+
+  ui.promotionDeleteBusyId = Number(promotion.id || 0);
+  try {
+    const { response, data } = await requestJson("/api/business/promotions", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "delete",
+        promotionId: Number(promotion.id || 0),
+        code: String(promotion.code || "").trim().toUpperCase(),
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u fshi.");
+      ui.promotionType = "error";
+      return;
+    }
+
+    promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
+    ui.promotionMessage = data.message || "Promocioni u fshi me sukses.";
+    ui.promotionType = "success";
+    await loadBusinessAnalytics();
+  } catch (error) {
+    console.error(error);
+    ui.promotionMessage = "Ndodhi nje problem i perkohshem gjate fshirjes se promocionit.";
+    ui.promotionType = "error";
+  } finally {
+    ui.promotionDeleteBusyId = 0;
   }
 }
 
@@ -2149,11 +2205,21 @@ async function applyBulkStockUpdate() {
               Kategoria: <strong>{{ formatCategoryLabel(promotion.category) }}</strong>
             </span>
             <span v-if="promotion.startsAt" class="section-text">
-              Nga: <strong>{{ formatDateLabel(promotion.startsAt) }}</strong>
+              Nga: <strong>{{ formatPromotionDateLabel(promotion.startsAt) }}</strong>
             </span>
             <span v-if="promotion.endsAt" class="section-text">
-              Deri: <strong>{{ formatDateLabel(promotion.endsAt) }}</strong>
+              Deri: <strong>{{ formatPromotionDateLabel(promotion.endsAt) }}</strong>
             </span>
+          </div>
+          <div class="auth-form-actions">
+            <button
+              class="button-danger"
+              type="button"
+              :disabled="ui.promotionDeleteBusyId === Number(promotion.id || 0)"
+              @click="deletePromotion(promotion)"
+            >
+              {{ ui.promotionDeleteBusyId === Number(promotion.id || 0) ? "Duke fshire..." : "Fshij promo code" }}
+            </button>
           </div>
         </article>
       </div>

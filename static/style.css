@@ -16511,3 +16511,55 @@ code {
     flex-wrap: wrap;
   }
 }
+
+.tracking-consent-banner {
+  position: fixed;
+  right: max(14px, var(--safe-space-right));
+  bottom: max(14px, var(--safe-space-bottom));
+  left: max(14px, var(--safe-space-left));
+  z-index: 65;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-strong-bg);
+  box-shadow: var(--glass-shadow-medium);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+}
+
+.tracking-consent-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.tracking-consent-copy strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.tracking-consent-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.tracking-consent-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tracking-consent-actions > button {
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+@media (min-width: 860px) {
+  .tracking-consent-banner {
+    left: auto;
+    width: min(520px, calc(100vw - 28px));
+  }
+}
