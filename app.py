@@ -545,28 +545,28 @@ except ValueError:
     MARKETPLACE_COMMISSION_RATE = 0.08
 
 PRODUCT_SELECT_COLUMNS = """
-    id,
-    article_number,
-    title,
-    description,
-    price,
-    image_path,
-    image_gallery,
-    image_fingerprint,
-    ai_image_search_text,
-    ai_image_color_terms,
-    category,
-    product_type,
-    size,
-    color,
-    variant_inventory,
-    package_amount_value,
-    package_amount_unit,
-    stock_quantity,
-    is_public,
-    show_stock_public,
-    created_by_user_id,
-    created_at,
+    products.id AS id,
+    products.article_number AS article_number,
+    products.title AS title,
+    products.description AS description,
+    products.price AS price,
+    products.image_path AS image_path,
+    products.image_gallery AS image_gallery,
+    products.image_fingerprint AS image_fingerprint,
+    products.ai_image_search_text AS ai_image_search_text,
+    products.ai_image_color_terms AS ai_image_color_terms,
+    products.category AS category,
+    products.product_type AS product_type,
+    products.size AS size,
+    products.color AS color,
+    products.variant_inventory AS variant_inventory,
+    products.package_amount_value AS package_amount_value,
+    products.package_amount_unit AS package_amount_unit,
+    products.stock_quantity AS stock_quantity,
+    products.is_public AS is_public,
+    products.show_stock_public AS show_stock_public,
+    products.created_by_user_id AS created_by_user_id,
+    products.created_at AS created_at,
     COALESCE(order_totals.buyers_count, 0) AS buyers_count,
     COALESCE(review_totals.average_rating, 0) AS average_rating,
     COALESCE(review_totals.review_count, 0) AS review_count,
@@ -9072,7 +9072,7 @@ def fetch_products(
             """
             + where_clause
             + """
-            ORDER BY id DESC
+            ORDER BY products.id DESC
             """
             + limit_offset_clause
             + """
@@ -9243,7 +9243,7 @@ def build_product_catalog_facets(
             """
             + where_clause
             + """
-            ORDER BY id DESC
+            ORDER BY products.id DESC
             """,
             parameters,
         ).fetchall()
@@ -9591,7 +9591,7 @@ def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
             """
             + PRODUCT_SELECT_RELATION_JOINS
             + """
-            WHERE id = ?
+            WHERE products.id = ?
             """,
             (product_id,),
         ).fetchone()
@@ -9911,7 +9911,7 @@ def fetch_products_for_checkout_records(
         """
         + PRODUCT_SELECT_RELATION_JOINS
         + """
-        WHERE id IN ("""
+        WHERE products.id IN ("""
         + placeholders
         + """)
         """,
@@ -14121,7 +14121,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """
                     + PRODUCT_SELECT_RELATION_JOINS
                     + """
-                    WHERE id = ?
+                    WHERE products.id = ?
                     """,
                     (product_id,),
                 ).fetchone()
@@ -15714,7 +15714,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """
                 + PRODUCT_SELECT_RELATION_JOINS
                 + """
-                WHERE id = ?
+                WHERE products.id = ?
                 """,
                 (product_id,),
             ).fetchone()
@@ -15859,7 +15859,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """
                 + PRODUCT_SELECT_RELATION_JOINS
                 + """
-                WHERE id = ?
+                WHERE products.id = ?
                 """,
                 (product_id,),
             ).fetchone()
