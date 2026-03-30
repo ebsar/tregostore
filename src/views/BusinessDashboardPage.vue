@@ -145,6 +145,7 @@ const ui = reactive({
   productAiBusy: false,
   promotionMessage: "",
   promotionType: "",
+  promotionBusy: false,
   shippingMessage: "",
   shippingType: "",
 });
@@ -354,7 +355,11 @@ function getStockAlertLabel(product) {
 
 onMounted(async () => {
   try {
-    const user = await ensureSessionLoaded();
+    let user = await ensureSessionLoaded();
+    if (!user) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      user = await ensureSessionLoaded({ force: true });
+    }
     if (!user) {
       router.replace("/login");
       return;
@@ -1062,8 +1067,25 @@ async function submitProduct() {
 }
 
 async function savePromotion() {
+  if (ui.promotionBusy) {
+    return;
+  }
+
   if (!canManageCatalog.value) {
     ui.promotionMessage = "Biznesi duhet te verifikohet nga admini para se te ruash promocione.";
+    ui.promotionType = "error";
+    return;
+  }
+
+  const promoCode = String(promotionForm.code || "").trim().toUpperCase();
+  const discountValue = Number(promotionForm.discountValue || 0);
+  if (promoCode.length < 3) {
+    ui.promotionMessage = "Kodi i promocionit duhet te kete te pakten 3 karaktere.";
+    ui.promotionType = "error";
+    return;
+  }
+  if (!Number.isFinite(discountValue) || discountValue <= 0) {
+    ui.promotionMessage = "Vendos nje vlere zbritjeje me te madhe se 0.";
     ui.promotionType = "error";
     return;
   }
@@ -1077,25 +1099,36 @@ async function savePromotion() {
     }
   }
 
-  const payload = {
-    ...promotionForm,
-  };
-  const { response, data } = await requestJson("/api/business/promotions", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  ui.promotionBusy = true;
+  try {
+    const payload = {
+      ...promotionForm,
+      code: promoCode,
+      discountValue,
+    };
+    const { response, data } = await requestJson("/api/business/promotions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok || !data?.ok) {
-    ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u ruajt.");
-    ui.promotionType = "error";
-    return;
+    if (!response.ok || !data?.ok) {
+      if (Number(response?.status || 0) === 401) {
+        ui.promotionMessage = "Sesioni skadoi. Kyçu perseri dhe provoje.";
+      } else {
+        ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u ruajt.");
+      }
+      ui.promotionType = "error";
+      return;
+    }
+
+    promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
+    ui.promotionMessage = data.message || "Promocioni u ruajt.";
+    ui.promotionType = "success";
+    resetPromotionForm();
+    await loadBusinessAnalytics();
+  } finally {
+    ui.promotionBusy = false;
   }
-
-  promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
-  ui.promotionMessage = data.message || "Promocioni u ruajt.";
-  ui.promotionType = "success";
-  resetPromotionForm();
-  await loadBusinessAnalytics();
 }
 
 async function submitProductAction(url, payload, fallbackMessage) {
@@ -2054,7 +2087,9 @@ async function applyBulkStockUpdate() {
         </label>
 
         <div class="auth-form-actions">
-          <button type="submit">Ruaje promocionin</button>
+          <button type="submit" :disabled="ui.promotionBusy">
+            {{ ui.promotionBusy ? "Duke ruajtur..." : "Ruaje promocionin" }}
+          </button>
         </div>
       </form>
 
