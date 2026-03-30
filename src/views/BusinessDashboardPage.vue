@@ -25,6 +25,7 @@ import {
 import {
   DELIVERY_METHOD_OPTIONS,
   formatCategoryLabel,
+  formatDateLabel,
   formatPrice,
   formatRoleLabel,
   formatVerificationStatusLabel,
@@ -65,6 +66,7 @@ const importMapping = reactive({
   color: "",
 });
 const showVerifiedProfileEditor = ref(false);
+const businessProfileReady = ref(false);
 const selectedProductIds = ref([]);
 const productCategoryFilter = ref("");
 const productStockFilter = ref("all");
@@ -314,7 +316,7 @@ const profileEditAccessStatus = computed(
 );
 const canManageCatalog = computed(() => Boolean(businessProfile.value) && isBusinessVerified.value);
 const shouldShowProfileCard = computed(
-  () => !businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value,
+  () => businessProfileReady.value && (!businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value),
 );
 const dashboardSingleColumn = computed(
   () => !canManageCatalog.value || !shouldShowProfileCard.value,
@@ -429,18 +431,23 @@ function revokePreviewUrls() {
 }
 
 async function loadBusinessProfile() {
-  const { response, data } = await requestJson("/api/business-profile");
-  if (!response.ok || !data?.ok) {
-    ui.profileMessage = resolveApiMessage(data, "Biznesi nuk u ngarkua.");
-    ui.profileType = "error";
-    return;
-  }
+  businessProfileReady.value = false;
+  try {
+    const { response, data } = await requestJson("/api/business-profile");
+    if (!response.ok || !data?.ok) {
+      ui.profileMessage = resolveApiMessage(data, "Biznesi nuk u ngarkua.");
+      ui.profileType = "error";
+      return;
+    }
 
-  businessProfile.value = data.profile || null;
-  hydrateProfileForm(businessProfile.value);
-  hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
-  if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
-    showVerifiedProfileEditor.value = false;
+    businessProfile.value = data.profile || null;
+    hydrateProfileForm(businessProfile.value);
+    hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
+    if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
+      showVerifiedProfileEditor.value = false;
+    }
+  } finally {
+    businessProfileReady.value = true;
   }
 }
 
@@ -1126,6 +1133,10 @@ async function savePromotion() {
     ui.promotionType = "success";
     resetPromotionForm();
     await loadBusinessAnalytics();
+  } catch (error) {
+    console.error(error);
+    ui.promotionMessage = "Ndodhi nje problem i perkohshem gjate ruajtjes se promocionit.";
+    ui.promotionType = "error";
   } finally {
     ui.promotionBusy = false;
   }
@@ -1646,6 +1657,13 @@ async function applyBulkStockUpdate() {
     </section>
 
     <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">
+      <section v-if="!businessProfileReady" class="card business-profile-card">
+        <h2>Duke ngarkuar profilin e biznesit...</h2>
+        <p class="section-text">
+          Po sinkronizohen te dhenat e biznesit. Nese sesioni eshte aktiv, forma shfaqet automatikisht.
+        </p>
+      </section>
+
       <section v-if="shouldShowProfileCard" class="card business-profile-card">
         <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
         <p class="section-text">
