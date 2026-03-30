@@ -12251,6 +12251,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/address":
             self.handle_save_default_address()
             return
+        if path == "/api/address/geocode":
+            self.handle_reverse_geocode_address()
+            return
         if path == "/api/business-profile":
             self.handle_save_business_profile()
             return
@@ -18218,6 +18221,95 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "message": "Adresa default u ruajt me sukses.",
                 "address": serialize_address(saved_address) if saved_address else None,
+            },
+        )
+
+    def handle_reverse_geocode_address(self) -> None:
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        try:
+            latitude = float(payload.get("latitude"))
+            longitude = float(payload.get("longitude"))
+        except (TypeError, ValueError):
+            self.send_json(400, {"ok": False, "message": "Lokacioni i telefonit nuk eshte valid."})
+            return
+
+        if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+            self.send_json(400, {"ok": False, "message": "Lokacioni i telefonit nuk eshte valid."})
+            return
+
+        geocode_url = (
+            "https://nominatim.openstreetmap.org/reverse?"
+            + urlencode(
+                {
+                    "format": "jsonv2",
+                    "lat": f"{latitude:.8f}",
+                    "lon": f"{longitude:.8f}",
+                    "addressdetails": "1",
+                    "zoom": "18",
+                }
+            )
+        )
+        request = Request(
+            geocode_url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "TREGO/1.0 (checkout geolocation)",
+            },
+            method="GET",
+        )
+
+        try:
+            with urlopen(request, timeout=20) as response:
+                raw_response = response.read().decode("utf-8", errors="ignore")
+            payload_data = json.loads(raw_response)
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+            self.send_json(
+                502,
+                {
+                    "ok": False,
+                    "message": "Lokacioni nuk u identifikua automatikisht. Plotëso adresën manualisht.",
+                },
+            )
+            return
+
+        address_details = payload_data.get("address") or {}
+        address_line_parts = [
+            str(address_details.get("house_number") or "").strip(),
+            str(address_details.get("road") or "").strip(),
+            str(address_details.get("suburb") or address_details.get("neighbourhood") or "").strip(),
+        ]
+        address_line = ", ".join(part for part in address_line_parts if part).strip()
+        city = (
+            str(address_details.get("city") or "").strip()
+            or str(address_details.get("town") or "").strip()
+            or str(address_details.get("village") or "").strip()
+            or str(address_details.get("municipality") or "").strip()
+            or str(address_details.get("county") or "").strip()
+        )
+        country = str(address_details.get("country") or "").strip()
+        zip_code = str(address_details.get("postcode") or "").strip()
+        display_name = str(payload_data.get("display_name") or "").strip()
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Lokacioni u plotësua nga telefoni.",
+                "address": {
+                    "addressLine": address_line or display_name or f"{latitude:.6f}, {longitude:.6f}",
+                    "city": city,
+                    "country": country,
+                    "zipCode": zip_code,
+                    "phoneNumber": "",
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "displayName": display_name,
+                },
             },
         )
 

@@ -18,6 +18,9 @@ const saveForLater = ref(false);
 const ui = reactive({
   message: "",
   type: "",
+  locationMessage: "",
+  locationType: "",
+  locationBusy: false,
 });
 
 onMounted(async () => {
@@ -83,6 +86,71 @@ async function continueWithNewAddress() {
   savedAddress.value = normalizeAddress(data.address);
   persistCheckoutAddressDraft(savedAddress.value);
   router.push("/menyra-e-pageses");
+}
+
+function applyResolvedLocation(address) {
+  const nextAddress = normalizeAddress(address);
+  Object.assign(formState, {
+    ...nextAddress,
+    country: nextAddress.country || formState.country || "Kosove",
+    phoneNumber: formState.phoneNumber || "",
+  });
+  persistCheckoutAddressDraft(formState);
+  ui.locationMessage = "Lokacioni u plotësua. Kontrolloje adresën para se të vazhdosh.";
+  ui.locationType = "success";
+}
+
+async function useDeviceLocation() {
+  ui.locationMessage = "";
+  ui.locationType = "";
+
+  if (!navigator.geolocation) {
+    ui.locationMessage = "Browser-i yt nuk e mbështet lokacionin automatik. Plotëso adresën manualisht.";
+    ui.locationType = "info";
+    return;
+  }
+
+  ui.locationBusy = true;
+  ui.locationMessage = "Po kërkohet leja e lokacionit nga telefoni...";
+  ui.locationType = "info";
+
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 30000,
+      });
+    });
+
+    const { response, data } = await requestJson("/api/address/geocode", {
+      method: "POST",
+      body: JSON.stringify({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      }),
+    });
+
+    if (!response.ok || !data?.ok || !data.address) {
+      ui.locationMessage = resolveApiMessage(data, "Lokacioni nuk u identifikua automatikisht. Plotëso adresën manualisht.");
+      ui.locationType = "info";
+      return;
+    }
+
+    applyResolvedLocation(data.address);
+  } catch (error) {
+    const errorCode = Number(error?.code || 0);
+    if (errorCode === 1) {
+      ui.locationMessage = "Leja për lokacion u refuzua. Plotëso adresën manualisht.";
+      ui.locationType = "info";
+      return;
+    }
+
+    ui.locationMessage = "Lokacioni nuk u mor. Plotëso adresën manualisht.";
+    ui.locationType = "info";
+  } finally {
+    ui.locationBusy = false;
+  }
 }
 
 function cancelChanges() {
@@ -165,6 +233,24 @@ function cancelChanges() {
             Bizneset e verifikuara vendosin cmimin baze, pickup-in dhe pragjet per zbritje ose transport falas.
           </p>
         </div>
+      </div>
+
+      <div class="checkout-location-panel">
+        <button
+          class="ghost-button checkout-location-button"
+          type="button"
+          :disabled="ui.locationBusy"
+          @click="useDeviceLocation"
+        >
+          {{ ui.locationBusy ? "Po merret lokacioni..." : "Përdor lokacionin tim" }}
+        </button>
+        <p class="section-text checkout-location-copy">
+          Kjo kërkon leje nga telefoni. Nëse s'e lejon, mund ta plotësosh adresën manualisht.
+        </p>
+      </div>
+
+      <div v-if="ui.locationMessage" class="form-message" :class="ui.locationType" role="status" aria-live="polite">
+        {{ ui.locationMessage }}
       </div>
 
       <form class="auth-form profile-form" @submit.prevent="continueWithNewAddress">
