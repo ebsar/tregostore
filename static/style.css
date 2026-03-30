@@ -2454,6 +2454,10 @@ body[data-page="home"] .home-hero .home-hero-content {
   gap: 28px;
 }
 
+.home-mobile-legacy-hero {
+  display: none;
+}
+
 .home-landing-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.02fr) minmax(360px, 0.92fr);
@@ -12949,6 +12953,25 @@ code {
 }
 
 @media (max-width: 640px) {
+  .home-mobile-legacy-hero {
+    display: block;
+  }
+
+  .home-landing-hero {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .home-landing-hero-copy {
+    display: none;
+  }
+
   .messages-sidebar,
   .messages-thread {
     padding: 12px;
@@ -13173,13 +13196,18 @@ code {
   }
 
   .home-landing-hero {
-    gap: 14px;
-    padding: 14px;
-    border-radius: 26px;
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .home-landing-hero-copy {
-    gap: 14px;
+    display: none;
   }
 
   .home-landing-kicker {

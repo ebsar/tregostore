@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
+import PromoSlider from "../components/PromoSlider.vue";
 import ProductCard from "../components/ProductCard.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
@@ -13,6 +14,7 @@ import {
   getBusinessProfileUrl,
   getProductDetailUrl,
   hasProductAvailableStock,
+  HOME_PROMO_SLIDES,
 } from "../lib/shop";
 import {
   compareState,
@@ -50,6 +52,7 @@ const ui = reactive({
   message: "",
   type: "",
 });
+const homePromoSlides = HOME_PROMO_SLIDES;
 const businessUi = reactive({
   message: "",
   type: "",
@@ -654,6 +657,8 @@ async function handleCart(productId) {
   </section>
 
   <section v-else class="collection-page home-collection-page" aria-label="Faqja kryesore">
+    <PromoSlider class="home-mobile-legacy-hero" :slides="homePromoSlides" />
+
     <section class="card home-landing-hero" aria-label="Hero kryesor">
       <div class="home-landing-hero-copy">
         <p class="home-landing-kicker">
