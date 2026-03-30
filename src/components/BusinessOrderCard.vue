@@ -4,6 +4,8 @@ import OrderItemCard from "./OrderItemCard.vue";
 import {
   buildFulfillmentTimeline,
   formatDateLabel,
+  formatDeliveryMethodLabel,
+  formatEstimatedDeliveryLabel,
   formatFulfillmentStatusLabel,
   formatPaymentMethodLabel,
   formatPrice,
@@ -75,6 +77,14 @@ function terminalEventFor(item) {
         <div class="order-card-meta">
           <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
           <strong>{{ formatDateLabel(order.createdAt || "") }}</strong>
+          <a
+            class="nav-action nav-action-secondary order-invoice-button"
+            :href="`/api/orders/invoice?id=${order.id}`"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Fatura PDF
+          </a>
         </div>
       </div>
 
@@ -186,6 +196,18 @@ function terminalEventFor(item) {
           <div class="summary-chip">
             <span>Numri i telefonit</span>
             <strong>{{ order.phoneNumber || "-" }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Dergesa</span>
+            <strong>{{ order.deliveryLabel || formatDeliveryMethodLabel(order.deliveryMethod) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Afati</span>
+            <strong>{{ formatEstimatedDeliveryLabel(order.deliveryMethod, order.estimatedDeliveryText) || "-" }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Transporti</span>
+            <strong>{{ formatPrice(order.shippingAmount || 0) }}</strong>
           </div>
           <div class="summary-chip">
             <span>Shuma e porosise</span>

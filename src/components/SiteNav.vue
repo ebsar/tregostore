@@ -24,6 +24,8 @@ const mobileQuickSearchInputElement = ref(null);
 const navVisualSearchInputElement = ref(null);
 const navSearchResult = ref(null);
 const navSearchProducts = ref([]);
+const navSearchBusinesses = ref([]);
+const navSearchCategories = ref([]);
 const navSearchLoading = ref(false);
 const navSearchMessage = ref("");
 const navSearchRecent = ref([]);
@@ -48,6 +50,8 @@ const AI_SEARCH_PROMPTS = [
 function resetNavSearchPreview() {
   navSearchResult.value = null;
   navSearchProducts.value = [];
+  navSearchBusinesses.value = [];
+  navSearchCategories.value = [];
   navSearchMessage.value = "";
   navSearchLoading.value = false;
 }
@@ -814,22 +818,26 @@ async function fetchNavSearchResult() {
 
   try {
     const params = new URLSearchParams();
-    params.set("limit", "5");
+    params.set("limit", "4");
     params.set("q", query);
-    const { response, data } = await requestJson(`/api/products/search?${params.toString()}`);
+    const { response, data } = await requestJson(`/api/search/autocomplete?${params.toString()}`);
     if (!response.ok || !data?.ok) {
-      navSearchMessage.value = resolveApiMessage(data, "Nuk u gjet produkti.");
+      navSearchMessage.value = resolveApiMessage(data, "Kerkimi nuk u ngarkua.");
       return;
     }
 
-    const nextProducts = Array.isArray(data.products) ? data.products.slice(0, 5) : [];
-    if (nextProducts.length === 0) {
-      navSearchMessage.value = "Nuk u gjet asnje produkt per kete kerkim.";
+    const nextProducts = Array.isArray(data.products) ? data.products.slice(0, 4) : [];
+    const nextBusinesses = Array.isArray(data.businesses) ? data.businesses.slice(0, 4) : [];
+    const nextCategories = Array.isArray(data.categories) ? data.categories.slice(0, 4) : [];
+    if (!nextProducts.length && !nextBusinesses.length && !nextCategories.length) {
+      navSearchMessage.value = "Nuk u gjet asnje rezultat per kete kerkim.";
       return;
     }
 
     navSearchProducts.value = nextProducts;
-    navSearchResult.value = nextProducts[0];
+    navSearchBusinesses.value = nextBusinesses;
+    navSearchCategories.value = nextCategories;
+    navSearchResult.value = nextProducts[0] || nextBusinesses[0] || nextCategories[0] || null;
   } catch (error) {
     console.error(error);
     navSearchMessage.value = "Serveri nuk po pergjigjet.";
@@ -893,11 +901,27 @@ async function openNavSearchProduct(product) {
   await router.push(getProductDetailUrl(product.id, route.fullPath));
 }
 
+async function openNavSearchBusiness(business) {
+  const nextTarget = String(business?.profileUrl || "").trim();
+  if (!nextTarget) {
+    await openSearchResultsPage();
+    return;
+  }
+
+  navSearchRecent.value = rememberRecentSearch(searchQuery.value || business.businessName || "Biznes");
+  mobileMenuOpen.value = false;
+  closeExpandedPanels();
+  await router.push(nextTarget);
+}
+
 async function openNavSearchSuggestion(target) {
   if (!target) {
     return;
   }
 
+  if (searchQuery.value.trim()) {
+    navSearchRecent.value = rememberRecentSearch(searchQuery.value);
+  }
   mobileMenuOpen.value = false;
   closeExpandedPanels();
   await router.push(target);
@@ -1468,33 +1492,100 @@ onBeforeUnmount(() => {
               Po kerkohet ne katalog...
             </div>
 
-            <div v-else-if="navSearchProducts.length > 0" class="nav-search-suggestion-list">
-              <button
-                v-for="product in navSearchProducts"
-                :key="product.id"
-                class="nav-search-suggestion-item"
-                type="button"
-                @click="openNavSearchProduct(product)"
-              >
-                <span class="nav-search-suggestion-image">
-                  <img
-                    :src="product.imagePath || product.image_path || product.image || '/bujqesia.webp'"
-                    :alt="product.title || product.productName || 'Produkt'"
-                    loading="lazy"
+            <template
+              v-else-if="navSearchProducts.length > 0 || navSearchBusinesses.length > 0 || navSearchCategories.length > 0"
+            >
+              <div v-if="navSearchProducts.length > 0" class="nav-search-group">
+                <p class="nav-search-group-title">Produkte</p>
+                <div class="nav-search-suggestion-list">
+                  <button
+                    v-for="product in navSearchProducts"
+                    :key="`product-${product.id}`"
+                    class="nav-search-suggestion-item"
+                    type="button"
+                    @click="openNavSearchProduct(product)"
                   >
-                </span>
-                <span class="nav-search-suggestion-copy">
-                  <strong>{{ product.title || product.productName || "Produkt" }}</strong>
-                  <span>{{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}</span>
-                </span>
-                <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M9 6l6 6-6 6"></path>
-                </svg>
-              </button>
-            </div>
+                    <span class="nav-search-suggestion-image">
+                      <img
+                        :src="product.imagePath || product.image_path || product.image || '/bujqesia.webp'"
+                        :alt="product.title || product.productName || 'Produkt'"
+                        loading="lazy"
+                      >
+                    </span>
+                    <span class="nav-search-suggestion-copy">
+                      <strong>{{ product.title || product.productName || "Produkt" }}</strong>
+                      <span>{{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}</span>
+                    </span>
+                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="navSearchBusinesses.length > 0" class="nav-search-group">
+                <p class="nav-search-group-title">Biznese</p>
+                <div class="nav-search-suggestion-list">
+                  <button
+                    v-for="business in navSearchBusinesses"
+                    :key="`business-${business.id}`"
+                    class="nav-search-suggestion-item"
+                    type="button"
+                    @click="openNavSearchBusiness(business)"
+                  >
+                    <span class="nav-search-suggestion-image is-logo">
+                      <img
+                        v-if="business.logoPath"
+                        :src="business.logoPath"
+                        :alt="business.businessName || 'Biznes'"
+                        loading="lazy"
+                      >
+                      <span v-else class="nav-search-suggestion-avatar-fallback">
+                        {{ String(business.businessName || "B").trim().slice(0, 1).toUpperCase() }}
+                      </span>
+                    </span>
+                    <span class="nav-search-suggestion-copy">
+                      <strong>{{ business.businessName || "Biznes" }}</strong>
+                      <span>{{ business.city || business.businessDescription || "Profili publik i biznesit" }}</span>
+                    </span>
+                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="navSearchCategories.length > 0" class="nav-search-group">
+                <p class="nav-search-group-title">Kategori</p>
+                <div class="nav-search-suggestion-list">
+                  <button
+                    v-for="item in navSearchCategories"
+                    :key="`category-${item.href}`"
+                    class="nav-search-suggestion-item is-category"
+                    type="button"
+                    @click="openNavSearchSuggestion(item.href)"
+                  >
+                    <span class="nav-search-suggestion-image is-icon">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M5 7h14"></path>
+                        <path d="M5 12h14"></path>
+                        <path d="M5 17h9"></path>
+                      </svg>
+                    </span>
+                    <span class="nav-search-suggestion-copy">
+                      <strong>{{ item.label || "Kategori" }}</strong>
+                      <span>{{ item.subtitle || "Shfleto kategorine" }}</span>
+                    </span>
+                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </template>
 
             <p v-else class="nav-search-no-results">
-              {{ navSearchMessage || "Nuk u gjet asnje produkt per kete kerkim." }}
+              {{ navSearchMessage || "Nuk u gjet asnje rezultat per kete kerkim." }}
             </p>
 
             <button

@@ -15,7 +15,9 @@ import os
 import re
 import secrets
 import sqlite3
+import textwrap
 import time
+import unicodedata
 from http.cookies import CookieError, SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -260,6 +262,23 @@ CHAT_PARTICIPANT_ROLES = {"client", "business", "admin"}
 CHAT_MESSAGE_MAX_LENGTH = 1500
 GENDER_OPTIONS = {"mashkull", "femer"}
 PAYMENT_METHODS = {"cash", "card-online"}
+DELIVERY_METHODS = {
+    "standard": {
+        "label": "Dergese standard",
+        "shipping_amount": 2.5,
+        "estimated_delivery_text": "2-4 dite pune",
+    },
+    "express": {
+        "label": "Dergese express",
+        "shipping_amount": 4.9,
+        "estimated_delivery_text": "1-2 dite pune",
+    },
+    "pickup": {
+        "label": "Terheqje ne biznes",
+        "shipping_amount": 0.0,
+        "estimated_delivery_text": "Gati per terheqje brenda 24 oresh",
+    },
+}
 ORDER_ITEM_FULFILLMENT_STATUSES = {
     "confirmed",
     "packed",
@@ -350,7 +369,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-29-marketplace-2"
+APP_SCHEMA_VERSION = "2026-03-30-marketplace-3"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -478,8 +497,12 @@ ORDER_SELECT_COLUMNS = """
     phone_number,
     subtotal_amount,
     discount_amount,
+    shipping_amount,
     total_amount,
     promo_code,
+    delivery_method,
+    delivery_label,
+    estimated_delivery_text,
     created_at
 """
 ORDER_ITEM_SELECT_COLUMNS = """
@@ -2017,6 +2040,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE orders ADD COLUMN discount_amount REAL NOT NULL DEFAULT 0"
         )
 
+    if not column_exists(connection, "orders", "shipping_amount"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN shipping_amount REAL NOT NULL DEFAULT 0"
+        )
+
     if not column_exists(connection, "orders", "total_amount"):
         connection.execute(
             "ALTER TABLE orders ADD COLUMN total_amount REAL NOT NULL DEFAULT 0"
@@ -2027,17 +2055,36 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE orders ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "orders", "delivery_method"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN delivery_method TEXT NOT NULL DEFAULT 'standard'"
+        )
+
+    if not column_exists(connection, "orders", "delivery_label"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN delivery_label TEXT NOT NULL DEFAULT 'Dergese standard'"
+        )
+
+    if not column_exists(connection, "orders", "estimated_delivery_text"):
+        connection.execute(
+            "ALTER TABLE orders ADD COLUMN estimated_delivery_text TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE orders
         SET
             subtotal_amount = COALESCE(subtotal_amount, 0),
             discount_amount = COALESCE(discount_amount, 0),
+            shipping_amount = COALESCE(shipping_amount, 0),
             total_amount = CASE
                 WHEN COALESCE(total_amount, 0) > 0 THEN total_amount
                 ELSE COALESCE(subtotal_amount, 0)
             END,
-            promo_code = COALESCE(promo_code, '')
+            promo_code = COALESCE(promo_code, ''),
+            delivery_method = COALESCE(NULLIF(TRIM(delivery_method), ''), 'standard'),
+            delivery_label = COALESCE(NULLIF(TRIM(delivery_label), ''), 'Dergese standard'),
+            estimated_delivery_text = COALESCE(estimated_delivery_text, '')
         """
     )
 
@@ -2535,7 +2582,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
                 amount_total INTEGER NOT NULL DEFAULT 0,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
+                shipping_amount INTEGER NOT NULL DEFAULT 0,
                 promo_code TEXT NOT NULL DEFAULT '',
+                delivery_method TEXT NOT NULL DEFAULT 'standard',
+                delivery_label TEXT NOT NULL DEFAULT 'Dergese standard',
+                estimated_delivery_text TEXT NOT NULL DEFAULT '',
                 currency TEXT NOT NULL DEFAULT 'eur',
                 payment_status TEXT NOT NULL DEFAULT '',
                 stripe_status TEXT NOT NULL DEFAULT '',
@@ -2559,7 +2610,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 checkout_items_snapshot TEXT NOT NULL DEFAULT '[]',
                 amount_total INTEGER NOT NULL DEFAULT 0,
                 discount_amount INTEGER NOT NULL DEFAULT 0,
+                shipping_amount INTEGER NOT NULL DEFAULT 0,
                 promo_code TEXT NOT NULL DEFAULT '',
+                delivery_method TEXT NOT NULL DEFAULT 'standard',
+                delivery_label TEXT NOT NULL DEFAULT 'Dergese standard',
+                estimated_delivery_text TEXT NOT NULL DEFAULT '',
                 currency TEXT NOT NULL DEFAULT 'eur',
                 payment_status TEXT NOT NULL DEFAULT '',
                 stripe_status TEXT NOT NULL DEFAULT '',
@@ -2582,6 +2637,38 @@ def migrate_database(connection: DatabaseConnection) -> None:
         connection.execute(
             "ALTER TABLE stripe_payment_sessions ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''"
         )
+
+    if not column_exists(connection, "stripe_payment_sessions", "shipping_amount"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN shipping_amount INTEGER NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "stripe_payment_sessions", "delivery_method"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN delivery_method TEXT NOT NULL DEFAULT 'standard'"
+        )
+
+    if not column_exists(connection, "stripe_payment_sessions", "delivery_label"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN delivery_label TEXT NOT NULL DEFAULT 'Dergese standard'"
+        )
+
+    if not column_exists(connection, "stripe_payment_sessions", "estimated_delivery_text"):
+        connection.execute(
+            "ALTER TABLE stripe_payment_sessions ADD COLUMN estimated_delivery_text TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        UPDATE stripe_payment_sessions
+        SET
+            shipping_amount = COALESCE(shipping_amount, 0),
+            promo_code = COALESCE(promo_code, ''),
+            delivery_method = COALESCE(NULLIF(TRIM(delivery_method), ''), 'standard'),
+            delivery_label = COALESCE(NULLIF(TRIM(delivery_label), ''), 'Dergese standard'),
+            estimated_delivery_text = COALESCE(estimated_delivery_text, '')
+        """
+    )
 
     connection.execute(
         """
@@ -4017,6 +4104,32 @@ def parse_business_id_query(
         {
             "businessId": query_params.get("id", [""])[0]
             or query_params.get("businessId", [""])[0]
+        }
+    )
+
+
+def parse_order_id(data: dict[str, object]) -> tuple[list[str], int | None]:
+    errors: list[str] = []
+    raw_order_id = str(data.get("orderId", "")).strip()
+
+    try:
+        order_id = int(raw_order_id)
+        if order_id <= 0:
+            errors.append("Porosia e zgjedhur nuk eshte valide.")
+    except ValueError:
+        order_id = None
+        errors.append("Porosia e zgjedhur nuk eshte valide.")
+
+    return errors, order_id
+
+
+def parse_order_id_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], int | None]:
+    return parse_order_id(
+        {
+            "orderId": query_params.get("id", [""])[0]
+            or query_params.get("orderId", [""])[0]
         }
     )
 
@@ -5708,6 +5821,24 @@ def parse_payment_method(data: dict[str, object]) -> tuple[list[str], str | None
     return [], payment_method
 
 
+def get_delivery_method_details(delivery_method: str | None) -> dict[str, object]:
+    normalized_delivery_method = str(delivery_method or "").strip().lower() or "standard"
+    details = DELIVERY_METHODS.get(normalized_delivery_method) or DELIVERY_METHODS["standard"]
+    return {
+        "value": normalized_delivery_method if normalized_delivery_method in DELIVERY_METHODS else "standard",
+        "label": str(details.get("label") or "Dergese standard").strip(),
+        "shippingAmount": round(float(details.get("shipping_amount") or 0), 2),
+        "estimatedDeliveryText": str(details.get("estimated_delivery_text") or "").strip(),
+    }
+
+
+def parse_delivery_method(data: dict[str, object]) -> tuple[list[str], str | None]:
+    delivery_method = str(data.get("deliveryMethod", "")).strip().lower() or "standard"
+    if delivery_method not in DELIVERY_METHODS:
+        return ["Menyra e dergeses nuk eshte valide."], None
+    return [], delivery_method
+
+
 def parse_review_rating(data: dict[str, object], field_name: str = "rating") -> tuple[list[str], int | None]:
     raw_value = str(data.get(field_name, "")).strip()
     if not raw_value:
@@ -6276,6 +6407,7 @@ def serialize_order(
     )
     subtotal_amount = round(float(row["subtotal_amount"] or calculated_total_price), 2) if "subtotal_amount" in row.keys() else calculated_total_price
     discount_amount = round(float(row["discount_amount"] or 0), 2) if "discount_amount" in row.keys() else 0
+    shipping_amount = round(float(row["shipping_amount"] or 0), 2) if "shipping_amount" in row.keys() else 0
     total_price = round(float(row["total_amount"] or calculated_total_price), 2) if "total_amount" in row.keys() else calculated_total_price
 
     return {
@@ -6295,8 +6427,14 @@ def serialize_order(
         "totalItems": total_items,
         "subtotalAmount": subtotal_amount,
         "discountAmount": discount_amount,
+        "shippingAmount": shipping_amount,
         "totalPrice": total_price,
         "promoCode": str(row["promo_code"] or "").strip().upper() if "promo_code" in row.keys() else "",
+        "deliveryMethod": str(row["delivery_method"] or "").strip().lower() if "delivery_method" in row.keys() else "standard",
+        "deliveryLabel": str(row["delivery_label"] or "").strip() if "delivery_label" in row.keys() else "",
+        "estimatedDeliveryText": str(row["estimated_delivery_text"] or "").strip()
+        if "estimated_delivery_text" in row.keys()
+        else "",
         "items": normalized_items,
     }
 
@@ -7841,6 +7979,89 @@ def fetch_public_business_profiles() -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def search_public_business_profiles(
+    search_text: str,
+    *,
+    limit: int = 4,
+) -> list[sqlite3.Row]:
+    normalized_search_text = normalize_search_intent_text(search_text)
+    if not normalized_search_text:
+        return []
+
+    safe_limit = max(1, min(8, int(limit or 4)))
+    search_pattern = f"%{normalized_search_text}%"
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                bp.id,
+                bp.user_id,
+                bp.business_name,
+                bp.business_description,
+                bp.business_number,
+                bp.business_logo_path,
+                bp.verification_status,
+                bp.phone_number,
+                bp.city,
+                bp.address_line,
+                bp.created_at,
+                bp.updated_at,
+                COALESCE(follower_totals.total_followers, 0) AS followers_count,
+                COALESCE(product_totals.total_products, 0) AS products_count,
+                COALESCE(review_totals.average_rating, 0) AS seller_rating,
+                COALESCE(review_totals.review_count, 0) AS seller_review_count
+            FROM business_profiles bp
+            LEFT JOIN (
+                SELECT
+                    business_id,
+                    COUNT(*) AS total_followers
+                FROM business_followers
+                GROUP BY business_id
+            ) follower_totals ON follower_totals.business_id = bp.id
+            LEFT JOIN (
+                SELECT
+                    created_by_user_id,
+                    COUNT(*) AS total_products
+                FROM products
+                WHERE is_public = 1
+                  AND created_by_user_id IS NOT NULL
+                GROUP BY created_by_user_id
+            ) product_totals ON product_totals.created_by_user_id = bp.user_id
+            LEFT JOIN (
+                SELECT
+                    business_user_id,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM product_reviews
+                WHERE business_user_id IS NOT NULL
+                  AND status = 'published'
+                GROUP BY business_user_id
+            ) review_totals ON review_totals.business_user_id = bp.user_id
+            WHERE TRIM(bp.business_name) <> ''
+              AND (
+                LOWER(bp.business_name) LIKE ?
+                OR LOWER(COALESCE(bp.business_description, '')) LIKE ?
+                OR LOWER(COALESCE(bp.city, '')) LIKE ?
+              )
+            ORDER BY
+                CASE
+                    WHEN LOWER(bp.business_name) LIKE ? THEN 0
+                    ELSE 1
+                END,
+                bp.updated_at DESC,
+                bp.id DESC
+            LIMIT ?
+            """,
+            (
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                f"{normalized_search_text}%",
+                safe_limit,
+            ),
+        ).fetchall()
+
+
 def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
     with get_db_connection() as connection:
         return connection.execute(
@@ -8286,6 +8507,93 @@ def build_product_catalog_facets(
         "sizes": sorted_sizes,
         "colors": sorted_colors,
     }
+
+
+def build_catalog_autocomplete_matches(
+    search_text: str,
+    *,
+    limit: int = 6,
+) -> list[dict[str, str]]:
+    normalized_query = normalize_search_intent_text(search_text)
+    if not normalized_query:
+        return []
+
+    tokens = [token for token in tokenize_search_intent_text(normalized_query) if token]
+    matches: list[dict[str, str]] = []
+    seen_hrefs: set[str] = set()
+
+    def add_match(*, label: str, href: str, subtitle: str = "", kind: str = "category") -> None:
+        cleaned_label = str(label or "").strip()
+        cleaned_href = str(href or "").strip()
+        if not cleaned_label or not cleaned_href or cleaned_href in seen_hrefs:
+            return
+
+        haystack = normalize_search_intent_text(f"{cleaned_label} {subtitle}")
+        if normalized_query not in haystack and not all(token in haystack for token in tokens):
+            return
+
+        seen_hrefs.add(cleaned_href)
+        matches.append(
+            {
+                "label": cleaned_label,
+                "href": cleaned_href,
+                "subtitle": str(subtitle or "").strip(),
+                "kind": kind,
+            }
+        )
+
+    for section_definition in PRODUCT_SECTION_DEFINITIONS:
+        section_value = str(section_definition.get("value") or "").strip().lower()
+        section_label = str(section_definition.get("label") or section_value).strip()
+        if not section_value or not section_label:
+            continue
+
+        section_href = (
+            f"/kerko?categoryGroup={quote(section_value)}"
+            if SECTION_AUDIENCE_CATEGORY_MAP.get(section_value)
+            else f"/kerko?category={quote(section_value)}"
+        )
+        add_match(
+            label=section_label,
+            href=section_href,
+            subtitle="Kategori",
+            kind="category",
+        )
+
+        for audience_definition in list(section_definition.get("audiences") or []):
+            category_value = str(audience_definition.get("category") or "").strip().lower()
+            audience_label = str(
+                audience_definition.get("label") or PRODUCT_CATEGORY_LABELS.get(category_value, category_value)
+            ).strip()
+            if not category_value or not audience_label:
+                continue
+
+            add_match(
+                label=audience_label,
+                href=f"/kerko?category={quote(category_value)}",
+                subtitle=section_label,
+                kind="category",
+            )
+
+    for category_value, product_type_options in PRODUCT_TYPE_OPTIONS_BY_CATEGORY.items():
+        normalized_category = str(category_value or "").strip().lower()
+        category_label = PRODUCT_CATEGORY_LABELS.get(normalized_category, normalized_category)
+        for option in list(product_type_options or []):
+            product_type_value = str(option.get("value") or "").strip().lower()
+            product_type_label = str(option.get("label") or product_type_value).strip()
+            if not product_type_value or not product_type_label:
+                continue
+
+            add_match(
+                label=product_type_label,
+                href=(
+                    f"/kerko?category={quote(normalized_category)}&productType={quote(product_type_value)}"
+                ),
+                subtitle=category_label,
+                kind="category",
+            )
+
+    return matches[: max(1, min(8, int(limit or 6)))]
 
 
 def count_products(
@@ -8746,6 +9054,7 @@ def build_checkout_signature(
     cleaned_address: dict[str, str],
     checkout_items: list[dict[str, object]],
     promo_code: str = "",
+    delivery_method: str = "standard",
 ) -> str:
     normalized_items = sorted(
         [
@@ -8777,6 +9086,7 @@ def build_checkout_signature(
         },
         "items": normalized_items,
         "promoCode": str(promo_code or "").strip().upper(),
+        "deliveryMethod": get_delivery_method_details(delivery_method)["value"],
     }
     payload_text = json.dumps(
         signature_payload,
@@ -8873,8 +9183,16 @@ def create_order_from_checkout_items(
     )
     subtotal_amount = round(float(normalized_pricing_summary.get("subtotal") or 0), 2)
     discount_amount = round(float(normalized_pricing_summary.get("discountAmount") or 0), 2)
+    shipping_amount = round(float(normalized_pricing_summary.get("shippingAmount") or 0), 2)
     total_amount = round(float(normalized_pricing_summary.get("total") or 0), 2)
     promo_code = str(normalized_pricing_summary.get("promoCode") or "").strip().upper()
+    delivery_method = str(normalized_pricing_summary.get("deliveryMethod") or "standard").strip().lower() or "standard"
+    delivery_label = str(normalized_pricing_summary.get("deliveryLabel") or "").strip() or str(
+        get_delivery_method_details(delivery_method)["label"]
+    )
+    estimated_delivery_text = str(
+        normalized_pricing_summary.get("estimatedDeliveryText") or ""
+    ).strip() or str(get_delivery_method_details(delivery_method)["estimatedDeliveryText"] or "").strip()
 
     customer_full_name = (
         str(user["full_name"] or "").strip()
@@ -8901,10 +9219,14 @@ def create_order_from_checkout_items(
             phone_number,
             subtotal_amount,
             discount_amount,
+            shipping_amount,
             total_amount,
-            promo_code
+            promo_code,
+            delivery_method,
+            delivery_label,
+            estimated_delivery_text
         )
-        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["id"],
@@ -8918,8 +9240,12 @@ def create_order_from_checkout_items(
             cleaned_address["phone_number"],
             subtotal_amount,
             discount_amount,
+            shipping_amount,
             total_amount,
             promo_code,
+            delivery_method,
+            delivery_label,
+            estimated_delivery_text,
         ),
     )
 
@@ -9137,6 +9463,8 @@ def build_stripe_checkout_line_items(
     checkout_items: list[dict[str, object]],
     *,
     discount_amount: float = 0.0,
+    shipping_amount: float = 0.0,
+    delivery_label: str = "",
 ) -> tuple[list[tuple[str, str]], int]:
     form_fields: list[tuple[str, str]] = []
     unit_entries: list[dict[str, object]] = []
@@ -9185,6 +9513,22 @@ def build_stripe_checkout_line_items(
             ]
         )
 
+    shipping_cents = max(0, int(round(float(shipping_amount or 0) * 100)))
+    if shipping_cents > 0:
+        shipping_index = len(unit_entries)
+        form_fields.extend(
+            [
+                (f"line_items[{shipping_index}][price_data][currency]", STRIPE_CURRENCY),
+                (f"line_items[{shipping_index}][price_data][unit_amount]", str(shipping_cents)),
+                (
+                    f"line_items[{shipping_index}][price_data][product_data][name]",
+                    str(delivery_label or "Dergese").strip() or "Dergese",
+                ),
+                (f"line_items[{shipping_index}][quantity]", "1"),
+            ]
+        )
+        total_amount += shipping_cents
+
     return form_fields, total_amount
 
 
@@ -9199,7 +9543,11 @@ def persist_stripe_payment_session(
     checkout_items: list[dict[str, object]],
     amount_total: int,
     discount_amount: int = 0,
+    shipping_amount: int = 0,
     promo_code: str = "",
+    delivery_method: str = "standard",
+    delivery_label: str = "",
+    estimated_delivery_text: str = "",
     currency: str,
     payment_status: str = "",
     stripe_status: str = "",
@@ -9216,14 +9564,18 @@ def persist_stripe_payment_session(
             checkout_items_snapshot,
             amount_total,
             discount_amount,
+            shipping_amount,
             promo_code,
+            delivery_method,
+            delivery_label,
+            estimated_delivery_text,
             currency,
             payment_status,
             stripe_status,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(stripe_session_id)
         DO UPDATE SET
             user_id = excluded.user_id,
@@ -9233,7 +9585,11 @@ def persist_stripe_payment_session(
             checkout_items_snapshot = excluded.checkout_items_snapshot,
             amount_total = excluded.amount_total,
             discount_amount = excluded.discount_amount,
+            shipping_amount = excluded.shipping_amount,
             promo_code = excluded.promo_code,
+            delivery_method = excluded.delivery_method,
+            delivery_label = excluded.delivery_label,
+            estimated_delivery_text = excluded.estimated_delivery_text,
             currency = excluded.currency,
             payment_status = excluded.payment_status,
             stripe_status = excluded.stripe_status,
@@ -9248,7 +9604,11 @@ def persist_stripe_payment_session(
             json.dumps(checkout_items, ensure_ascii=False),
             amount_total,
             max(0, int(discount_amount or 0)),
+            max(0, int(shipping_amount or 0)),
             str(promo_code or "").strip().upper(),
+            str(delivery_method or "").strip().lower() or "standard",
+            str(delivery_label or "").strip(),
+            str(estimated_delivery_text or "").strip(),
             str(currency or STRIPE_CURRENCY).strip().lower() or STRIPE_CURRENCY,
             str(payment_status or "").strip().lower(),
             str(stripe_status or "").strip().lower(),
@@ -9274,7 +9634,11 @@ def fetch_stripe_payment_session(
             checkout_items_snapshot,
             amount_total,
             discount_amount,
+            shipping_amount,
             promo_code,
+            delivery_method,
+            delivery_label,
+            estimated_delivery_text,
             currency,
             payment_status,
             stripe_status,
@@ -9646,6 +10010,70 @@ def build_orders_payload(orders: list[sqlite3.Row], order_items: list[sqlite3.Ro
         serialize_order(order_row, items_by_order_id.get(int(order_row["id"]), []))
         for order_row in orders
     ]
+
+
+def fetch_order_row_by_id(
+    connection: DatabaseConnection,
+    order_id: int,
+) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+        """
+        + ORDER_SELECT_COLUMNS
+        + """
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (order_id,),
+    ).fetchone()
+
+
+def fetch_order_items_for_order_id(
+    connection: DatabaseConnection,
+    order_id: int,
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT
+        """
+        + ORDER_ITEM_SELECT_COLUMNS
+        + """
+        FROM order_items
+        WHERE order_id = ?
+        ORDER BY id DESC
+        """,
+        (order_id,),
+    ).fetchall()
+
+
+def user_can_access_order_invoice(
+    connection: DatabaseConnection,
+    *,
+    user: sqlite3.Row,
+    order_row: sqlite3.Row,
+) -> bool:
+    if user["role"] == "admin":
+        return True
+
+    if user["role"] == "client":
+        return int(order_row["user_id"] or 0) == int(user["id"])
+
+    if user["role"] == "business":
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM order_items
+            WHERE order_id = ?
+              AND business_user_id = ?
+            LIMIT 1
+            """,
+            (int(order_row["id"]), int(user["id"])),
+        ).fetchone()
+        return bool(row)
+
+    return False
 
 
 def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, object]]:
@@ -10151,7 +10579,9 @@ def build_checkout_pricing_summary(
     checkout_items: list[dict[str, object]],
     promo_code: str = "",
     user_id: int | None = None,
+    delivery_method: str = "standard",
 ) -> dict[str, object]:
+    delivery_details = get_delivery_method_details(delivery_method)
     subtotal = round(
         sum(round(float(item.get("price") or 0), 2) * max(1, int(item.get("quantity") or 1)) for item in checkout_items),
         2,
@@ -10217,13 +10647,18 @@ def build_checkout_pricing_summary(
         discount_amount = max(0.0, min(subtotal, discount_amount))
         message = str(promo_row["title"] or "").strip() or f"Kuponi {normalized_code} u aplikua."
 
-    total = round(max(0.0, subtotal - discount_amount), 2)
+    shipping_amount = round(float(delivery_details.get("shippingAmount") or 0), 2)
+    total = round(max(0.0, subtotal - discount_amount + shipping_amount), 2)
     return {
         "promoCode": normalized_code,
         "promo": serialize_promo_code(promo_row) if promo_row else None,
         "subtotal": subtotal,
         "discountAmount": discount_amount,
+        "shippingAmount": shipping_amount,
         "total": total,
+        "deliveryMethod": str(delivery_details.get("value") or "standard"),
+        "deliveryLabel": str(delivery_details.get("label") or "Dergese standard"),
+        "estimatedDeliveryText": str(delivery_details.get("estimatedDeliveryText") or "").strip(),
         "message": message,
     }
 
@@ -10527,6 +10962,177 @@ def build_business_notification_messages(
     return messages, warnings
 
 
+def normalize_pdf_text(value: object) -> str:
+    normalized_value = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_value = normalized_value.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_value).strip()
+
+
+def escape_pdf_text(value: object) -> str:
+    text_value = normalize_pdf_text(value)
+    return (
+        text_value.replace("\\", "\\\\")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+    )
+
+
+def build_simple_text_pdf(lines: list[str]) -> bytes:
+    page_width = 595
+    page_height = 842
+    line_height = 15
+    top_offset = 792
+    left_offset = 48
+    bottom_margin = 58
+    max_lines_per_page = max(1, int((top_offset - bottom_margin) / line_height))
+    normalized_lines = [normalize_pdf_text(line) for line in lines] or [""]
+    page_chunks = [
+        normalized_lines[index : index + max_lines_per_page]
+        for index in range(0, len(normalized_lines), max_lines_per_page)
+    ] or [[""]]
+
+    objects: list[bytes] = []
+
+    def add_object(payload: str | bytes) -> int:
+        if isinstance(payload, str):
+            payload_bytes = payload.encode("latin-1")
+        else:
+            payload_bytes = payload
+        objects.append(payload_bytes)
+        return len(objects)
+
+    pages_object_number = add_object(b"<< /Type /Pages /Count 0 /Kids [] >>")
+    font_object_number = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    page_object_numbers: list[int] = []
+
+    for page_index, page_lines in enumerate(page_chunks, start=1):
+        content_lines = [
+            "BT",
+            "/F1 12 Tf",
+            f"1 0 0 1 {left_offset} {top_offset} Tm",
+            f"{line_height} TL",
+        ]
+        for line in page_lines:
+            content_lines.append(f"({escape_pdf_text(line)}) Tj")
+            content_lines.append("T*")
+        content_lines.append("ET")
+        content_stream = "\n".join(content_lines).encode("latin-1")
+        content_object_number = add_object(
+            b"<< /Length "
+            + str(len(content_stream)).encode("ascii")
+            + b" >>\nstream\n"
+            + content_stream
+            + b"\nendstream"
+        )
+        page_object_number = add_object(
+            (
+                f"<< /Type /Page /Parent {pages_object_number} 0 R "
+                f"/MediaBox [0 0 {page_width} {page_height}] "
+                f"/Resources << /Font << /F1 {font_object_number} 0 R >> >> "
+                f"/Contents {content_object_number} 0 R >>"
+            ).encode("latin-1")
+        )
+        page_object_numbers.append(page_object_number)
+
+    objects[pages_object_number - 1] = (
+        f"<< /Type /Pages /Count {len(page_object_numbers)} /Kids "
+        f"[{' '.join(f'{page_number} 0 R' for page_number in page_object_numbers)}] >>"
+    ).encode("latin-1")
+    catalog_object_number = add_object(
+        f"<< /Type /Catalog /Pages {pages_object_number} 0 R >>".encode("latin-1")
+    )
+
+    payload = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    offsets = [0]
+    for object_number, object_payload in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload += (
+            f"{object_number} 0 obj\n".encode("ascii")
+            + object_payload
+            + b"\nendobj\n"
+        )
+
+    xref_offset = len(payload)
+    payload += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+    payload += b"0000000000 65535 f \n"
+    for offset in offsets[1:]:
+        payload += f"{offset:010d} 00000 n \n".encode("ascii")
+
+    payload += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root {catalog_object_number} 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF"
+    ).encode("ascii")
+    return payload
+
+
+def format_invoice_price(amount: object) -> str:
+    return f"EUR {round(float(amount or 0), 2):.2f}"
+
+
+def build_order_invoice_pdf(order_payload: dict[str, object]) -> bytes:
+    order_items = list(order_payload.get("items") or [])
+    lines: list[str] = [
+        "TREGO",
+        "Fature / Invoice",
+        f"Porosia #{int(order_payload.get('id') or 0)}",
+        "",
+        "Te dhenat e klientit",
+        f"Emri: {order_payload.get('customerName') or '-'}",
+        f"Email: {order_payload.get('customerEmail') or '-'}",
+        f"Telefoni: {order_payload.get('phoneNumber') or '-'}",
+        "",
+        "Adresa e dergeses",
+        f"Adresa: {order_payload.get('addressLine') or '-'}",
+        f"Qyteti: {order_payload.get('city') or '-'}",
+        f"Shteti: {order_payload.get('country') or '-'}",
+        f"ZIP: {order_payload.get('zipCode') or '-'}",
+        "",
+        "Pagesa dhe dergesa",
+        f"Pagesa: {format_notification_payment_method(str(order_payload.get('paymentMethod') or ''))}",
+        f"Dergesa: {order_payload.get('deliveryLabel') or 'Dergese standard'}",
+        f"Afati: {order_payload.get('estimatedDeliveryText') or '-'}",
+        f"Data e porosise: {order_payload.get('createdAt') or '-'}",
+        "",
+        "Artikujt",
+    ]
+
+    if not order_items:
+        lines.append("Nuk ka artikuj te ruajtur ne kete fature.")
+    else:
+        for item in order_items:
+            quantity = max(1, int(item.get("quantity") or 1))
+            title = str(item.get("title") or "Produkt").strip()
+            variant_label = str(item.get("variantLabel") or "").strip()
+            business_name = str(item.get("businessName") or "").strip()
+            details = f"{title} x{quantity} - {format_invoice_price(item.get('totalPrice') or 0)}"
+            lines.extend(textwrap.wrap(details, width=84) or [details])
+            if variant_label:
+                lines.append(f"  Varianti: {variant_label}")
+            if business_name:
+                lines.append(f"  Biznesi: {business_name}")
+
+    lines.extend(
+        [
+            "",
+            "Permbledhja",
+            f"Nentotali: {format_invoice_price(order_payload.get('subtotalAmount') or 0)}",
+            f"Zbritja: {format_invoice_price(order_payload.get('discountAmount') or 0)}",
+            f"Transporti: {format_invoice_price(order_payload.get('shippingAmount') or 0)}",
+            f"Totali: {format_invoice_price(order_payload.get('totalPrice') or 0)}",
+        ]
+    )
+    promo_code = str(order_payload.get("promoCode") or "").strip()
+    if promo_code:
+        lines.append(f"Kuponi: {promo_code}")
+    lines.extend(
+        [
+            "",
+            "Faleminderit qe perdorni TREGO.",
+        ]
+    )
+    return build_simple_text_pdf(lines)
+
+
 def fetch_stats() -> dict[str, object]:
     with get_db_connection() as connection:
         total_users_row = connection.execute(
@@ -10764,6 +11370,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/businesses/public":
             self.handle_public_businesses_list()
             return
+        if path == "/api/search/autocomplete":
+            self.handle_search_autocomplete(query_params)
+            return
         if path == "/api/address":
             self.handle_default_address()
             return
@@ -10814,6 +11423,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/orders":
             self.handle_orders_list()
+            return
+        if path == "/api/orders/invoice":
+            self.handle_order_invoice(query_params)
             return
         if path == "/api/business/orders":
             self.handle_business_orders_list()
@@ -11654,6 +12266,66 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "offset": offset,
                 "total": None,
                 "hasMore": has_more,
+            },
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+        )
+
+    def handle_search_autocomplete(self, query_params: dict[str, list[str]]) -> None:
+        raw_query = str(query_params.get("q", [""])[0] or "").strip()
+        try:
+            limit = int(str(query_params.get("limit", ["4"])[0] or "4").strip() or "4")
+        except ValueError:
+            limit = 4
+        safe_limit = max(1, min(6, limit))
+
+        if len(raw_query) < 2:
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "query": raw_query,
+                    "products": [],
+                    "businesses": [],
+                    "categories": [],
+                },
+                headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
+            )
+            return
+
+        interpreted_intent = interpret_search_query(raw_query)
+        category = interpreted_intent.get("category")
+        category_group = interpreted_intent.get("categoryGroup")
+        product_type = interpreted_intent.get("productType")
+        size = interpreted_intent.get("size")
+        color = interpreted_intent.get("color")
+        business_name = str(interpreted_intent.get("businessName") or "").strip() or None
+        search_text = str(interpreted_intent.get("searchText", "") or raw_query).strip()
+
+        product_rows, _has_more = fetch_products_page(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name,
+            search_text=search_text,
+            limit=safe_limit,
+            offset=0,
+        )
+        businesses = [
+            serialize_public_business_profile(row)
+            for row in search_public_business_profiles(raw_query, limit=safe_limit)
+        ]
+        categories = build_catalog_autocomplete_matches(raw_query, limit=safe_limit)
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "query": raw_query,
+                "products": [serialize_product(row) for row in product_rows],
+                "businesses": businesses,
+                "categories": categories,
             },
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS,
         )
@@ -13909,7 +14581,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
         address_errors, cleaned_address = validate_address_payload(payload)
         promo_code_errors, promo_code = parse_promo_code(payload)
-        combined_errors = cart_line_ids_errors + address_errors + promo_code_errors
+        delivery_method_errors, delivery_method = parse_delivery_method(payload)
+        combined_errors = cart_line_ids_errors + address_errors + promo_code_errors + delivery_method_errors
         if combined_errors:
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
@@ -13926,6 +14599,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     checkout_items=checkout_items,
                     promo_code=promo_code,
                     user_id=int(user["id"]),
+                    delivery_method=delivery_method or "standard",
                 )
                 reserved_until = reserve_checkout_stock(
                     connection,
@@ -13949,10 +14623,13 @@ class AppHandler(SimpleHTTPRequestHandler):
             cleaned_address,
             checkout_items,
             promo_code,
+            delivery_method or "standard",
         )
         line_item_fields, fallback_total_amount = build_stripe_checkout_line_items(
             checkout_items,
             discount_amount=float(pricing_summary.get("discountAmount") or 0),
+            shipping_amount=float(pricing_summary.get("shippingAmount") or 0),
+            delivery_label=str(pricing_summary.get("deliveryLabel") or ""),
         )
         form_fields = list(line_item_fields)
         form_fields.extend(
@@ -14005,7 +14682,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 checkout_items=checkout_items,
                 amount_total=int(stripe_payload.get("amount_total") or fallback_total_amount),
                 discount_amount=int(round(float(pricing_summary.get("discountAmount") or 0) * 100)),
+                shipping_amount=int(round(float(pricing_summary.get("shippingAmount") or 0) * 100)),
                 promo_code=promo_code,
+                delivery_method=str(pricing_summary.get("deliveryMethod") or delivery_method or "standard"),
+                delivery_label=str(pricing_summary.get("deliveryLabel") or ""),
+                estimated_delivery_text=str(pricing_summary.get("estimatedDeliveryText") or ""),
                 currency=str(stripe_payload.get("currency") or STRIPE_CURRENCY).strip().lower(),
                 payment_status=str(stripe_payload.get("payment_status") or "").strip().lower(),
                 stripe_status=str(stripe_payload.get("status") or "").strip().lower(),
@@ -14214,7 +14895,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                             2,
                         ),
                         "discountAmount": round(float(int(stored_session["discount_amount"] or 0)) / 100, 2),
+                        "shippingAmount": round(float(int(stored_session["shipping_amount"] or 0)) / 100, 2),
                         "total": round(float(stripe_amount_total or 0) / 100, 2),
+                        "deliveryMethod": str(stored_session["delivery_method"] or "standard").strip().lower(),
+                        "deliveryLabel": str(stored_session["delivery_label"] or "").strip(),
+                        "estimatedDeliveryText": str(stored_session["estimated_delivery_text"] or "").strip(),
                     },
                 )
                 update_stripe_payment_session_state(
@@ -14279,6 +14964,44 @@ class AppHandler(SimpleHTTPRequestHandler):
         order_ids = [int(order["id"]) for order in orders]
         payload = build_orders_payload(orders, fetch_order_items_for_orders(order_ids))
         self.send_json(200, {"ok": True, "orders": payload})
+
+    def handle_order_invoice(self, query_params: dict[str, list[str]]) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per ta shkarkuar faturen."})
+            return
+
+        errors, order_id = parse_order_id_query(query_params)
+        if errors or order_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        with get_db_connection() as connection:
+            order_row = fetch_order_row_by_id(connection, order_id)
+            if not order_row:
+                self.send_json(404, {"ok": False, "message": "Porosia nuk u gjet."})
+                return
+
+            if not user_can_access_order_invoice(connection, user=user, order_row=order_row):
+                self.send_json(403, {"ok": False, "message": "Nuk ke akses ne kete fature."})
+                return
+
+            order_items = fetch_order_items_for_order_id(connection, order_id)
+
+        order_payload = serialize_order(
+            order_row,
+            [serialize_order_item(item) for item in order_items],
+        )
+        invoice_pdf = build_order_invoice_pdf(order_payload)
+        self.send_bytes(
+            200,
+            invoice_pdf,
+            content_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="trego-invoice-{order_id}.pdf"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     def handle_business_orders_list(self) -> None:
         user = self.get_current_user()
@@ -14446,7 +15169,8 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         promo_code_errors, promo_code = parse_promo_code(payload)
         cart_line_ids_errors, cart_line_ids = parse_cart_line_ids(payload)
-        combined_errors = promo_code_errors + cart_line_ids_errors
+        delivery_method_errors, delivery_method = parse_delivery_method(payload)
+        combined_errors = promo_code_errors + cart_line_ids_errors + delivery_method_errors
         if combined_errors:
             self.send_json(400, {"ok": False, "errors": combined_errors})
             return
@@ -14463,6 +15187,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     checkout_items=checkout_items,
                     promo_code=promo_code,
                     user_id=int(user["id"]),
+                    delivery_method=delivery_method or "standard",
                 )
         except CheckoutProcessError as error:
             self.send_json(
@@ -15806,7 +16531,14 @@ class AppHandler(SimpleHTTPRequestHandler):
         payment_method_errors, payment_method = parse_payment_method(payload)
         address_errors, cleaned_address = validate_address_payload(payload)
         promo_code_errors, promo_code = parse_promo_code(payload)
-        combined_errors = cart_line_ids_errors + payment_method_errors + address_errors + promo_code_errors
+        delivery_method_errors, delivery_method = parse_delivery_method(payload)
+        combined_errors = (
+            cart_line_ids_errors
+            + payment_method_errors
+            + address_errors
+            + promo_code_errors
+            + delivery_method_errors
+        )
 
         if combined_errors or payment_method is None:
             self.send_json(400, {"ok": False, "errors": combined_errors})
@@ -15834,6 +16566,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     checkout_items=checkout_items,
                     promo_code=promo_code,
                     user_id=int(user["id"]),
+                    delivery_method=delivery_method or "standard",
                 )
                 order_id, saved_order, saved_items = create_order_from_checkout_items(
                     connection,

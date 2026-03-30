@@ -15,9 +15,36 @@ import {
 export const LOGIN_GREETING_KEY = "trego_login_greeting";
 export const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address_draft";
 export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
+export const CHECKOUT_DELIVERY_METHOD_KEY = "trego_checkout_delivery_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 export const APP_LOADER_MIN_DURATION_MS = 160;
+export const DELIVERY_METHOD_OPTIONS = [
+  {
+    value: "standard",
+    label: "Dergese standard",
+    description: "Opsioni me i balancuar per shumicen e porosive ne marketplace.",
+    shippingAmount: 2.5,
+    estimatedDeliveryText: "2-4 dite pune",
+    badge: "Opsioni 01",
+  },
+  {
+    value: "express",
+    label: "Dergese express",
+    description: "Per porosi me urgjence dhe dorezim me te shpejte.",
+    shippingAmount: 4.9,
+    estimatedDeliveryText: "1-2 dite pune",
+    badge: "Opsioni 02",
+  },
+  {
+    value: "pickup",
+    label: "Terheqje ne biznes",
+    description: "Rezervo online dhe terhiqe produktin direkt te biznesi.",
+    shippingAmount: 0,
+    estimatedDeliveryText: "Gati per terheqje brenda 24 oresh",
+    badge: "Opsioni 03",
+  },
+];
 
 function createSearchHref({ categoryGroup = "", category = "", productType = "" } = {}) {
   const params = new URLSearchParams();
@@ -223,6 +250,27 @@ export function readCheckoutPaymentMethod() {
   }
 }
 
+export function persistCheckoutDeliveryMethod(method) {
+  try {
+    window.sessionStorage.setItem(
+      CHECKOUT_DELIVERY_METHOD_KEY,
+      String(method || "").trim() || "standard",
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+export function readCheckoutDeliveryMethod() {
+  try {
+    const nextValue = String(window.sessionStorage.getItem(CHECKOUT_DELIVERY_METHOD_KEY) || "").trim();
+    return nextValue || "standard";
+  } catch (error) {
+    console.error(error);
+    return "standard";
+  }
+}
+
 export function persistOrderConfirmationMessage(message) {
   try {
     const nextValue = String(message || "").trim();
@@ -255,6 +303,7 @@ export function clearCheckoutFlowState() {
   try {
     window.sessionStorage.removeItem(CHECKOUT_ADDRESS_DRAFT_KEY);
     window.sessionStorage.removeItem(CHECKOUT_PAYMENT_METHOD_KEY);
+    window.sessionStorage.removeItem(CHECKOUT_DELIVERY_METHOD_KEY);
     window.sessionStorage.removeItem(CHECKOUT_SELECTED_CART_IDS_KEY);
   } catch (error) {
     console.error(error);
@@ -442,6 +491,27 @@ export function formatPaymentMethodLabel(paymentMethod) {
   };
 
   return labels[String(paymentMethod || "").trim()] || "Pagesa";
+}
+
+export function getDeliveryMethodOption(deliveryMethod) {
+  const normalizedValue = String(deliveryMethod || "").trim().toLowerCase() || "standard";
+  return (
+    DELIVERY_METHOD_OPTIONS.find((option) => option.value === normalizedValue)
+    || DELIVERY_METHOD_OPTIONS[0]
+  );
+}
+
+export function formatDeliveryMethodLabel(deliveryMethod) {
+  return getDeliveryMethodOption(deliveryMethod)?.label || "Dergese standard";
+}
+
+export function formatEstimatedDeliveryLabel(deliveryMethod, fallbackText = "") {
+  const explicitText = String(fallbackText || "").trim();
+  if (explicitText) {
+    return explicitText;
+  }
+
+  return getDeliveryMethodOption(deliveryMethod)?.estimatedDeliveryText || "";
 }
 
 export function formatOrderStatusLabel(status) {

@@ -4,11 +4,15 @@ import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   clearCheckoutFlowState,
+  DELIVERY_METHOD_OPTIONS,
+  formatDeliveryMethodLabel,
   formatDateLabel,
   formatPrice,
+  persistCheckoutDeliveryMethod,
   persistCheckoutPaymentMethod,
   persistOrderConfirmationMessage,
   readCheckoutAddressDraft,
+  readCheckoutDeliveryMethod,
   readCheckoutPaymentMethod,
   readCheckoutSelectedCartIds,
 } from "../lib/shop";
@@ -17,10 +21,12 @@ import { bumpCatalogRevision, ensureSessionLoaded, markRouteReady } from "../sto
 const route = useRoute();
 const router = useRouter();
 const selectedMethod = ref(readCheckoutPaymentMethod());
+const selectedDeliveryMethod = ref(readCheckoutDeliveryMethod());
 const submitting = ref(false);
 const promoCode = ref("");
 const pricing = ref(null);
 const reservedUntil = ref("");
+const deliveryOptions = DELIVERY_METHOD_OPTIONS;
 const ui = reactive({
   message: "",
   type: "",
@@ -62,11 +68,19 @@ onMounted(async () => {
     }
 
     await reserveCheckoutStock();
+    await refreshPricingSummary();
 
   } finally {
     markRouteReady();
   }
 });
+
+async function handleDeliverySelection(method) {
+  const nextMethod = String(method || "").trim().toLowerCase() || "standard";
+  selectedDeliveryMethod.value = nextMethod;
+  persistCheckoutDeliveryMethod(nextMethod);
+  await refreshPricingSummary();
+}
 
 async function handlePaymentSelection(method) {
   if (submitting.value) {
@@ -104,25 +118,21 @@ async function reserveCheckoutStock() {
   reservedUntil.value = String(data.reservedUntil || "").trim();
 }
 
-async function applyPromotion() {
+async function refreshPricingSummary({ announceSuccess = false } = {}) {
   const selectedCartIds = readCheckoutSelectedCartIds();
-  if (!String(promoCode.value || "").trim()) {
-    pricing.value = null;
-    ui.message = "";
-    ui.type = "";
-    return;
-  }
-
   const { response, data } = await requestJson("/api/promotions/apply", {
     method: "POST",
     body: JSON.stringify({
       cartItemIds: selectedCartIds,
       promoCode: promoCode.value,
+      deliveryMethod: selectedDeliveryMethod.value,
     }),
   });
 
   if (!response.ok || !data?.ok) {
-    pricing.value = null;
+    if (String(promoCode.value || "").trim()) {
+      pricing.value = null;
+    }
     ui.message = resolveApiMessage(data, "Kuponi nuk u aplikua.");
     ui.type = "error";
     return;
@@ -130,8 +140,17 @@ async function applyPromotion() {
 
   pricing.value = data.pricing || null;
   promoCode.value = String(pricing.value?.promoCode || promoCode.value || "").trim().toUpperCase();
-  ui.message = data.message || "Kuponi u aplikua.";
-  ui.type = "success";
+  if (announceSuccess) {
+    ui.message = data.message || "Kuponi u aplikua.";
+    ui.type = "success";
+  } else if (!String(promoCode.value || "").trim()) {
+    ui.message = "";
+    ui.type = "";
+  }
+}
+
+async function applyPromotion() {
+  await refreshPricingSummary({ announceSuccess: true });
 }
 
 async function submitCashOrder() {
@@ -141,6 +160,7 @@ async function submitCashOrder() {
   const payload = {
     cartItemIds: selectedCartIds,
     paymentMethod: selectedMethod.value,
+    deliveryMethod: selectedDeliveryMethod.value,
     promoCode: promoCode.value,
     ...checkoutAddress,
   };
@@ -181,6 +201,7 @@ async function startStripeCheckout() {
   const payload = {
     cartItemIds: selectedCartIds,
     paymentMethod: "card-online",
+    deliveryMethod: selectedDeliveryMethod.value,
     promoCode: promoCode.value,
     ...checkoutAddress,
   };
@@ -257,8 +278,8 @@ async function confirmStripePayment(stripeSessionId) {
     <section class="card checkout-address-card">
       <div class="profile-card-header">
         <div>
-          <p class="section-label">Pagesa</p>
-          <h2>Opsionet e pageses</h2>
+          <p class="section-label">Checkout</p>
+          <h2>Dergesa dhe pagesa</h2>
         </div>
       </div>
 
@@ -293,8 +314,44 @@ async function confirmStripePayment(stripeSessionId) {
           <strong>{{ formatPrice(pricing.discountAmount) }}</strong>
         </div>
         <div class="summary-chip">
+          <span>Transporti</span>
+          <strong>{{ formatPrice(pricing.shippingAmount) }}</strong>
+        </div>
+        <div class="summary-chip">
           <span>Totali i ri</span>
           <strong>{{ formatPrice(pricing.total) }}</strong>
+        </div>
+      </div>
+
+      <div class="payment-options-card">
+        <div class="profile-card-header">
+          <div>
+            <p class="section-label">Dergesa</p>
+            <h2>Zgjidh menyren e dergeses</h2>
+          </div>
+        </div>
+
+        <div class="payment-options-grid">
+          <button
+            v-for="option in deliveryOptions"
+            :key="option.value"
+            class="payment-option-card delivery-option-card"
+            :class="{ active: selectedDeliveryMethod === option.value }"
+            type="button"
+            @click="handleDeliverySelection(option.value)"
+          >
+            <div class="payment-option-card-header">
+              <span class="checkout-choice-label">{{ option.badge }}</span>
+              <strong class="checkout-choice-title">{{ option.label }}</strong>
+            </div>
+            <p class="payment-option-copy">
+              {{ option.description }}
+            </p>
+            <div class="payment-option-cta">
+              <span class="payment-option-chip">{{ option.estimatedDeliveryText }}</span>
+              <span class="payment-option-status">{{ formatPrice(option.shippingAmount) }}</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -314,8 +371,8 @@ async function confirmStripePayment(stripeSessionId) {
             Paguani kur porosia të arrijë te ju dhe ruani fleksibilitetin e biznesit tuaj.
           </p>
           <div class="payment-option-cta">
-            <span class="payment-option-chip">Cash on Delivery</span>
-            <span class="payment-option-status">Çaktivizuar nga Stripe</span>
+            <span class="payment-option-chip">{{ formatDeliveryMethodLabel(selectedDeliveryMethod) }}</span>
+            <span class="payment-option-status">Paguan ne pranim</span>
           </div>
         </button>
 
@@ -335,7 +392,7 @@ async function confirmStripePayment(stripeSessionId) {
           </p>
           <div class="payment-option-logos">
             <span class="payment-option-logo-badge">Stripe</span>
-            <span class="payment-option-logo-label">Test mode</span>
+            <span class="payment-option-logo-label">{{ pricing?.estimatedDeliveryText || "Test mode" }}</span>
           </div>
         </button>
       </div>
