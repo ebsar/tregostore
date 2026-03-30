@@ -325,7 +325,7 @@ const featuredCategoryCards = computed(() => {
   })
     .filter(Boolean)
     .sort((left, right) => right.count - left.count)
-    .slice(0, 5);
+    .slice(0, 4);
 });
 const highestDiscountDisplay = computed(() => {
   const highestDiscount = marketplaceProducts.value.reduce(
@@ -1175,8 +1175,12 @@ async function handleCart(productId) {
       </aside>
     </section>
 
-    <section v-if="featuredCategoryCards.length > 0" class="home-marketplace-section" aria-label="Kategorite e kuruara">
-      <header class="home-marketplace-section-head">
+    <section
+      v-if="featuredCategoryCards.length > 0"
+      class="home-marketplace-section home-marketplace-featured-categories"
+      aria-label="Kategorite e kuruara"
+    >
+      <header class="home-marketplace-section-head home-marketplace-featured-categories-head">
         <div>
           <p class="section-label">Featured categories</p>
           <h2>Fillo nga koleksioni qe te pershtatet me shume.</h2>
@@ -1185,11 +1189,11 @@ async function handleCart(productId) {
         <RouterLink class="home-marketplace-section-link" to="/kerko">Te gjitha kategorite</RouterLink>
       </header>
 
-      <div class="home-marketplace-category-grid">
+      <div class="home-marketplace-category-grid home-marketplace-featured-categories-grid">
         <RouterLink
           v-for="category in featuredCategoryCards"
           :key="category.value"
-          class="home-marketplace-category-card"
+          class="home-marketplace-category-card home-marketplace-featured-category-card"
           :to="category.href"
         >
           <div class="home-marketplace-category-media">
@@ -1204,6 +1208,7 @@ async function handleCart(productId) {
             >
           </div>
           <div class="home-marketplace-category-copy">
+            <em class="home-marketplace-featured-chip">Featured</em>
             <span>{{ category.count }} produkte</span>
             <strong>{{ category.label }}</strong>
             <small>{{ category.helper }}</small>
