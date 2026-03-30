@@ -26,7 +26,7 @@ const submitting = ref(false);
 const promoCode = ref("");
 const pricing = ref(null);
 const reservedUntil = ref("");
-const deliveryOptions = DELIVERY_METHOD_OPTIONS;
+const deliveryOptions = ref([...DELIVERY_METHOD_OPTIONS]);
 const ui = reactive({
   message: "",
   type: "",
@@ -82,6 +82,22 @@ async function handleDeliverySelection(method) {
   await refreshPricingSummary();
 }
 
+function syncDeliveryOptions(pricingPayload) {
+  const nextOptions = Array.isArray(pricingPayload?.availableDeliveryMethods)
+    && pricingPayload.availableDeliveryMethods.length > 0
+    ? pricingPayload.availableDeliveryMethods
+    : DELIVERY_METHOD_OPTIONS;
+
+  deliveryOptions.value = nextOptions;
+  const normalizedSelected = String(pricingPayload?.deliveryMethod || selectedDeliveryMethod.value || "standard")
+    .trim()
+    .toLowerCase() || "standard";
+  if (normalizedSelected !== selectedDeliveryMethod.value) {
+    selectedDeliveryMethod.value = normalizedSelected;
+    persistCheckoutDeliveryMethod(normalizedSelected);
+  }
+}
+
 async function handlePaymentSelection(method) {
   if (submitting.value) {
     return;
@@ -120,12 +136,14 @@ async function reserveCheckoutStock() {
 
 async function refreshPricingSummary({ announceSuccess = false } = {}) {
   const selectedCartIds = readCheckoutSelectedCartIds();
+  const checkoutAddress = readCheckoutAddressDraft() || {};
   const { response, data } = await requestJson("/api/promotions/apply", {
     method: "POST",
     body: JSON.stringify({
       cartItemIds: selectedCartIds,
       promoCode: promoCode.value,
       deliveryMethod: selectedDeliveryMethod.value,
+      ...checkoutAddress,
     }),
   });
 
@@ -139,8 +157,12 @@ async function refreshPricingSummary({ announceSuccess = false } = {}) {
   }
 
   pricing.value = data.pricing || null;
+  syncDeliveryOptions(pricing.value);
   promoCode.value = String(pricing.value?.promoCode || promoCode.value || "").trim().toUpperCase();
-  if (announceSuccess) {
+  if (String(pricing.value?.deliveryNotice || "").trim()) {
+    ui.message = String(pricing.value.deliveryNotice).trim();
+    ui.type = "info";
+  } else if (announceSuccess) {
     ui.message = data.message || "Kuponi u aplikua.";
     ui.type = "success";
   } else if (!String(promoCode.value || "").trim()) {
@@ -221,6 +243,7 @@ async function startStripeCheckout() {
     }
 
     pricing.value = data.pricing || pricing.value;
+    syncDeliveryOptions(pricing.value);
     reservedUntil.value = String(data.reservedUntil || reservedUntil.value || "").trim();
     persistCheckoutPaymentMethod("card-online");
     window.location.href = String(data.checkoutUrl).trim();
@@ -323,6 +346,49 @@ async function confirmStripePayment(stripeSessionId) {
         </div>
       </div>
 
+      <div v-if="pricing?.shippingRuleMessage" class="marketplace-status-card checkout-shipping-note">
+        <div>
+          <p class="section-label">Transporti dinamik</p>
+          <strong>{{ pricing.shippingRuleMessage }}</strong>
+          <p class="section-text">
+            Qyteti / zona: {{ pricing.cityZoneLabel || "Qyteti i zgjedhur" }}
+            <span v-if="pricing.shippingCitySurcharge > 0">
+              · Shtese qyteti {{ formatPrice(pricing.shippingCitySurcharge) }}
+            </span>
+            <span v-if="pricing.shippingSubtotalDiscount > 0">
+              · Zbritje shporte {{ formatPrice(pricing.shippingSubtotalDiscount) }}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <div
+        v-if="Array.isArray(pricing?.shippingBreakdown) && pricing.shippingBreakdown.length > 0"
+        class="checkout-shipping-breakdown"
+      >
+        <article
+          v-for="entry in pricing.shippingBreakdown"
+          :key="`${entry.businessUserId}-${entry.deliveryMethod}`"
+          class="summary-chip"
+        >
+          <span>{{ entry.businessName || "Marketplace" }}</span>
+          <strong>{{ formatPrice(entry.shippingAmount) }}</strong>
+          <small>
+            {{ entry.deliveryLabel }}
+            <span v-if="entry.estimatedDeliveryText"> · {{ entry.estimatedDeliveryText }}</span>
+          </small>
+          <small v-if="entry.cityZoneLabel || entry.citySurcharge > 0">
+            <span>{{ entry.cityZoneLabel || "Qyteti i zgjedhur" }}</span>
+            <span v-if="entry.citySurcharge > 0"> · Shtese {{ formatPrice(entry.citySurcharge) }}</span>
+          </small>
+          <small v-if="entry.pickupAddress || entry.pickupHours">
+            <span v-if="entry.pickupAddress">{{ entry.pickupAddress }}</span>
+            <span v-if="entry.pickupAddress && entry.pickupHours"> · </span>
+            <span v-if="entry.pickupHours">{{ entry.pickupHours }}</span>
+          </small>
+        </article>
+      </div>
+
       <div class="payment-options-card">
         <div class="profile-card-header">
           <div>
@@ -333,7 +399,7 @@ async function confirmStripePayment(stripeSessionId) {
 
         <div class="payment-options-grid">
           <button
-            v-for="option in deliveryOptions"
+            v-for="(option, index) in deliveryOptions"
             :key="option.value"
             class="payment-option-card delivery-option-card"
             :class="{ active: selectedDeliveryMethod === option.value }"
@@ -341,7 +407,7 @@ async function confirmStripePayment(stripeSessionId) {
             @click="handleDeliverySelection(option.value)"
           >
             <div class="payment-option-card-header">
-              <span class="checkout-choice-label">{{ option.badge }}</span>
+              <span class="checkout-choice-label">{{ option.badge || `Opsioni ${String(index + 1).padStart(2, '0')}` }}</span>
               <strong class="checkout-choice-title">{{ option.label }}</strong>
             </div>
             <p class="payment-option-copy">

@@ -279,6 +279,62 @@ DELIVERY_METHODS = {
         "estimated_delivery_text": "Gati per terheqje brenda 24 oresh",
     },
 }
+DEFAULT_BUSINESS_SHIPPING_SETTINGS = {
+    "standardEnabled": True,
+    "standardFee": round(float(DELIVERY_METHODS["standard"]["shipping_amount"]), 2),
+    "standardEta": str(DELIVERY_METHODS["standard"]["estimated_delivery_text"]),
+    "expressEnabled": True,
+    "expressFee": round(float(DELIVERY_METHODS["express"]["shipping_amount"]), 2),
+    "expressEta": str(DELIVERY_METHODS["express"]["estimated_delivery_text"]),
+    "pickupEnabled": True,
+    "pickupEta": str(DELIVERY_METHODS["pickup"]["estimated_delivery_text"]),
+    "pickupAddress": "",
+    "pickupHours": "Kontakto biznesin per orarin",
+    "cityRates": [],
+    "halfOffThreshold": 120.0,
+    "freeShippingThreshold": 180.0,
+}
+DELIVERY_CITY_ZONE_RULES = [
+    {
+        "key": "urban",
+        "label": "Qytet kryesor",
+        "cities": {
+            "prishtine",
+            "prishtina",
+            "prizren",
+            "peje",
+            "gjakove",
+            "mitrovice",
+            "ferizaj",
+            "gjilan",
+        },
+        "surcharge": 0.0,
+    },
+    {
+        "key": "regional",
+        "label": "Qytet rajonal",
+        "cities": {
+            "podujeve",
+            "vushtrri",
+            "rahovec",
+            "suhareke",
+            "fushe kosove",
+            "lipjan",
+            "drenas",
+            "istog",
+            "kline",
+            "decan",
+            "kamenice",
+            "malsheve",
+            "malisheve",
+        },
+        "surcharge": 0.9,
+    },
+]
+SHIPPING_DISCOUNT_THRESHOLDS = {
+    "half_off": 120.0,
+    "free": 180.0,
+}
 ORDER_ITEM_FULFILLMENT_STATUSES = {
     "confirmed",
     "packed",
@@ -406,6 +462,11 @@ BUSINESS_PROFILE_SELECT_COLUMNS = """
     verification_requested_at,
     verification_verified_at,
     verification_notes,
+    profile_edit_access_status,
+    profile_edit_requested_at,
+    profile_edit_approved_at,
+    profile_edit_notes,
+    shipping_settings,
     phone_number,
     city,
     address_line,
@@ -1319,6 +1380,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE business_profiles ADD COLUMN profile_edit_notes TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "business_profiles", "shipping_settings"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN shipping_settings TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE business_profiles
@@ -1341,26 +1407,39 @@ def migrate_database(connection: DatabaseConnection) -> None:
             END,
             profile_edit_requested_at = COALESCE(profile_edit_requested_at, ''),
             profile_edit_approved_at = COALESCE(profile_edit_approved_at, ''),
-            profile_edit_notes = COALESCE(profile_edit_notes, '')
+            profile_edit_notes = COALESCE(profile_edit_notes, ''),
+            shipping_settings = COALESCE(shipping_settings, '')
         """
     )
 
     business_profiles = connection.execute(
         """
-        SELECT id, business_logo_path
+        SELECT id, business_logo_path, shipping_settings
         FROM business_profiles
         """
     ).fetchall()
     for business_profile in business_profiles:
         normalized_logo_path = normalize_image_path(business_profile["business_logo_path"])
-        if normalized_logo_path != str(business_profile["business_logo_path"] or "").strip():
+        normalized_shipping_settings = serialize_business_shipping_settings_storage(
+            normalize_business_shipping_settings(business_profile["shipping_settings"])
+        )
+        if (
+            normalized_logo_path != str(business_profile["business_logo_path"] or "").strip()
+            or normalized_shipping_settings != str(business_profile["shipping_settings"] or "").strip()
+        ):
             connection.execute(
                 """
                 UPDATE business_profiles
-                SET business_logo_path = ?
+                SET
+                    business_logo_path = ?,
+                    shipping_settings = ?
                 WHERE id = ?
                 """,
-                (normalized_logo_path, business_profile["id"]),
+                (
+                    normalized_logo_path,
+                    normalized_shipping_settings,
+                    business_profile["id"],
+                ),
             )
 
     connection.execute(
@@ -5832,6 +5911,574 @@ def get_delivery_method_details(delivery_method: str | None) -> dict[str, object
     }
 
 
+def normalize_business_shipping_settings(
+    raw_settings: object,
+    *,
+    ensure_available: bool = True,
+) -> dict[str, object]:
+    if isinstance(raw_settings, str):
+        raw_text = str(raw_settings or "").strip()
+        if raw_text:
+            try:
+                parsed_settings = json.loads(raw_text)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed_settings = {}
+        else:
+            parsed_settings = {}
+    elif hasattr(raw_settings, "keys"):
+        parsed_settings = {key: raw_settings[key] for key in raw_settings.keys()}
+    elif isinstance(raw_settings, dict):
+        parsed_settings = dict(raw_settings)
+    else:
+        parsed_settings = {}
+
+    def coerce_bool(key: str, fallback: bool) -> bool:
+        value = parsed_settings.get(key, fallback)
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "po", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "jo", "no", "off"}:
+            return False
+        return fallback
+
+    def coerce_amount(key: str, fallback: float) -> float:
+        try:
+            amount = round(float(parsed_settings.get(key, fallback) or 0), 2)
+        except (TypeError, ValueError):
+            amount = fallback
+        return max(0.0, amount)
+
+    def coerce_threshold(key: str, fallback: float) -> float:
+        try:
+            threshold = round(float(parsed_settings.get(key, fallback) or 0), 2)
+        except (TypeError, ValueError):
+            threshold = fallback
+        return max(0.0, threshold)
+
+    def coerce_text(key: str, fallback: str, max_length: int = 80) -> str:
+        value = re.sub(r"\s+", " ", str(parsed_settings.get(key, fallback) or "").strip())
+        return value[:max_length] or fallback
+
+    def coerce_city_rates(raw_value: object) -> list[dict[str, object]]:
+        if isinstance(raw_value, str):
+            raw_text = str(raw_value or "").strip()
+            if raw_text:
+                try:
+                    parsed_value = json.loads(raw_text)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed_value = []
+            else:
+                parsed_value = []
+        elif isinstance(raw_value, list):
+            parsed_value = list(raw_value)
+        elif isinstance(raw_value, tuple):
+            parsed_value = list(raw_value)
+        elif isinstance(raw_value, dict):
+            parsed_value = [
+                {"city": key, "surcharge": value}
+                for key, value in raw_value.items()
+            ]
+        else:
+            parsed_value = []
+
+        normalized_entries: dict[str, dict[str, object]] = {}
+        for entry in parsed_value[:20]:
+            if hasattr(entry, "keys"):
+                city_value = str(entry.get("city") or "").strip()
+                surcharge_value = entry.get("surcharge", 0)
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                city_value = str(entry[0] or "").strip()
+                surcharge_value = entry[1]
+            else:
+                continue
+
+            city_value = re.sub(r"\s+", " ", city_value)[:80]
+            city_lookup = normalize_city_lookup(city_value)
+            if not city_lookup:
+                continue
+
+            try:
+                surcharge_amount = round(float(surcharge_value or 0), 2)
+            except (TypeError, ValueError):
+                surcharge_amount = 0.0
+
+            normalized_entries[city_lookup] = {
+                "city": city_value,
+                "surcharge": max(0.0, surcharge_amount),
+            }
+
+        return sorted(
+            normalized_entries.values(),
+            key=lambda entry: normalize_city_lookup(entry["city"]),
+        )
+
+    normalized_settings = {
+        "standardEnabled": coerce_bool("standardEnabled", bool(DEFAULT_BUSINESS_SHIPPING_SETTINGS["standardEnabled"])),
+        "standardFee": coerce_amount("standardFee", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["standardFee"])),
+        "standardEta": coerce_text("standardEta", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["standardEta"])),
+        "expressEnabled": coerce_bool("expressEnabled", bool(DEFAULT_BUSINESS_SHIPPING_SETTINGS["expressEnabled"])),
+        "expressFee": coerce_amount("expressFee", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["expressFee"])),
+        "expressEta": coerce_text("expressEta", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["expressEta"])),
+        "pickupEnabled": coerce_bool("pickupEnabled", bool(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupEnabled"])),
+        "pickupEta": coerce_text("pickupEta", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupEta"])),
+        "pickupAddress": coerce_text("pickupAddress", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupAddress"]), 180),
+        "pickupHours": coerce_text("pickupHours", str(DEFAULT_BUSINESS_SHIPPING_SETTINGS["pickupHours"]), 120),
+        "cityRates": coerce_city_rates(parsed_settings.get("cityRates", DEFAULT_BUSINESS_SHIPPING_SETTINGS["cityRates"])),
+        "halfOffThreshold": coerce_threshold("halfOffThreshold", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["halfOffThreshold"])),
+        "freeShippingThreshold": coerce_threshold("freeShippingThreshold", float(DEFAULT_BUSINESS_SHIPPING_SETTINGS["freeShippingThreshold"])),
+    }
+
+    if (
+        normalized_settings["halfOffThreshold"] > 0
+        and normalized_settings["freeShippingThreshold"] > 0
+        and normalized_settings["freeShippingThreshold"] < normalized_settings["halfOffThreshold"]
+    ):
+        normalized_settings["halfOffThreshold"] = normalized_settings["freeShippingThreshold"]
+
+    if ensure_available and not any(
+        bool(normalized_settings[key])
+        for key in ("standardEnabled", "expressEnabled", "pickupEnabled")
+    ):
+        normalized_settings["standardEnabled"] = True
+
+    return normalized_settings
+
+
+def serialize_business_shipping_settings_storage(settings: object) -> str:
+    return json.dumps(
+        normalize_business_shipping_settings(settings),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def validate_business_shipping_settings_payload(
+    data: dict[str, object],
+) -> tuple[list[str], dict[str, object]]:
+    raw_payload = data.get("shippingSettings", data)
+    normalized_settings = normalize_business_shipping_settings(raw_payload, ensure_available=False)
+    errors: list[str] = []
+
+    if not any(
+        bool(normalized_settings[key])
+        for key in ("standardEnabled", "expressEnabled", "pickupEnabled")
+    ):
+        errors.append("Lejo te pakten nje metode dergese per biznesin.")
+
+    if normalized_settings["freeShippingThreshold"] > 0 and normalized_settings["halfOffThreshold"] > normalized_settings["freeShippingThreshold"]:
+        errors.append("Pragu i transportit falas duhet te jete me i madh ose i barabarte me pragun e zbritjes 50%.")
+
+    if normalized_settings["pickupEnabled"]:
+        if len(str(normalized_settings["pickupAddress"] or "").strip()) < 5:
+            errors.append("Vendos adresen e terheqjes per pickup.")
+        if len(str(normalized_settings["pickupHours"] or "").strip()) < 4:
+            errors.append("Vendos orarin e terheqjes per pickup.")
+
+    return errors, normalize_business_shipping_settings(normalized_settings)
+
+
+def normalize_city_lookup(value: object) -> str:
+    normalized_value = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_value = normalized_value.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_value).strip().lower()
+
+
+def resolve_delivery_city_zone(city: str | None) -> dict[str, object]:
+    normalized_city = normalize_city_lookup(city)
+    for zone in DELIVERY_CITY_ZONE_RULES:
+        if normalized_city and normalized_city in zone["cities"]:
+            return {
+                "key": str(zone["key"]),
+                "label": str(zone["label"]),
+                "surcharge": round(float(zone["surcharge"] or 0), 2),
+                "city": str(city or "").strip(),
+            }
+
+    return {
+        "key": "extended",
+        "label": "Zone e zgjeruar",
+        "surcharge": 1.7,
+        "city": str(city or "").strip(),
+    }
+
+
+def resolve_business_delivery_city_rule(
+    city: str | None,
+    shipping_settings: dict[str, object] | None = None,
+) -> dict[str, object]:
+    normalized_city = normalize_city_lookup(city)
+    normalized_settings = normalize_business_shipping_settings(shipping_settings)
+    for entry in normalized_settings.get("cityRates", []):
+        city_label = str(entry.get("city") or "").strip()
+        if normalized_city and normalize_city_lookup(city_label) == normalized_city:
+            return {
+                "key": f"business-{normalized_city}",
+                "label": city_label,
+                "surcharge": round(float(entry.get("surcharge") or 0), 2),
+                "city": str(city or "").strip(),
+                "source": "business",
+            }
+
+    fallback_zone = resolve_delivery_city_zone(city)
+    return {
+        **fallback_zone,
+        "source": "marketplace",
+    }
+
+
+def is_delivery_method_enabled_for_settings(
+    shipping_settings: dict[str, object],
+    delivery_method: str,
+) -> bool:
+    normalized_method = str(get_delivery_method_details(delivery_method)["value"])
+    return bool(
+        normalize_business_shipping_settings(shipping_settings).get(
+            f"{normalized_method}Enabled",
+            normalized_method == "pickup",
+        )
+    )
+
+
+def build_business_shipping_quote(
+    *,
+    delivery_method: str,
+    subtotal: float,
+    destination_city: str = "",
+    shipping_settings: dict[str, object] | None = None,
+) -> dict[str, object]:
+    delivery_details = get_delivery_method_details(delivery_method)
+    normalized_method = str(delivery_details.get("value") or "standard")
+    normalized_settings = normalize_business_shipping_settings(shipping_settings)
+
+    if not is_delivery_method_enabled_for_settings(normalized_settings, normalized_method):
+        raise CheckoutProcessError(message="Kjo metode dergese nuk eshte aktive per biznesin e zgjedhur.")
+
+    if normalized_method == "pickup":
+        return {
+            "deliveryMethod": normalized_method,
+            "deliveryLabel": str(delivery_details.get("label") or "Terheqje ne biznes"),
+            "estimatedDeliveryText": str(normalized_settings.get("pickupEta") or delivery_details.get("estimatedDeliveryText") or "").strip(),
+            "shippingAmount": 0.0,
+            "baseAmount": 0.0,
+            "citySurcharge": 0.0,
+            "subtotalDiscount": 0.0,
+            "cityZoneLabel": "Pa transport",
+            "ruleMessage": "Terheqja ne biznes nuk ka kosto transporti dhe varet nga disponueshmeria e biznesit.",
+            "pickupAddress": str(normalized_settings.get("pickupAddress") or "").strip(),
+            "pickupHours": str(normalized_settings.get("pickupHours") or "").strip(),
+        }
+
+    city_zone = resolve_business_delivery_city_rule(destination_city, normalized_settings)
+    eta_key = "expressEta" if normalized_method == "express" else "standardEta"
+    fee_key = "expressFee" if normalized_method == "express" else "standardFee"
+    base_amount = round(float(normalized_settings.get(fee_key) or delivery_details.get("shippingAmount") or 0), 2)
+    city_surcharge = round(float(city_zone.get("surcharge") or 0), 2)
+    pre_discount_amount = round(base_amount + city_surcharge, 2)
+    subtotal_discount = 0.0
+    if str(city_zone.get("source") or "") == "business":
+        rule_message = (
+            f"Transporti per {str(city_zone.get('label') or 'qytetin e zgjedhur')} u llogarit sipas tarifes se vendosur nga biznesi."
+        )
+    else:
+        rule_message = (
+            f"Transporti llogaritet sipas qytetit dhe rregullave te biznesit per {str(city_zone.get('label') or 'qytetin e zgjedhur')}."
+        )
+
+    free_shipping_threshold = round(float(normalized_settings.get("freeShippingThreshold") or 0), 2)
+    half_off_threshold = round(float(normalized_settings.get("halfOffThreshold") or 0), 2)
+
+    if free_shipping_threshold > 0 and subtotal >= free_shipping_threshold:
+        subtotal_discount = pre_discount_amount
+        rule_message = (
+            f"Transporti u be falas sepse shporta e ketij biznesi kaloi {free_shipping_threshold:.2f}€."
+        )
+    elif half_off_threshold > 0 and subtotal >= half_off_threshold:
+        subtotal_discount = round(pre_discount_amount * 0.5, 2)
+        rule_message = (
+            f"Transporti mori 50% zbritje sepse shporta e ketij biznesi kaloi {half_off_threshold:.2f}€."
+        )
+
+    shipping_amount = round(max(0.0, pre_discount_amount - subtotal_discount), 2)
+    return {
+        "deliveryMethod": normalized_method,
+        "deliveryLabel": str(delivery_details.get("label") or "Dergese standard"),
+        "estimatedDeliveryText": str(normalized_settings.get(eta_key) or delivery_details.get("estimatedDeliveryText") or "").strip(),
+        "shippingAmount": shipping_amount,
+        "baseAmount": base_amount,
+        "citySurcharge": city_surcharge,
+        "subtotalDiscount": subtotal_discount,
+        "cityZoneLabel": str(city_zone.get("label") or "Zone e zgjeruar"),
+        "cityRateSource": str(city_zone.get("source") or "marketplace"),
+        "ruleMessage": rule_message,
+    }
+
+
+def fetch_business_shipping_profiles_by_user_ids(
+    connection: DatabaseConnection,
+    user_ids: list[int],
+) -> dict[int, sqlite3.Row]:
+    filtered_user_ids = sorted({int(user_id) for user_id in user_ids if int(user_id) > 0})
+    if not filtered_user_ids:
+        return {}
+
+    placeholders = ", ".join("?" for _ in filtered_user_ids)
+    rows = connection.execute(
+        """
+        SELECT
+            user_id,
+            business_name,
+            address_line,
+            shipping_settings
+        FROM business_profiles
+        WHERE user_id IN ("""
+        + placeholders
+        + """)
+        """,
+        filtered_user_ids,
+    ).fetchall()
+    return {int(row["user_id"]): row for row in rows}
+
+
+def build_checkout_shipping_groups(
+    connection: DatabaseConnection,
+    checkout_items: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    grouped_items: dict[int, dict[str, object]] = {}
+    for item in checkout_items:
+        business_user_id = int(item.get("businessUserId") or 0)
+        group = grouped_items.setdefault(
+            business_user_id,
+            {
+                "businessUserId": business_user_id,
+                "businessName": str(item.get("businessName") or "").strip(),
+                "items": [],
+            },
+        )
+        group["items"].append(item)
+        if not group["businessName"]:
+            group["businessName"] = str(item.get("businessName") or "").strip()
+
+    rows_by_user_id = fetch_business_shipping_profiles_by_user_ids(connection, list(grouped_items.keys()))
+    shipping_groups: list[dict[str, object]] = []
+    for business_user_id, grouped in grouped_items.items():
+        business_row = rows_by_user_id.get(int(business_user_id))
+        subtotal = round(
+            sum(
+                round(float(item.get("price") or 0), 2) * max(1, int(item.get("quantity") or 1))
+                for item in grouped["items"]
+            ),
+            2,
+        )
+        normalized_shipping_settings = normalize_business_shipping_settings(
+            business_row["shipping_settings"] if business_row else None
+        )
+        business_name = (
+            str(grouped.get("businessName") or "").strip()
+            or (str(business_row["business_name"] or "").strip() if business_row else "")
+            or "Marketplace"
+        )
+        shipping_groups.append(
+            {
+                "businessUserId": int(business_user_id),
+                "businessName": business_name,
+                "subtotal": subtotal,
+                "items": list(grouped["items"]),
+                "shippingSettings": {
+                    **normalized_shipping_settings,
+                    "pickupAddress": (
+                        str(normalized_shipping_settings.get("pickupAddress") or "").strip()
+                        or (str(business_row["address_line"] or "").strip() if business_row else "")
+                    ),
+                },
+            }
+        )
+
+    return sorted(
+        shipping_groups,
+        key=lambda group: (
+            str(group.get("businessName") or "").strip().lower(),
+            int(group.get("businessUserId") or 0),
+        ),
+    )
+
+
+def build_checkout_shipping_quote(
+    *,
+    shipping_groups: list[dict[str, object]],
+    delivery_method: str,
+    destination_city: str = "",
+) -> dict[str, object]:
+    normalized_method = str(get_delivery_method_details(delivery_method)["value"])
+    group_quotes: list[dict[str, object]] = []
+    for group in shipping_groups:
+        quote_payload = build_business_shipping_quote(
+            delivery_method=normalized_method,
+            subtotal=round(float(group.get("subtotal") or 0), 2),
+            destination_city=destination_city,
+            shipping_settings=group.get("shippingSettings"),
+        )
+        group_quotes.append(
+            {
+                **quote_payload,
+                "businessUserId": int(group.get("businessUserId") or 0),
+                "businessName": str(group.get("businessName") or "").strip() or "Marketplace",
+                "subtotal": round(float(group.get("subtotal") or 0), 2),
+            }
+        )
+
+    if not group_quotes:
+        fallback_quote = build_business_shipping_quote(
+            delivery_method=normalized_method,
+            subtotal=0,
+            destination_city=destination_city,
+            shipping_settings=DEFAULT_BUSINESS_SHIPPING_SETTINGS,
+        )
+        group_quotes.append(
+            {
+                **fallback_quote,
+                "businessUserId": 0,
+                "businessName": "Marketplace",
+                "subtotal": 0.0,
+            }
+        )
+
+    estimated_delivery_values = [
+        str(quote.get("estimatedDeliveryText") or "").strip()
+        for quote in group_quotes
+        if str(quote.get("estimatedDeliveryText") or "").strip()
+    ]
+    unique_estimates = list(dict.fromkeys(estimated_delivery_values))
+    zone_labels = [
+        str(quote.get("cityZoneLabel") or "").strip()
+        for quote in group_quotes
+        if str(quote.get("cityZoneLabel") or "").strip()
+    ]
+    unique_zone_labels = list(dict.fromkeys(zone_labels))
+    total_shipping_amount = round(sum(float(quote.get("shippingAmount") or 0) for quote in group_quotes), 2)
+    total_base_amount = round(sum(float(quote.get("baseAmount") or 0) for quote in group_quotes), 2)
+    total_city_surcharge = round(sum(float(quote.get("citySurcharge") or 0) for quote in group_quotes), 2)
+    total_subtotal_discount = round(sum(float(quote.get("subtotalDiscount") or 0) for quote in group_quotes), 2)
+
+    if len(group_quotes) == 1:
+        rule_message = str(group_quotes[0].get("ruleMessage") or "").strip()
+    else:
+        rule_message = "Transporti llogaritet vecmas per secilin biznes ne shporte."
+        if total_subtotal_discount > 0:
+            rule_message += " Zbritja e transportit u aplikua sipas pragjeve te bizneseve."
+
+    return {
+        "deliveryMethod": normalized_method,
+        "deliveryLabel": str(get_delivery_method_details(normalized_method)["label"]),
+        "estimatedDeliveryText": (
+            unique_estimates[0]
+            if len(unique_estimates) == 1
+            else ("Sipas biznesit ne shporte" if unique_estimates else "")
+        ),
+        "shippingAmount": total_shipping_amount,
+        "baseAmount": total_base_amount,
+        "citySurcharge": total_city_surcharge,
+        "subtotalDiscount": total_subtotal_discount,
+        "cityZoneLabel": (
+            unique_zone_labels[0]
+            if len(unique_zone_labels) == 1
+            else ("Zona te kombinuara" if unique_zone_labels else "Qyteti i zgjedhur")
+        ),
+        "ruleMessage": rule_message,
+        "breakdown": group_quotes,
+    }
+
+
+def build_checkout_delivery_option_summaries(
+    *,
+    shipping_groups: list[dict[str, object]],
+    destination_city: str = "",
+) -> tuple[list[dict[str, object]], dict[str, dict[str, object]]]:
+    available_options: list[dict[str, object]] = []
+    quotes_by_method: dict[str, dict[str, object]] = {}
+    descriptions = {
+        "standard": (
+            "Tarifa dhe pragjet e transportit vendosen nga biznesi. "
+            "Kur ke disa biznese ne shporte, llogaritja mblidhet per secilin."
+        ),
+        "express": (
+            "Opsion me i shpejte kur bizneset ne shporte e kane aktiv. "
+            "Tarifa llogaritet vecmas per secilin biznes."
+        ),
+        "pickup": (
+            "Shfaqet vetem kur te gjitha bizneset ne shporte lejojne pickup. "
+            "Adresa dhe orari shfaqen poshte sipas secilit biznes."
+        ),
+    }
+
+    for index, method in enumerate(DELIVERY_METHODS.keys(), start=1):
+        if shipping_groups and not all(
+            is_delivery_method_enabled_for_settings(group.get("shippingSettings", {}), method)
+            for group in shipping_groups
+        ):
+            continue
+
+        method_quote = build_checkout_shipping_quote(
+            shipping_groups=shipping_groups,
+            delivery_method=method,
+            destination_city=destination_city,
+        )
+        quotes_by_method[method] = method_quote
+        available_options.append(
+            {
+                "value": method,
+                "label": str(method_quote.get("deliveryLabel") or get_delivery_method_details(method)["label"]),
+                "description": descriptions.get(method, "Opsion i rregulluar sipas biznesit."),
+                "shippingAmount": round(float(method_quote.get("shippingAmount") or 0), 2),
+                "estimatedDeliveryText": str(method_quote.get("estimatedDeliveryText") or "").strip(),
+                "badge": f"Opsioni {index:02d}",
+            }
+        )
+
+    return available_options, quotes_by_method
+
+
+def build_shipping_quote(
+    *,
+    connection: DatabaseConnection,
+    checkout_items: list[dict[str, object]],
+    delivery_method: str,
+    destination_city: str = "",
+) -> dict[str, object]:
+    shipping_groups = build_checkout_shipping_groups(connection, checkout_items)
+    available_delivery_options, quotes_by_method = build_checkout_delivery_option_summaries(
+        shipping_groups=shipping_groups,
+        destination_city=destination_city,
+    )
+    if not available_delivery_options:
+        raise CheckoutProcessError(
+            message=(
+                "Bizneset ne shporte nuk kane metode te perbashket dergese. "
+                "Ndrysho produktet ne shporte ose kontakto bizneset per transportin."
+            )
+        )
+
+    requested_method = str(get_delivery_method_details(delivery_method)["value"])
+    selected_option = next(
+        (option for option in available_delivery_options if str(option.get("value") or "") == requested_method),
+        None,
+    ) or available_delivery_options[0]
+    selected_method = str(selected_option.get("value") or "standard")
+    selected_quote = quotes_by_method.get(selected_method) or build_checkout_shipping_quote(
+        shipping_groups=shipping_groups,
+        delivery_method=selected_method,
+        destination_city=destination_city,
+    )
+    selected_quote["availableDeliveryMethods"] = available_delivery_options
+    selected_quote["deliveryNotice"] = (
+        f"Metoda e dergeses u kalua te `{selected_option['label']}` sepse ishte opsioni i perbashket per bizneset ne shporte."
+        if requested_method != selected_method
+        else ""
+    )
+    return selected_quote
+
+
 def parse_delivery_method(data: dict[str, object]) -> tuple[list[str], str | None]:
     delivery_method = str(data.get("deliveryMethod", "")).strip().lower() or "standard"
     if delivery_method not in DELIVERY_METHODS:
@@ -6027,6 +6674,9 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "phoneNumber": row["phone_number"],
         "city": row["city"],
         "addressLine": row["address_line"],
+        "shippingSettings": normalize_business_shipping_settings(
+            row["shipping_settings"] if "shipping_settings" in row.keys() else None
+        ),
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -6142,6 +6792,9 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "city": row["city"],
         "addressLine": row["address_line"],
         "phoneNumber": row["phone_number"],
+        "shippingSettings": normalize_business_shipping_settings(
+            row["shipping_settings"] if "shipping_settings" in row.keys() else None
+        ),
         "ownerName": row["owner_full_name"],
         "ownerEmail": row["owner_email"],
         "productsCount": row["products_count"],
@@ -7744,6 +8397,7 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 bp.profile_edit_requested_at,
                 bp.profile_edit_approved_at,
                 bp.profile_edit_notes,
+                bp.shipping_settings,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -7816,6 +8470,7 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 bp.profile_edit_requested_at,
                 bp.profile_edit_approved_at,
                 bp.profile_edit_notes,
+                bp.shipping_settings,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -7879,6 +8534,7 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 bp.profile_edit_requested_at,
                 bp.profile_edit_approved_at,
                 bp.profile_edit_notes,
+                bp.shipping_settings,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -9180,6 +9836,7 @@ def create_order_from_checkout_items(
         connection,
         checkout_items=checkout_items,
         user_id=int(user["id"]),
+        destination_city=str(cleaned_address.get("city") or "").strip(),
     )
     subtotal_amount = round(float(normalized_pricing_summary.get("subtotal") or 0), 2)
     discount_amount = round(float(normalized_pricing_summary.get("discountAmount") or 0), 2)
@@ -10580,8 +11237,8 @@ def build_checkout_pricing_summary(
     promo_code: str = "",
     user_id: int | None = None,
     delivery_method: str = "standard",
+    destination_city: str = "",
 ) -> dict[str, object]:
-    delivery_details = get_delivery_method_details(delivery_method)
     subtotal = round(
         sum(round(float(item.get("price") or 0), 2) * max(1, int(item.get("quantity") or 1)) for item in checkout_items),
         2,
@@ -10647,7 +11304,13 @@ def build_checkout_pricing_summary(
         discount_amount = max(0.0, min(subtotal, discount_amount))
         message = str(promo_row["title"] or "").strip() or f"Kuponi {normalized_code} u aplikua."
 
-    shipping_amount = round(float(delivery_details.get("shippingAmount") or 0), 2)
+    shipping_quote = build_shipping_quote(
+        connection=connection,
+        checkout_items=checkout_items,
+        delivery_method=delivery_method,
+        destination_city=destination_city,
+    )
+    shipping_amount = round(float(shipping_quote.get("shippingAmount") or 0), 2)
     total = round(max(0.0, subtotal - discount_amount + shipping_amount), 2)
     return {
         "promoCode": normalized_code,
@@ -10656,9 +11319,25 @@ def build_checkout_pricing_summary(
         "discountAmount": discount_amount,
         "shippingAmount": shipping_amount,
         "total": total,
-        "deliveryMethod": str(delivery_details.get("value") or "standard"),
-        "deliveryLabel": str(delivery_details.get("label") or "Dergese standard"),
-        "estimatedDeliveryText": str(delivery_details.get("estimatedDeliveryText") or "").strip(),
+        "deliveryMethod": str(shipping_quote.get("deliveryMethod") or "standard"),
+        "deliveryLabel": str(shipping_quote.get("deliveryLabel") or "Dergese standard"),
+        "estimatedDeliveryText": str(shipping_quote.get("estimatedDeliveryText") or "").strip(),
+        "cityZoneLabel": str(shipping_quote.get("cityZoneLabel") or "").strip(),
+        "shippingRuleMessage": str(shipping_quote.get("ruleMessage") or "").strip(),
+        "shippingBaseAmount": round(float(shipping_quote.get("baseAmount") or 0), 2),
+        "shippingCitySurcharge": round(float(shipping_quote.get("citySurcharge") or 0), 2),
+        "shippingSubtotalDiscount": round(float(shipping_quote.get("subtotalDiscount") or 0), 2),
+        "availableDeliveryMethods": (
+            list(shipping_quote.get("availableDeliveryMethods") or [])
+            if isinstance(shipping_quote.get("availableDeliveryMethods"), list)
+            else []
+        ),
+        "shippingBreakdown": (
+            list(shipping_quote.get("breakdown") or [])
+            if isinstance(shipping_quote.get("breakdown"), list)
+            else []
+        ),
+        "deliveryNotice": str(shipping_quote.get("deliveryNotice") or "").strip(),
         "message": message,
     }
 
@@ -11566,6 +12245,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/business-profile":
             self.handle_save_business_profile()
+            return
+        if path == "/api/business-profile/shipping":
+            self.handle_save_business_shipping_settings()
             return
         if path == "/api/business-profile/verification-request":
             self.handle_business_verification_request()
@@ -13626,11 +14308,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                             business_description,
                             business_number,
                             business_logo_path,
+                            shipping_settings,
                             phone_number,
                             city,
                             address_line
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             user["id"],
@@ -13638,6 +14321,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                             normalized["business_description"],
                             normalized["business_number"],
                             normalized["business_logo_path"],
+                            serialize_business_shipping_settings_storage(DEFAULT_BUSINESS_SHIPPING_SETTINGS),
                             normalized["phone_number"],
                             normalized["city"],
                             normalized["address_line"],
@@ -13672,6 +14356,82 @@ class AppHandler(SimpleHTTPRequestHandler):
                     else "Biznesi u ruajt me sukses."
                 ),
                 "profile": serialize_business_profile(saved_profile),
+            },
+        )
+
+    def handle_save_business_shipping_settings(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh para se ta ruash transportin."},
+            )
+            return
+
+        if user["role"] != "business":
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem bizneset mund t'i ndryshojne rregullat e transportit."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors, normalized_settings = validate_business_shipping_settings_payload(payload)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        with get_db_connection() as connection:
+            business_profile = connection.execute(
+                """
+                SELECT id, verification_status
+                FROM business_profiles
+                WHERE user_id = ?
+                LIMIT 1
+                """,
+                (user["id"],),
+            ).fetchone()
+
+            if not business_profile:
+                self.send_json(404, {"ok": False, "message": "Ruaje fillimisht profilin e biznesit."})
+                return
+
+            if str(business_profile["verification_status"] or "").strip().lower() != "verified":
+                self.send_json(
+                    403,
+                    {
+                        "ok": False,
+                        "message": "Rregullat e transportit hapen sapo biznesi te verifikohet nga admini.",
+                    },
+                )
+                return
+
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    shipping_settings = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    serialize_business_shipping_settings_storage(normalized_settings),
+                    int(business_profile["id"]),
+                ),
+            )
+
+        updated_profile = fetch_business_profile_for_user(int(user["id"]))
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Rregullat e transportit u ruajten me sukses.",
+                "profile": serialize_business_profile(updated_profile) if updated_profile else None,
             },
         )
 
@@ -13761,17 +14521,19 @@ class AppHandler(SimpleHTTPRequestHandler):
                         business_name,
                         business_description,
                         business_number,
+                        shipping_settings,
                         phone_number,
                         city,
                         address_line
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
                         cleaned_payload["business_name"],
                         cleaned_payload["business_description"],
                         cleaned_payload["business_number"],
+                        serialize_business_shipping_settings_storage(DEFAULT_BUSINESS_SHIPPING_SETTINGS),
                         cleaned_payload["phone_number"],
                         cleaned_payload["city"],
                         cleaned_payload["address_line"],
@@ -14600,6 +15362,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     promo_code=promo_code,
                     user_id=int(user["id"]),
                     delivery_method=delivery_method or "standard",
+                    destination_city=str(cleaned_address.get("city") or "").strip(),
                 )
                 reserved_until = reserve_checkout_stock(
                     connection,
@@ -14623,7 +15386,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             cleaned_address,
             checkout_items,
             promo_code,
-            delivery_method or "standard",
+            str(pricing_summary.get("deliveryMethod") or delivery_method or "standard"),
         )
         line_item_fields, fallback_total_amount = build_stripe_checkout_line_items(
             checkout_items,
@@ -15188,6 +15951,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     promo_code=promo_code,
                     user_id=int(user["id"]),
                     delivery_method=delivery_method or "standard",
+                    destination_city=str(payload.get("city", "") or "").strip(),
                 )
         except CheckoutProcessError as error:
             self.send_json(
@@ -16567,6 +17331,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     promo_code=promo_code,
                     user_id=int(user["id"]),
                     delivery_method=delivery_method or "standard",
+                    destination_city=str(cleaned_address.get("city") or "").strip(),
                 )
                 order_id, saved_order, saved_items = create_order_from_checkout_items(
                     connection,

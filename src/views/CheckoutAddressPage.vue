@@ -157,6 +157,16 @@ function cancelChanges() {
         {{ savedAddress ? "Ose vazhdo me regjistrimin e nje adrese te re." : "Vazhdo me regjistrimin e adreses." }}
       </p>
 
+      <div class="marketplace-status-card checkout-shipping-note">
+        <div>
+          <p class="section-label">Transporti</p>
+          <strong>Kostoja e dergeses llogaritet sipas qytetit dhe rregullave te secilit biznes ne shporte.</strong>
+          <p class="section-text">
+            Bizneset e verifikuara vendosin cmimin baze, pickup-in dhe pragjet per zbritje ose transport falas.
+          </p>
+        </div>
+      </div>
+
       <form class="auth-form profile-form" @submit.prevent="continueWithNewAddress">
         <div class="field">
           <span>Adresa e vendbanimit</span>

@@ -21,6 +21,7 @@ import {
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
 import {
+  DELIVERY_METHOD_OPTIONS,
   formatCategoryLabel,
   formatPrice,
   formatRoleLabel,
@@ -62,6 +63,35 @@ const promotionForm = reactive({
   isActive: true,
 });
 
+function createDefaultShippingForm() {
+  const standardOption = DELIVERY_METHOD_OPTIONS.find((option) => option.value === "standard");
+  const expressOption = DELIVERY_METHOD_OPTIONS.find((option) => option.value === "express");
+  const pickupOption = DELIVERY_METHOD_OPTIONS.find((option) => option.value === "pickup");
+
+  return {
+    standardEnabled: true,
+    standardFee: String(standardOption?.shippingAmount ?? 2.5),
+    standardEta: String(standardOption?.estimatedDeliveryText || "2-4 dite pune"),
+    expressEnabled: true,
+    expressFee: String(expressOption?.shippingAmount ?? 4.9),
+    expressEta: String(expressOption?.estimatedDeliveryText || "1-2 dite pune"),
+    pickupEnabled: true,
+    pickupEta: String(pickupOption?.estimatedDeliveryText || "Gati per terheqje brenda 24 oresh"),
+    pickupAddress: "",
+    pickupHours: "Kontakto biznesin per orarin",
+    cityRates: [],
+    halfOffThreshold: "120",
+    freeShippingThreshold: "180",
+  };
+}
+
+function createEmptyCityRate(rate = null) {
+  return {
+    city: String(rate?.city || ""),
+    surcharge: String(rate?.surcharge ?? ""),
+  };
+}
+
 const profileForm = reactive({
   businessName: "",
   businessDescription: "",
@@ -71,6 +101,7 @@ const profileForm = reactive({
   addressLine: "",
   businessLogoPath: "",
 });
+const shippingForm = reactive(createDefaultShippingForm());
 
 const productForm = reactive(createEmptyProductFormState());
 const ui = reactive({
@@ -86,6 +117,8 @@ const ui = reactive({
   productAiBusy: false,
   promotionMessage: "",
   promotionType: "",
+  shippingMessage: "",
+  shippingType: "",
 });
 
 const productPreviewItems = computed(() => {
@@ -274,6 +307,7 @@ async function loadBusinessProfile() {
 
   businessProfile.value = data.profile || null;
   hydrateProfileForm(businessProfile.value);
+  hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
   if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
     showVerifiedProfileEditor.value = false;
   }
@@ -293,6 +327,7 @@ async function requestVerificationReview() {
   businessProfile.value = data.profile || businessProfile.value;
   if (businessProfile.value) {
     hydrateProfileForm(businessProfile.value);
+    hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
   }
   ui.profileMessage = data.message || "Kerkesa per verifikim u dergua.";
   ui.profileType = "success";
@@ -312,6 +347,7 @@ async function requestBusinessProfileEditAccess() {
   businessProfile.value = data.profile || businessProfile.value;
   if (businessProfile.value) {
     hydrateProfileForm(businessProfile.value);
+    hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
   }
   ui.profileMessage = data.message || "Kerkesa per editim u dergua te admini.";
   ui.profileType = "success";
@@ -344,6 +380,37 @@ function hydrateProfileForm(profile) {
   profileForm.businessLogoPath = String(profile?.logoPath || "");
   logoFile.value = null;
   revokeLogoPreview();
+}
+
+function hydrateShippingForm(settings, profile = null) {
+  const defaults = createDefaultShippingForm();
+  shippingForm.standardEnabled = settings?.standardEnabled ?? defaults.standardEnabled;
+  shippingForm.standardFee = String(settings?.standardFee ?? defaults.standardFee);
+  shippingForm.standardEta = String(settings?.standardEta ?? defaults.standardEta);
+  shippingForm.expressEnabled = settings?.expressEnabled ?? defaults.expressEnabled;
+  shippingForm.expressFee = String(settings?.expressFee ?? defaults.expressFee);
+  shippingForm.expressEta = String(settings?.expressEta ?? defaults.expressEta);
+  shippingForm.pickupEnabled = settings?.pickupEnabled ?? defaults.pickupEnabled;
+  shippingForm.pickupEta = String(settings?.pickupEta ?? defaults.pickupEta);
+  shippingForm.pickupAddress = String(settings?.pickupAddress || profile?.addressLine || defaults.pickupAddress);
+  shippingForm.pickupHours = String(settings?.pickupHours ?? defaults.pickupHours);
+  shippingForm.cityRates = Array.isArray(settings?.cityRates) && settings.cityRates.length > 0
+    ? settings.cityRates.map((rate) => createEmptyCityRate(rate))
+    : [createEmptyCityRate()];
+  shippingForm.halfOffThreshold = String(settings?.halfOffThreshold ?? defaults.halfOffThreshold);
+  shippingForm.freeShippingThreshold = String(settings?.freeShippingThreshold ?? defaults.freeShippingThreshold);
+}
+
+function addShippingCityRate() {
+  shippingForm.cityRates.push(createEmptyCityRate());
+}
+
+function removeShippingCityRate(index) {
+  if (shippingForm.cityRates.length <= 1) {
+    shippingForm.cityRates.splice(0, shippingForm.cityRates.length, createEmptyCityRate());
+    return;
+  }
+  shippingForm.cityRates.splice(index, 1);
 }
 
 async function saveBusinessProfile() {
@@ -381,9 +448,52 @@ async function saveBusinessProfile() {
 
   businessProfile.value = data.profile;
   hydrateProfileForm(data.profile);
+  hydrateShippingForm(data.profile?.shippingSettings || null, data.profile);
   showVerifiedProfileEditor.value = false;
   ui.profileMessage = data.message || "Biznesi u ruajt me sukses.";
   ui.profileType = "success";
+}
+
+async function saveShippingSettings() {
+  ui.shippingMessage = "";
+  ui.shippingType = "";
+
+  const payload = {
+    shippingSettings: {
+      standardEnabled: Boolean(shippingForm.standardEnabled),
+      standardFee: shippingForm.standardFee,
+      standardEta: shippingForm.standardEta.trim(),
+      expressEnabled: Boolean(shippingForm.expressEnabled),
+      expressFee: shippingForm.expressFee,
+      expressEta: shippingForm.expressEta.trim(),
+      pickupEnabled: Boolean(shippingForm.pickupEnabled),
+      pickupEta: shippingForm.pickupEta.trim(),
+      pickupAddress: shippingForm.pickupAddress.trim(),
+      pickupHours: shippingForm.pickupHours.trim(),
+      cityRates: shippingForm.cityRates.map((rate) => ({
+        city: String(rate.city || "").trim(),
+        surcharge: String(rate.surcharge ?? "").trim(),
+      })),
+      halfOffThreshold: shippingForm.halfOffThreshold,
+      freeShippingThreshold: shippingForm.freeShippingThreshold,
+    },
+  };
+
+  const { response, data } = await requestJson("/api/business-profile/shipping", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok || !data?.ok || !data.profile) {
+    ui.shippingMessage = resolveApiMessage(data, "Transporti nuk u ruajt.");
+    ui.shippingType = "error";
+    return;
+  }
+
+  businessProfile.value = data.profile;
+  hydrateShippingForm(data.profile?.shippingSettings || null, data.profile);
+  ui.shippingMessage = data.message || "Transporti u ruajt.";
+  ui.shippingType = "success";
 }
 
 function handleLogoChange(event) {
@@ -837,6 +947,173 @@ async function handleToggleStock(product) {
         <span>Review / Returne</span>
         <strong>{{ analytics.reviewCount }} / {{ analytics.openReturns }}</strong>
       </article>
+    </section>
+
+    <section v-if="canManageCatalog" class="card business-shipping-card" aria-label="Transporti i biznesit">
+      <div class="profile-card-header">
+        <div>
+          <p class="section-label">Transporti i biznesit</p>
+          <h2>Rregullat e dergeses</h2>
+          <p class="section-text">
+            Klienti vazhdon te shohe `Standard`, `Express` dhe `Pickup`, por checkout-i llogarit koston sipas rregullave qe vendos ky biznes.
+          </p>
+        </div>
+      </div>
+
+      <form class="auth-form" @submit.prevent="saveShippingSettings">
+        <div class="business-shipping-settings-grid">
+          <article class="business-shipping-method-card">
+            <div class="business-shipping-method-head">
+              <div>
+                <strong>Dergese standard</strong>
+                <p class="section-text">Opsioni i balancuar per shumicen e porosive.</p>
+              </div>
+              <label class="business-shipping-toggle">
+                <input v-model="shippingForm.standardEnabled" type="checkbox">
+                <span>Aktive</span>
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field">
+                <span>Kosto baze (€)</span>
+                <input v-model="shippingForm.standardFee" :disabled="!shippingForm.standardEnabled" type="number" min="0" step="0.10" placeholder="2.50">
+              </label>
+              <label class="field">
+                <span>Koha e dorezimit</span>
+                <input v-model="shippingForm.standardEta" :disabled="!shippingForm.standardEnabled" type="text" placeholder="2-4 dite pune">
+              </label>
+            </div>
+          </article>
+
+          <article class="business-shipping-method-card">
+            <div class="business-shipping-method-head">
+              <div>
+                <strong>Dergese express</strong>
+                <p class="section-text">Per porosi me urgjence dhe ritem me te shpejte.</p>
+              </div>
+              <label class="business-shipping-toggle">
+                <input v-model="shippingForm.expressEnabled" type="checkbox">
+                <span>Aktive</span>
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field">
+                <span>Kosto baze (€)</span>
+                <input v-model="shippingForm.expressFee" :disabled="!shippingForm.expressEnabled" type="number" min="0" step="0.10" placeholder="4.90">
+              </label>
+              <label class="field">
+                <span>Koha e dorezimit</span>
+                <input v-model="shippingForm.expressEta" :disabled="!shippingForm.expressEnabled" type="text" placeholder="1-2 dite pune">
+              </label>
+            </div>
+          </article>
+
+          <article class="business-shipping-method-card">
+            <div class="business-shipping-method-head">
+              <div>
+                <strong>Terheqje ne biznes</strong>
+                <p class="section-text">Lejoje kur klienti mund ta marre porosine direkt te biznesi yt.</p>
+              </div>
+              <label class="business-shipping-toggle">
+                <input v-model="shippingForm.pickupEnabled" type="checkbox">
+                <span>Aktive</span>
+              </label>
+            </div>
+            <label class="field">
+              <span>Koha e gatishmerise</span>
+              <input v-model="shippingForm.pickupEta" :disabled="!shippingForm.pickupEnabled" type="text" placeholder="Gati per terheqje brenda 24 oresh">
+            </label>
+            <label class="field">
+              <span>Adresa e terheqjes</span>
+              <input
+                v-model="shippingForm.pickupAddress"
+                :disabled="!shippingForm.pickupEnabled"
+                type="text"
+                placeholder="Shkruaje adresen ku merret porosia"
+              >
+            </label>
+            <label class="field">
+              <span>Orari i terheqjes</span>
+              <input
+                v-model="shippingForm.pickupHours"
+                :disabled="!shippingForm.pickupEnabled"
+                type="text"
+                placeholder="p.sh. Hene-Shtune, 09:00 - 18:00"
+              >
+            </label>
+          </article>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Pragu per 50% zbritje transporti (€)</span>
+            <input v-model="shippingForm.halfOffThreshold" type="number" min="0" step="0.10" placeholder="120">
+          </label>
+
+          <label class="field">
+            <span>Pragu per transport falas (€)</span>
+            <input v-model="shippingForm.freeShippingThreshold" type="number" min="0" step="0.10" placeholder="180">
+          </label>
+        </div>
+
+        <div class="business-shipping-city-rates">
+          <div class="business-shipping-city-rates-head">
+            <div>
+              <strong>Tarifa sipas qytetit</strong>
+              <p class="section-text">
+                Vendos shtesat e qyteteve vetem per biznesin tend. Nese nje qytet mungon, checkout-i bie te rregulli i pergjithshem.
+              </p>
+            </div>
+            <button type="button" class="business-shipping-city-add" @click="addShippingCityRate">
+              Shto qytet
+            </button>
+          </div>
+
+          <div class="business-shipping-city-list">
+            <div
+              v-for="(cityRate, index) in shippingForm.cityRates"
+              :key="`shipping-city-rate-${index}`"
+              class="business-shipping-city-row"
+            >
+              <label class="field">
+                <span>Qyteti</span>
+                <input
+                  v-model="cityRate.city"
+                  type="text"
+                  placeholder="p.sh. Prishtine"
+                >
+              </label>
+
+              <label class="field">
+                <span>Shtesa (€)</span>
+                <input
+                  v-model="cityRate.surcharge"
+                  type="number"
+                  min="0"
+                  step="0.10"
+                  placeholder="0.00"
+                >
+              </label>
+
+              <button type="button" class="business-shipping-city-remove" @click="removeShippingCityRate(index)">
+                Hiq
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p class="section-text business-shipping-footnote">
+          Pickup merr adresen dhe orarin tend, ndersa dergesat me transport perdorin fillimisht tarifat qe vendos ti per qytetet specifike.
+        </p>
+
+        <div class="auth-form-actions">
+          <button type="submit">Ruaj transportin</button>
+        </div>
+      </form>
+
+      <div class="form-message" :class="ui.shippingType" role="status" aria-live="polite">
+        {{ ui.shippingMessage }}
+      </div>
     </section>
 
     <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">

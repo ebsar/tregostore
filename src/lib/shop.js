@@ -23,7 +23,7 @@ export const DELIVERY_METHOD_OPTIONS = [
   {
     value: "standard",
     label: "Dergese standard",
-    description: "Opsioni me i balancuar per shumicen e porosive ne marketplace.",
+    description: "Opsioni me i balancuar, me kosto qe llogaritet sipas biznesit ne shporte.",
     shippingAmount: 2.5,
     estimatedDeliveryText: "2-4 dite pune",
     badge: "Opsioni 01",
@@ -31,7 +31,7 @@ export const DELIVERY_METHOD_OPTIONS = [
   {
     value: "express",
     label: "Dergese express",
-    description: "Per porosi me urgjence dhe dorezim me te shpejte.",
+    description: "Per porosi me urgjence, nese bizneset ne shporte e kane aktivizuar.",
     shippingAmount: 4.9,
     estimatedDeliveryText: "1-2 dite pune",
     badge: "Opsioni 02",
@@ -39,7 +39,7 @@ export const DELIVERY_METHOD_OPTIONS = [
   {
     value: "pickup",
     label: "Terheqje ne biznes",
-    description: "Rezervo online dhe terhiqe produktin direkt te biznesi.",
+    description: "Rezervo online dhe terhiqe produktin direkt te biznesi kur pickup eshte aktiv.",
     shippingAmount: 0,
     estimatedDeliveryText: "Gati per terheqje brenda 24 oresh",
     badge: "Opsioni 03",

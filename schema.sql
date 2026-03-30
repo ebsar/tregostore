@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     profile_edit_requested_at TEXT NOT NULL DEFAULT '',
     profile_edit_approved_at TEXT NOT NULL DEFAULT '',
     profile_edit_notes TEXT NOT NULL DEFAULT '',
+    shipping_settings TEXT NOT NULL DEFAULT '',
     phone_number TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     address_line TEXT NOT NULL DEFAULT '',
