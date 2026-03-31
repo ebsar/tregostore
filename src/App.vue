@@ -33,8 +33,9 @@ let deferredWidgetsTimeoutId = 0;
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
+const showSiteNav = computed(() => !route.meta?.hideNav);
 const showSiteFooter = computed(() =>
-  !["login", "signup", "verify-email"].includes(String(route.meta.pageKey || "").trim()),
+  !route.meta?.hideFooter && !["login", "signup", "verify-email"].includes(String(route.meta.pageKey || "").trim()),
 );
 
 watch(
@@ -437,7 +438,7 @@ function declineTrackingConsent() {
   </section>
 
   <div :class="shellClass">
-    <SiteNav />
+    <SiteNav v-if="showSiteNav" />
 
     <main :class="mainClass">
       <RouterView />

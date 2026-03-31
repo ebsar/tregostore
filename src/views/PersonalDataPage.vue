@@ -184,9 +184,19 @@ async function handleDelete() {
           <h2>Perditeso profilin</h2>
         </div>
 
-        <div class="summary-chip profile-summary-chip">
-          <span>Email</span>
-          <strong>{{ appState.user.email || "-" }}</strong>
+        <div class="profile-card-header-actions">
+          <div class="summary-chip profile-summary-chip">
+            <span>Email</span>
+            <strong>{{ appState.user.email || "-" }}</strong>
+          </div>
+          <a
+            class="ghost-button profile-liquid-glass-link"
+            href="/liquid-glass"
+            target="_blank"
+            rel="noopener"
+          >
+            Liquid glass
+          </a>
         </div>
       </div>
 
@@ -291,3 +301,19 @@ async function handleDelete() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.profile-card-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.profile-liquid-glass-link {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+</style>
