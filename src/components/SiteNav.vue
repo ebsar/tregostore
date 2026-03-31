@@ -5,7 +5,9 @@ import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRe
 import { PRIMARY_NAVIGATION, formatPrice, getProductDetailUrl } from "../lib/shop";
 import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
+import { NAV_LIQUID_SETTINGS_CHANGE_EVENT, readNavLiquidSettings } from "../lib/liquid-glass-nav-settings";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
+import LiquidGlassNavButton from "./LiquidGlassNavButton.vue";
 import LiquidGlassNavSurface from "./LiquidGlassNavSurface.vue";
 
 const route = useRoute();
@@ -42,11 +44,27 @@ let mobileQuickSearchTimeoutId = 0;
 let navSearchTimeoutId = 0;
 const UNREAD_MESSAGES_POLL_MS = 3000;
 const MOBILE_QUICK_SEARCH_RECENT_KEY = "trego-mobile-quick-search-recent";
+const navbarLiquidSettings = ref(readNavLiquidSettings());
 const AI_SEARCH_PROMPTS = [
   "me trego maica te kuqe",
   "dua pantallona te gjera",
   "me gjej patika te veres",
 ];
+
+const navbarRefractionMode = computed(() => navbarLiquidSettings.value.mode);
+const navbarDisplacementScale = computed(() => navbarLiquidSettings.value.displacementScale);
+
+function syncNavbarLiquidSettings() {
+  navbarLiquidSettings.value = readNavLiquidSettings();
+}
+
+function handleNavbarLiquidStorage(event) {
+  if (event?.key && event.key !== "trego-nav-liquid-settings") {
+    return;
+  }
+
+  syncNavbarLiquidSettings();
+}
 
 function resetNavSearchPreview() {
   navSearchResult.value = null;
@@ -1050,6 +1068,7 @@ watch(mobileQuickSearchQuery, (nextValue) => {
 });
 
 onMounted(async () => {
+  syncNavbarLiquidSettings();
   updateViewportState();
   lastScrollY = window.scrollY || window.pageYOffset || 0;
   loadRecentMobileQuickSearches();
@@ -1057,6 +1076,8 @@ onMounted(async () => {
   window.addEventListener("resize", updateViewportState);
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
   window.addEventListener("focus", handleWindowFocus);
+  window.addEventListener("storage", handleNavbarLiquidStorage);
+  window.addEventListener(NAV_LIQUID_SETTINGS_CHANGE_EVENT, syncNavbarLiquidSettings);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("click", closeOnOutsideClick);
   document.addEventListener("keydown", closeOnEscape);
@@ -1075,6 +1096,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", updateViewportState);
   window.removeEventListener("scroll", handleWindowScroll);
   window.removeEventListener("focus", handleWindowFocus);
+  window.removeEventListener("storage", handleNavbarLiquidStorage);
+  window.removeEventListener(NAV_LIQUID_SETTINGS_CHANGE_EVENT, syncNavbarLiquidSettings);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.removeEventListener("click", closeOnOutsideClick);
   document.removeEventListener("keydown", closeOnEscape);
@@ -1106,12 +1129,12 @@ onBeforeUnmount(() => {
     <LiquidGlassNavSurface
       class-name="site-nav-liquid-overlay"
       :mouse-container="navElement"
-      mode="standard"
-      :displacement-scale="64"
+      :mode="navbarRefractionMode"
+      :displacement-scale="navbarDisplacementScale"
       :blur-amount="0.1"
       :saturation="130"
       :aberration-intensity="2"
-      :elasticity="0.35"
+      :elasticity="0"
       :corner-radius="100"
     >
       <div class="site-nav-row">
@@ -1121,8 +1144,10 @@ onBeforeUnmount(() => {
         </RouterLink>
 
         <div class="nav-mobile-tray">
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="isBusinessUser"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button add-product-button nav-mobile-shortcut"
             to="/biznesi-juaj?view=add-product"
             aria-label="Shto artikull te ri"
@@ -1131,9 +1156,11 @@ onBeforeUnmount(() => {
               <path d="M12 5v14"></path>
               <path d="M5 12h14"></path>
             </svg>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
+            as="button"
+            :mouse-container="navElement"
             class="nav-icon-button search-button nav-mobile-shortcut"
             type="button"
             aria-label="Kerko ketu"
@@ -1145,10 +1172,12 @@ onBeforeUnmount(() => {
               <path d="m20 20-4.2-4.2"></path>
             </svg>
             <span class="nav-mobile-search-label">Kerko ketu...</span>
-          </button>
+          </LiquidGlassNavButton>
 
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="showConsumerNavigation"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button wishlist-link nav-mobile-shortcut"
             to="/wishlist"
             aria-label="Wishlist"
@@ -1156,10 +1185,12 @@ onBeforeUnmount(() => {
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
             </svg>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="showConsumerNavigation"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button cart-button nav-mobile-shortcut"
             to="/cart"
             aria-label="My Cart"
@@ -1170,10 +1201,12 @@ onBeforeUnmount(() => {
               <circle cx="18" cy="19" r="1.4"></circle>
             </svg>
             <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
             v-if="showMessagesShortcut"
+            as="button"
+            :mouse-container="navElement"
             class="nav-icon-button messages-button nav-mobile-shortcut"
             type="button"
             aria-label="Mesazhet"
@@ -1183,10 +1216,12 @@ onBeforeUnmount(() => {
               <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
             </svg>
             <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
-          </button>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
             v-if="mobileMenuOpen && isMobileViewport && appState.user"
+            as="button"
+            :mouse-container="navElement"
             class="nav-icon-button nav-mobile-menu-search-trigger"
             type="button"
             aria-label="Kerko ne menune tende"
@@ -1197,9 +1232,11 @@ onBeforeUnmount(() => {
               <circle cx="11" cy="11" r="6"></circle>
               <path d="m20 20-4.2-4.2"></path>
             </svg>
-          </button>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
+            as="button"
+            :mouse-container="navElement"
             class="nav-mobile-toggle"
             type="button"
             :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
@@ -1213,13 +1250,15 @@ onBeforeUnmount(() => {
             <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18"></path>
             </svg>
-          </button>
+          </LiquidGlassNavButton>
         </div>
 
         <div v-if="showConsumerNavigation" id="site-nav-mobile-panel" class="nav-links">
           <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
             <div v-if="section.groups?.length" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
-              <button
+              <LiquidGlassNavButton
+                as="button"
+                :mouse-container="navElement"
                 class="nav-dropdown-trigger"
                 type="button"
                 :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
@@ -1230,7 +1269,7 @@ onBeforeUnmount(() => {
                 <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="m7 10 5 5 5-5"></path>
                 </svg>
-              </button>
+              </LiquidGlassNavButton>
 
               <div class="nav-dropdown-menu nav-dropdown-menu-rich" :hidden="openDropdownKey !== section.key">
                 <RouterLink
@@ -1255,20 +1294,24 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <RouterLink
+            <LiquidGlassNavButton
               v-else
+              :as="RouterLink"
+              :mouse-container="navElement"
               class="nav-link"
               :to="section.href"
               @click="closeExpandedPanels"
             >
               {{ section.label }}
-            </RouterLink>
+            </LiquidGlassNavButton>
           </template>
         </div>
 
         <div class="nav-actions">
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="isBusinessUser"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button add-product-button"
             to="/biznesi-juaj?view=add-product"
             aria-label="Shto artikull te ri"
@@ -1277,9 +1320,11 @@ onBeforeUnmount(() => {
               <path d="M12 5v14"></path>
               <path d="M5 12h14"></path>
             </svg>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
+            as="button"
+            :mouse-container="navElement"
             class="nav-icon-button search-button"
             type="button"
             aria-label="Kerko"
@@ -1290,10 +1335,12 @@ onBeforeUnmount(() => {
               <circle cx="11" cy="11" r="6"></circle>
               <path d="m20 20-4.2-4.2"></path>
             </svg>
-          </button>
+          </LiquidGlassNavButton>
 
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="showConsumerNavigation"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button wishlist-link"
             to="/wishlist"
             aria-label="Wishlist"
@@ -1301,10 +1348,12 @@ onBeforeUnmount(() => {
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
             </svg>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <RouterLink
+          <LiquidGlassNavButton
             v-if="showConsumerNavigation"
+            :as="RouterLink"
+            :mouse-container="navElement"
             class="nav-icon-button cart-button"
             to="/cart"
             aria-label="My Cart"
@@ -1315,10 +1364,12 @@ onBeforeUnmount(() => {
               <circle cx="18" cy="19" r="1.4"></circle>
             </svg>
             <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-          </RouterLink>
+          </LiquidGlassNavButton>
 
-          <button
+          <LiquidGlassNavButton
             v-if="showMessagesShortcut"
+            as="button"
+            :mouse-container="navElement"
             class="nav-icon-button messages-button"
             type="button"
             aria-label="Mesazhet"
@@ -1328,15 +1379,15 @@ onBeforeUnmount(() => {
               <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
             </svg>
             <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
-          </button>
+          </LiquidGlassNavButton>
 
           <template v-if="!appState.user">
-            <RouterLink class="nav-action nav-action-secondary nav-link-login" to="/login">
-              Login
-            </RouterLink>
-            <RouterLink class="nav-action nav-action-primary nav-link-signup" to="/signup">
-              Sign Up
-            </RouterLink>
+            <LiquidGlassNavButton :as="RouterLink" :mouse-container="navElement" class="nav-action nav-action-secondary nav-link-login" to="/login">
+              <span class="nav-action-label">Login</span>
+            </LiquidGlassNavButton>
+            <LiquidGlassNavButton :as="RouterLink" :mouse-container="navElement" class="nav-action nav-action-primary nav-link-signup" to="/signup">
+              <span class="nav-action-label">Sign Up</span>
+            </LiquidGlassNavButton>
           </template>
 
           <div
@@ -1344,7 +1395,9 @@ onBeforeUnmount(() => {
             class="nav-user-menu"
             :class="{ open: userMenuOpen && !isMobileViewport }"
           >
-            <button
+            <LiquidGlassNavButton
+              as="button"
+              :mouse-container="navElement"
               class="nav-user-trigger"
               type="button"
               :aria-expanded="userMenuOpen && !isMobileViewport ? 'true' : 'false'"
@@ -1377,7 +1430,7 @@ onBeforeUnmount(() => {
               <svg class="nav-user-trigger-chevron" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="m7 10 5 5 5-5"></path>
               </svg>
-            </button>
+            </LiquidGlassNavButton>
 
             <Transition name="nav-floating-panel">
               <div v-if="userMenuOpen && !isMobileViewport" class="nav-user-panel">

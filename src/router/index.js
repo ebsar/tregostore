@@ -111,7 +111,7 @@ const routes = [
       pageKey: "forgot-password",
       title: "TREGO | Kam harruar fjalekalimin",
       shellClass: "page-shell",
-      mainClass: "page-main",
+      mainClass: "page-main page-main-login",
     },
   },
   {

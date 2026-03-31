@@ -1,7 +1,13 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import LiquidGlass from "../liquid-glass/components/LiquidGlass.vue";
+import LiquidGlassNavSurface from "../components/LiquidGlassNavSurface.vue";
+import {
+  NAV_LIQUID_MODE_OPTIONS,
+  readNavLiquidSettings,
+  writeNavLiquidSettings,
+} from "../lib/liquid-glass-nav-settings";
 import { fragmentShaders } from "../liquid-glass/shader-util";
 import { GlassMode } from "../liquid-glass/type";
 
@@ -50,12 +56,16 @@ const logoutControls = reactive({
   overLight: false,
 });
 
+const navbarControls = reactive(readNavLiquidSettings());
+
 const activeControls = computed(() =>
   activeTab.value === "userInfo" ? userInfoControls : logoutControls,
 );
 
 const activeModeLabel = computed(() => {
-  switch (activeControls.value.mode) {
+  const activeMode = activeTab.value === "navbar" ? navbarControls.mode : activeControls.value.mode;
+
+  switch (activeMode) {
     case GlassMode.polar:
       return "Polar";
     case GlassMode.prominent:
@@ -67,6 +77,18 @@ const activeModeLabel = computed(() => {
       return "Standard";
   }
 });
+
+const navbarDisplacementLabel = computed(() => `${navbarControls.displacementScale}`);
+
+watch(
+  () => [navbarControls.mode, navbarControls.displacementScale],
+  () => {
+    writeNavLiquidSettings({
+      mode: navbarControls.mode,
+      displacementScale: navbarControls.displacementScale,
+    });
+  },
+);
 </script>
 
 <template>
@@ -134,6 +156,35 @@ const activeModeLabel = computed(() => {
             </div>
           </LiquidGlass>
 
+          <LiquidGlassNavSurface
+            v-else-if="activeTab === 'navbar'"
+            class-name="glass-controls-preview-navbar-surface"
+            :mouse-container="previewStageRef"
+            :mode="navbarControls.mode"
+            :displacement-scale="navbarControls.displacementScale"
+            :blur-amount="0.1"
+            :saturation="130"
+            :aberration-intensity="2"
+            :elasticity="0"
+            :corner-radius="100"
+            effect="liquidGlass"
+            :style="{ position: 'absolute', top: '22px', left: '18px', right: '18px' }"
+          >
+            <div class="glass-controls-navbar-preview">
+              <div class="glass-controls-navbar-brand">TREGO</div>
+              <div class="glass-controls-navbar-links">
+                <span>Veshje</span>
+                <span>Beauty</span>
+                <span>Tech</span>
+              </div>
+              <div class="glass-controls-navbar-actions">
+                <span class="glass-controls-navbar-dot"></span>
+                <span class="glass-controls-navbar-dot"></span>
+                <span class="glass-controls-navbar-pill">Login</span>
+              </div>
+            </div>
+          </LiquidGlassNavSurface>
+
           <LiquidGlass
             v-else
             class-name="glass-controls-preview-glass"
@@ -164,7 +215,7 @@ const activeModeLabel = computed(() => {
           </LiquidGlass>
 
           <div class="glass-controls-preview-footer">
-            <span>{{ activeTab === "userInfo" ? "User Info Card" : "Logout Button" }}</span>
+            <span>{{ activeTab === "userInfo" ? "User Info Card" : activeTab === "navbar" ? "Navbar Preview" : "Logout Button" }}</span>
             <strong>{{ activeModeLabel }}</strong>
           </div>
         </div>
@@ -187,8 +238,48 @@ const activeModeLabel = computed(() => {
             >
               Logout Button
             </button>
+            <button
+              class="glass-controls-tab"
+              :class="{ 'is-active': activeTab === 'navbar' }"
+              type="button"
+              @click="activeTab = 'navbar'"
+            >
+              Navbar
+            </button>
           </div>
 
+          <template v-if="activeTab === 'navbar'">
+            <label class="field">
+              <span>Refraction mode</span>
+              <select v-model="navbarControls.mode">
+                <option
+                  v-for="option in NAV_LIQUID_MODE_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Displacement scale</span>
+              <input v-model.number="navbarControls.displacementScale" type="range" min="0" max="300" step="1">
+            </label>
+
+            <label class="field">
+              <span>Scale value</span>
+              <input v-model.number="navbarControls.displacementScale" type="number" min="0" max="1000" step="1">
+            </label>
+
+            <div class="glass-controls-note">
+              <strong>Navbar live settings</strong>
+              <p>Keto vlera ruhen ne browser dhe aplikohen direkt te navbar-i i webfaqes.</p>
+              <span>Displacement aktual: {{ navbarDisplacementLabel }}</span>
+            </div>
+          </template>
+
+          <template v-else>
           <label class="field">
             <span>Refraction mode</span>
             <select v-model="activeControls.mode">
@@ -251,6 +342,7 @@ const activeModeLabel = computed(() => {
             <input v-model="activeControls.overLight" type="checkbox">
             <span>Over light</span>
           </label>
+          </template>
         </div>
       </div>
     </section>
@@ -327,6 +419,66 @@ const activeModeLabel = computed(() => {
 .glass-controls-user-card {
   width: 288px;
   color: rgba(255, 255, 255, 0.94);
+}
+
+.glass-controls-preview-navbar-surface {
+  display: block;
+  width: auto;
+}
+
+.glass-controls-navbar-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 16px;
+  color: rgba(47, 52, 70, 0.96);
+}
+
+.glass-controls-navbar-brand {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+
+.glass-controls-navbar-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-width: 0;
+  color: rgba(47, 52, 70, 0.78);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.glass-controls-navbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.glass-controls-navbar-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(47, 52, 70, 0.18);
+  border: 1px solid rgba(47, 52, 70, 0.12);
+}
+
+.glass-controls-navbar-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.44);
+  color: rgba(47, 52, 70, 0.92);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .glass-controls-user-head {
@@ -409,7 +561,7 @@ const activeModeLabel = computed(() => {
 
 .glass-controls-tab-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -462,6 +614,27 @@ const activeModeLabel = computed(() => {
   margin: 0;
 }
 
+.glass-controls-note {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(47, 52, 70, 0.1);
+  background: rgba(245, 243, 241, 0.7);
+  color: rgba(31, 41, 55, 0.78);
+}
+
+.glass-controls-note strong {
+  color: rgba(31, 41, 55, 0.92);
+}
+
+.glass-controls-note p,
+.glass-controls-note span {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 920px) {
   .glass-controls-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -487,6 +660,12 @@ const activeModeLabel = computed(() => {
 
   .glass-controls-tab-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .glass-controls-navbar-preview {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
   }
 }
 </style>

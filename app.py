@@ -41,6 +41,8 @@ except ImportError:
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+FRONTEND_DIST_DIR = BASE_DIR / "dist"
+FRONTEND_DIR = FRONTEND_DIST_DIR if FRONTEND_DIST_DIR.exists() else STATIC_DIR
 IS_VERCEL = bool(str(os.environ.get("VERCEL", "")).strip())
 RUNTIME_ROOT_DIR = Path("/tmp/trego-runtime") if IS_VERCEL else BASE_DIR
 UPLOADS_DIR = RUNTIME_ROOT_DIR / "uploads" if IS_VERCEL else STATIC_DIR / "uploads"
@@ -88,33 +90,69 @@ SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
 PRODUCTS_PAGE_MAX_LIMIT = 24
-PAGE_ROUTES = {
-    "/": "/index.html",
-    "/about": "/about.html",
-    "/kerko": "/search.html",
-    "/profili-biznesit": "/business-profile-public.html",
-    "/mesazhet": "/messages.html",
-    "/njoftimet": "/account.html",
-    "/login": "/login.html",
-    "/forgot-password": "/forgot-password.html",
-    "/signup": "/signup.html",
-    "/verifiko-email": "/verify-email.html",
-    "/biznesi-juaj": "/index.html",
-    "/llogaria": "/account.html",
-    "/te-dhenat-personale": "/personal-data.html",
-    "/adresat": "/addresses.html",
-    "/porosite": "/orders.html",
-    "/porosite-e-biznesit": "/business-orders.html",
-    "/ndrysho-fjalekalimin": "/change-password.html",
-    "/produkti": "/product-detail.html",
-    "/wishlist": "/wishlist.html",
-    "/cart": "/cart.html",
-    "/adresa-e-porosise": "/checkout-address.html",
-    "/menyra-e-pageses": "/payment-options.html",
-    "/kafshet-shtepiake": "/pets.html",
-    "/admin-products": "/index.html",
-    "/bizneset-e-regjistruara": "/registered-businesses.html",
+SPA_FRONTEND_ROUTES = {
+    "/",
+    "/about",
+    "/kerko",
+    "/profili-biznesit",
+    "/mesazhet",
+    "/njoftimet",
+    "/login",
+    "/forgot-password",
+    "/signup",
+    "/verifiko-email",
+    "/biznesi-juaj",
+    "/llogaria",
+    "/te-dhenat-personale",
+    "/adresat",
+    "/porosite",
+    "/porosite-e-biznesit",
+    "/refund-returne",
+    "/admin-porosite",
+    "/ndrysho-fjalekalimin",
+    "/produkti",
+    "/wishlist",
+    "/cart",
+    "/adresa-e-porosise",
+    "/menyra-e-pageses",
+    "/kafshet-shtepiake",
+    "/admin-products",
+    "/bizneset-e-regjistruara",
+    "/krahaso-produkte",
+    "/liquid-glass",
 }
+LEGACY_PAGE_ROUTES = {
+    "/": "/legacy/index.html",
+    "/about": "/legacy/about.html",
+    "/kerko": "/legacy/search.html",
+    "/profili-biznesit": "/legacy/business-profile-public.html",
+    "/mesazhet": "/legacy/messages.html",
+    "/njoftimet": "/legacy/account.html",
+    "/login": "/legacy/login.html",
+    "/forgot-password": "/legacy/forgot-password.html",
+    "/signup": "/legacy/signup.html",
+    "/verifiko-email": "/legacy/verify-email.html",
+    "/biznesi-juaj": "/legacy/index.html",
+    "/llogaria": "/legacy/account.html",
+    "/te-dhenat-personale": "/legacy/personal-data.html",
+    "/adresat": "/legacy/addresses.html",
+    "/porosite": "/legacy/orders.html",
+    "/porosite-e-biznesit": "/legacy/business-orders.html",
+    "/ndrysho-fjalekalimin": "/legacy/change-password.html",
+    "/produkti": "/legacy/product-detail.html",
+    "/wishlist": "/legacy/wishlist.html",
+    "/cart": "/legacy/cart.html",
+    "/adresa-e-porosise": "/legacy/checkout-address.html",
+    "/menyra-e-pageses": "/legacy/payment-options.html",
+    "/kafshet-shtepiake": "/legacy/pets.html",
+    "/admin-products": "/legacy/index.html",
+    "/bizneset-e-regjistruara": "/legacy/registered-businesses.html",
+}
+PAGE_ROUTES = (
+    {route: "/index.html" for route in SPA_FRONTEND_ROUTES}
+    if FRONTEND_DIST_DIR.exists()
+    else LEGACY_PAGE_ROUTES
+)
 
 
 def load_product_catalog() -> dict[str, object]:
@@ -12439,7 +12477,7 @@ def parse_session_token(cookie_header: str | None) -> str | None:
 
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+        super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
 
     def do_GET(self) -> None:
         parsed_url = urlparse(self.path)
