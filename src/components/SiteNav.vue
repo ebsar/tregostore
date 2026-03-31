@@ -39,7 +39,7 @@ let lastScrollY = 0;
 let unreadMessagesPollIntervalId = 0;
 let mobileQuickSearchTimeoutId = 0;
 let navSearchTimeoutId = 0;
-const UNREAD_MESSAGES_POLL_MS = 15000;
+const UNREAD_MESSAGES_POLL_MS = 3000;
 const MOBILE_QUICK_SEARCH_RECENT_KEY = "trego-mobile-quick-search-recent";
 const AI_SEARCH_PROMPTS = [
   "me trego maica te kuqe",
@@ -746,7 +746,7 @@ async function loadUnreadMessagesCount() {
   }
 
   try {
-    const { response, data } = await requestJson("/api/chat/conversations", {}, { cacheTtlMs: 10000 });
+    const { response, data } = await requestJson("/api/chat/conversations", {}, { cacheTtlMs: 2500 });
     if (!response.ok || !data?.ok) {
       unreadMessagesCount.value = 0;
       return;
@@ -766,7 +766,7 @@ async function loadUnreadNotificationsCount() {
   }
 
   try {
-    const { response, data } = await requestJson("/api/notifications/count", {}, { cacheTtlMs: 10000 });
+    const { response, data } = await requestJson("/api/notifications/count", {}, { cacheTtlMs: 2500 });
     if (!response.ok || !data?.ok) {
       unreadNotificationsCount.value = 0;
       return;
@@ -977,6 +977,8 @@ watch(
     searchQuery.value = String(route.query.q || "").trim();
     resetNavSearchPreview();
     loadRecentNavSearches();
+    void loadUnreadMessagesCount();
+    void loadUnreadNotificationsCount();
   },
 );
 
