@@ -30,6 +30,7 @@ const props = withDefaults(defineProps<{
 const surfaceRef = ref<HTMLElement | null>(null);
 const surfaceSize = ref({ width: 1, height: 1 });
 const mouseOffset = ref({ x: 0, y: 0 });
+const globalMousePos = ref({ x: 0, y: 0 });
 const filterId = uuid();
 const isFirefox = typeof window !== "undefined" && window.navigator.userAgent.toLowerCase().includes("firefox");
 let resizeObserver: ResizeObserver | null = null;
@@ -60,10 +61,15 @@ function handleMouseMove(event: MouseEvent) {
     y: ((event.clientY - centerY) / Math.max(rect.height, 1)) * 100,
   };
 
+  globalMousePos.value = {
+    x: event.clientX,
+    y: event.clientY,
+  };
 }
 
 function resetMouse() {
   mouseOffset.value = { x: 0, y: 0 };
+  globalMousePos.value = { x: 0, y: 0 };
 }
 
 watchEffect((onCleanup) => {
@@ -139,6 +145,7 @@ const borderGradientStrong = computed(() =>
     ref="surfaceRef"
     :class="['liquid-glass-nav-surface', className]"
     :style="{ borderRadius: `${cornerRadius}px` }"
+    aria-hidden="true"
   >
     <GlassFilter
       :id="filterId"
@@ -220,29 +227,21 @@ const borderGradientStrong = computed(() =>
         background: borderGradientStrong,
       }"
     ></span>
-
-    <div class="liquid-glass-nav-surface-content">
-      <slot />
-    </div>
   </div>
 </template>
 
 <style scoped>
 .liquid-glass-nav-surface {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: block;
-  width: 100%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .liquid-glass-nav-surface-base {
   position: absolute;
   inset: 0;
   overflow: hidden;
-}
-
-.liquid-glass-nav-surface-content {
-  position: relative;
-  z-index: 1;
-  width: 100%;
 }
 </style>

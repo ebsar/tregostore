@@ -2064,6 +2064,115 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
   display: none !important;
 }
 
+.site-nav :is(.nav-link, .nav-dropdown-trigger, .nav-action, .nav-icon-button, .nav-user-trigger, .nav-mobile-toggle) {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.18);
+  backdrop-filter: var(--nav-liquid-backdrop-filter, blur(2px) saturate(130%));
+  -webkit-backdrop-filter: var(--nav-liquid-backdrop-filter, blur(2px) saturate(130%));
+  filter: var(--nav-liquid-filter, none);
+}
+
+.site-nav :is(.nav-link, .nav-dropdown-trigger, .nav-action, .nav-icon-button, .nav-user-trigger, .nav-mobile-toggle)::before {
+  content: "";
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 54%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.02) 52%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+}
+
+.site-nav :is(.nav-link, .nav-dropdown-trigger, .nav-action, .nav-icon-button, .nav-user-trigger, .nav-mobile-toggle)::after {
+  content: "";
+  position: absolute;
+  inset: auto 10% -46% 10%;
+  height: 68%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(114, 196, 255, 0.18), rgba(114, 196, 255, 0) 38%),
+    radial-gradient(circle at 82% 26%, rgba(255, 162, 214, 0.16), rgba(255, 162, 214, 0) 36%),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 56%);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.site-nav :is(.nav-link, .nav-dropdown-trigger, .nav-action, .nav-icon-button, .nav-user-trigger, .nav-mobile-toggle):hover {
+  transform: none;
+  color: rgba(255, 255, 255, 0.98);
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.028);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+.site-nav .nav-action:hover,
+.site-nav .nav-icon-button:hover,
+.site-nav .nav-user-trigger:hover,
+.site-nav .nav-link:hover,
+.site-nav .nav-dropdown-trigger:hover,
+.site-nav .nav-mobile-toggle:hover {
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.site-nav .nav-icon,
+.site-nav .nav-mobile-toggle-icon {
+  position: relative;
+  z-index: 1;
+  stroke: currentColor;
+  color: currentColor;
+}
+
+.site-nav .nav-user-avatar {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 10px 20px rgba(0, 0, 0, 0.16);
+}
+
+.site-nav .search-button,
+.site-nav .wishlist-link,
+.site-nav .cart-button,
+.site-nav .messages-button,
+.site-nav .add-product-button {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 0, 0, 0.18);
+  backdrop-filter: var(--nav-liquid-backdrop-filter, blur(2px) saturate(130%));
+  -webkit-backdrop-filter: var(--nav-liquid-backdrop-filter, blur(2px) saturate(130%));
+}
+
+.site-nav .search-button:hover,
+.site-nav .wishlist-link:hover,
+.site-nav .cart-button:hover,
+.site-nav .messages-button:hover,
+.site-nav .add-product-button:hover {
+  color: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+.site-nav .nav-link-login,
+.site-nav .nav-link-signup {
+  min-height: 42px;
+  padding: 8px 16px;
+}
+
 .voice-assistant-shell {
   position: fixed;
   right: 18px;
