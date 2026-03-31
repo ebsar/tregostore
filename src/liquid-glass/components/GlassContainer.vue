@@ -1,5 +1,5 @@
 <script setup lang="ts" name="GlassContainer">
-import { ref, watch, computed, type CSSProperties } from 'vue'
+import { ref, watch, computed, onBeforeUnmount, type CSSProperties } from 'vue'
 import { GlassMode, type GlassContainerProps } from '../type'
 import { ShaderDisplacementGenerator } from '../shader-util';
 
@@ -22,24 +22,105 @@ const props = withDefaults(defineProps<GlassContainerProps>(), {
 const shaderMapUrl = ref<string>("")
 const isFirefox = window.navigator.userAgent.toLowerCase().includes("firefox")
 const filterId = uuid()
-// Generate shader-based displacement map using shaderUtils
-const generateShaderDisplacementMap = async (width: number, height: number) => {
-    const generator = new ShaderDisplacementGenerator({
+let shaderGenerator: ShaderDisplacementGenerator | null = null
+let shaderAnimationFrame = 0
+
+const destroyShaderGenerator = () => {
+    if (shaderGenerator) {
+        shaderGenerator.destroy()
+        shaderGenerator = null
+    }
+}
+
+const createShaderGenerator = (width: number, height: number) => {
+    destroyShaderGenerator()
+    shaderGenerator = new ShaderDisplacementGenerator({
         width,
         height,
         effect: props.effect,
     })
+}
 
-    const dataUrl = await generator.updateShader()
-    generator.destroy()
+const normalizeMouseOffset = () => {
+    if (!props.mouseOffset) {
+        return undefined
+    }
 
+    return {
+        x: Math.max(-1, Math.min(1, props.mouseOffset.x / 100)),
+        y: Math.max(-1, Math.min(1, props.mouseOffset.y / 100)),
+    }
+}
+
+// Generate shader-based displacement map using shaderUtils
+const generateShaderDisplacementMap = async (width: number, height: number) => {
+    if (!shaderGenerator) {
+        createShaderGenerator(width, height)
+    }
+
+    const dataUrl = await shaderGenerator!.updateShader(normalizeMouseOffset())
     return dataUrl
 }
-watch(() => [props.mode, props.glassSize.width, props.glassSize.height, props.effect], async () => {
-    if (props.mode === "shader") {
+
+const scheduleShaderRefresh = () => {
+    if (shaderAnimationFrame) {
+        cancelAnimationFrame(shaderAnimationFrame)
+    }
+
+    shaderAnimationFrame = requestAnimationFrame(async () => {
+        shaderAnimationFrame = 0
+
+        if (props.mode !== "shader") {
+            shaderMapUrl.value = ""
+            return
+        }
+
+        if (!shaderGenerator) {
+            createShaderGenerator(props.glassSize.width, props.glassSize.height)
+        }
+
         const url = await generateShaderDisplacementMap(props.glassSize.width, props.glassSize.height)
         shaderMapUrl.value = url
+    })
+}
+
+watch(
+    () => [
+        props.mode,
+        props.glassSize.width,
+        props.glassSize.height,
+        props.effect,
+        props.mouseOffset?.x ?? 0,
+        props.mouseOffset?.y ?? 0,
+    ],
+    ([mode, width, height, effect], previous = []) => {
+        const [previousMode, previousWidth, previousHeight, previousEffect] = previous
+        const didShaderConfigChange =
+            mode !== previousMode ||
+            width !== previousWidth ||
+            height !== previousHeight ||
+            effect !== previousEffect
+
+        if (mode !== "shader") {
+            destroyShaderGenerator()
+            shaderMapUrl.value = ""
+            return
+        }
+
+        if (didShaderConfigChange || !shaderGenerator) {
+            createShaderGenerator(props.glassSize.width, props.glassSize.height)
+        }
+
+        scheduleShaderRefresh()
+    },
+    { immediate: true },
+)
+
+onBeforeUnmount(() => {
+    if (shaderAnimationFrame) {
+        cancelAnimationFrame(shaderAnimationFrame)
     }
+    destroyShaderGenerator()
 })
 
 const backdropStyle = computed<Partial<CSSProperties>>(() => {

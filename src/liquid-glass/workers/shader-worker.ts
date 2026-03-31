@@ -46,6 +46,17 @@ function fbm(x: number, y: number, octaves: number = 4): number {
   return value
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function normalizeMousePosition(mousePosition?: Vec2): Vec2 {
+  return {
+    x: clamp(mousePosition?.x ?? 0, -1, 1),
+    y: clamp(mousePosition?.y ?? 0, -1, 1),
+  }
+}
+
 // Shader fragment functions
 const fragmentShaders = {
   liquidGlass: (uv: Vec2): Vec2 => {
@@ -55,6 +66,27 @@ const fragmentShaders = {
     const displacement = smoothStep(0.8, 0, distanceToEdge - 0.15)
     const scaled = smoothStep(0, 1, displacement)
     return texture(ix * scaled + 0.5, iy * scaled + 0.5)
+  },
+  liquidGlass2: (uv: Vec2, mousePosition?: Vec2, time: number = 0): Vec2 => {
+    const ix = uv.x - 0.5
+    const iy = uv.y - 0.5
+    const mouse = normalizeMousePosition(mousePosition)
+    const pulse = Math.sin(time * 1.2) * 0.02
+    const mouseWarpX = mouse.x * 0.06
+    const mouseWarpY = mouse.y * 0.06
+    const distanceToEdge = roundedRectSDF(ix, iy, 0.32, 0.22, 0.72)
+    const lensMask = smoothStep(0.92, -0.04, distanceToEdge - 0.14)
+    const shimmer = fbm(uv.x * 5 + time * 0.2, uv.y * 5 - time * 0.15, 3) * 0.025
+    const cornerPull = smoothStep(0.45, -0.1, distanceToEdge) * 0.08
+    const distortionX =
+      ix +
+      (ix * (-0.16 - pulse) + mouseWarpX * (0.8 - Math.abs(iy) * 0.6) + shimmer) * lensMask +
+      ix * cornerPull
+    const distortionY =
+      iy +
+      (iy * (-0.14 - pulse * 0.8) + mouseWarpY * (0.8 - Math.abs(ix) * 0.6) + shimmer * 0.8) * lensMask +
+      iy * cornerPull
+    return texture(distortionX + 0.5, distortionY + 0.5)
   },
   flowingLiquid: (uv: Vec2): Vec2 => {
     const ix = uv.x - 0.5
@@ -143,7 +175,8 @@ self.onmessage = (e: MessageEvent) => {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const uv: Vec2 = { x: x / w, y: y / h }
-      const pos = fragmentShaders[effect](uv, mousePosition, time)
+      const shader = fragmentShaders[effect] || fragmentShaders.liquidGlass
+      const pos = shader(uv, mousePosition, time)
       const dx = pos.x * w - x
       const dy = pos.y * h - y
 

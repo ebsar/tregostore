@@ -10,6 +10,9 @@ export const prominentDisplacementMap =
 
 export function autoPx(val: number | string) {
   if (typeof val === 'string') {
+    if (val.trim() === '') {
+      return val
+    }
     const num = Number(val)
     return isNaN(num) ? val : num + 'px'
   }

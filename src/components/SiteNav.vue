@@ -6,6 +6,7 @@ import { PRIMARY_NAVIGATION, formatPrice, getProductDetailUrl } from "../lib/sho
 import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
 import { appState, ensureSessionLoaded, logoutUser } from "../stores/app-state";
+import LiquidGlassNavSurface from "./LiquidGlassNavSurface.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -1102,106 +1103,338 @@ onBeforeUnmount(() => {
     }"
     aria-label="Navigimi kryesor"
   >
-    <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO" width="420" height="159" fetchpriority="high">
-      <span class="sr-only">TREGO</span>
-    </RouterLink>
+    <LiquidGlassNavSurface
+      class-name="site-nav-liquid-overlay"
+      :mouse-container="navElement"
+      mode="standard"
+      :displacement-scale="64"
+      :blur-amount="0.1"
+      :saturation="130"
+      :aberration-intensity="2"
+      :elasticity="0.35"
+      :corner-radius="100"
+    >
+      <div class="site-nav-row">
+        <RouterLink class="brand has-logo" to="/">
+          <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO" width="420" height="159" fetchpriority="high">
+          <span class="sr-only">TREGO</span>
+        </RouterLink>
 
-    <div class="nav-mobile-tray">
-      <RouterLink
-        v-if="isBusinessUser"
-        class="nav-icon-button add-product-button nav-mobile-shortcut"
-        to="/biznesi-juaj?view=add-product"
-        aria-label="Shto artikull te ri"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5v14"></path>
-          <path d="M5 12h14"></path>
-        </svg>
-      </RouterLink>
+        <div class="nav-mobile-tray">
+          <RouterLink
+            v-if="isBusinessUser"
+            class="nav-icon-button add-product-button nav-mobile-shortcut"
+            to="/biznesi-juaj?view=add-product"
+            aria-label="Shto artikull te ri"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14"></path>
+              <path d="M5 12h14"></path>
+            </svg>
+          </RouterLink>
 
-      <button
-        class="nav-icon-button search-button nav-mobile-shortcut"
-        type="button"
-        aria-label="Kerko ketu"
-        :aria-expanded="searchMenuOpen ? 'true' : 'false'"
-        @click="toggleSearchPanel"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="6"></circle>
-          <path d="m20 20-4.2-4.2"></path>
-        </svg>
-        <span class="nav-mobile-search-label">Kerko ketu...</span>
-      </button>
+          <button
+            class="nav-icon-button search-button nav-mobile-shortcut"
+            type="button"
+            aria-label="Kerko ketu"
+            :aria-expanded="searchMenuOpen ? 'true' : 'false'"
+            @click="toggleSearchPanel"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m20 20-4.2-4.2"></path>
+            </svg>
+            <span class="nav-mobile-search-label">Kerko ketu...</span>
+          </button>
 
-      <RouterLink
-        v-if="showConsumerNavigation"
-        class="nav-icon-button wishlist-link nav-mobile-shortcut"
-        to="/wishlist"
-        aria-label="Wishlist"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-        </svg>
-      </RouterLink>
+          <RouterLink
+            v-if="showConsumerNavigation"
+            class="nav-icon-button wishlist-link nav-mobile-shortcut"
+            to="/wishlist"
+            aria-label="Wishlist"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+            </svg>
+          </RouterLink>
 
-      <RouterLink
-        v-if="showConsumerNavigation"
-        class="nav-icon-button cart-button nav-mobile-shortcut"
-        to="/cart"
-        aria-label="My Cart"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
-          <circle cx="10" cy="19" r="1.4"></circle>
-          <circle cx="18" cy="19" r="1.4"></circle>
-        </svg>
-        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-      </RouterLink>
+          <RouterLink
+            v-if="showConsumerNavigation"
+            class="nav-icon-button cart-button nav-mobile-shortcut"
+            to="/cart"
+            aria-label="My Cart"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+              <circle cx="10" cy="19" r="1.4"></circle>
+              <circle cx="18" cy="19" r="1.4"></circle>
+            </svg>
+            <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+          </RouterLink>
 
-      <button
-        v-if="showMessagesShortcut"
-        class="nav-icon-button messages-button nav-mobile-shortcut"
-        type="button"
-        aria-label="Mesazhet"
-        @click="handleMessagesClick"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
-        </svg>
-        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
-      </button>
+          <button
+            v-if="showMessagesShortcut"
+            class="nav-icon-button messages-button nav-mobile-shortcut"
+            type="button"
+            aria-label="Mesazhet"
+            @click="handleMessagesClick"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
+            </svg>
+            <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+          </button>
 
-      <button
-        v-if="mobileMenuOpen && isMobileViewport && appState.user"
-        class="nav-icon-button nav-mobile-menu-search-trigger"
-        type="button"
-        aria-label="Kerko ne menune tende"
-        :aria-expanded="mobileQuickSearchOpen ? 'true' : 'false'"
-        @click="toggleMobileQuickSearch"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="6"></circle>
-          <path d="m20 20-4.2-4.2"></path>
-        </svg>
-      </button>
+          <button
+            v-if="mobileMenuOpen && isMobileViewport && appState.user"
+            class="nav-icon-button nav-mobile-menu-search-trigger"
+            type="button"
+            aria-label="Kerko ne menune tende"
+            :aria-expanded="mobileQuickSearchOpen ? 'true' : 'false'"
+            @click="toggleMobileQuickSearch"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m20 20-4.2-4.2"></path>
+            </svg>
+          </button>
 
-      <button
-        class="nav-mobile-toggle"
-        type="button"
-        :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
-        aria-controls="site-nav-mobile-panel"
-        :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
-        @click="toggleMobileMenu"
-      >
-        <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 7h16M4 12h16M4 17h16"></path>
-        </svg>
-        <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 6l12 12M18 6 6 18"></path>
-        </svg>
-      </button>
-    </div>
+          <button
+            class="nav-mobile-toggle"
+            type="button"
+            :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
+            aria-controls="site-nav-mobile-panel"
+            :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
+            @click="toggleMobileMenu"
+          >
+            <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+            <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="showConsumerNavigation" id="site-nav-mobile-panel" class="nav-links">
+          <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
+            <div v-if="section.groups?.length" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
+              <button
+                class="nav-dropdown-trigger"
+                type="button"
+                :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
+                :aria-label="`Hape menune per ${section.label}`"
+                @click="toggleDropdown(section.key)"
+              >
+                <span>{{ section.label }}</span>
+                <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m7 10 5 5 5-5"></path>
+                </svg>
+              </button>
+
+              <div class="nav-dropdown-menu nav-dropdown-menu-rich" :hidden="openDropdownKey !== section.key">
+                <RouterLink
+                  class="nav-dropdown-all-link"
+                  :to="section.href"
+                  @click="closeExpandedPanels"
+                >
+                  Shih te gjitha
+                </RouterLink>
+
+                <div class="nav-dropdown-group-items nav-dropdown-shortcuts">
+                  <RouterLink
+                    v-for="group in section.groups"
+                    :key="group.key"
+                    class="nav-dropdown-item nav-dropdown-shortcut-link"
+                    :to="group.href"
+                    @click="closeExpandedPanels"
+                  >
+                    {{ group.label }}
+                  </RouterLink>
+                </div>
+              </div>
+            </div>
+
+            <RouterLink
+              v-else
+              class="nav-link"
+              :to="section.href"
+              @click="closeExpandedPanels"
+            >
+              {{ section.label }}
+            </RouterLink>
+          </template>
+        </div>
+
+        <div class="nav-actions">
+          <RouterLink
+            v-if="isBusinessUser"
+            class="nav-icon-button add-product-button"
+            to="/biznesi-juaj?view=add-product"
+            aria-label="Shto artikull te ri"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14"></path>
+              <path d="M5 12h14"></path>
+            </svg>
+          </RouterLink>
+
+          <button
+            class="nav-icon-button search-button"
+            type="button"
+            aria-label="Kerko"
+            :aria-expanded="searchMenuOpen ? 'true' : 'false'"
+            @click="toggleSearchPanel"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m20 20-4.2-4.2"></path>
+            </svg>
+          </button>
+
+          <RouterLink
+            v-if="showConsumerNavigation"
+            class="nav-icon-button wishlist-link"
+            to="/wishlist"
+            aria-label="Wishlist"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+            </svg>
+          </RouterLink>
+
+          <RouterLink
+            v-if="showConsumerNavigation"
+            class="nav-icon-button cart-button"
+            to="/cart"
+            aria-label="My Cart"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
+              <circle cx="10" cy="19" r="1.4"></circle>
+              <circle cx="18" cy="19" r="1.4"></circle>
+            </svg>
+            <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+          </RouterLink>
+
+          <button
+            v-if="showMessagesShortcut"
+            class="nav-icon-button messages-button"
+            type="button"
+            aria-label="Mesazhet"
+            @click="handleMessagesClick"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
+            </svg>
+            <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+          </button>
+
+          <template v-if="!appState.user">
+            <RouterLink class="nav-action nav-action-secondary nav-link-login" to="/login">
+              Login
+            </RouterLink>
+            <RouterLink class="nav-action nav-action-primary nav-link-signup" to="/signup">
+              Sign Up
+            </RouterLink>
+          </template>
+
+          <div
+            v-else
+            class="nav-user-menu"
+            :class="{ open: userMenuOpen && !isMobileViewport }"
+          >
+            <button
+              class="nav-user-trigger"
+              type="button"
+              :aria-expanded="userMenuOpen && !isMobileViewport ? 'true' : 'false'"
+              aria-label="Hape menune e perdoruesit"
+              @click="handleUserTrigger"
+            >
+              <span class="nav-user-avatar" aria-hidden="true">
+                <img
+                  v-if="userAvatarPath"
+                  class="nav-user-avatar-image"
+                  :src="userAvatarPath"
+                  :alt="userDisplayName"
+                  width="160"
+                  height="160"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
+                    <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
+                  </svg>
+                </span>
+              </span>
+
+              <span class="nav-user-trigger-copy">
+                <span class="nav-user-name">{{ userDisplayName }}</span>
+              </span>
+
+              <svg class="nav-user-trigger-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m7 10 5 5 5-5"></path>
+              </svg>
+            </button>
+
+            <Transition name="nav-floating-panel">
+              <div v-if="userMenuOpen && !isMobileViewport" class="nav-user-panel">
+                <div class="nav-user-panel-head">
+                  <span class="nav-user-avatar nav-user-avatar-large" aria-hidden="true">
+                    <img
+                      v-if="userAvatarPath"
+                      class="nav-user-avatar-image"
+                      :src="userAvatarPath"
+                      :alt="userDisplayName"
+                      width="160"
+                      height="160"
+                      loading="lazy"
+                      decoding="async"
+                    >
+                    <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
+                        <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
+                      </svg>
+                    </span>
+                  </span>
+
+                  <div class="nav-user-panel-copy">
+                    <p class="nav-user-panel-label">{{ userPanelLabel }}</p>
+                    <strong class="nav-user-panel-name">{{ userDisplayName }}</strong>
+                    <span class="nav-user-panel-email">{{ appState.user.email }}</span>
+                  </div>
+                </div>
+
+                <div class="nav-user-panel-links">
+                  <RouterLink
+                    v-for="link in userMenuLinks"
+                    :key="link.href"
+                    class="nav-user-panel-link"
+                    :to="link.href"
+                    @click="closeExpandedPanels"
+                  >
+                    <span>{{ link.label }}</span>
+                    <span
+                      v-if="link.showUnreadNotifications && unreadNotificationsCount > 0"
+                      class="nav-user-panel-link-badge"
+                    >
+                      {{ unreadNotificationsBadgeLabel }}
+                    </span>
+                  </RouterLink>
+                </div>
+
+                <button class="nav-user-panel-logout" type="button" @click="handleLogout">
+                  Shkycu
+                </button>
+              </div>
+            </Transition>
+          </div>
+        </div>
+      </div>
+    </LiquidGlassNavSurface>
 
     <Transition name="nav-floating-panel">
       <div
@@ -1613,223 +1846,5 @@ onBeforeUnmount(() => {
         >
       </form>
     </Transition>
-
-    <div v-if="showConsumerNavigation" id="site-nav-mobile-panel" class="nav-links">
-      <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
-        <div v-if="section.groups?.length" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
-          <button
-            class="nav-dropdown-trigger"
-            type="button"
-            :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
-            :aria-label="`Hape menune per ${section.label}`"
-            @click="toggleDropdown(section.key)"
-          >
-            <span>{{ section.label }}</span>
-            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m7 10 5 5 5-5"></path>
-            </svg>
-          </button>
-
-          <div class="nav-dropdown-menu nav-dropdown-menu-rich" :hidden="openDropdownKey !== section.key">
-            <RouterLink
-              class="nav-dropdown-all-link"
-              :to="section.href"
-              @click="closeExpandedPanels"
-            >
-              Shih te gjitha
-            </RouterLink>
-
-            <div class="nav-dropdown-group-items nav-dropdown-shortcuts">
-              <RouterLink
-                v-for="group in section.groups"
-                :key="group.key"
-                class="nav-dropdown-item nav-dropdown-shortcut-link"
-                :to="group.href"
-                @click="closeExpandedPanels"
-              >
-                {{ group.label }}
-              </RouterLink>
-            </div>
-          </div>
-        </div>
-
-        <RouterLink
-          v-else
-          class="nav-link"
-          :to="section.href"
-          @click="closeExpandedPanels"
-        >
-          {{ section.label }}
-        </RouterLink>
-      </template>
-    </div>
-
-    <div class="nav-actions">
-      <RouterLink
-        v-if="isBusinessUser"
-        class="nav-icon-button add-product-button"
-        to="/biznesi-juaj?view=add-product"
-        aria-label="Shto artikull te ri"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5v14"></path>
-          <path d="M5 12h14"></path>
-        </svg>
-      </RouterLink>
-
-      <button
-        class="nav-icon-button search-button"
-        type="button"
-        aria-label="Kerko"
-        :aria-expanded="searchMenuOpen ? 'true' : 'false'"
-        @click="toggleSearchPanel"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="6"></circle>
-          <path d="m20 20-4.2-4.2"></path>
-        </svg>
-      </button>
-
-      <RouterLink
-        v-if="showConsumerNavigation"
-        class="nav-icon-button wishlist-link"
-        to="/wishlist"
-        aria-label="Wishlist"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-        </svg>
-      </RouterLink>
-
-      <RouterLink
-        v-if="showConsumerNavigation"
-        class="nav-icon-button cart-button"
-        to="/cart"
-        aria-label="My Cart"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
-          <circle cx="10" cy="19" r="1.4"></circle>
-          <circle cx="18" cy="19" r="1.4"></circle>
-        </svg>
-        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
-      </RouterLink>
-
-      <button
-        v-if="showMessagesShortcut"
-        class="nav-icon-button messages-button"
-        type="button"
-        aria-label="Mesazhet"
-        @click="handleMessagesClick"
-      >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
-        </svg>
-        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
-      </button>
-
-      <template v-if="!appState.user">
-        <RouterLink class="nav-action nav-action-secondary nav-link-login" to="/login">
-          Login
-        </RouterLink>
-        <RouterLink class="nav-action nav-action-primary nav-link-signup" to="/signup">
-          Sign Up
-        </RouterLink>
-      </template>
-
-      <div
-        v-else
-        class="nav-user-menu"
-        :class="{ open: userMenuOpen && !isMobileViewport }"
-      >
-        <button
-          class="nav-user-trigger"
-          type="button"
-          :aria-expanded="userMenuOpen && !isMobileViewport ? 'true' : 'false'"
-          aria-label="Hape menune e perdoruesit"
-          @click="handleUserTrigger"
-        >
-          <span class="nav-user-avatar" aria-hidden="true">
-            <img
-              v-if="userAvatarPath"
-              class="nav-user-avatar-image"
-              :src="userAvatarPath"
-              :alt="userDisplayName"
-              width="160"
-              height="160"
-              loading="lazy"
-              decoding="async"
-            >
-            <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
-                <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
-              </svg>
-            </span>
-          </span>
-
-          <span class="nav-user-trigger-copy">
-            <span class="nav-user-name">{{ userDisplayName }}</span>
-          </span>
-
-          <svg class="nav-user-trigger-chevron" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m7 10 5 5 5-5"></path>
-          </svg>
-        </button>
-
-        <Transition name="nav-floating-panel">
-          <div v-if="userMenuOpen && !isMobileViewport" class="nav-user-panel">
-            <div class="nav-user-panel-head">
-              <span class="nav-user-avatar nav-user-avatar-large" aria-hidden="true">
-                <img
-                  v-if="userAvatarPath"
-                  class="nav-user-avatar-image"
-                  :src="userAvatarPath"
-                  :alt="userDisplayName"
-                  width="160"
-                  height="160"
-                  loading="lazy"
-                  decoding="async"
-                >
-                <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
-                    <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
-                  </svg>
-                </span>
-              </span>
-
-              <div class="nav-user-panel-copy">
-                <p class="nav-user-panel-label">{{ userPanelLabel }}</p>
-                <strong class="nav-user-panel-name">{{ userDisplayName }}</strong>
-                <span class="nav-user-panel-email">{{ appState.user.email }}</span>
-              </div>
-            </div>
-
-            <div class="nav-user-panel-links">
-              <RouterLink
-                v-for="link in userMenuLinks"
-                :key="link.href"
-                class="nav-user-panel-link"
-                :to="link.href"
-                @click="closeExpandedPanels"
-              >
-                <span>{{ link.label }}</span>
-                <span
-                  v-if="link.showUnreadNotifications && unreadNotificationsCount > 0"
-                  class="nav-user-panel-link-badge"
-                >
-                  {{ unreadNotificationsBadgeLabel }}
-                </span>
-              </RouterLink>
-            </div>
-
-            <button class="nav-user-panel-logout" type="button" @click="handleLogout">
-              Shkycu
-            </button>
-          </div>
-        </Transition>
-      </div>
-    </div>
   </nav>
 </template>
