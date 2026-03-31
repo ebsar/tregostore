@@ -60,7 +60,6 @@ const businessUi = reactive({
   type: "",
 });
 let stopProductsPageSizeSubscription = () => {};
-let productsFailureCooldownUntil = 0;
 const isBusinessUser = computed(() => appState.user?.role === "business");
 const homeAnnouncementItems = [
   {
@@ -240,8 +239,8 @@ const quickNavigationItems = computed(() =>
 const homeQuickChips = computed(() => {
   const navigationByKey = Object.fromEntries(PRIMARY_NAVIGATION.map((item) => [item.key, item.href]));
   return [
-    { label: "New arrivals", type: "scroll", target: "home-marketplace-new-arrivals" },
-    { label: "Best sellers", type: "scroll", target: "home-marketplace-best-sellers" },
+    { label: "Produktet", type: "scroll", target: "home-marketplace-catalog" },
+    { label: "Markat lokale", type: "scroll", target: "home-marketplace-local-brands" },
     { label: "Fashion", type: "route", to: navigationByKey.clothing || "/kerko" },
     { label: "Beauty", type: "route", to: navigationByKey.cosmetics || "/kerko" },
     { label: "Tech", type: "route", to: navigationByKey.technology || "/kerko" },
@@ -325,7 +324,7 @@ const featuredCategoryCards = computed(() => {
   })
     .filter(Boolean)
     .sort((left, right) => right.count - left.count)
-    .slice(0, 4);
+    .slice(0, 5);
 });
 const highestDiscountDisplay = computed(() => {
   const highestDiscount = marketplaceProducts.value.reduce(
@@ -460,11 +459,6 @@ async function refreshCollectionState() {
 
 async function loadProducts(options = {}) {
   const { append = false, forceFacets = false } = options;
-  if (!append && Date.now() < productsFailureCooldownUntil) {
-    statusText.value = "Po provojme perseri pas pak. Serveri po vonon perkohesisht.";
-    return;
-  }
-
   const offset = append ? products.value.length : 0;
   const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
@@ -495,7 +489,6 @@ async function loadProducts(options = {}) {
     { cacheTtlMs: append ? 0 : 15000 },
   );
   if (!response.ok || !data?.ok) {
-    productsFailureCooldownUntil = Date.now() + 4000;
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     if (!append) {
       products.value = [];
@@ -506,7 +499,6 @@ async function loadProducts(options = {}) {
     return;
   }
 
-  productsFailureCooldownUntil = 0;
   const nextProducts = Array.isArray(data.products) ? data.products : [];
   const visibleProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
   products.value = append ? [...products.value, ...visibleProducts] : visibleProducts;
@@ -544,10 +536,6 @@ async function loadBusinesses() {
 }
 
 async function loadHomeCatalogProducts() {
-  if (Date.now() < productsFailureCooldownUntil) {
-    return;
-  }
-
   const { response, data } = await requestJson(
     "/api/products?limit=24&offset=0",
     {},
@@ -1176,263 +1164,10 @@ async function handleCart(productId) {
     </section>
 
     <section
-      v-if="featuredCategoryCards.length > 0"
-      class="home-marketplace-section home-marketplace-featured-categories"
-      aria-label="Kategorite e kuruara"
+      id="home-marketplace-catalog"
+      class="home-marketplace-section home-marketplace-catalog"
+      aria-label="Katalogu i plote"
     >
-      <header class="home-marketplace-section-head home-marketplace-featured-categories-head">
-        <div>
-          <p class="section-label">Featured categories</p>
-          <h2>Fillo nga koleksioni qe te pershtatet me shume.</h2>
-          <p>Hyrje te shpejta ne seksionet me te forta te marketplace-it, me produkte dhe imazhe reale.</p>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/kerko">Te gjitha kategorite</RouterLink>
-      </header>
-
-      <div class="home-marketplace-category-grid home-marketplace-featured-categories-grid">
-        <RouterLink
-          v-for="category in featuredCategoryCards"
-          :key="category.value"
-          class="home-marketplace-category-card home-marketplace-featured-category-card"
-          :to="category.href"
-        >
-          <div class="home-marketplace-category-media">
-            <img
-              v-if="category.imagePath"
-              :src="category.imagePath"
-              :alt="category.label"
-              width="560"
-              height="420"
-              loading="lazy"
-              decoding="async"
-            >
-          </div>
-          <div class="home-marketplace-category-copy">
-            <em class="home-marketplace-featured-chip">Featured</em>
-            <span>{{ category.count }} produkte</span>
-            <strong>{{ category.label }}</strong>
-            <small>{{ category.helper }}</small>
-          </div>
-        </RouterLink>
-      </div>
-    </section>
-
-    <section v-if="flashDealProducts.length > 0" class="home-marketplace-section" aria-label="Flash deals">
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Flash deals</p>
-          <h2>Ofertat me te mira qe duken qarte dhe shiten me bindje.</h2>
-          <p>Karta moderne me cmim aktual, cmim te vjeter, rating dhe qasje direkte drejt shportes.</p>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/kerko">Shiko me shume</RouterLink>
-      </header>
-
-      <div class="home-marketplace-products-grid">
-        <HomeMarketplaceCard
-          v-for="(product, index) in flashDealProducts"
-          :key="`flash-${product.id}`"
-          :product="product"
-          :badge="getShowcaseBadge(product, index)"
-          :badge-tone="getShowcaseBadgeTone(product)"
-          :cart-busy="busyCartIds.includes(product.id)"
-          @cart="handleCart"
-        />
-      </div>
-    </section>
-
-    <section
-      v-if="bestSellerProducts.length > 0 || newArrivalProducts.length > 0"
-      class="home-marketplace-section home-marketplace-dual-section"
-      aria-label="Best sellers dhe new arrivals"
-    >
-      <article id="home-marketplace-best-sellers" class="home-marketplace-product-column">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">Best sellers</p>
-          <h2>Produktet qe po marrin me shume vemendje.</h2>
-        </header>
-        <div class="home-marketplace-products-grid is-compact">
-          <HomeMarketplaceCard
-            v-for="(product, index) in bestSellerProducts"
-            :key="`best-${product.id}`"
-            :product="product"
-            :badge="index === 0 ? 'Best Seller' : getShowcaseBadge(product, index)"
-            badge-tone="premium"
-            compact
-            :cart-busy="busyCartIds.includes(product.id)"
-            @cart="handleCart"
-          />
-        </div>
-      </article>
-
-      <article id="home-marketplace-new-arrivals" class="home-marketplace-product-column">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">New arrivals</p>
-          <h2>Artikuj te rinj qe e mbajne homepage-in aktiv dhe aktual.</h2>
-        </header>
-        <div class="home-marketplace-products-grid is-compact">
-          <HomeMarketplaceCard
-            v-for="(product, index) in newArrivalProducts"
-            :key="`new-${product.id}`"
-            :product="product"
-            :badge="index === 0 ? 'New' : getShowcaseBadge(product, index)"
-            badge-tone="premium"
-            compact
-            :cart-busy="busyCartIds.includes(product.id)"
-            @cart="handleCart"
-          />
-        </div>
-      </article>
-    </section>
-
-    <section class="home-marketplace-trust-grid" aria-label="Besimi dhe sherbimi">
-      <article
-        v-for="card in homeTrustCards"
-        :key="card.title"
-        class="home-marketplace-trust-card"
-      >
-        <p class="section-label">{{ card.title }}</p>
-        <h3>{{ card.title }}</h3>
-        <p>{{ card.copy }}</p>
-      </article>
-    </section>
-
-    <section v-if="featuredBusinesses.length > 0" class="home-marketplace-section" aria-label="Markat lokale">
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Local brands</p>
-          <h2>Biznese reale qe i japin fytyre marketplace-it.</h2>
-          <p>Profile publike me katalog, produkte te publikuara dhe identitet te qarte vizual.</p>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/bizneset-e-regjistruara">
-          Shiko te gjitha markat
-        </RouterLink>
-      </header>
-
-      <div class="home-marketplace-brand-grid">
-        <RouterLink
-          v-for="business in featuredBusinesses"
-          :key="business.id"
-          class="home-marketplace-brand-card"
-          :to="business.profileUrl || getBusinessProfileUrl(business.id)"
-        >
-          <div class="home-marketplace-brand-logo">
-            <img
-              v-if="business.logoPath"
-              :src="business.logoPath"
-              :alt="business.businessName"
-              width="140"
-              height="140"
-              loading="lazy"
-              decoding="async"
-            >
-            <span v-else>{{ getBusinessInitials(business.businessName) }}</span>
-          </div>
-          <div class="home-marketplace-brand-copy">
-            <strong>{{ business.businessName }}</strong>
-            <span>{{ business.city || "Partner i TREGO" }}</span>
-          </div>
-        </RouterLink>
-      </div>
-    </section>
-
-    <section
-      v-if="visibleRecentlyViewedProducts.length > 0"
-      class="home-marketplace-section"
-      aria-label="Produktet e pare se fundi"
-    >
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Pare se fundi</p>
-          <h2>Rikthehu te produktet qe i pe pak me pare.</h2>
-          <p>Nje shtrese e shpejte rikthimi per user-in pa e humbur rrjedhen e blerjes.</p>
-        </div>
-      </header>
-
-      <div class="home-marketplace-products-grid is-compact">
-        <HomeMarketplaceCard
-          v-for="product in visibleRecentlyViewedProducts"
-          :key="`home-recent-${product.id}`"
-          :product="product"
-          badge="Viewed"
-          badge-tone="premium"
-          compact
-          :cart-busy="busyCartIds.includes(product.id)"
-          @cart="handleCart"
-        />
-      </div>
-    </section>
-
-    <section v-if="popularNowProducts.length > 0" class="home-marketplace-section" aria-label="Popular right now">
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Popular right now</p>
-          <h2>Produktet qe po e mbajne katalogun aktiv tani.</h2>
-          <p>Mix i best sellers, ofertave dhe artikujve te rinj per nje homepage qe duket gjithmone live.</p>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/kerko">Shfleto gjithcka</RouterLink>
-      </header>
-
-      <div class="home-marketplace-products-grid">
-        <HomeMarketplaceCard
-          v-for="(product, index) in popularNowProducts.slice(0, 4)"
-          :key="`popular-${product.id}`"
-          :product="product"
-          :badge="getShowcaseBadge(product, index)"
-          :badge-tone="getShowcaseBadgeTone(product)"
-          :cart-busy="busyCartIds.includes(product.id)"
-          @cart="handleCart"
-        />
-      </div>
-    </section>
-
-    <section class="home-marketplace-proof-layout" aria-label="Reviews dhe newsletter">
-      <article class="home-marketplace-proof-column home-marketplace-testimonials">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">Reviews</p>
-          <h2>Pershtypje qe e bejne faqen te ndihet e besueshme.</h2>
-        </header>
-
-        <div class="home-marketplace-testimonial-grid">
-          <article
-            v-for="testimonial in homeTestimonials"
-            :key="testimonial.author"
-            class="home-marketplace-testimonial-card"
-          >
-            <p>“{{ testimonial.quote }}”</p>
-            <strong>{{ testimonial.author }}</strong>
-            <span>{{ testimonial.meta }}</span>
-          </article>
-        </div>
-      </article>
-
-      <article class="home-marketplace-proof-column home-marketplace-newsletter">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">Newsletter</p>
-          <h2>Merri drop-et, ofertat dhe produktet e reja ne inbox.</h2>
-          <p>
-            Nje CTA e thjeshte qe e kthen faqen nga katalog pasiv ne nje kanal te rregullt rikthimi.
-          </p>
-        </header>
-
-        <form class="home-marketplace-newsletter-form" @submit.prevent="handleNewsletterSubmit">
-          <input
-            v-model="newsletterEmail"
-            type="email"
-            inputmode="email"
-            autocomplete="email"
-            placeholder="Shkruaj email-in tend"
-            aria-label="Email per newsletter"
-          >
-          <button type="submit">Regjistrohu</button>
-        </form>
-
-        <ul class="home-marketplace-newsletter-list">
-          <li v-for="benefit in homeNewsletterBenefits" :key="benefit">{{ benefit }}</li>
-        </ul>
-      </article>
-    </section>
-
-    <section class="home-marketplace-section home-marketplace-catalog" aria-label="Katalogu i plote">
       <header class="home-marketplace-section-head home-marketplace-catalog-head">
         <div>
           <p class="section-label">Gjithe katalogu</p>
@@ -1585,6 +1320,136 @@ async function handleCart(productId) {
 
       <div v-if="products.length === 0" class="collection-empty-state">
         Nuk ka produkte publike ende.
+      </div>
+    </section>
+
+    <section class="home-marketplace-trust-grid" aria-label="Besimi dhe sherbimi">
+      <article
+        v-for="card in homeTrustCards"
+        :key="card.title"
+        class="home-marketplace-trust-card"
+      >
+        <p class="section-label">{{ card.title }}</p>
+        <h3>{{ card.title }}</h3>
+        <p>{{ card.copy }}</p>
+      </article>
+    </section>
+
+    <section
+      v-if="visibleRecentlyViewedProducts.length > 0"
+      class="home-marketplace-section"
+      aria-label="Produktet e pare se fundi"
+    >
+      <header class="home-marketplace-section-head">
+        <div>
+          <p class="section-label">Pare se fundi</p>
+          <h2>Rikthehu te produktet qe i pe pak me pare.</h2>
+          <p>Nje shtrese e shpejte rikthimi per user-in pa e humbur rrjedhen e blerjes.</p>
+        </div>
+      </header>
+
+      <div class="home-marketplace-products-grid is-compact">
+        <HomeMarketplaceCard
+          v-for="product in visibleRecentlyViewedProducts"
+          :key="`home-recent-${product.id}`"
+          :product="product"
+          badge="Viewed"
+          badge-tone="premium"
+          compact
+          :cart-busy="busyCartIds.includes(product.id)"
+          @cart="handleCart"
+        />
+      </div>
+    </section>
+
+    <section class="home-marketplace-proof-layout" aria-label="Reviews dhe newsletter">
+      <article class="home-marketplace-proof-column home-marketplace-testimonials">
+        <header class="home-marketplace-column-head">
+          <p class="section-label">Reviews</p>
+          <h2>Pershtypje qe e bejne faqen te ndihet e besueshme.</h2>
+        </header>
+
+        <div class="home-marketplace-testimonial-grid">
+          <article
+            v-for="testimonial in homeTestimonials"
+            :key="testimonial.author"
+            class="home-marketplace-testimonial-card"
+          >
+            <p>“{{ testimonial.quote }}”</p>
+            <strong>{{ testimonial.author }}</strong>
+            <span>{{ testimonial.meta }}</span>
+          </article>
+        </div>
+      </article>
+
+      <article class="home-marketplace-proof-column home-marketplace-newsletter">
+        <header class="home-marketplace-column-head">
+          <p class="section-label">Newsletter</p>
+          <h2>Merri drop-et, ofertat dhe produktet e reja ne inbox.</h2>
+          <p>
+            Nje CTA e thjeshte qe e kthen faqen nga katalog pasiv ne nje kanal te rregullt rikthimi.
+          </p>
+        </header>
+
+        <form class="home-marketplace-newsletter-form" @submit.prevent="handleNewsletterSubmit">
+          <input
+            v-model="newsletterEmail"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            placeholder="Shkruaj email-in tend"
+            aria-label="Email per newsletter"
+          >
+          <button type="submit">Regjistrohu</button>
+        </form>
+
+        <ul class="home-marketplace-newsletter-list">
+          <li v-for="benefit in homeNewsletterBenefits" :key="benefit">{{ benefit }}</li>
+        </ul>
+      </article>
+    </section>
+
+    <section
+      v-if="featuredBusinesses.length > 0"
+      id="home-marketplace-local-brands"
+      class="home-marketplace-section"
+      aria-label="Markat lokale"
+    >
+      <header class="home-marketplace-section-head">
+        <div>
+          <p class="section-label">Local brands</p>
+          <h2>Biznese reale qe i japin fytyre marketplace-it.</h2>
+          <p>Profile publike me katalog, produkte te publikuara dhe identitet te qarte vizual.</p>
+        </div>
+        <RouterLink class="home-marketplace-section-link" to="/bizneset-e-regjistruara">
+          Shiko te gjitha markat
+        </RouterLink>
+      </header>
+
+      <div class="home-marketplace-brand-grid">
+        <RouterLink
+          v-for="business in featuredBusinesses"
+          :key="business.id"
+          class="home-marketplace-brand-card"
+          :to="business.profileUrl || getBusinessProfileUrl(business.id)"
+        >
+          <div class="home-marketplace-brand-logo">
+            <img
+              v-if="business.logoPath"
+              :src="business.logoPath"
+              :alt="business.businessName"
+              width="140"
+              height="140"
+              loading="lazy"
+              decoding="async"
+            >
+            <span v-else>{{ getBusinessInitials(business.businessName) }}</span>
+          </div>
+          <div class="home-marketplace-brand-copy">
+            <strong>{{ business.businessName }}</strong>
+            <span>{{ business.city || "Partner i TREGO" }}</span>
+          </div>
+        </RouterLink>
       </div>
     </section>
   </section>

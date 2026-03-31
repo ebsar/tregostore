@@ -1,16 +1,14 @@
 <script setup>
 import { computeRoute, injectSpeedInsights } from "@vercel/speed-insights";
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
+import ProductCompareTray from "./components/ProductCompareTray.vue";
 import SiteNav from "./components/SiteNav.vue";
+import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
-import { getTrackingConsentState, setTrackingConsent } from "./lib/tracking";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
-
-const ProductCompareTray = defineAsyncComponent(() => import("./components/ProductCompareTray.vue"));
-const VoiceAssistantWidget = defineAsyncComponent(() => import("./components/VoiceAssistantWidget.vue"));
 
 const route = useRoute();
 const router = useRouter();
@@ -27,15 +25,11 @@ const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILI
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
 const safeArea = useScreenSafeArea();
 let sessionWarmupTimeoutId = 0;
-const showTrackingConsentBanner = ref(false);
-const showDeferredWidgets = ref(false);
-let deferredWidgetsTimeoutId = 0;
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
-const showSiteNav = computed(() => !route.meta?.hideNav);
 const showSiteFooter = computed(() =>
-  !route.meta?.hideFooter && !["login", "signup", "verify-email"].includes(String(route.meta.pageKey || "").trim()),
+  !["login", "signup", "verify-email"].includes(String(route.meta.pageKey || "").trim()),
 );
 
 watch(
@@ -116,10 +110,6 @@ onMounted(() => {
   initializeSpeedInsights();
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startFormMessageObserver();
-  initializeTrackingConsent();
-  deferredWidgetsTimeoutId = window.setTimeout(() => {
-    showDeferredWidgets.value = true;
-  }, 800);
 });
 
 onBeforeUnmount(() => {
@@ -136,10 +126,6 @@ onBeforeUnmount(() => {
   if (sessionWarmupTimeoutId) {
     window.clearTimeout(sessionWarmupTimeoutId);
     sessionWarmupTimeoutId = 0;
-  }
-  if (deferredWidgetsTimeoutId) {
-    window.clearTimeout(deferredWidgetsTimeoutId);
-    deferredWidgetsTimeoutId = 0;
   }
   document.body.classList.remove("app-loading");
   document.body.style.position = "";
@@ -343,51 +329,9 @@ function initializeSpeedInsights() {
 function updateSpeedInsightsRoute() {
   speedInsightsHandle?.setRoute?.(computeRoute(route.path, route.params));
 }
-
-function initializeTrackingConsent() {
-  const consentState = getTrackingConsentState();
-  showTrackingConsentBanner.value = consentState === "unset";
-}
-
-function acceptTrackingConsent() {
-  setTrackingConsent(true);
-  showTrackingConsentBanner.value = false;
-  window.dispatchEvent(new CustomEvent("trego:toast", {
-    detail: { message: "Faleminderit. Tracking per personalizim u aktivizua.", type: "success" },
-  }));
-}
-
-function declineTrackingConsent() {
-  setTrackingConsent(false);
-  showTrackingConsentBanner.value = false;
-  window.dispatchEvent(new CustomEvent("trego:toast", {
-    detail: { message: "Tracking per personalizim u refuzua. Mund ta ndryshosh me vone.", type: "info" },
-  }));
-}
 </script>
 
 <template>
-  <svg class="nav-liquid-defs" aria-hidden="true" focusable="false">
-    <defs>
-      <filter id="nav-liquid-refraction" x="-24%" y="-24%" width="148%" height="148%">
-        <feTurbulence
-          type="fractalNoise"
-          baseFrequency="0.01 0.032"
-          numOctaves="1"
-          seed="7"
-          result="noise"
-        />
-        <feGaussianBlur in="noise" stdDeviation="0.4" result="softNoise" />
-        <feDisplacementMap
-          in="SourceGraphic"
-          in2="softNoise"
-          scale="22"
-          xChannelSelector="R"
-          yChannelSelector="G"
-        />
-      </filter>
-    </defs>
-  </svg>
   <LoaderOverlay v-if="appState.loaderVisible" />
   <LoginGreetingToast v-if="appState.loginGreeting" :message="appState.loginGreeting" />
   <div
@@ -412,33 +356,14 @@ function declineTrackingConsent() {
       </button>
     </div>
   </div>
-  <VoiceAssistantWidget v-if="showDeferredWidgets" />
-  <ProductCompareTray v-if="showDeferredWidgets" />
+  <VoiceAssistantWidget />
+  <ProductCompareTray />
 
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
 
-  <section
-    v-if="showTrackingConsentBanner"
-    class="tracking-consent-banner"
-    role="dialog"
-    aria-live="polite"
-    aria-label="Njoftim per cookies dhe tracking"
-  >
-    <div class="tracking-consent-copy">
-      <strong>Privatesia dhe personalizimi</strong>
-      <p>
-        Perdorin cookies/localStorage per recently viewed dhe reklama me relevante (Meta/Google) vetem nese e pranon.
-      </p>
-    </div>
-    <div class="tracking-consent-actions">
-      <button type="button" class="button-secondary" @click="declineTrackingConsent">Refuzoj</button>
-      <button type="button" @click="acceptTrackingConsent">Pranoj</button>
-    </div>
-  </section>
-
   <div :class="shellClass">
-    <SiteNav v-if="showSiteNav" />
+    <SiteNav />
 
     <main :class="mainClass">
       <RouterView />

@@ -65,7 +65,6 @@ const importMapping = reactive({
   color: "",
 });
 const showVerifiedProfileEditor = ref(false);
-const businessProfileReady = ref(false);
 const selectedProductIds = ref([]);
 const productCategoryFilter = ref("");
 const productStockFilter = ref("all");
@@ -146,8 +145,6 @@ const ui = reactive({
   productAiBusy: false,
   promotionMessage: "",
   promotionType: "",
-  promotionBusy: false,
-  promotionDeleteBusyId: 0,
   shippingMessage: "",
   shippingType: "",
 });
@@ -316,7 +313,7 @@ const profileEditAccessStatus = computed(
 );
 const canManageCatalog = computed(() => Boolean(businessProfile.value) && isBusinessVerified.value);
 const shouldShowProfileCard = computed(
-  () => businessProfileReady.value && (!businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value),
+  () => !businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value,
 );
 const dashboardSingleColumn = computed(
   () => !canManageCatalog.value || !shouldShowProfileCard.value,
@@ -342,21 +339,6 @@ function formatPromotionSectionLabel(sectionValue) {
   return match?.label || String(sectionValue || "").trim();
 }
 
-function formatPromotionDateLabel(value) {
-  if (!value) {
-    return "-";
-  }
-  const parsedDate = new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(parsedDate.getTime())) {
-    return String(value);
-  }
-  return parsedDate.toLocaleDateString("sq-AL", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
 function getStockAlertLabel(product) {
   const stockQuantity = Number(product?.stockQuantity || 0);
   if (stockQuantity <= 0) {
@@ -372,11 +354,7 @@ function getStockAlertLabel(product) {
 
 onMounted(async () => {
   try {
-    let user = await ensureSessionLoaded();
-    if (!user) {
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-      user = await ensureSessionLoaded({ force: true });
-    }
+    const user = await ensureSessionLoaded();
     if (!user) {
       router.replace("/login");
       return;
@@ -446,23 +424,18 @@ function revokePreviewUrls() {
 }
 
 async function loadBusinessProfile() {
-  businessProfileReady.value = false;
-  try {
-    const { response, data } = await requestJson("/api/business-profile");
-    if (!response.ok || !data?.ok) {
-      ui.profileMessage = resolveApiMessage(data, "Biznesi nuk u ngarkua.");
-      ui.profileType = "error";
-      return;
-    }
+  const { response, data } = await requestJson("/api/business-profile");
+  if (!response.ok || !data?.ok) {
+    ui.profileMessage = resolveApiMessage(data, "Biznesi nuk u ngarkua.");
+    ui.profileType = "error";
+    return;
+  }
 
-    businessProfile.value = data.profile || null;
-    hydrateProfileForm(businessProfile.value);
-    hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
-    if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
-      showVerifiedProfileEditor.value = false;
-    }
-  } finally {
-    businessProfileReady.value = true;
+  businessProfile.value = data.profile || null;
+  hydrateProfileForm(businessProfile.value);
+  hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
+  if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
+    showVerifiedProfileEditor.value = false;
   }
 }
 
@@ -1089,25 +1062,8 @@ async function submitProduct() {
 }
 
 async function savePromotion() {
-  if (ui.promotionBusy) {
-    return;
-  }
-
   if (!canManageCatalog.value) {
     ui.promotionMessage = "Biznesi duhet te verifikohet nga admini para se te ruash promocione.";
-    ui.promotionType = "error";
-    return;
-  }
-
-  const promoCode = String(promotionForm.code || "").trim().toUpperCase();
-  const discountValue = Number(promotionForm.discountValue || 0);
-  if (promoCode.length < 3) {
-    ui.promotionMessage = "Kodi i promocionit duhet te kete te pakten 3 karaktere.";
-    ui.promotionType = "error";
-    return;
-  }
-  if (!Number.isFinite(discountValue) || discountValue <= 0) {
-    ui.promotionMessage = "Vendos nje vlere zbritjeje me te madhe se 0.";
     ui.promotionType = "error";
     return;
   }
@@ -1121,81 +1077,25 @@ async function savePromotion() {
     }
   }
 
-  ui.promotionBusy = true;
-  try {
-    const payload = {
-      ...promotionForm,
-      code: promoCode,
-      discountValue,
-    };
-    const { response, data } = await requestJson("/api/business/promotions", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  const payload = {
+    ...promotionForm,
+  };
+  const { response, data } = await requestJson("/api/business/promotions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok || !data?.ok) {
-      if (Number(response?.status || 0) === 401) {
-        ui.promotionMessage = "Sesioni skadoi. Kyçu perseri dhe provoje.";
-      } else {
-        ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u ruajt.");
-      }
-      ui.promotionType = "error";
-      return;
-    }
-
-    promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
-    ui.promotionMessage = data.message || "Promocioni u ruajt.";
-    ui.promotionType = "success";
-    resetPromotionForm();
-    await loadBusinessAnalytics();
-  } catch (error) {
-    console.error(error);
-    ui.promotionMessage = "Ndodhi nje problem i perkohshem gjate ruajtjes se promocionit.";
+  if (!response.ok || !data?.ok) {
+    ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u ruajt.");
     ui.promotionType = "error";
-  } finally {
-    ui.promotionBusy = false;
-  }
-}
-
-async function deletePromotion(promotion) {
-  if (!promotion || !promotion.id) {
-    return;
-  }
-  if (ui.promotionDeleteBusyId) {
-    return;
-  }
-  if (!window.confirm(`A do ta fshish promocionin ${promotion.code || ""}?`)) {
     return;
   }
 
-  ui.promotionDeleteBusyId = Number(promotion.id || 0);
-  try {
-    const { response, data } = await requestJson("/api/business/promotions", {
-      method: "POST",
-      body: JSON.stringify({
-        action: "delete",
-        promotionId: Number(promotion.id || 0),
-        code: String(promotion.code || "").trim().toUpperCase(),
-      }),
-    });
-
-    if (!response.ok || !data?.ok) {
-      ui.promotionMessage = resolveApiMessage(data, "Promocioni nuk u fshi.");
-      ui.promotionType = "error";
-      return;
-    }
-
-    promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
-    ui.promotionMessage = data.message || "Promocioni u fshi me sukses.";
-    ui.promotionType = "success";
-    await loadBusinessAnalytics();
-  } catch (error) {
-    console.error(error);
-    ui.promotionMessage = "Ndodhi nje problem i perkohshem gjate fshirjes se promocionit.";
-    ui.promotionType = "error";
-  } finally {
-    ui.promotionDeleteBusyId = 0;
-  }
+  promotions.value = Array.isArray(data.promotions) ? data.promotions : promotions.value;
+  ui.promotionMessage = data.message || "Promocioni u ruajt.";
+  ui.promotionType = "success";
+  resetPromotionForm();
+  await loadBusinessAnalytics();
 }
 
 async function submitProductAction(url, payload, fallbackMessage) {
@@ -1713,13 +1613,6 @@ async function applyBulkStockUpdate() {
     </section>
 
     <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">
-      <section v-if="!businessProfileReady" class="card business-profile-card">
-        <h2>Duke ngarkuar profilin e biznesit...</h2>
-        <p class="section-text">
-          Po sinkronizohen te dhenat e biznesit. Nese sesioni eshte aktiv, forma shfaqet automatikisht.
-        </p>
-      </section>
-
       <section v-if="shouldShowProfileCard" class="card business-profile-card">
         <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
         <p class="section-text">
@@ -2161,9 +2054,7 @@ async function applyBulkStockUpdate() {
         </label>
 
         <div class="auth-form-actions">
-          <button type="submit" :disabled="ui.promotionBusy">
-            {{ ui.promotionBusy ? "Duke ruajtur..." : "Ruaje promocionin" }}
-          </button>
+          <button type="submit">Ruaje promocionin</button>
         </div>
       </form>
 
@@ -2205,21 +2096,11 @@ async function applyBulkStockUpdate() {
               Kategoria: <strong>{{ formatCategoryLabel(promotion.category) }}</strong>
             </span>
             <span v-if="promotion.startsAt" class="section-text">
-              Nga: <strong>{{ formatPromotionDateLabel(promotion.startsAt) }}</strong>
+              Nga: <strong>{{ formatDateLabel(promotion.startsAt) }}</strong>
             </span>
             <span v-if="promotion.endsAt" class="section-text">
-              Deri: <strong>{{ formatPromotionDateLabel(promotion.endsAt) }}</strong>
+              Deri: <strong>{{ formatDateLabel(promotion.endsAt) }}</strong>
             </span>
-          </div>
-          <div class="auth-form-actions">
-            <button
-              class="button-danger"
-              type="button"
-              :disabled="ui.promotionDeleteBusyId === Number(promotion.id || 0)"
-              @click="deletePromotion(promotion)"
-            >
-              {{ ui.promotionDeleteBusyId === Number(promotion.id || 0) ? "Duke fshire..." : "Fshij promo code" }}
-            </button>
           </div>
         </article>
       </div>

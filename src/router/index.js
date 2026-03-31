@@ -27,7 +27,6 @@ const AdminProductsPage = () => import("../views/AdminProductsPage.vue");
 const BusinessDashboardPage = () => import("../views/BusinessDashboardPage.vue");
 const RegisteredBusinessesPage = () => import("../views/RegisteredBusinessesPage.vue");
 const ProductComparePage = () => import("../views/ProductComparePage.vue");
-const LiquidGlassPage = () => import("../views/LiquidGlassPage.vue");
 
 const routes = [
   {
@@ -111,7 +110,7 @@ const routes = [
       pageKey: "forgot-password",
       title: "TREGO | Kam harruar fjalekalimin",
       shellClass: "page-shell",
-      mainClass: "page-main page-main-login",
+      mainClass: "page-main",
     },
   },
   {
@@ -308,18 +307,6 @@ const routes = [
       title: "TREGO | Krahaso produktet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
-    },
-  },
-  {
-    path: "/liquid-glass",
-    component: LiquidGlassPage,
-    meta: {
-      pageKey: "liquid-glass",
-      title: "TREGO | Liquid Glass",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
-      hideNav: true,
-      hideFooter: true,
     },
   },
   {
