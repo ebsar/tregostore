@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Capacitor } from "@capacitor/core";
 import {
   IonIcon,
   IonLabel,
@@ -13,6 +14,7 @@ import { activityBadgeCount, sessionState } from "../stores/session";
 
 const cartBadge = computed(() => (sessionState.cartCount > 0 ? String(sessionState.cartCount) : ""));
 const wishlistBadge = computed(() => (sessionState.wishlistCount > 0 ? String(sessionState.wishlistCount) : ""));
+const isNativeIOS = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
 const activityBadge = computed(() => {
   const total = Math.max(0, Number(activityBadgeCount.value || 0));
   if (total <= 0) {
@@ -24,12 +26,18 @@ const activityBadge = computed(() => {
 onMounted(() => {
   if (typeof document !== "undefined") {
     document.body.dataset.mobileTabbar = "1";
+    if (isNativeIOS) {
+      document.body.dataset.nativeIosSwiftuiTabbar = "1";
+    }
   }
 });
 
 onUnmounted(() => {
   if (typeof document !== "undefined") {
     delete document.body.dataset.mobileTabbar;
+    if (isNativeIOS) {
+      delete document.body.dataset.nativeIosSwiftuiTabbar;
+    }
   }
 });
 </script>
@@ -38,7 +46,7 @@ onUnmounted(() => {
   <IonTabs>
     <IonRouterOutlet />
 
-    <IonTabBar slot="bottom" class="mobile-tabbar">
+    <IonTabBar v-show="!isNativeIOS" slot="bottom" class="mobile-tabbar">
       <IonTabButton tab="home" href="/tabs/home">
         <IonIcon :icon="homeOutline" />
         <IonLabel>Home</IonLabel>
@@ -69,15 +77,18 @@ onUnmounted(() => {
 <style scoped>
 .mobile-tabbar {
   position: fixed;
-  left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2);
+  left: 50%;
+  right: auto;
   bottom: 10px;
   transform: translateX(-50%);
+  box-sizing: border-box;
   display: flex;
   align-items: stretch;
   justify-content: center;
   overflow: hidden;
   margin: 0;
-  width: min(540px, calc(100% - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  width: calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  max-width: 540px;
   min-height: 72px;
   padding: 8px 10px calc(env(safe-area-inset-bottom, 0px) + 8px);
   border-radius: 30px;
@@ -189,7 +200,8 @@ onUnmounted(() => {
 
 :global(body[data-platform="ios"]) .mobile-tabbar {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-  width: min(520px, calc(100% - 22px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  width: calc(100vw - 22px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  max-width: 520px;
   min-height: 76px;
   padding: 8px 9px calc(env(safe-area-inset-bottom, 0px) + 8px);
   border-radius: 34px;

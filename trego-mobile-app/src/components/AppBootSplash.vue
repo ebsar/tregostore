@@ -4,15 +4,8 @@
     <div class="app-boot-splash__glow app-boot-splash__glow--cool" />
 
     <section class="app-boot-splash__panel">
-      <div class="app-boot-splash__badge">TREGO</div>
-      <h1>Blerje me ndjesi app-first</h1>
-      <p>Po lidhim katalogun, sesionin dhe seksionet kryesore me te njejtin backend.</p>
-
-      <div class="app-boot-splash__loader" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
+      <img class="app-boot-splash__logo" src="/trego-logo.webp" alt="Trego" />
+      <div class="app-boot-splash__loader" aria-hidden="true" />
     </section>
   </div>
 </template>

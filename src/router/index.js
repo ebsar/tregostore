@@ -36,7 +36,7 @@ const routes = [
       pageKey: "home",
       title: "TREGO | Home",
       shellClass: "page-shell page-shell-home-full",
-      mainClass: "page-main page-main-collection",
+      mainClass: "page-main page-main-home",
     },
   },
   {

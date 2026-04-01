@@ -118,7 +118,7 @@ watch(
             <span>Contact support</span>
           </button>
 
-          <form class="messages-search-shell" @submit.prevent>
+          <div class="messages-search-shell" role="search" aria-label="Kerko ne mesazhe">
             <IonIcon :icon="searchOutline" />
             <IonInput
               v-model="searchTerm"
@@ -126,7 +126,7 @@ watch(
               placeholder="Kerko ne mesazhe..."
               clear-input
             />
-          </form>
+          </div>
         </section>
 
         <EmptyStatePanel

@@ -53,6 +53,10 @@ const searchStatus = computed(() => {
   return `Po shfaqen ${filteredBusinesses.value.length} nga ${businesses.value.length} biznese per kerkimin "${searchQuery.value.trim()}".`;
 });
 
+function submitBusinessSearch() {
+  searchQuery.value = String(searchQuery.value || "").trim();
+}
+
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
@@ -300,7 +304,7 @@ async function handleEditAccessUpdate({ businessId, editAccessStatus }) {
           </div>
         </div>
 
-        <form class="search-form registered-businesses-search-form" @submit.prevent>
+        <form class="search-form registered-businesses-search-form" @submit.prevent="submitBusinessSearch">
           <input
             v-model="searchQuery"
             class="search-input"
@@ -308,7 +312,7 @@ async function handleEditAccessUpdate({ businessId, editAccessStatus }) {
             placeholder="Kerko sipas emrit te biznesit, pronarit ose nr. te biznesit"
             aria-label="Kerko biznes"
           >
-          <button class="search-submit-button" type="button">Kerko</button>
+          <button class="search-submit-button" type="button" @click="submitBusinessSearch">Kerko</button>
           <button class="search-reset-button" type="button" @click="searchQuery = ''">Pastro</button>
         </form>
 

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { IonApp, IonRouterOutlet } from "@ionic/vue";
 import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppBootSplash from "./components/AppBootSplash.vue";
 import { useConnectivity } from "./composables/useConnectivity";
 import { ensurePushClient, requestPushPermissionIfNeeded, syncPushIdentity } from "./lib/push";
-import { ensureSession, refreshCounts, refreshSession, sessionState } from "./stores/session";
+import { activityBadgeCount, ensureSession, refreshCounts, refreshSession, sessionState } from "./stores/session";
 
 const route = useRoute();
 const router = useRouter();
 const { isOnline, isConnectionUnstable } = useConnectivity();
+const isNativeIOS = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
 const resumeListener = ref<{ remove: () => Promise<void> } | null>(null);
 const bootSplashVisible = ref(true);
 const bannerLabel = computed(() => {
@@ -79,10 +81,79 @@ function handleEdgeTouchEnd(event: TouchEvent) {
   }
 }
 
+function normalizeBadge(value: number | string | null | undefined) {
+  const total = Math.max(0, Number(value || 0));
+  if (total <= 0) {
+    return "";
+  }
+
+  return total > 99 ? "99+" : String(total);
+}
+
+function resolveTabId(path: string) {
+  if (path.startsWith("/tabs/home")) {
+    return "home";
+  }
+
+  if (path.startsWith("/tabs/search")) {
+    return "kerko";
+  }
+
+  if (path.startsWith("/tabs/wishlist")) {
+    return "wishlist";
+  }
+
+  if (path.startsWith("/tabs/cart")) {
+    return "cart";
+  }
+
+  if (path.startsWith("/tabs/account")) {
+    return "llogaria";
+  }
+
+  return "";
+}
+
+function postNativeTabState() {
+  if (!isNativeIOS || typeof window === "undefined") {
+    return;
+  }
+
+  const handler = (window as any)?.webkit?.messageHandlers?.tregoTabState;
+  if (!handler || typeof handler.postMessage !== "function") {
+    return;
+  }
+
+  const selectedTab = resolveTabId(route.path);
+  handler.postMessage({
+    currentPath: route.fullPath,
+    selectedTab,
+    showTabBar: !bootSplashVisible.value && route.path.startsWith("/tabs/"),
+    badges: {
+      wishlist: normalizeBadge(sessionState.wishlistCount),
+      cart: normalizeBadge(sessionState.cartCount),
+      llogaria: normalizeBadge(activityBadgeCount.value),
+    },
+  });
+}
+
+function navigateFromNative(path: string) {
+  if (!path || route.fullPath === path || route.path === path) {
+    return;
+  }
+
+  void router.push(path);
+}
+
+function handleNativeTabNavigate(event: Event) {
+  const path = (event as CustomEvent<{ path?: string }>).detail?.path || "";
+  navigateFromNative(path);
+}
+
 onMounted(async () => {
   void ensurePushClient(router);
   const minimumBootDelay = new Promise((resolve) => {
-    window.setTimeout(resolve, 950);
+    window.setTimeout(resolve, 460);
   });
   const initialSessionPromise = ensureSession();
   void Promise.allSettled([initialSessionPromise, minimumBootDelay]).finally(() => {
@@ -105,6 +176,13 @@ onMounted(async () => {
   if (typeof window !== "undefined") {
     window.addEventListener("touchstart", handleEdgeTouchStart, { passive: true });
     window.addEventListener("touchend", handleEdgeTouchEnd, { passive: true });
+    if (isNativeIOS) {
+      window.addEventListener("trego:native-tab-navigate", handleNativeTabNavigate as EventListener);
+      (window as any).__tregoNativeNavigateTo = navigateFromNative;
+      document.documentElement.dataset.nativeIosSwiftuiTabbar = "1";
+      document.body.dataset.nativeIosSwiftuiTabbar = "1";
+      postNativeTabState();
+    }
   }
 });
 
@@ -113,6 +191,10 @@ onUnmounted(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("touchstart", handleEdgeTouchStart);
     window.removeEventListener("touchend", handleEdgeTouchEnd);
+    if (isNativeIOS) {
+      window.removeEventListener("trego:native-tab-navigate", handleNativeTabNavigate as EventListener);
+      delete (window as any).__tregoNativeNavigateTo;
+    }
   }
 });
 
@@ -127,6 +209,20 @@ watch(
     if (userId > 0 && !splashVisible) {
       await requestPushPermissionIfNeeded(false, router);
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => [
+    route.fullPath,
+    sessionState.wishlistCount,
+    sessionState.cartCount,
+    activityBadgeCount.value,
+    bootSplashVisible.value,
+  ] as const,
+  () => {
+    postNativeTabState();
   },
   { immediate: true },
 );

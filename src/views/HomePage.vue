@@ -350,6 +350,38 @@ const flashDealProducts = computed(() =>
     4,
   ),
 );
+const saleTickerProducts = computed(() => {
+  const discountedProducts = buildUniqueProducts(
+    [
+      ...flashDealProducts.value,
+      ...[...marketplaceProducts.value]
+        .filter((product) => getProductDiscountPercent(product) > 0)
+        .sort((left, right) => {
+          const discountDifference = getProductDiscountPercent(right) - getProductDiscountPercent(left);
+          if (discountDifference !== 0) {
+            return discountDifference;
+          }
+
+          return getProductPopularityScore(right) - getProductPopularityScore(left);
+        }),
+      ...bestSellerProducts.value,
+    ],
+    8,
+  );
+
+  if (discountedProducts.length > 0) {
+    return discountedProducts;
+  }
+
+  return buildUniqueProducts(
+    [
+      ...flashDealProducts.value,
+      ...bestSellerProducts.value,
+      ...marketplaceProducts.value,
+    ],
+    8,
+  );
+});
 const bestSellerProducts = computed(() =>
   buildUniqueProducts(
     [...marketplaceProducts.value].sort(
@@ -1131,24 +1163,68 @@ async function handleCart(productId) {
       </template>
     </section>
 
-    <section class="home-marketplace-utility-strip" aria-label="Sherbime te shpejta te marketplace-it">
-      <article class="home-marketplace-utility-head">
-        <p class="section-label">Marketplace shortcuts</p>
-        <h2>Veprimet qe user-i i perdor me shpesh.</h2>
-        <p>
-          Eshte me e lehte te vazhdosh me porosi, wishlist, mesazhe apo hyrje ne llogari pa kerkuar neper menu.
-        </p>
-      </article>
+    <section
+      v-if="saleTickerProducts.length > 0"
+      class="home-marketplace-sale-strip"
+      aria-label="Sale"
+    >
+      <header class="home-marketplace-sale-head">
+        <div>
+          <p class="section-label">Sale</p>
+          <h2>Produktet me zbritje levizin ketu pa nderprerje.</h2>
+        </div>
+        <RouterLink class="home-marketplace-section-link" to="/kerko">
+          Shiko ofertat
+        </RouterLink>
+      </header>
 
-      <RouterLink
-        v-for="item in consumerUtilityActions"
-        :key="item.title"
-        class="home-marketplace-utility-card"
-        :to="item.to"
-      >
-        <strong>{{ item.title }}</strong>
-        <span>{{ item.copy }}</span>
-      </RouterLink>
+      <div class="home-marketplace-sale-marquee">
+        <div class="home-marketplace-sale-track">
+          <RouterLink
+            v-for="product in saleTickerProducts"
+            :key="`sale-primary-${product.id}`"
+            class="home-marketplace-sale-item"
+            :to="getProductDetailUrl(product.id, '/')"
+          >
+            <img
+              :src="product.imagePath"
+              :alt="product.title"
+              width="96"
+              height="96"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="home-marketplace-sale-copy">
+              <strong>{{ product.title }}</strong>
+              <span>{{ formatPrice(product.price) }}</span>
+            </div>
+            <small>{{ getProductDiscountPercent(product) > 0 ? `-${getProductDiscountPercent(product)}%` : "Sale" }}</small>
+          </RouterLink>
+
+          <RouterLink
+            v-for="product in saleTickerProducts"
+            :key="`sale-loop-${product.id}`"
+            class="home-marketplace-sale-item"
+            :to="getProductDetailUrl(product.id, '/')"
+            aria-hidden="true"
+            tabindex="-1"
+          >
+            <img
+              :src="product.imagePath"
+              :alt="product.title"
+              width="96"
+              height="96"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="home-marketplace-sale-copy">
+              <strong>{{ product.title }}</strong>
+              <span>{{ formatPrice(product.price) }}</span>
+            </div>
+            <small>{{ getProductDiscountPercent(product) > 0 ? `-${getProductDiscountPercent(product)}%` : "Sale" }}</small>
+          </RouterLink>
+        </div>
+      </div>
     </section>
 
     <section class="home-marketplace-announcement" aria-label="Highlights te marketplace-it">
@@ -1162,49 +1238,39 @@ async function handleCart(productId) {
       </article>
     </section>
 
+    <section
+      v-if="bestSellerProducts.length > 0"
+      class="home-marketplace-section home-marketplace-best-sellers"
+      aria-label="Produktet me te shitura"
+    >
+      <header class="home-marketplace-section-head">
+        <div>
+          <p class="section-label">Produktet me te shitura</p>
+          <h2>Keto kater produkte po levizin me shpejt ne marketplace.</h2>
+          <p>Renditur sipas shitjeve, reviews dhe sinjaleve reale te interesit nga katalogu aktiv.</p>
+        </div>
+        <RouterLink
+          class="home-marketplace-section-link"
+          :to="{ path: '/kerko', query: { featured: 'best-sellers' } }"
+        >
+          Shiko produktet me te shitura
+        </RouterLink>
+      </header>
+
+      <div class="home-marketplace-products-grid home-marketplace-best-sellers-grid">
+        <HomeMarketplaceCard
+          v-for="product in bestSellerProducts"
+          :key="`home-best-seller-${product.id}`"
+          :product="product"
+          badge="Best seller"
+          badge-tone="premium"
+          :cart-busy="busyCartIds.includes(product.id)"
+          @cart="handleCart"
+        />
+      </div>
+    </section>
+
     <section class="home-marketplace-masthead" aria-label="Hyrja kryesore ne marketplace">
-      <section class="home-marketplace-command-bar" aria-label="Kerko produktet me tekst ose foto">
-        <form class="home-marketplace-command-form" @submit.prevent="submitHeroSearch">
-          <button
-            class="home-marketplace-command-visual-trigger"
-            type="button"
-            aria-label="Kerko me foto"
-            @click="openHeroVisualSearchPicker"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4.8 8.2h3l1.4-2.2h5.6l1.4 2.2h3A1.8 1.8 0 0 1 21 10v8.2A1.8 1.8 0 0 1 19.2 20H4.8A1.8 1.8 0 0 1 3 18.2V10a1.8 1.8 0 0 1 1.8-1.8Z"></path>
-              <circle cx="12" cy="14" r="3.6"></circle>
-            </svg>
-          </button>
-
-          <input
-            v-model="heroSearchQuery"
-            class="home-marketplace-command-input"
-            type="search"
-            autocomplete="off"
-            enterkeyhint="search"
-            placeholder="Kerko produkte, kategori ose marke"
-            aria-label="Kerko produktet"
-          >
-
-          <button class="home-marketplace-command-submit" type="submit">
-            Kerko
-          </button>
-
-          <input
-            ref="heroVisualSearchInputElement"
-            class="sr-only"
-            type="file"
-            accept="image/*"
-            @change="handleHeroVisualSearchSelection"
-          >
-        </form>
-
-        <p class="home-marketplace-command-note">
-          Perdore kameran per kerkim me fotografi ose shkruaj emrin e produktit.
-        </p>
-      </section>
-
       <aside class="home-marketplace-category-rail">
         <header class="home-marketplace-rail-head">
           <p class="section-label">Shop categories</p>
@@ -1567,25 +1633,6 @@ async function handleCart(productId) {
     </section>
 
     <section class="home-marketplace-proof-layout" aria-label="Reviews dhe newsletter">
-      <article class="home-marketplace-proof-column home-marketplace-testimonials">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">Reviews</p>
-          <h2>Pershtypje qe e bejne faqen te ndihet e besueshme.</h2>
-        </header>
-
-        <div class="home-marketplace-testimonial-grid">
-          <article
-            v-for="testimonial in homeTestimonials"
-            :key="testimonial.author"
-            class="home-marketplace-testimonial-card"
-          >
-            <p>“{{ testimonial.quote }}”</p>
-            <strong>{{ testimonial.author }}</strong>
-            <span>{{ testimonial.meta }}</span>
-          </article>
-        </div>
-      </article>
-
       <article class="home-marketplace-proof-column home-marketplace-newsletter">
         <header class="home-marketplace-column-head">
           <p class="section-label">Newsletter</p>

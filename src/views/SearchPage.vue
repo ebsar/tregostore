@@ -71,6 +71,7 @@ const { target: loadMoreSentinel, supportsAutoLoad } = useInfiniteScrollSentinel
 });
 
 const activeQuery = computed(() => String(route.query.q || "").trim());
+const featuredCollection = computed(() => String(route.query.featured || "").trim().toLowerCase());
 const availablePageSectionOptions = computed(() => availableFilters.value.pageSections);
 const availableCategoryOptions = computed(() =>
   !filters.pageSection || !GROUPED_PAGE_SECTIONS.has(filters.pageSection)
@@ -118,9 +119,25 @@ const filteredProducts = computed(() => {
     nextProducts.sort((left, right) => Number(left.price || 0) - Number(right.price || 0));
   } else if (filters.sort === "price-desc") {
     nextProducts.sort((left, right) => Number(right.price || 0) - Number(left.price || 0));
+  } else if (featuredCollection.value === "best-sellers") {
+    nextProducts.sort((left, right) => getProductPopularityScore(right) - getProductPopularityScore(left));
   }
 
   return nextProducts;
+});
+
+const searchTitle = computed(() =>
+  featuredCollection.value === "best-sellers" && !activeQuery.value
+    ? "Produktet me te shitura"
+    : "Kerko produktet",
+);
+
+const searchIntro = computed(() => {
+  if (featuredCollection.value === "best-sellers" && !activeQuery.value) {
+    return "Po shfaqen produktet qe po levizin me shpejt ne marketplace sipas shitjeve, reviews dhe interesit real.";
+  }
+
+  return "Shkruaj p.sh. `me trego maica te kuqe`, `dua pantallona te gjera` ose fotografo produktin me kamerë.";
 });
 
 const resultsLabel = computed(() => {
@@ -135,6 +152,10 @@ const resultsLabel = computed(() => {
   }
 
   if (!products.value.length) {
+    if (featuredCollection.value === "best-sellers" && !activeQuery.value) {
+      return "Nuk ka produkte te shitura ende ne kete liste.";
+    }
+
     return "Nuk u gjet asnje produkt per kete kerkim.";
   }
 
@@ -385,6 +406,10 @@ function buildSearchRouteQuery(nextQueryValue = draftQuery.value) {
     nextQuery.productType = filters.productType;
   }
 
+  if (featuredCollection.value) {
+    nextQuery.featured = featuredCollection.value;
+  }
+
   return nextQuery;
 }
 
@@ -394,12 +419,14 @@ function routeQueryMatches(nextQuery) {
     pageSection: String(route.query.pageSection || "").trim().toLowerCase(),
     category: String(route.query.category || "").trim().toLowerCase(),
     productType: String(route.query.productType || "").trim().toLowerCase(),
+    featured: String(route.query.featured || "").trim().toLowerCase(),
   };
   const normalizedNextQuery = {
     q: String(nextQuery.q || "").trim(),
     pageSection: String(nextQuery.pageSection || "").trim().toLowerCase(),
     category: String(nextQuery.category || "").trim().toLowerCase(),
     productType: String(nextQuery.productType || "").trim().toLowerCase(),
+    featured: String(nextQuery.featured || "").trim().toLowerCase(),
   };
 
   return JSON.stringify(currentQuery) === JSON.stringify(normalizedNextQuery);
@@ -523,6 +550,13 @@ function submitSearch() {
     recentSearches.value = rememberRecentSearch(draftQuery.value);
   }
   updateSearchRouteFromFilters(draftQuery.value);
+}
+
+function getProductPopularityScore(product) {
+  const buyersCount = Number(product?.buyersCount ?? product?.unitsSold ?? 0) || 0;
+  const reviewCount = Number(product?.reviewCount ?? 0) || 0;
+  const ratingAverage = Number(product?.averageRating ?? product?.ratingAverage ?? 0) || 0;
+  return (buyersCount * 4) + (reviewCount * 2) + ratingAverage;
 }
 
 function applyRecentSearch(term) {
@@ -718,6 +752,9 @@ function resetFilters() {
   }
 
   const nextQuery = activeQuery.value ? { q: activeQuery.value } : {};
+  if (featuredCollection.value) {
+    nextQuery.featured = featuredCollection.value;
+  }
   if (routeQueryMatches(nextQuery)) {
     void loadProducts();
     return;
@@ -816,10 +853,8 @@ function handleCompare(product) {
   <section class="collection-page search-page" aria-label="Kerko produkte">
     <header class="collection-page-header">
       <p class="section-label">Kerko</p>
-      <h1>Kerko produktet</h1>
-      <p>
-        Shkruaj p.sh. `me trego maica te kuqe`, `dua pantallona te gjera` ose fotografo produktin me kamerë.
-      </p>
+      <h1>{{ searchTitle }}</h1>
+      <p>{{ searchIntro }}</p>
     </header>
 
     <form class="search-form" role="search" @submit.prevent="submitSearch">

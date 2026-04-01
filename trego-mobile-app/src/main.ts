@@ -60,7 +60,9 @@ const app = createApp(App)
   .use(IonicVue)
   .use(router);
 
-Promise.all([router.isReady(), setupNativeChrome()]).finally(() => {
+setupNativeChrome().finally(() => {
   app.mount("#app");
-  warmCriticalRoutes();
+  void router.isReady().finally(() => {
+    warmCriticalRoutes();
+  });
 });
