@@ -158,6 +158,8 @@ export function createEmptyProductFormState() {
     articleNumber: "",
     title: "",
     price: "",
+    compareAtPrice: "",
+    saleEndsAt: "",
     description: "",
     pageSection: defaultSection,
     audience: defaultAudience,
@@ -248,6 +250,9 @@ export function normalizeVariantInventory(value, fallback = {}) {
     const size = String(candidate.size || "").trim().toUpperCase();
     const color = String(candidate.color || "").trim().toLowerCase();
     const quantity = Math.max(0, Number.parseInt(String(candidate.quantity ?? "0"), 10) || 0);
+    const rawPrice = Number(candidate.price ?? 0);
+    const price = Number.isFinite(rawPrice) && rawPrice > 0 ? Number(rawPrice.toFixed(2)) : 0;
+    const imagePath = String(candidate.imagePath || "").trim();
     const key = buildVariantKey({ size, color });
     if (seenKeys.has(key)) {
       return;
@@ -260,6 +265,8 @@ export function normalizeVariantInventory(value, fallback = {}) {
       color,
       quantity,
       label: formatVariantLabel({ size, color }),
+      price,
+      imagePath,
     });
   });
 
@@ -280,6 +287,8 @@ export function normalizeVariantInventory(value, fallback = {}) {
     color: fallbackColor,
     quantity: fallbackQuantity,
     label: formatVariantLabel({ size: fallbackSize, color: fallbackColor }),
+    price: 0,
+    imagePath: "",
   }];
 }
 
@@ -288,6 +297,10 @@ export function hydrateProductFormFromProduct(form, product) {
   form.articleNumber = String(product?.articleNumber || "");
   form.title = String(product?.title || "");
   form.price = String(product?.price ?? "");
+  form.compareAtPrice = Number(product?.compareAtPrice || 0) > Number(product?.price || 0)
+    ? String(product?.compareAtPrice ?? "")
+    : "";
+  form.saleEndsAt = String(product?.saleEndsAt || "");
   form.description = String(product?.description || "");
   form.pageSection = deriveSectionFromCategory(product?.category);
   form.audience = deriveAudienceFromCategory(product?.category);
@@ -318,6 +331,8 @@ export function hydrateProductFormFromProduct(form, product) {
           size: option.value,
           enabled: Boolean(existingEntry),
           quantity: String(existingEntry?.quantity ?? 0),
+          price: String(existingEntry?.price ?? ""),
+          imagePath: String(existingEntry?.imagePath || ""),
         };
       }),
     }));
@@ -330,6 +345,8 @@ export function hydrateProductFormFromProduct(form, product) {
       return {
         color,
         quantity: String(existingEntry?.quantity ?? 0),
+        price: String(existingEntry?.price ?? ""),
+        imagePath: String(existingEntry?.imagePath || ""),
       };
     });
     return;
@@ -355,6 +372,8 @@ export function buildVariantInventoryFromForm(form) {
           size: String(entry.size || "").trim().toUpperCase(),
           quantity: Math.max(0, Number.parseInt(String(entry.quantity ?? "0"), 10) || 0),
           label: formatVariantLabel({ color: colorVariant.color, size: entry.size }),
+          price: Math.max(0, Number.parseFloat(String(entry.price ?? "0")) || 0),
+          imagePath: String(entry.imagePath || "").trim(),
         })),
     );
   }
@@ -366,6 +385,8 @@ export function buildVariantInventoryFromForm(form) {
       size: "",
       quantity: Math.max(0, Number.parseInt(String(entry.quantity ?? "0"), 10) || 0),
       label: formatVariantLabel({ color: entry.color }),
+      price: Math.max(0, Number.parseFloat(String(entry.price ?? "0")) || 0),
+      imagePath: String(entry.imagePath || "").trim(),
     }));
   }
 
@@ -377,6 +398,8 @@ export function buildVariantInventoryFromForm(form) {
         size: "",
         quantity,
         label: "Standard",
+        price: 0,
+        imagePath: "",
       }]
     : [];
 }

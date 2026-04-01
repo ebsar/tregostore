@@ -11,7 +11,7 @@ import {
   hydrateProductFormFromProduct,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
-import { formatDateLabel, formatRoleLabel, getProductImageGallery } from "../lib/shop";
+import { formatCount, formatDateLabel, formatRoleLabel, getProductImageGallery } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
@@ -138,6 +138,27 @@ const filteredProducts = computed(() => {
       || String(left.product.title || "").localeCompare(String(right.product.title || ""))
     )
     .map((entry) => entry.product);
+});
+const adminEngagementSummary = computed(() => {
+  const totals = products.value.reduce((accumulator, product) => {
+    accumulator.viewsCount += Number(product.viewsCount || 0);
+    accumulator.wishlistCount += Number(product.wishlistCount || 0);
+    accumulator.cartCount += Number(product.cartCount || 0);
+    accumulator.shareCount += Number(product.shareCount || 0);
+    return accumulator;
+  }, {
+    viewsCount: 0,
+    wishlistCount: 0,
+    cartCount: 0,
+    shareCount: 0,
+  });
+
+  return [
+    { label: "Views", value: formatCount(totals.viewsCount) },
+    { label: "Wishlist", value: formatCount(totals.wishlistCount) },
+    { label: "Cart", value: formatCount(totals.cartCount) },
+    { label: "Share", value: formatCount(totals.shareCount) },
+  ];
 });
 
 onMounted(async () => {
@@ -493,6 +514,17 @@ async function handleReportStatus(report, status) {
     </header>
 
     <p class="admin-access-note">{{ ui.accessNote }}</p>
+
+    <section v-if="products.length > 0" class="business-dashboard-analytics-grid" aria-label="Engagement i produkteve">
+      <article
+        v-for="item in adminEngagementSummary"
+        :key="`admin-engagement-${item.label}`"
+        class="summary-chip"
+      >
+        <span>{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+      </article>
+    </section>
 
     <div class="admin-products-shell">
       <section class="card admin-form-card admin-form-card-compact">

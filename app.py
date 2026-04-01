@@ -75,6 +75,9 @@ BREVO_API_KEY = str(os.environ.get("BREVO_API_KEY", "")).strip()
 BREVO_SENDER_EMAIL = str(os.environ.get("BREVO_SENDER_EMAIL", "")).strip()
 BREVO_SENDER_NAME = str(os.environ.get("BREVO_SENDER_NAME", "TREGO")).strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+ONESIGNAL_APP_ID = str(os.environ.get("ONESIGNAL_APP_ID", "")).strip()
+ONESIGNAL_REST_API_KEY = str(os.environ.get("ONESIGNAL_REST_API_KEY", "")).strip()
+ONESIGNAL_API_URL = "https://api.onesignal.com/notifications?c=push"
 CRON_SECRET = str(os.environ.get("CRON_SECRET") or os.environ.get("TREGO_CRON_SECRET") or "").strip()
 SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
@@ -588,6 +591,8 @@ PRODUCT_SELECT_COLUMNS = """
     products.title AS title,
     products.description AS description,
     products.price AS price,
+    products.compare_at_price AS compare_at_price,
+    products.sale_ends_at AS sale_ends_at,
     products.image_path AS image_path,
     products.image_gallery AS image_gallery,
     products.image_fingerprint AS image_fingerprint,
@@ -606,9 +611,15 @@ PRODUCT_SELECT_COLUMNS = """
     products.created_by_user_id AS created_by_user_id,
     products.created_at AS created_at,
     COALESCE(order_totals.buyers_count, 0) AS buyers_count,
+    COALESCE(view_totals.views_count, 0) AS views_count,
+    COALESCE(wishlist_totals.wishlist_count, 0) AS wishlist_count,
+    COALESCE(cart_totals.cart_count, 0) AS cart_count,
+    COALESCE(share_totals.share_count, 0) AS share_count,
     COALESCE(review_totals.average_rating, 0) AS average_rating,
     COALESCE(review_totals.review_count, 0) AS review_count,
-    COALESCE(product_business_profile.business_name, '') AS business_name
+    COALESCE(product_business_profile.business_name, '') AS business_name,
+    COALESCE(product_business_profile.id, 0) AS business_profile_id,
+    COALESCE(product_business_profile.verification_status, '') AS business_verification_status
 """
 PRODUCT_SELECT_RELATION_JOINS = """
     LEFT JOIN (
@@ -619,6 +630,42 @@ PRODUCT_SELECT_RELATION_JOINS = """
         WHERE product_id IS NOT NULL
         GROUP BY product_id
     ) order_totals ON order_totals.product_id = products.id
+    LEFT JOIN (
+        SELECT
+            product_id,
+            COUNT(*) AS views_count
+        FROM product_engagements
+        WHERE product_id IS NOT NULL
+          AND event_type = 'view'
+        GROUP BY product_id
+    ) view_totals ON view_totals.product_id = products.id
+    LEFT JOIN (
+        SELECT
+            product_id,
+            COUNT(DISTINCT user_id) AS wishlist_count
+        FROM wishlist_items
+        WHERE product_id IS NOT NULL
+          AND user_id IS NOT NULL
+        GROUP BY product_id
+    ) wishlist_totals ON wishlist_totals.product_id = products.id
+    LEFT JOIN (
+        SELECT
+            product_id,
+            COUNT(DISTINCT user_id) AS cart_count
+        FROM cart_lines
+        WHERE product_id IS NOT NULL
+          AND user_id IS NOT NULL
+        GROUP BY product_id
+    ) cart_totals ON cart_totals.product_id = products.id
+    LEFT JOIN (
+        SELECT
+            product_id,
+            COUNT(*) AS share_count
+        FROM product_engagements
+        WHERE product_id IS NOT NULL
+          AND event_type = 'share'
+        GROUP BY product_id
+    ) share_totals ON share_totals.product_id = products.id
     LEFT JOIN (
         SELECT
             product_id,
@@ -1838,6 +1885,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE products ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0"
         )
 
+    if not column_exists(connection, "products", "compare_at_price"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN compare_at_price REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "products", "sale_ends_at"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN sale_ends_at TEXT NOT NULL DEFAULT ''"
+        )
+
     if not column_exists(connection, "products", "is_public"):
         connection.execute(
             "ALTER TABLE products ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1"
@@ -1880,6 +1937,8 @@ def migrate_database(connection: DatabaseConnection) -> None:
             package_amount_value = COALESCE(package_amount_value, 0),
             package_amount_unit = COALESCE(NULLIF(TRIM(package_amount_unit), ''), ''),
             stock_quantity = COALESCE(stock_quantity, 0),
+            compare_at_price = COALESCE(compare_at_price, 0),
+            sale_ends_at = COALESCE(sale_ends_at, ''),
             is_public = CASE WHEN COALESCE(is_public, 1) = 0 THEN 0 ELSE 1 END,
             show_stock_public = CASE
                 WHEN COALESCE(show_stock_public, 0) = 1 THEN 1
@@ -2182,6 +2241,72 @@ def migrate_database(connection: DatabaseConnection) -> None:
             selected_color = COALESCE(selected_color, ''),
             variant_key = COALESCE(NULLIF(TRIM(variant_key), ''), 'default'),
             variant_label = COALESCE(NULLIF(TRIM(variant_label), ''), 'Standard')
+        """,
+        (now_text_value, now_text_value),
+    )
+
+    if not table_exists(connection, "product_engagements"):
+        connection.execute(
+            """
+            CREATE TABLE product_engagements (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                business_user_id BIGINT NOT NULL,
+                event_type TEXT NOT NULL,
+                actor_key TEXT NOT NULL,
+                user_id BIGINT,
+                visitor_token TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE product_engagements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                business_user_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                actor_key TEXT NOT NULL,
+                user_id INTEGER,
+                visitor_token TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_product_engagements_actor_unique
+        ON product_engagements(product_id, event_type, actor_key)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_engagements_product_event
+        ON product_engagements(product_id, event_type, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_engagements_business_event
+        ON product_engagements(business_user_id, event_type, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        UPDATE product_engagements
+        SET
+            visitor_token = COALESCE(visitor_token, ''),
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), ?),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), COALESCE(NULLIF(TRIM(created_at), ''), ?))
         """,
         (now_text_value, now_text_value),
     )
@@ -3669,6 +3794,8 @@ def normalize_variant_inventory_value(
         size = str(candidate.get("size", "")).strip().upper()
         color = str(candidate.get("color", "")).strip().lower()
         raw_quantity = str(candidate.get("quantity", "")).strip()
+        raw_price = str(candidate.get("price", "")).strip()
+        image_path = str(candidate.get("imagePath", "")).strip()
 
         if requires_size and size and size not in CLOTHING_SIZES:
             errors.append(f"Madhesia `{size}` nuk eshte valide te varianti #{index}.")
@@ -3692,6 +3819,18 @@ def normalize_variant_inventory_value(
             errors.append(f"Sasia e variantit #{index} nuk mund te jete negative.")
             continue
 
+        if raw_price:
+            try:
+                price = round(float(raw_price), 2)
+            except ValueError:
+                errors.append(f"Cmimi i variantit #{index} duhet te jete numer valid.")
+                continue
+            if price < 0:
+                errors.append(f"Cmimi i variantit #{index} nuk mund te jete negativ.")
+                continue
+        else:
+            price = 0.0
+
         variant_key = build_product_variant_key(size=size, color=color)
         if variant_key in seen_keys:
             errors.append(f"Varianti `{build_product_variant_label(size=size, color=color)}` eshte perseritur.")
@@ -3705,6 +3844,8 @@ def normalize_variant_inventory_value(
                 "color": color,
                 "quantity": quantity,
                 "label": build_product_variant_label(size=size, color=color),
+                "price": price,
+                "imagePath": image_path,
             }
         )
 
@@ -3739,6 +3880,8 @@ def normalize_variant_inventory_value(
                 size=normalized_fallback_size,
                 color=normalized_fallback_color,
             ),
+            "price": 0.0,
+            "imagePath": "",
         }
     ]
 
@@ -3803,8 +3946,11 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
     )
     image_path = image_gallery[0] if image_gallery else ""
     price_text = str(data.get("price", "")).strip()
+    compare_at_price_text = str(data.get("compareAtPrice", "")).strip()
+    sale_ends_at = str(data.get("saleEndsAt", "")).strip()[:40]
     stock_quantity_text = str(data.get("stockQuantity", "")).strip()
     price = 0.0
+    compare_at_price = 0.0
     stock_quantity = 0
 
     if len(title) < 2:
@@ -3831,6 +3977,23 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
             errors.append("Cmimi duhet te jete me i madh se zero.")
     except ValueError:
         errors.append("Cmimi duhet te jete numer valid.")
+
+    if compare_at_price_text:
+        try:
+            compare_at_price = round(float(compare_at_price_text), 2)
+            if compare_at_price <= 0:
+                compare_at_price = 0.0
+            elif compare_at_price <= price:
+                errors.append("Cmimi i zbritjes duhet te jete me i larte se cmimi aktual.")
+        except ValueError:
+            errors.append("Cmimi i zbritjes duhet te jete numer valid.")
+
+    if sale_ends_at:
+        try:
+            datetime.fromisoformat(sale_ends_at.replace("Z", "+00:00"))
+        except ValueError:
+            errors.append("Afati i zbritjes nuk eshte ne format valid.")
+            sale_ends_at = ""
 
     try:
         stock_quantity = int(stock_quantity_text)
@@ -3910,6 +4073,8 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
         "imagePath": image_path,
         "imageGallery": image_gallery,
         "price": price,
+        "compareAtPrice": compare_at_price,
+        "saleEndsAt": sale_ends_at,
         "packageAmountValue": package_amount_value,
         "packageAmountUnit": package_amount_unit,
         "stockQuantity": stock_quantity,
@@ -7010,6 +7175,80 @@ def serialize_session_user(row: sqlite3.Row) -> dict[str, object]:
     return payload
 
 
+def normalize_tracking_visitor_token(raw_value: object) -> str:
+    token = re.sub(r"[^a-zA-Z0-9_-]+", "", str(raw_value or "").strip())
+    return token[:96]
+
+
+def resolve_product_tracking_actor(
+    *,
+    user: sqlite3.Row | dict[str, object] | None,
+    visitor_token: str,
+) -> tuple[str, int | None, str]:
+    if user:
+        user_id = int(user["id"])
+        return f"user:{user_id}", user_id, ""
+
+    normalized_visitor_token = normalize_tracking_visitor_token(visitor_token)
+    if not normalized_visitor_token:
+        return "", None, ""
+
+    return f"visitor:{normalized_visitor_token}", None, normalized_visitor_token
+
+
+def record_product_engagement(
+    *,
+    product_id: int,
+    business_user_id: int,
+    event_type: str,
+    user: sqlite3.Row | dict[str, object] | None = None,
+    visitor_token: str = "",
+) -> bool:
+    normalized_event_type = str(event_type or "").strip().lower()
+    if normalized_event_type not in {"view", "share"}:
+        return False
+
+    actor_key, user_id, normalized_visitor_token = resolve_product_tracking_actor(
+        user=user,
+        visitor_token=visitor_token,
+    )
+    if not actor_key:
+        return False
+
+    timestamp = now_text()
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO product_engagements (
+                product_id,
+                business_user_id,
+                event_type,
+                actor_key,
+                user_id,
+                visitor_token,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(product_id, event_type, actor_key)
+            DO UPDATE SET
+                updated_at = excluded.updated_at,
+                business_user_id = excluded.business_user_id
+            """,
+            (
+                product_id,
+                business_user_id,
+                normalized_event_type,
+                actor_key,
+                user_id,
+                normalized_visitor_token,
+                timestamp,
+                timestamp,
+            ),
+        )
+    return True
+
+
 def serialize_product(row: sqlite3.Row) -> dict[str, object]:
     image_gallery = normalize_image_gallery_value(
         row["image_gallery"],
@@ -7073,6 +7312,14 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "title": row["title"],
         "description": row["description"],
         "price": row["price"],
+        "compareAtPrice": round(float(row["compare_at_price"] or 0), 2)
+        if "compare_at_price" in row.keys()
+        else 0,
+        "saleEndsAt": (
+            str(row["sale_ends_at"] or "").strip()
+            if "sale_ends_at" in row.keys()
+            else ""
+        ),
         "imagePath": image_path,
         "imageGallery": image_gallery,
         "category": row["category"],
@@ -7090,9 +7337,29 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "isPublic": bool(row["is_public"]),
         "showStockPublic": bool(row["show_stock_public"]),
         "createdByUserId": row["created_by_user_id"],
+        "businessProfileId": int(row["business_profile_id"] or 0)
+        if "business_profile_id" in row.keys()
+        else 0,
+        "businessVerificationStatus": (
+            str(row["business_verification_status"] or "").strip().lower()
+            if "business_verification_status" in row.keys()
+            else ""
+        ),
         "createdAt": row["created_at"],
         "businessName": business_name,
         "buyersCount": buyers_count,
+        "viewsCount": max(0, int(row["views_count"] or 0))
+        if "views_count" in row.keys()
+        else 0,
+        "wishlistCount": max(0, int(row["wishlist_count"] or 0))
+        if "wishlist_count" in row.keys()
+        else 0,
+        "cartCount": max(0, int(row["cart_count"] or 0))
+        if "cart_count" in row.keys()
+        else 0,
+        "shareCount": max(0, int(row["share_count"] or 0))
+        if "share_count" in row.keys()
+        else 0,
         "averageRating": round(float(row["average_rating"] or 0), 2)
         if "average_rating" in row.keys()
         else 0,
@@ -8449,7 +8716,7 @@ def is_brevo_configured() -> bool:
     return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL)
 
 
-def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
+def send_email_messages_via_brevo(messages: list[dict[str, object]]) -> list[str]:
     warnings: list[str] = []
     headers = {
         "Content-Type": "application/json",
@@ -8464,14 +8731,32 @@ def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
     for message_payload in messages:
         payload = {
             "sender": sender,
-            "to": [{"email": message_payload["to_email"]}],
-            "subject": message_payload["subject"],
-            "textContent": message_payload["body"],
+            "to": [{"email": str(message_payload["to_email"])}],
+            "subject": str(message_payload["subject"]),
+            "textContent": str(message_payload["body"]),
             "htmlContent": str(
                 message_payload.get("html_body")
-                or convert_email_body_to_html(message_payload["body"])
+                or convert_email_body_to_html(str(message_payload["body"]))
             ),
         }
+        attachment_payload: list[dict[str, str]] = []
+        raw_attachments = message_payload.get("attachments")
+        if isinstance(raw_attachments, list):
+            for attachment in raw_attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                attachment_name = str(attachment.get("name") or "").strip()
+                attachment_content = str(attachment.get("content") or "").strip()
+                if not attachment_name or not attachment_content:
+                    continue
+                attachment_payload.append(
+                    {
+                        "name": attachment_name,
+                        "content": attachment_content,
+                    }
+                )
+        if attachment_payload:
+            payload["attachment"] = attachment_payload
 
         request = Request(
             BREVO_API_URL,
@@ -8498,7 +8783,7 @@ def send_email_messages_via_brevo(messages: list[dict[str, str]]) -> list[str]:
     return warnings
 
 
-def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
+def send_email_messages(messages: list[dict[str, object]]) -> list[str]:
     if not messages:
         return []
 
@@ -8510,8 +8795,221 @@ def send_email_messages(messages: list[dict[str, str]]) -> list[str]:
     return send_email_messages_via_brevo(messages)
 
 
-def send_email_notifications(messages: list[dict[str, str]]) -> list[str]:
+def send_email_notifications(messages: list[dict[str, object]]) -> list[str]:
     return send_email_messages(messages)
+
+
+def is_onesignal_configured() -> bool:
+    return bool(ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY)
+
+
+def send_push_notifications_via_onesignal(messages: list[dict[str, object]]) -> list[str]:
+    warnings: list[str] = []
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Key {ONESIGNAL_REST_API_KEY}",
+    }
+
+    for message_payload in messages:
+        external_id = str(message_payload.get("external_id") or "").strip()
+        title = str(message_payload.get("title") or "").strip()
+        body = str(message_payload.get("body") or "").strip()
+        if not external_id or not body:
+            continue
+
+        path = str(message_payload.get("path") or "").strip()
+        custom_data = dict(message_payload.get("data") or {})
+        if path and "path" not in custom_data:
+            custom_data["path"] = path
+
+        payload = {
+            "app_id": ONESIGNAL_APP_ID,
+            "include_aliases": {"external_id": [external_id]},
+            "target_channel": "push",
+            "contents": {"en": body},
+            "priority": 10,
+            "ios_interruption_level": "active",
+            "data": custom_data,
+        }
+
+        if title:
+            payload["headings"] = {"en": title}
+
+        existing_android_channel_id = str(
+            message_payload.get("existingAndroidChannelId") or ""
+        ).strip()
+        if existing_android_channel_id:
+            payload["existing_android_channel_id"] = existing_android_channel_id
+
+        public_app_url = STRIPE_PUBLIC_APP_URL or ""
+        if path and public_app_url:
+            payload["app_url"] = f"{public_app_url}{path}"
+            payload["url"] = f"{public_app_url}{path}"
+
+        request = Request(
+            ONESIGNAL_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=15) as response:
+                if response.status >= 400:
+                    response_body = response.read().decode("utf-8", errors="ignore")
+                    warnings.append(
+                        f"OneSignal dërgoi kod gabimi {response.status}: {response_body}"
+                    )
+        except HTTPError as error:
+            body_text = error.read().decode("utf-8", errors="ignore") if error.fp else ""
+            warnings.append(f"OneSignal HTTP gabim {error.code}: {body_text}")
+        except URLError as error:
+            warnings.append(f"OneSignal nuk u arrit: {error.reason}")
+        except Exception as error:
+            warnings.append(f"OneSignal: {error}")
+
+    return warnings
+
+
+def send_push_notifications(messages: list[dict[str, object]]) -> list[str]:
+    if not messages or not is_onesignal_configured():
+        return []
+
+    return send_push_notifications_via_onesignal(messages)
+
+
+def build_business_order_push_messages(order_rows: list[sqlite3.Row]) -> list[dict[str, object]]:
+    grouped_rows: dict[int, list[sqlite3.Row]] = defaultdict(list)
+    for row in order_rows:
+        business_user_id = int(row["business_user_id"] or 0)
+        if business_user_id <= 0:
+            continue
+        grouped_rows[business_user_id].append(row)
+
+    messages: list[dict[str, object]] = []
+    for business_user_id, recipient_rows in grouped_rows.items():
+        first_row = recipient_rows[0]
+        customer_name = str(first_row["customer_full_name"] or "").strip() or "Klient"
+        item_count = sum(max(1, int(item_row["quantity"] or 1)) for item_row in recipient_rows)
+        order_id = int(first_row["order_id"] or 0)
+        business_name = str(first_row["business_name_snapshot"] or "").strip() or "Biznesi juaj"
+        body = (
+            f"Porosia #{order_id} nga {customer_name} pret konfirmim."
+            if item_count <= 1
+            else f"Porosia #{order_id} nga {customer_name} ka {item_count} artikuj qe presin konfirmim."
+        )
+        messages.append(
+            {
+                "external_id": str(business_user_id),
+                "title": "Porosi e re",
+                "body": body,
+                "path": "/business",
+                "existingAndroidChannelId": "trego_orders",
+                "data": {
+                    "type": "order_created",
+                    "orderId": order_id,
+                    "businessName": business_name,
+                },
+            }
+        )
+
+    return messages
+
+
+def build_customer_order_status_push_message(
+    *,
+    order_item_row: sqlite3.Row | None,
+    next_status: str,
+) -> list[dict[str, object]]:
+    if not order_item_row:
+        return []
+
+    customer_user_id = int(order_item_row["customer_user_id"] or 0)
+    if customer_user_id <= 0:
+        return []
+
+    normalized_status = str(next_status or "").strip().lower()
+    if normalized_status not in {"confirmed", "shipped", "delivered"}:
+        return []
+
+    product_title = str(order_item_row["product_title"] or "").strip() or "Produkti juaj"
+    order_id = int(order_item_row["order_id"] or 0)
+    status_copy_map = {
+        "confirmed": "u konfirmua dhe po pergatitet",
+        "shipped": "u dergua dhe eshte ne transport",
+        "delivered": "u dorezua me sukses",
+    }
+    title_map = {
+        "confirmed": "Porosia u konfirmua",
+        "shipped": "Porosia u dergua",
+        "delivered": "Porosia u dorezua",
+    }
+
+    return [
+        {
+            "external_id": str(customer_user_id),
+            "title": title_map.get(normalized_status, "Perditesim porosie"),
+            "body": f"{product_title} {status_copy_map.get(normalized_status, 'u perditesua')}.",
+            "path": "/orders",
+            "existingAndroidChannelId": "trego_orders",
+            "data": {
+                "type": "order_status",
+                "orderId": order_id,
+                "orderItemId": int(order_item_row["id"] or 0),
+                "status": normalized_status,
+            },
+        }
+    ]
+
+
+def build_chat_push_messages(
+    *,
+    message_row: sqlite3.Row | None,
+) -> list[dict[str, object]]:
+    if not message_row:
+        return []
+
+    sender_role = str(message_row["sender_role"] or "").strip().lower()
+    if sender_role not in {"business", "admin"}:
+        return []
+
+    recipient_user_id = int(message_row["recipient_user_id"] or 0)
+    if recipient_user_id <= 0:
+        return []
+
+    sender_name = get_chat_display_name(
+        role=sender_role,
+        full_name=str(message_row["sender_full_name"] or "").strip(),
+        business_name=str(message_row["sender_business_name"] or "").strip(),
+    )
+    preview = str(message_row["body"] or "").strip()
+    if not preview and str(message_row["attachment_path"] or "").strip():
+        preview = "Ju erdhi nje bashkangjitje e re."
+    preview = re.sub(r"\s+", " ", preview).strip()
+    if len(preview) > 120:
+        preview = f"{preview[:117].rstrip()}..."
+
+    if sender_role == "admin":
+        title = "Mesazh i ri nga support"
+    else:
+        title = f"Mesazh i ri nga {sender_name or 'biznesi'}"
+
+    return [
+        {
+            "external_id": str(recipient_user_id),
+            "title": title,
+            "body": preview or "Keni nje mesazh te ri ne TREGO.",
+            "path": "/messages",
+            "existingAndroidChannelId": "trego_messages",
+            "data": {
+                "type": "chat_message",
+                "conversationId": int(message_row["conversation_id"] or 0),
+                "messageId": int(message_row["id"] or 0),
+                "senderRole": sender_role,
+            },
+        }
+    ]
 
 
 def send_email_verification_code(
@@ -9664,6 +10162,8 @@ def insert_product_for_owner(
             title,
             description,
             price,
+            compare_at_price,
+            sale_ends_at,
             image_path,
             image_gallery,
             image_fingerprint,
@@ -9679,13 +10179,15 @@ def insert_product_for_owner(
             stock_quantity,
             created_by_user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             normalized_product["articleNumber"],
             normalized_product["title"],
             normalized_product["description"],
             normalized_product["price"],
+            normalized_product["compareAtPrice"],
+            normalized_product["saleEndsAt"],
             normalized_product["imagePath"],
             json.dumps(normalized_product["imageGallery"], ensure_ascii=False),
             image_fingerprint,
@@ -11853,6 +12355,38 @@ def fetch_business_analytics(user_id: int) -> dict[str, object]:
             """,
             (user_id,),
         ).fetchone()
+        engagement_row = connection.execute(
+            """
+            SELECT
+                SUM(CASE WHEN pe.event_type = 'view' THEN 1 ELSE 0 END) AS total_views,
+                SUM(CASE WHEN pe.event_type = 'share' THEN 1 ELSE 0 END) AS total_shares
+            FROM product_engagements pe
+            INNER JOIN products p ON p.id = pe.product_id
+            WHERE p.created_by_user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        wishlist_row = connection.execute(
+            """
+            SELECT COUNT(*) AS total_wishlist_saves
+            FROM wishlist_items wi
+            INNER JOIN products p ON p.id = wi.product_id
+            WHERE p.created_by_user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        cart_row = connection.execute(
+            """
+            SELECT COUNT(*) AS total_cart_saves
+            FROM (
+                SELECT DISTINCT cl.user_id, cl.product_id
+                FROM cart_lines cl
+                INNER JOIN products p ON p.id = cl.product_id
+                WHERE p.created_by_user_id = ?
+            ) cart_totals
+            """,
+            (user_id,),
+        ).fetchone()
 
     return {
         "totalProducts": int(products_row["total_products"] or 0) if products_row else 0,
@@ -11869,6 +12403,10 @@ def fetch_business_analytics(user_id: int) -> dict[str, object]:
         "totalReturns": int(returns_row["total_returns"] or 0) if returns_row else 0,
         "openReturns": int(returns_row["open_returns"] or 0) if returns_row else 0,
         "activePromotions": int(promotions_row["total_promotions"] or 0) if promotions_row else 0,
+        "viewsCount": int(engagement_row["total_views"] or 0) if engagement_row else 0,
+        "wishlistCount": int(wishlist_row["total_wishlist_saves"] or 0) if wishlist_row else 0,
+        "cartCount": int(cart_row["total_cart_saves"] or 0) if cart_row else 0,
+        "shareCount": int(engagement_row["total_shares"] or 0) if engagement_row else 0,
     }
 
 
@@ -12016,7 +12554,7 @@ def format_notification_payment_method(payment_method: str) -> str:
 
 def build_business_notification_messages(
     order_rows: list[sqlite3.Row],
-) -> tuple[list[dict[str, str]], list[str]]:
+) -> tuple[list[dict[str, object]], list[str]]:
     grouped_rows: dict[str, list[sqlite3.Row]] = defaultdict(list)
     warnings: list[str] = []
 
@@ -12033,7 +12571,7 @@ def build_business_notification_messages(
 
         grouped_rows[recipient_email.lower()].append(row)
 
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, object]] = []
     for recipient_email, recipient_rows in grouped_rows.items():
         first_row = recipient_rows[0]
         business_name = str(first_row["business_name_snapshot"] or "").strip() or str(
@@ -12096,6 +12634,93 @@ def build_business_notification_messages(
         )
 
     return messages, warnings
+
+
+def build_customer_order_confirmation_messages(
+    order_payload: dict[str, object] | None,
+) -> tuple[list[dict[str, object]], list[str]]:
+    if not order_payload:
+        return [], []
+
+    recipient_email = str(order_payload.get("customerEmail") or "").strip()
+    if not recipient_email:
+        return [], ["Email-i i klientit mungon, prandaj konfirmimi i porosise nuk u dergua."]
+
+    order_id = int(order_payload.get("id") or 0)
+    customer_name = str(order_payload.get("customerName") or "").strip() or "Klient"
+    payment_method = format_notification_payment_method(str(order_payload.get("paymentMethod") or ""))
+    delivery_label = str(order_payload.get("deliveryLabel") or "").strip() or "Dergese standard"
+    estimated_delivery_text = str(order_payload.get("estimatedDeliveryText") or "").strip() or "-"
+    created_at = str(order_payload.get("createdAt") or "").strip() or "-"
+    address_line = str(order_payload.get("addressLine") or "").strip() or "-"
+    city = str(order_payload.get("city") or "").strip() or "-"
+    country = str(order_payload.get("country") or "").strip() or "-"
+    zip_code = str(order_payload.get("zipCode") or "").strip() or "-"
+    phone_number = str(order_payload.get("phoneNumber") or "").strip() or "-"
+    subtotal_amount = round(float(order_payload.get("subtotalAmount") or 0), 2)
+    discount_amount = round(float(order_payload.get("discountAmount") or 0), 2)
+    shipping_amount = round(float(order_payload.get("shippingAmount") or 0), 2)
+    total_amount = round(float(order_payload.get("totalPrice") or 0), 2)
+    promo_code = str(order_payload.get("promoCode") or "").strip().upper()
+    items = list(order_payload.get("items") or [])
+
+    item_lines: list[str] = []
+    for item in items:
+        quantity = max(1, int(item.get("quantity") or 1))
+        title = str(item.get("title") or "Produkt").strip()
+        business_name = str(item.get("businessName") or "").strip()
+        variant_label = str(item.get("variantLabel") or "").strip()
+        line_total = round(float(item.get("totalPrice") or 0), 2)
+        parts = [f"- {title} x{quantity} — EUR {line_total:.2f}"]
+        detail_bits = [bit for bit in [variant_label, business_name] if bit]
+        if detail_bits:
+            parts.append(f" ({' · '.join(detail_bits)})")
+        item_lines.append("".join(parts))
+
+    body = (
+        f"Pershendetje {customer_name},\n\n"
+        f"Porosia juaj ne TREGO u regjistrua me sukses dhe tani pret konfirmimin e biznesit.\n\n"
+        f"Porosia #{order_id}\n"
+        f"Data: {created_at}\n"
+        f"Menyra e pageses: {payment_method}\n"
+        f"Menyra e dergeses: {delivery_label}\n"
+        f"Afati i pritshem: {estimated_delivery_text}\n\n"
+        f"Adresa e dergeses:\n"
+        f"- {address_line}\n"
+        f"- {city}, {country}, {zip_code}\n"
+        f"- Telefoni: {phone_number}\n\n"
+        f"Artikujt e porosise:\n"
+        f"{chr(10).join(item_lines) if item_lines else '- Nuk ka artikuj te ruajtur ne porosi.'}\n\n"
+        f"Permbledhja:\n"
+        f"- Nentotali: EUR {subtotal_amount:.2f}\n"
+        f"- Zbritja: EUR {discount_amount:.2f}\n"
+        f"- Transporti: EUR {shipping_amount:.2f}\n"
+        f"- Totali: EUR {total_amount:.2f}\n"
+        + (f"- Kuponi: {promo_code}\n" if promo_code else "")
+        + "\nInvoice / fatura e porosise eshte e bashkangjitur ne kete email si PDF.\n\n"
+        "Faleminderit qe perdorni TREGO."
+    )
+
+    invoice_pdf = build_order_invoice_pdf(order_payload)
+    attachment_name = f"trego-invoice-{order_id}.pdf"
+    attachment_content = base64.b64encode(invoice_pdf).decode("ascii")
+
+    return (
+        [
+            {
+                "to_email": recipient_email,
+                "subject": f"Konfirmimi i porosise #{order_id} - TREGO",
+                "body": body,
+                "attachments": [
+                    {
+                        "name": attachment_name,
+                        "content": attachment_content,
+                    }
+                ],
+            }
+        ],
+        [],
+    )
 
 
 def normalize_pdf_text(value: object) -> str:
@@ -12747,6 +13372,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/products/ai-draft":
             self.handle_product_ai_draft()
+            return
+        if path == "/api/products/share":
+            self.handle_product_share()
             return
         if path == "/api/products":
             self.handle_create_product()
@@ -13716,16 +14344,6 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         current_user = self.get_current_user()
-        cache_key = build_runtime_public_cache_key(
-            "product:detail",
-            {"productId": product_id},
-        )
-        if not current_user:
-            cached_payload = read_runtime_public_cache(cache_key)
-            if isinstance(cached_payload, dict):
-                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
-                return
-
         product = fetch_product_by_id(product_id)
         if not product:
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
@@ -13738,6 +14356,25 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
             return
 
+        if bool(product["is_public"]):
+            record_product_engagement(
+                product_id=product_id,
+                business_user_id=int(product["created_by_user_id"] or 0),
+                event_type="view",
+                user=current_user,
+                visitor_token=self.get_tracking_visitor_token(),
+            )
+
+        cache_key = build_runtime_public_cache_key(
+            "product:detail",
+            {"productId": product_id},
+        )
+        if not current_user and bool(product["is_public"]):
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+                return
+
         payload = {"ok": True, "product": serialize_product(product)}
         if bool(product["is_public"]):
             write_runtime_public_cache(
@@ -13749,6 +14386,47 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             payload,
             headers=PUBLIC_PRODUCTS_CACHE_HEADERS if bool(product["is_public"]) else None,
+        )
+
+    def handle_product_share(self) -> None:
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        product_id = parse_positive_int(payload.get("productId"))
+        if not product_id:
+            self.send_json(400, {"ok": False, "message": "Produkti nuk eshte valid."})
+            return
+
+        product = fetch_product_by_id(product_id)
+        if not product or not bool(product["is_public"]):
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        record_product_engagement(
+            product_id=product_id,
+            business_user_id=int(product["created_by_user_id"] or 0),
+            event_type="share",
+            user=self.get_current_user(),
+            visitor_token=self.get_tracking_visitor_token(),
+        )
+
+        refreshed_product = fetch_product_by_id(product_id) or product
+        serialized_product = serialize_product(refreshed_product)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Share u regjistrua me sukses.",
+                "metrics": {
+                    "viewsCount": int(serialized_product.get("viewsCount") or 0),
+                    "wishlistCount": int(serialized_product.get("wishlistCount") or 0),
+                    "cartCount": int(serialized_product.get("cartCount") or 0),
+                    "shareCount": int(serialized_product.get("shareCount") or 0),
+                },
+            },
         )
 
     def handle_product_reviews_list(self, query_params: dict[str, list[str]]) -> None:
@@ -14692,6 +15370,12 @@ class AppHandler(SimpleHTTPRequestHandler):
         )
         if serialized_conversation is not None:
             serialized_conversation["counterpartTyping"] = False
+
+        push_warnings = send_push_notifications(
+            build_chat_push_messages(message_row=message_row)
+        )
+        for warning in push_warnings:
+            print(f"[TREGO] Push warning: {warning}", flush=True)
 
         self.send_json(
             201,
@@ -15850,6 +16534,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     title = ?,
                     description = ?,
                     price = ?,
+                    compare_at_price = ?,
+                    sale_ends_at = ?,
                     image_path = ?,
                     image_gallery = ?,
                     image_fingerprint = ?,
@@ -15870,6 +16556,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["title"],
                     normalized["description"],
                     normalized["price"],
+                    normalized["compareAtPrice"],
+                    normalized["saleEndsAt"],
                     normalized["imagePath"],
                     json.dumps(normalized["imageGallery"], ensure_ascii=False),
                     image_fingerprint,
@@ -16304,24 +16992,35 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        order_payload = (
+            serialize_order(
+                saved_order,
+                [serialize_order_item(item) for item in saved_items],
+            )
+            if saved_order
+            else None
+        )
         notification_messages, notification_warnings = build_business_notification_messages(
             fetch_order_notification_rows(order_id)
         )
+        customer_messages, customer_warnings = build_customer_order_confirmation_messages(
+            order_payload
+        )
+        notification_messages.extend(customer_messages)
+        notification_warnings.extend(customer_warnings)
         notification_warnings.extend(send_email_notifications(notification_messages))
+        notification_warnings.extend(
+            send_push_notifications(
+                build_business_order_push_messages(fetch_order_notification_rows(order_id))
+            )
+        )
 
         self.send_json(
             200,
             {
                 "ok": True,
                 "message": "Pagesa u konfirmua me sukses dhe porosia u dergua per konfirmim.",
-                "order": (
-                    serialize_order(
-                        saved_order,
-                        [serialize_order_item(item) for item in saved_items],
-                    )
-                    if saved_order
-                    else None
-                ),
+                "order": order_payload,
                 "notificationWarnings": notification_warnings,
                 "paymentStatus": payment_status,
                 "stripeStatus": stripe_status,
@@ -17303,6 +18002,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                     metadata={"orderItemId": order_item_id, "orderId": int(order_item_row['order_id'])},
                 )
 
+        push_warnings = send_push_notifications(
+            build_customer_order_status_push_message(
+                order_item_row=order_item_row,
+                next_status=next_status,
+            )
+        )
+        for warning in push_warnings:
+            print(f"[TREGO] Push warning: {warning}", flush=True)
+
         self.send_json(200, {"ok": True, "message": "Statusi i porosise u perditesua."})
 
     def handle_business_verification_request(self) -> None:
@@ -18043,24 +18751,35 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        order_payload = (
+            serialize_order(
+                saved_order,
+                [serialize_order_item(item) for item in saved_items],
+            )
+            if saved_order
+            else None
+        )
         notification_messages, notification_warnings = build_business_notification_messages(
             fetch_order_notification_rows(order_id)
         )
+        customer_messages, customer_warnings = build_customer_order_confirmation_messages(
+            order_payload
+        )
+        notification_messages.extend(customer_messages)
+        notification_warnings.extend(customer_warnings)
         notification_warnings.extend(send_email_notifications(notification_messages))
+        notification_warnings.extend(
+            send_push_notifications(
+                build_business_order_push_messages(fetch_order_notification_rows(order_id))
+            )
+        )
 
         self.send_json(
             201,
             {
                 "ok": True,
                 "message": (pricing_summary.get("message") or "").strip() or "Porosia u dergua per konfirmim.",
-                "order": (
-                    serialize_order(
-                        saved_order,
-                        [serialize_order_item(item) for item in saved_items],
-                    )
-                    if saved_order
-                    else None
-                ),
+                "order": order_payload,
                 "notificationWarnings": notification_warnings,
             },
         )
@@ -19333,6 +20052,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             raise ValueError("Forma e te dhenave duhet te jete objekt.")
 
         return data
+
+    def get_tracking_visitor_token(self) -> str:
+        return normalize_tracking_visitor_token(self.headers.get("X-Trego-Visitor", ""))
 
     def read_multipart_message(self):
         content_type = self.headers.get("Content-Type", "")

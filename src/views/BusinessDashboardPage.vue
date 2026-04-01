@@ -25,6 +25,7 @@ import {
 import {
   DELIVERY_METHOD_OPTIONS,
   formatCategoryLabel,
+  formatCount,
   formatPrice,
   formatRoleLabel,
   formatVerificationStatusLabel,
@@ -47,6 +48,10 @@ const previewUrls = ref([]);
 const editingProduct = ref(null);
 const productFormSection = ref(null);
 const productTitleInput = ref(null);
+const profileCardSection = ref(null);
+const shippingSection = ref(null);
+const promotionsSection = ref(null);
+const productsManagementSection = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
 const importPreviewRows = ref([]);
@@ -132,6 +137,7 @@ const profileForm = reactive({
 const shippingForm = reactive(createDefaultShippingForm());
 
 const productForm = reactive(createEmptyProductFormState());
+const productFormStep = ref("details");
 const ui = reactive({
   accessNote: "Po kontrollohet aksesimi i biznesit...",
   profileMessage: "",
@@ -168,6 +174,93 @@ const productPreviewItems = computed(() => {
   }));
 });
 const businessLogoPreview = computed(() => logoPreviewUrl.value || profileForm.businessLogoPath || "");
+const productVariantEntries = computed(() => buildVariantInventoryFromForm(productForm));
+const productMediaCount = computed(() => productPreviewItems.value.length);
+const productStockTotal = computed(() =>
+  productVariantEntries.value.reduce((total, entry) => total + Math.max(0, Number(entry.quantity || 0)), 0),
+);
+const productPriceValue = computed(() => Number(productForm.price || 0));
+const productCompareAtPriceValue = computed(() => Number(productForm.compareAtPrice || 0));
+const productDiscountPercent = computed(() => {
+  if (!Number.isFinite(productPriceValue.value) || !Number.isFinite(productCompareAtPriceValue.value) || productPriceValue.value <= 0) {
+    return 0;
+  }
+  if (productCompareAtPriceValue.value <= productPriceValue.value) {
+    return 0;
+  }
+  return Math.max(0, Math.round(((productCompareAtPriceValue.value - productPriceValue.value) / productCompareAtPriceValue.value) * 100));
+});
+const productPricingReady = computed(() => {
+  if (!Number.isFinite(productPriceValue.value) || productPriceValue.value <= 0) {
+    return false;
+  }
+  if (!productCompareAtPriceValue.value) {
+    return true;
+  }
+  if (productCompareAtPriceValue.value <= productPriceValue.value) {
+    return false;
+  }
+  if (!String(productForm.saleEndsAt || "").trim()) {
+    return true;
+  }
+  return Number.isFinite(Date.parse(String(productForm.saleEndsAt || "")));
+});
+const productChecklist = computed(() => ([
+  {
+    key: "title",
+    label: "Titull dhe pershkrim",
+    done: Boolean(String(productForm.title || "").trim() && String(productForm.description || "").trim()),
+  },
+  {
+    key: "pricing",
+    label: "Cmim dhe zbritje valide",
+    done: productPricingReady.value,
+  },
+  {
+    key: "variants",
+    label: "Variantet / stoku",
+    done: productStockTotal.value > 0,
+  },
+  {
+    key: "media",
+    label: "Foto te produktit",
+    done: productMediaCount.value > 0,
+  },
+]));
+const productReadyToSave = computed(() => productChecklist.value.every((item) => item.done));
+const productFormSteps = computed(() => ([
+  {
+    id: "details",
+    label: "Detajet",
+    caption: "Titull, kategori dhe pershkrim",
+    done: productChecklist.value.find((item) => item.key === "title")?.done,
+  },
+  {
+    id: "pricing",
+    label: "Cmimi",
+    caption: "Regular, sale dhe afati",
+    done: productChecklist.value.find((item) => item.key === "pricing")?.done,
+  },
+  {
+    id: "variants",
+    label: "Variantet",
+    caption: "Ngjyra, madhesia dhe stoku",
+    done: productChecklist.value.find((item) => item.key === "variants")?.done,
+  },
+  {
+    id: "media",
+    label: "Media",
+    caption: "Cover dhe galeria",
+    done: productChecklist.value.find((item) => item.key === "media")?.done,
+  },
+  {
+    id: "review",
+    label: "Preview",
+    caption: "Kontroll para ruajtjes",
+    done: productReadyToSave.value,
+  },
+]));
+const productPreviewCover = computed(() => productPreviewItems.value[0]?.path || "");
 const filteredProducts = computed(() => {
   const normalizedQuery = String(productSearchQuery.value || "").trim().toLowerCase();
   let nextProducts = [...products.value];
@@ -294,6 +387,12 @@ const outOfStockProducts = computed(() =>
 );
 const stockAlertProducts = computed(() => [...outOfStockProducts.value, ...lowStockProducts.value].slice(0, 6));
 const stockAlertCount = computed(() => outOfStockProducts.value.length + lowStockProducts.value.length);
+const engagementSummaryItems = computed(() => ([
+  { label: "Views", value: formatCount(analytics.value?.viewsCount || 0) },
+  { label: "Wishlist", value: formatCount(analytics.value?.wishlistCount || 0) },
+  { label: "Cart", value: formatCount(analytics.value?.cartCount || 0) },
+  { label: "Share", value: formatCount(analytics.value?.shareCount || 0) },
+]));
 
 const promotionCategoryOptions = computed(() => {
   if (!promotionForm.pageSection) {
@@ -333,6 +432,98 @@ const editBusinessHelperText = computed(() => {
 
   return "Klikimi dergon kerkese te admini. Pasi te aprovohet, forma hapet vetem kur ta klikosh perseri.";
 });
+const businessWorkspaceActions = computed(() => ([
+  {
+    key: "add-product",
+    title: "Shto artikull",
+    copy: "Hape builder-in dhe vazhdo direkt me produktin e ardhshem.",
+    disabled: !canManageCatalog.value,
+  },
+  {
+    key: "messages",
+    title: "Mesazhet",
+    copy: "Shko te inbox-i per pyetje, porosi dhe support.",
+    route: "/mesazhet",
+  },
+  {
+    key: "orders",
+    title: "Porosite e biznesit",
+    copy: "Kontrollo porosite pa dale nga fluksi ditor i punes.",
+    route: "/porosite-e-biznesit",
+  },
+  {
+    key: "shipping",
+    title: "Transporti",
+    copy: "Perditeso standard, express dhe pickup ne nje vend.",
+    disabled: !canManageCatalog.value,
+  },
+  {
+    key: "promotions",
+    title: "Promocionet",
+    copy: promotions.value.length
+      ? `${promotions.value.length} oferta aktive ose te ruajtura.`
+      : "Krijo kuponin ose zbritjen e pare per biznesin.",
+    disabled: !canManageCatalog.value,
+  },
+  {
+    key: "products",
+    title: "Produktet",
+    copy: products.value.length
+      ? `${products.value.length} artikuj jane gati per menaxhim.`
+      : "Sapo te shtosh artikujt, menaxhimi del ketu.",
+    disabled: !canManageCatalog.value,
+  },
+  {
+    key: "profile",
+    title: "Profili",
+    copy: isBusinessVerified.value
+      ? "Edito biznesin, logon dhe informacionin publik."
+      : "Ploteso profilin dhe vazhdo me verifikimin.",
+  },
+]));
+const businessNextSteps = computed(() => {
+  const items = [];
+
+  if (!businessProfile.value) {
+    items.push({
+      key: "profile",
+      title: "Ploteso profilin e biznesit",
+      copy: "Pa te dhena baze, biznesi nuk mund te kaloje ne verifikim ose katalog.",
+    });
+  } else if (!isBusinessVerified.value) {
+    items.push({
+      key: "verify",
+      title: "Kerko verifikim",
+      copy: "Pasi verifikohet biznesi, hapen katalogu, publikimi dhe importi i artikujve.",
+    });
+  }
+
+  if (canManageCatalog.value && !products.value.length) {
+    items.push({
+      key: "add-product",
+      title: "Shto produktin e pare",
+      copy: "Nis me nje artikull cover qe ta besh dyqanin gati per vizitore.",
+    });
+  }
+
+  if (canManageCatalog.value && stockAlertCount.value > 0) {
+    items.push({
+      key: "products",
+      title: "Kontrollo stokun",
+      copy: `${stockAlertCount.value} artikuj kerkojne vemendje para se te humben shitjet.`,
+    });
+  }
+
+  if (canManageCatalog.value && promotions.value.length === 0) {
+    items.push({
+      key: "promotions",
+      title: "Krijo oferten e pare",
+      copy: "Promocionet e qarta e bejne faqen dhe checkout-in me bindes.",
+    });
+  }
+
+  return items.slice(0, 4);
+});
 
 function formatPromotionSectionLabel(sectionValue) {
   const match = PRODUCT_PAGE_SECTION_OPTIONS.find((option) => option.value === String(sectionValue || "").trim().toLowerCase());
@@ -350,6 +541,55 @@ function getStockAlertLabel(product) {
   }
 
   return `Stok • ${formatStockQuantity(stockQuantity)}`;
+}
+
+function scrollToDashboardSection(sectionRef) {
+  sectionRef.value?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
+function handleBusinessWorkspaceAction(action) {
+  if (!action || action.disabled) {
+    return;
+  }
+
+  if (action.route) {
+    router.push(action.route);
+    return;
+  }
+
+  if (action.key === "add-product") {
+    void openAddProductForm();
+    return;
+  }
+
+  if (action.key === "shipping") {
+    scrollToDashboardSection(shippingSection);
+    return;
+  }
+
+  if (action.key === "promotions") {
+    scrollToDashboardSection(promotionsSection);
+    return;
+  }
+
+  if (action.key === "products") {
+    scrollToDashboardSection(productsManagementSection);
+    return;
+  }
+
+  if (action.key === "verify") {
+    void requestVerificationReview();
+    return;
+  }
+
+  if (action.key === "profile") {
+    if (shouldShowProfileCard.value) {
+      scrollToDashboardSection(profileCardSection);
+      return;
+    }
+
+    void handleBusinessEditButton();
+  }
 }
 
 onMounted(async () => {
@@ -684,11 +924,22 @@ function resetPromotionForm() {
 
 function resetProductForm() {
   Object.assign(productForm, createEmptyProductFormState());
+  productFormStep.value = "details";
   editingProduct.value = null;
   selectedFiles.value = [];
   revokePreviewUrls();
   ui.productMessage = "";
   ui.productTypeMessage = "";
+}
+
+function focusProductFormStep(stepId = "details") {
+  productFormStep.value = stepId;
+  const target = typeof document !== "undefined"
+    ? document.getElementById(`business-product-step-${stepId}`)
+    : null;
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 async function handleRouteView() {
@@ -706,6 +957,7 @@ async function handleRouteView() {
   if (businessProfile.value && productFormSection.value) {
     productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
     window.setTimeout(() => {
+      focusProductFormStep("details");
       productTitleInput.value?.focus?.();
     }, 220);
     return;
@@ -725,6 +977,7 @@ async function openAddProductForm() {
   if (productFormSection.value) {
     productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
     window.setTimeout(() => {
+      focusProductFormStep("details");
       productTitleInput.value?.focus?.();
     }, 220);
   }
@@ -739,6 +992,7 @@ function beginProductEdit(product) {
   selectedFiles.value = [];
   revokePreviewUrls();
   syncProductFormCatalogState(productForm);
+  productFormStep.value = "details";
   ui.productMessage = `Po editon artikullin "${product.title}".`;
   ui.productTypeMessage = "success";
 }
@@ -1025,6 +1279,8 @@ async function submitProduct() {
     articleNumber: productForm.articleNumber.trim(),
     title: productForm.title.trim(),
     price: productForm.price,
+    compareAtPrice: productForm.compareAtPrice,
+    saleEndsAt: productForm.saleEndsAt,
     description: productForm.description.trim(),
     pageSection: productForm.pageSection,
     audience: productForm.audience,
@@ -1203,6 +1459,8 @@ function buildProductUpdatePayload(product, overrides = {}) {
     articleNumber: String(product.articleNumber || "").trim(),
     title: String(product.title || "").trim(),
     price: Number(product.price || 0),
+    compareAtPrice: Number(product.compareAtPrice || 0),
+    saleEndsAt: String(product.saleEndsAt || "").trim(),
     description: String(product.description || "").trim(),
     pageSection,
     audience,
@@ -1396,6 +1654,58 @@ async function applyBulkStockUpdate() {
         <span>Review / Returne</span>
         <strong>{{ analytics.reviewCount }} / {{ analytics.openReturns }}</strong>
       </article>
+      <article
+        v-for="item in engagementSummaryItems"
+        :key="`business-engagement-${item.label}`"
+        class="summary-chip"
+      >
+        <span>{{ item.label }}</span>
+        <strong>{{ item.value }}</strong>
+      </article>
+    </section>
+
+    <section class="card business-dashboard-workspace-card" aria-label="Veprimet kryesore te panelit">
+      <div class="profile-card-header">
+        <div>
+          <p class="section-label">Workspace i biznesit</p>
+          <h2>Hyrje te shpejta per punen e dites</h2>
+          <p class="section-text">
+            Keto hyrje jane menduar per hapat qe biznesi i perdor me shpesh: produktet, porosite, mesazhet, transporti dhe promocionet.
+          </p>
+        </div>
+      </div>
+
+      <div class="business-dashboard-workspace-grid">
+        <button
+          v-for="item in businessWorkspaceActions"
+          :key="item.key"
+          class="business-dashboard-workspace-action"
+          type="button"
+          :disabled="item.disabled"
+          @click="handleBusinessWorkspaceAction(item)"
+        >
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.copy }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section
+      v-if="businessNextSteps.length > 0"
+      class="business-dashboard-next-grid"
+      aria-label="Hapat e rekomanduar per biznesin"
+    >
+      <button
+        v-for="item in businessNextSteps"
+        :key="item.key"
+        class="business-dashboard-next-card"
+        type="button"
+        @click="handleBusinessWorkspaceAction(item)"
+      >
+        <p class="section-label">Next step</p>
+        <strong>{{ item.title }}</strong>
+        <span>{{ item.copy }}</span>
+      </button>
     </section>
 
     <section v-if="stockAlertCount > 0" class="card business-stock-alerts-card" aria-label="Alertet e stokut">
@@ -1436,7 +1746,12 @@ async function applyBulkStockUpdate() {
       </p>
     </section>
 
-    <section v-if="canManageCatalog" class="card business-shipping-card" aria-label="Transporti i biznesit">
+    <section
+      v-if="canManageCatalog"
+      ref="shippingSection"
+      class="card business-shipping-card"
+      aria-label="Transporti i biznesit"
+    >
       <div class="profile-card-header">
         <div>
           <p class="section-label">Transporti i biznesit</p>
@@ -1613,7 +1928,7 @@ async function applyBulkStockUpdate() {
     </section>
 
     <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">
-      <section v-if="shouldShowProfileCard" class="card business-profile-card">
+      <section v-if="shouldShowProfileCard" ref="profileCardSection" class="card business-profile-card">
         <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
         <p class="section-text">
           {{
@@ -1717,75 +2032,302 @@ async function applyBulkStockUpdate() {
         </div>
       </section>
 
-      <section v-if="canManageCatalog" ref="productFormSection" class="card admin-form-card">
-        <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
-        <p class="section-text">
-          Artikujt qe shton ketu lidhen vetem me biznesin tend. Madhesia shfaqet vetem per veshjet.
-        </p>
+      <section v-if="canManageCatalog" ref="productFormSection" class="card admin-form-card product-builder-card">
+        <div class="product-builder-head">
+          <div>
+            <p class="section-label">Product builder</p>
+            <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
+            <p class="section-text">
+              Organizoje produktin me hapa te qarte: detajet, cmimi, variantet, media dhe preview final para ruajtjes.
+            </p>
+          </div>
+          <button class="button-secondary" type="button" @click="resetProductForm">Reset</button>
+        </div>
+
         <p v-if="editingProduct" class="admin-edit-state">
           Po editon nje artikull te biznesit tend. Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
         </p>
 
-        <form class="auth-form" @submit.prevent="submitProduct">
-          <label class="field">
-            <span>Numri i artikullit</span>
-            <input
-              v-model="productForm.articleNumber"
-              type="text"
-              inputmode="numeric"
-              placeholder="p.sh. 10025"
-            >
-          </label>
-
-          <label class="field">
-            <span>Titulli</span>
-            <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
-          </label>
-
-          <label class="field">
-            <span>Cmimi (€)</span>
-            <input v-model="productForm.price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
-          </label>
-
-          <ProductVariantConfigurator :form="productForm" />
-
-          <label class="field">
-            <span>Upload photo</span>
-            <input type="file" accept="image/*" multiple :required="!editingProduct" @change="handleFilesChange">
-          </label>
-
-          <p class="product-upload-help">
-            Mund te ngarkosh disa foto per te njejtin artikull. Ato shfaqen vetem te artikulli yt.
-          </p>
-
-          <div class="product-upload-preview" aria-live="polite">
-            <div v-if="productPreviewItems.length === 0" class="product-upload-empty">
-              Asnje foto nuk eshte zgjedhur ende.
+        <div class="product-builder-shell">
+          <form class="auth-form product-builder-form" @submit.prevent="submitProduct">
+            <div class="product-builder-steps" role="tablist" aria-label="Hapat e produktit">
+              <button
+                v-for="step in productFormSteps"
+                :key="step.id"
+                class="product-builder-step"
+                :class="{ 'is-active': productFormStep === step.id, 'is-done': step.done }"
+                type="button"
+                @click="focusProductFormStep(step.id)"
+              >
+                <strong>{{ step.label }}</strong>
+                <span>{{ step.caption }}</span>
+                <small>{{ step.done ? "Gati" : "Ne pritje" }}</small>
+              </button>
             </div>
-            <figure
-              v-for="(item, index) in productPreviewItems"
-              v-else
-              :key="`${item.path}-${index}`"
-              class="product-upload-preview-item"
+
+            <section
+              id="business-product-step-details"
+              class="product-builder-block"
+              :class="{ 'is-active': productFormStep === 'details' }"
             >
-              <img class="product-upload-preview-image" :src="item.path" :alt="item.label">
-              <figcaption class="product-upload-preview-name">{{ item.label }}</figcaption>
-            </figure>
-          </div>
+              <div class="product-builder-block-head">
+                <div>
+                  <p class="section-label">1. Detajet baze</p>
+                  <h3>Emri, kodi dhe pershkrimi</h3>
+                </div>
+                <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
+                  {{ ui.productAiBusy ? "Duke analizuar..." : "Sugjero me AI" }}
+                </button>
+              </div>
 
-          <label class="field">
-            <span>Pershkrimi</span>
-            <textarea v-model="productForm.description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
-          </label>
+              <div class="field-row">
+                <label class="field">
+                  <span>Numri i artikullit</span>
+                  <input
+                    v-model="productForm.articleNumber"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="p.sh. 10025"
+                  >
+                </label>
 
-          <div class="auth-form-actions">
-            <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
-              {{ ui.productAiBusy ? "Duke analizuar..." : "Sugjero me AI" }}
-            </button>
-            <button type="submit">{{ editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin" }}</button>
-            <button v-if="editingProduct" class="button-secondary" type="button" @click="resetProductForm">Anulo editimin</button>
-          </div>
-        </form>
+                <label class="field">
+                  <span>Titulli</span>
+                  <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Pershkrimi</span>
+                <textarea v-model="productForm.description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
+              </label>
+
+              <div class="auth-form-actions">
+                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Vazhdo te cmimi</button>
+              </div>
+            </section>
+
+            <section
+              id="business-product-step-pricing"
+              class="product-builder-block"
+              :class="{ 'is-active': productFormStep === 'pricing' }"
+            >
+              <div class="product-builder-block-head">
+                <div>
+                  <p class="section-label">2. Cmimi</p>
+                  <h3>Regular price, sale dhe afati</h3>
+                </div>
+              </div>
+
+              <div class="field-row field-row-3">
+                <label class="field">
+                  <span>Cmimi aktual (€)</span>
+                  <input v-model="productForm.price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
+                </label>
+                <label class="field">
+                  <span>Cmimi para zbritjes</span>
+                  <input v-model="productForm.compareAtPrice" type="number" min="0" step="0.01" placeholder="p.sh. 18.99">
+                </label>
+                <label class="field">
+                  <span>Zbritja vlen deri</span>
+                  <input v-model="productForm.saleEndsAt" type="datetime-local">
+                </label>
+              </div>
+
+              <p class="product-builder-note" :class="{ 'is-warning': !productPricingReady && (productForm.price || productForm.compareAtPrice || productForm.saleEndsAt) }">
+                <template v-if="productDiscountPercent > 0">
+                  Produkti do te shfaqet me rreth {{ productDiscountPercent }}% zbritje.
+                </template>
+                <template v-else>
+                  Nese vendos cmim para zbritjes, ai duhet te jete me i madh se cmimi aktual.
+                </template>
+              </p>
+
+              <div class="auth-form-actions">
+                <button class="button-secondary" type="button" @click="focusProductFormStep('details')">Kthehu</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Vazhdo te variantet</button>
+              </div>
+            </section>
+
+            <section
+              id="business-product-step-variants"
+              class="product-builder-block"
+              :class="{ 'is-active': productFormStep === 'variants' }"
+            >
+              <div class="product-builder-block-head">
+                <div>
+                  <p class="section-label">3. Kategoria dhe variantet</p>
+                  <h3>Ngjyra, madhesia, tipi dhe stoku</h3>
+                  <p class="product-builder-note">Per secilin variant mund te ruash cmim ose foto specifike qe zgjedhja ne product page te ndryshoje sakte sipas ngjyres ose madhesise.</p>
+                </div>
+                <div class="product-builder-inline-summary">
+                  <span class="summary-chip">
+                    <span>Variante</span>
+                    <strong>{{ productVariantEntries.length }}</strong>
+                  </span>
+                  <span class="summary-chip">
+                    <span>Stok total</span>
+                    <strong>{{ formatStockQuantity(productStockTotal) }}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <ProductVariantConfigurator :form="productForm" />
+
+              <div class="auth-form-actions">
+                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Kthehu</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Vazhdo te media</button>
+              </div>
+            </section>
+
+            <section
+              id="business-product-step-media"
+              class="product-builder-block"
+              :class="{ 'is-active': productFormStep === 'media' }"
+            >
+              <div class="product-builder-block-head">
+                <div>
+                  <p class="section-label">4. Media</p>
+                  <h3>Cover dhe galeria e produktit</h3>
+                </div>
+                <span class="summary-chip">
+                  <span>Foto</span>
+                  <strong>{{ productMediaCount }}</strong>
+                </span>
+              </div>
+
+              <label class="field">
+                <span>Upload photo</span>
+                <input type="file" accept="image/*" multiple :required="!editingProduct" @change="handleFilesChange">
+              </label>
+
+              <p class="product-upload-help">
+                Ngarko cover-in e produktit dhe disa foto shtese. Nese po editon produktin, fotot ekzistuese ruhen derisa te zgjedhesh te reja.
+              </p>
+
+              <div class="product-upload-preview" aria-live="polite">
+                <div v-if="productPreviewItems.length === 0" class="product-upload-empty">
+                  Asnje foto nuk eshte zgjedhur ende.
+                </div>
+                <figure
+                  v-for="(item, index) in productPreviewItems"
+                  v-else
+                  :key="`${item.path}-${index}`"
+                  class="product-upload-preview-item"
+                >
+                  <img class="product-upload-preview-image" :src="item.path" :alt="item.label">
+                  <figcaption class="product-upload-preview-name">{{ item.label }}</figcaption>
+                </figure>
+              </div>
+
+              <div class="auth-form-actions">
+                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Kthehu</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('review')">Preview final</button>
+              </div>
+            </section>
+
+            <section
+              id="business-product-step-review"
+              class="product-builder-block"
+              :class="{ 'is-active': productFormStep === 'review' }"
+            >
+              <div class="product-builder-block-head">
+                <div>
+                  <p class="section-label">5. Preview final</p>
+                  <h3>Kontrolloje artikullin para ruajtjes</h3>
+                </div>
+              </div>
+
+              <div class="product-builder-review-card">
+                <div class="product-builder-review-media">
+                  <img v-if="productPreviewCover" :src="productPreviewCover" :alt="productForm.title || 'Preview i produktit'">
+                  <div v-else class="product-builder-review-empty">Pa cover</div>
+                </div>
+                <div class="product-builder-review-copy">
+                  <p class="section-label">{{ formatCategoryLabel(productForm.category) || "Kategoria e produktit" }}</p>
+                  <h3>{{ productForm.title || "Titulli i produktit" }}</h3>
+                  <p>{{ productForm.description || "Pershkrimi do te shfaqet ketu sapo ta plotesosh." }}</p>
+                  <div class="product-builder-price-preview">
+                    <strong>{{ productPriceValue > 0 ? formatPrice(productPriceValue) : "Vendos cmimin" }}</strong>
+                    <span v-if="productCompareAtPriceValue > productPriceValue">{{ formatPrice(productCompareAtPriceValue) }}</span>
+                    <mark v-if="productDiscountPercent > 0">-{{ productDiscountPercent }}%</mark>
+                  </div>
+                  <div class="product-builder-inline-summary">
+                    <span class="summary-chip">
+                      <span>Stok total</span>
+                      <strong>{{ formatStockQuantity(productStockTotal) }}</strong>
+                    </span>
+                    <span class="summary-chip">
+                      <span>Variante</span>
+                      <strong>{{ productVariantEntries.length || 1 }}</strong>
+                    </span>
+                    <span class="summary-chip">
+                      <span>Media</span>
+                      <strong>{{ productMediaCount }}</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <ul class="product-builder-checklist" aria-label="Kontrolli final i produktit">
+                <li
+                  v-for="item in productChecklist"
+                  :key="item.key"
+                  class="product-builder-checklist-item"
+                  :class="{ 'is-done': item.done }"
+                >
+                  <span class="product-builder-checklist-dot"></span>
+                  <strong>{{ item.label }}</strong>
+                  <small>{{ item.done ? "OK" : "Plotesoje para ruajtjes" }}</small>
+                </li>
+              </ul>
+
+              <div class="auth-form-actions">
+                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Kthehu</button>
+                <button type="submit">{{ editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin" }}</button>
+                <button v-if="editingProduct" class="button-secondary" type="button" @click="resetProductForm">Anulo editimin</button>
+              </div>
+            </section>
+          </form>
+
+          <aside class="product-builder-aside">
+            <article class="product-builder-aside-card">
+              <p class="section-label">Quick summary</p>
+              <h3>{{ editingProduct ? "Artikull ne editim" : "Artikull i ri" }}</h3>
+              <div class="product-builder-aside-grid">
+                <div class="summary-chip">
+                  <span>Detajet</span>
+                  <strong>{{ productChecklist[0]?.done ? "Gati" : "Hape" }}</strong>
+                </div>
+                <div class="summary-chip">
+                  <span>Cmimi</span>
+                  <strong>{{ productChecklist[1]?.done ? "Gati" : "Kontrollo" }}</strong>
+                </div>
+                <div class="summary-chip">
+                  <span>Variantet</span>
+                  <strong>{{ productVariantEntries.length || 1 }}</strong>
+                </div>
+                <div class="summary-chip">
+                  <span>Media</span>
+                  <strong>{{ productMediaCount }}</strong>
+                </div>
+              </div>
+              <p class="section-text product-builder-aside-copy">
+                Preview anash te ndihmon ta kuptosh shpejt nese produkti eshte gati per publikim.
+              </p>
+            </article>
+
+            <article class="product-builder-aside-card">
+              <p class="section-label">Ruajtja</p>
+              <h3>{{ productReadyToSave ? "Produkti duket gati" : "Mungojne disa hapa" }}</h3>
+              <p class="section-text">
+                {{ productReadyToSave
+                  ? "Titulli, cmimi, stoku dhe media jane plotesuar. Mund ta ruash produktin."
+                  : "Ploteso te pakten titullin, pershkrimin, cmimin, stokun dhe nje foto para ruajtjes." }}
+              </p>
+            </article>
+          </aside>
+        </div>
 
         <div class="form-message" :class="ui.productTypeMessage" role="status" aria-live="polite">
           {{ ui.productMessage }}
@@ -1954,7 +2496,12 @@ async function applyBulkStockUpdate() {
       </div>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card" aria-label="Promocionet e biznesit">
+    <section
+      v-if="canManageCatalog"
+      ref="promotionsSection"
+      class="card admin-list-card"
+      aria-label="Promocionet e biznesit"
+    >
       <div class="admin-list-header">
         <div>
           <p class="section-label">Promocionet</p>
@@ -2106,7 +2653,11 @@ async function applyBulkStockUpdate() {
       </div>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card products-management-surface">
+    <section
+      v-if="canManageCatalog"
+      ref="productsManagementSection"
+      class="card admin-list-card products-management-surface"
+    >
       <div class="admin-list-header">
         <div>
           <p class="section-label">Products</p>
@@ -2230,6 +2781,7 @@ async function applyBulkStockUpdate() {
                   <th>Stoku</th>
                   <th>Kategoria</th>
                   <th>Statusi</th>
+                  <th>Insights</th>
                   <th>Aksione</th>
                 </tr>
               </thead>
@@ -2256,6 +2808,26 @@ async function applyBulkStockUpdate() {
                     <span class="summary-chip">
                       <strong>{{ product.isPublic ? "Publik" : "I fshehur" }}</strong>
                     </span>
+                  </td>
+                  <td>
+                    <div class="products-row-metrics" aria-label="Statistikat e produktit">
+                      <span class="products-row-metric">
+                        <small>Views</small>
+                        <strong>{{ formatCount(product.viewsCount || 0) }}</strong>
+                      </span>
+                      <span class="products-row-metric">
+                        <small>Wishlist</small>
+                        <strong>{{ formatCount(product.wishlistCount || 0) }}</strong>
+                      </span>
+                      <span class="products-row-metric">
+                        <small>Cart</small>
+                        <strong>{{ formatCount(product.cartCount || 0) }}</strong>
+                      </span>
+                      <span class="products-row-metric">
+                        <small>Share</small>
+                        <strong>{{ formatCount(product.shareCount || 0) }}</strong>
+                      </span>
+                    </div>
                   </td>
                   <td>
                     <div class="products-row-actions">
@@ -2286,3 +2858,280 @@ async function applyBulkStockUpdate() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.business-dashboard-workspace-card {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.business-dashboard-workspace-grid,
+.business-dashboard-next-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.business-dashboard-workspace-action,
+.business-dashboard-next-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(47, 52, 70, 0.08);
+  background: rgba(255, 255, 255, 0.8);
+  color: inherit;
+  text-align: left;
+  box-shadow: 0 14px 30px rgba(31, 41, 55, 0.06);
+}
+
+.business-dashboard-workspace-action strong,
+.business-dashboard-next-card strong {
+  color: #1f2937;
+  font-size: 1rem;
+}
+
+.business-dashboard-workspace-action span,
+.business-dashboard-next-card span {
+  color: #6b7280;
+  line-height: 1.55;
+}
+
+.business-dashboard-workspace-action:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.product-builder-card {
+  display: grid;
+  gap: 20px;
+}
+
+.product-builder-head,
+.product-builder-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.product-builder-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.product-builder-form,
+.product-builder-aside {
+  display: grid;
+  gap: 18px;
+}
+
+.product-builder-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.product-builder-step {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(47, 52, 70, 0.08);
+  background: rgba(255, 255, 255, 0.76);
+  color: inherit;
+  text-align: left;
+  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.06);
+}
+
+.product-builder-step strong {
+  font-size: 0.95rem;
+}
+
+.product-builder-step span,
+.product-builder-step small {
+  color: #6b7280;
+}
+
+.product-builder-step.is-active {
+  border-color: rgba(255, 106, 43, 0.28);
+  box-shadow: 0 16px 34px rgba(255, 106, 43, 0.12);
+}
+
+.product-builder-step.is-done small {
+  color: #ff6a2b;
+}
+
+.product-builder-block,
+.product-builder-aside-card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(47, 52, 70, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 36px rgba(31, 41, 55, 0.07);
+}
+
+.product-builder-block.is-active {
+  border-color: rgba(255, 106, 43, 0.24);
+}
+
+.product-builder-inline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.product-builder-note {
+  margin: 0;
+  font-size: 0.94rem;
+  color: #556070;
+}
+
+.product-builder-note.is-warning {
+  color: #b45309;
+}
+
+.field-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.product-builder-review-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.product-builder-review-media {
+  min-height: 220px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(245, 243, 241, 0.92);
+}
+
+.product-builder-review-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.product-builder-review-empty {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.product-builder-review-copy {
+  display: grid;
+  gap: 12px;
+}
+
+.product-builder-review-copy h3,
+.product-builder-aside-card h3 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.product-builder-review-copy p,
+.product-builder-aside-copy {
+  margin: 0;
+}
+
+.product-builder-price-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.product-builder-price-preview strong {
+  font-size: 1.35rem;
+  color: #1f2937;
+}
+
+.product-builder-price-preview span {
+  color: #6b7280;
+  text-decoration: line-through;
+}
+
+.product-builder-price-preview mark {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 106, 43, 0.14);
+  color: #c2410c;
+}
+
+.product-builder-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.product-builder-checklist-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(245, 243, 241, 0.9);
+}
+
+.product-builder-checklist-item strong {
+  color: #1f2937;
+}
+
+.product-builder-checklist-item small {
+  color: #6b7280;
+}
+
+.product-builder-checklist-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(47, 52, 70, 0.18);
+}
+
+.product-builder-checklist-item.is-done .product-builder-checklist-dot {
+  background: #ff6a2b;
+}
+
+.product-builder-aside-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .product-builder-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 840px) {
+  .business-dashboard-workspace-grid,
+  .business-dashboard-next-grid,
+  .product-builder-steps,
+  .field-row-3,
+  .product-builder-review-card {
+    grid-template-columns: 1fr;
+  }
+
+  .product-builder-head,
+  .product-builder-block-head {
+    flex-direction: column;
+  }
+}
+</style>

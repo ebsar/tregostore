@@ -8,6 +8,7 @@ import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib
 import { PRODUCT_PAGE_SECTION_OPTIONS, deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { readRecentlyViewedProducts } from "../lib/recently-viewed";
+import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import {
   formatCategoryLabel,
   formatPrice,
@@ -25,6 +26,8 @@ import {
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
+const heroSearchQuery = ref("");
+const heroVisualSearchInputElement = ref(null);
 const products = ref([]);
 const homeCatalogProducts = ref([]);
 const businesses = ref([]);
@@ -247,6 +250,91 @@ const homeQuickChips = computed(() => {
     { label: "Home", type: "route", to: navigationByKey.home || "/kerko" },
   ];
 });
+const consumerUtilityActions = computed(() => {
+  if (!appState.user) {
+    return [
+      {
+        title: "Login",
+        copy: "Ruaje wishlist-in dhe porosite ne nje vend.",
+        to: "/login",
+      },
+      {
+        title: "Sign up",
+        copy: "Krijo llogari per checkout, njoftime dhe mesazhe.",
+        to: "/signup",
+      },
+      {
+        title: "Katalogu",
+        copy: "Hape kerkimet dhe filtrat e plote te marketplace-it.",
+        to: "/kerko",
+      },
+      {
+        title: "Markat lokale",
+        copy: "Shiko bizneset qe shesin aktualisht ne platforme.",
+        to: "/bizneset-e-regjistruara",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "Porosite",
+      copy: "Ndjek statusin, pagesen dhe doren e porosive.",
+      to: "/porosite",
+    },
+    {
+      title: "Wishlist",
+      copy: "Rikthehu te produktet qe i ke ruajtur me heret.",
+      to: "/wishlist",
+    },
+    {
+      title: "Mesazhet",
+      copy: "Vazhdo bisedat me bizneset dhe support-in.",
+      to: "/mesazhet",
+    },
+    {
+      title: "Adresat",
+      copy: "Perditeso adresat dhe checkout-in me me pak hapa.",
+      to: "/adresat",
+    },
+    {
+      title: "Njoftimet",
+      copy: "Shiko alertet e porosive, mesazheve dhe aktivitetit.",
+      to: "/njoftimet",
+    },
+    {
+      title: "Kthimet",
+      copy: "Kontrollo refund-et dhe kerkesat e hapura.",
+      to: "/refund-returne",
+    },
+  ];
+});
+const businessWorkspaceActions = computed(() => ([
+  {
+    title: "Shto artikull",
+    copy: "Hape builder-in dhe publiko produktin e ardhshem.",
+    to: "/biznesi-juaj?view=add-product",
+  },
+  {
+    title: "Porosite e biznesit",
+    copy: businessOrdersCount.value > 0
+      ? `${businessOrdersCount.value} porosi jane ne qarkullim tani.`
+      : "Kontrollo kerkesat sapo te vijne porosite e para.",
+    to: "/porosite-e-biznesit",
+  },
+  {
+    title: "Mesazhet",
+    copy: "Kalo direkt te inbox-i me klientet dhe support-i.",
+    to: "/mesazhet",
+  },
+  {
+    title: businessPublicProfileUrl.value ? "Profili publik" : "Menaxho profilin",
+    copy: businessPublicProfileUrl.value
+      ? "Shiko si duket biznesi yt per bleresit."
+      : "Plotesoje profilin qe biznesi te jete me i besueshem.",
+    to: businessPublicProfileUrl.value || "/biznesi-juaj",
+  },
+]));
 const featuredBusinesses = computed(() => businesses.value.slice(0, 6));
 const flashDealProducts = computed(() =>
   buildUniqueProducts(
@@ -715,6 +803,36 @@ function handleNewsletterSubmit() {
   router.push("/signup");
 }
 
+async function submitHeroSearch() {
+  const normalizedQuery = String(heroSearchQuery.value || "").trim();
+  await router.push(
+    normalizedQuery
+      ? {
+          path: "/kerko",
+          query: { q: normalizedQuery },
+        }
+      : "/kerko",
+  );
+}
+
+function openHeroVisualSearchPicker() {
+  heroVisualSearchInputElement.value?.click?.();
+}
+
+async function handleHeroVisualSearchSelection(event) {
+  const nextFile = event?.target?.files?.[0] || null;
+  if (!nextFile) {
+    return;
+  }
+
+  setPendingVisualSearchFile(nextFile);
+  await router.push("/kerko");
+
+  if (event?.target) {
+    event.target.value = "";
+  }
+}
+
 function scrollToMarketplaceSection(sectionId) {
   if (typeof window === "undefined") {
     return;
@@ -902,6 +1020,30 @@ async function handleCart(productId) {
       </article>
     </div>
 
+    <section class="card business-home-workspace" aria-label="Veprimet kryesore te biznesit">
+      <div class="business-home-workspace-head">
+        <div>
+          <p class="section-label">Workspace i biznesit</p>
+          <h2>Veprimet qe perdoren me shpesh</h2>
+          <p class="section-text">
+            Kalo direkt te shtimi i artikujve, porosite, mesazhet dhe profili publik pa humbur kohe ne navigim.
+          </p>
+        </div>
+      </div>
+
+      <div class="business-home-workspace-grid">
+        <RouterLink
+          v-for="item in businessWorkspaceActions"
+          :key="item.title"
+          class="business-home-workspace-card"
+          :to="item.to"
+        >
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.copy }}</span>
+        </RouterLink>
+      </div>
+    </section>
+
     <section class="card business-home-contact">
       <div>
         <p class="section-label">Kontaktet</p>
@@ -989,6 +1131,26 @@ async function handleCart(productId) {
       </template>
     </section>
 
+    <section class="home-marketplace-utility-strip" aria-label="Sherbime te shpejta te marketplace-it">
+      <article class="home-marketplace-utility-head">
+        <p class="section-label">Marketplace shortcuts</p>
+        <h2>Veprimet qe user-i i perdor me shpesh.</h2>
+        <p>
+          Eshte me e lehte te vazhdosh me porosi, wishlist, mesazhe apo hyrje ne llogari pa kerkuar neper menu.
+        </p>
+      </article>
+
+      <RouterLink
+        v-for="item in consumerUtilityActions"
+        :key="item.title"
+        class="home-marketplace-utility-card"
+        :to="item.to"
+      >
+        <strong>{{ item.title }}</strong>
+        <span>{{ item.copy }}</span>
+      </RouterLink>
+    </section>
+
     <section class="home-marketplace-announcement" aria-label="Highlights te marketplace-it">
       <article
         v-for="item in homeAnnouncementItems"
@@ -1001,6 +1163,48 @@ async function handleCart(productId) {
     </section>
 
     <section class="home-marketplace-masthead" aria-label="Hyrja kryesore ne marketplace">
+      <section class="home-marketplace-command-bar" aria-label="Kerko produktet me tekst ose foto">
+        <form class="home-marketplace-command-form" @submit.prevent="submitHeroSearch">
+          <button
+            class="home-marketplace-command-visual-trigger"
+            type="button"
+            aria-label="Kerko me foto"
+            @click="openHeroVisualSearchPicker"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.8 8.2h3l1.4-2.2h5.6l1.4 2.2h3A1.8 1.8 0 0 1 21 10v8.2A1.8 1.8 0 0 1 19.2 20H4.8A1.8 1.8 0 0 1 3 18.2V10a1.8 1.8 0 0 1 1.8-1.8Z"></path>
+              <circle cx="12" cy="14" r="3.6"></circle>
+            </svg>
+          </button>
+
+          <input
+            v-model="heroSearchQuery"
+            class="home-marketplace-command-input"
+            type="search"
+            autocomplete="off"
+            enterkeyhint="search"
+            placeholder="Kerko produkte, kategori ose marke"
+            aria-label="Kerko produktet"
+          >
+
+          <button class="home-marketplace-command-submit" type="submit">
+            Kerko
+          </button>
+
+          <input
+            ref="heroVisualSearchInputElement"
+            class="sr-only"
+            type="file"
+            accept="image/*"
+            @change="handleHeroVisualSearchSelection"
+          >
+        </form>
+
+        <p class="home-marketplace-command-note">
+          Perdore kameran per kerkim me fotografi ose shkruaj emrin e produktit.
+        </p>
+      </section>
+
       <aside class="home-marketplace-category-rail">
         <header class="home-marketplace-rail-head">
           <p class="section-label">Shop categories</p>

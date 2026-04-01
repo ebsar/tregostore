@@ -1,5 +1,30 @@
 const GET_REQUEST_CACHE = new Map();
 const INFLIGHT_GET_REQUESTS = new Map();
+const VISITOR_TOKEN_STORAGE_KEY = "trego-visitor-token";
+
+function generateVisitorToken() {
+  return `visitor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function getVisitorToken() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const storedToken = String(window.localStorage.getItem(VISITOR_TOKEN_STORAGE_KEY) || "").trim();
+    if (storedToken) {
+      return storedToken;
+    }
+
+    const nextToken = generateVisitorToken();
+    window.localStorage.setItem(VISITOR_TOKEN_STORAGE_KEY, nextToken);
+    return nextToken;
+  } catch (error) {
+    console.error(error);
+    return "";
+  }
+}
 
 function cloneJsonPayload(value) {
   return JSON.parse(JSON.stringify(value ?? {}));
@@ -40,6 +65,11 @@ export async function requestJson(url, options = {}, runtime = {}) {
     !config.headers["Content-Type"]
   ) {
     config.headers["Content-Type"] = "application/json";
+  }
+
+  const visitorToken = getVisitorToken();
+  if (visitorToken && !config.headers["X-Trego-Visitor"]) {
+    config.headers["X-Trego-Visitor"] = visitorToken;
   }
 
   if (canUseCache) {
@@ -225,6 +255,13 @@ export async function uploadProfilePhoto(file) {
     path: String(data.path).trim(),
     message: data.message || "Fotoja e profilit u ngarkua me sukses.",
   };
+}
+
+export async function trackProductShare(productId) {
+  return requestJson("/api/products/share", {
+    method: "POST",
+    body: JSON.stringify({ productId }),
+  });
 }
 
 export async function searchProductsByImage(file, options = {}) {

@@ -78,14 +78,16 @@ function syncVariantCollections() {
         color,
         sizeEntries: CLOTHING_SIZE_OPTIONS.map((option) => {
           const existingEntry = existingRow?.sizeEntries?.find((entry) => entry.size === option.value);
-          return {
-            size: option.value,
-            enabled: Boolean(existingEntry?.enabled),
-            quantity: String(existingEntry?.quantity ?? "0"),
-          };
-        }),
-      };
-    });
+        return {
+          size: option.value,
+          enabled: Boolean(existingEntry?.enabled),
+          quantity: String(existingEntry?.quantity ?? "0"),
+          price: String(existingEntry?.price ?? ""),
+          imagePath: String(existingEntry?.imagePath || ""),
+        };
+      }),
+    };
+  });
     props.form.colorStockVariants = [];
     return;
   }
@@ -99,6 +101,8 @@ function syncVariantCollections() {
       return {
         color,
         quantity: String(existingRow?.quantity ?? "0"),
+        price: String(existingRow?.price ?? ""),
+        imagePath: String(existingRow?.imagePath || ""),
       };
     });
     props.form.clothingColorVariants = [];
@@ -247,14 +251,30 @@ function getColorSwatchStyle(colorValue) {
             <input v-model="sizeEntry.enabled" type="checkbox">
             <strong>{{ sizeEntry.size }}</strong>
           </span>
-          <input
-            v-model="sizeEntry.quantity"
-            type="number"
-            min="0"
-            step="1"
-            :disabled="!sizeEntry.enabled"
-            placeholder="0"
-          >
+          <div class="field-row">
+            <input
+              v-model="sizeEntry.quantity"
+              type="number"
+              min="0"
+              step="1"
+              :disabled="!sizeEntry.enabled"
+              placeholder="Stok"
+            >
+            <input
+              v-model="sizeEntry.price"
+              type="number"
+              min="0"
+              step="0.01"
+              :disabled="!sizeEntry.enabled"
+              placeholder="Cmimi"
+            >
+            <input
+              v-model="sizeEntry.imagePath"
+              type="text"
+              :disabled="!sizeEntry.enabled"
+              placeholder="Foto e variantit"
+            >
+          </div>
         </label>
       </div>
     </div>
@@ -270,7 +290,11 @@ function getColorSwatchStyle(colorValue) {
       class="product-variant-color-row"
     >
       <strong>{{ PRODUCT_COLOR_LABELS[colorEntry.color] || colorEntry.color }}</strong>
-      <input v-model="colorEntry.quantity" type="number" min="0" step="1" placeholder="0">
+      <div class="field-row">
+        <input v-model="colorEntry.quantity" type="number" min="0" step="1" placeholder="Stok">
+        <input v-model="colorEntry.price" type="number" min="0" step="0.01" placeholder="Cmimi">
+        <input v-model="colorEntry.imagePath" type="text" placeholder="Foto e variantit">
+      </div>
     </label>
   </div>
 

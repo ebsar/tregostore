@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import {
   formatCategoryLabel,
+  formatCount,
   formatPrice,
   formatProductColorLabel,
   formatProductTypeLabel,
@@ -72,6 +73,13 @@ const details = computed(() =>
       : "Stoku eshte privat",
   ].filter(Boolean),
 );
+
+const engagementItems = computed(() => ([
+  { label: "Views", value: formatCount(props.product.viewsCount || 0) },
+  { label: "Wishlist", value: formatCount(props.product.wishlistCount || 0) },
+  { label: "Cart", value: formatCount(props.product.cartCount || 0) },
+  { label: "Share", value: formatCount(props.product.shareCount || 0) },
+]));
 </script>
 
 <template>
@@ -111,6 +119,16 @@ const details = computed(() =>
         {{ stockStateLabel }}
       </p>
       <p>{{ product.description }}</p>
+      <div class="admin-product-metrics" aria-label="Statistikat e produktit">
+        <span
+          v-for="item in engagementItems"
+          :key="`${product.id}-${item.label}`"
+          class="admin-product-metric"
+        >
+          <small>{{ item.label }}</small>
+          <strong>{{ item.value }}</strong>
+        </span>
+      </div>
       <div class="product-detail-tags product-detail-tags-admin">
         <span
           v-for="detail in details"

@@ -1,0 +1,36 @@
+{
+  "name": "trego-mobile-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/app": "^7.1.1",
+    "@capacitor/browser": "^7.0.5",
+    "@capacitor/core": "^7.6.1",
+    "@capacitor/haptics": "^7.0.1",
+    "@capacitor/keyboard": "^7.0.2",
+    "@capacitor/status-bar": "^7.0.2",
+    "@ionic/vue": "^8.7.0",
+    "@ionic/vue-router": "^8.7.0",
+    "ionicons": "^7.4.0",
+    "onesignal-cordova-plugin": "^5.3.6",
+    "vue": "^3.5.31",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.6.1",
+    "@capacitor/ios": "^7.4.3",
+    "@vitejs/plugin-vue": "^4.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^4.5.14"
+  }
+}

@@ -474,6 +474,17 @@ export function formatPrice(value) {
   return `€${number.toFixed(2).replace(/\.?0+$/, "")}`;
 }
 
+export function formatCount(value) {
+  const number = Number(value || 0);
+  if (Number.isNaN(number) || number <= 0) {
+    return "0";
+  }
+
+  return new Intl.NumberFormat("sq-AL", {
+    maximumFractionDigits: 0,
+  }).format(number);
+}
+
 export function formatCategoryLabel(category) {
   const labels = {
     "clothing-babies": "Veshje per beba",

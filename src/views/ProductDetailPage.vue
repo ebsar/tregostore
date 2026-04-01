@@ -2,16 +2,18 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { fetchProtectedCollection, requestJson, resolveApiMessage, trackProductShare } from "../lib/api";
 import { readRecentlyViewedProducts, rememberRecentlyViewedProduct } from "../lib/recently-viewed";
 import { trackAddToCart, trackProductView } from "../lib/tracking";
 import {
   formatCategoryLabel,
+  formatCount,
   formatDateLabel,
   formatPrice,
   formatProductColorLabel,
   formatProductTypeLabel,
   getCategoryUrl,
+  getProductDetailUrl,
   getProductImageGallery,
   getProductStockMessage,
   hasProductAvailableStock,
@@ -43,6 +45,9 @@ const ui = reactive({
 });
 const isCompared = computed(() =>
   compareState.items.some((item) => Number(item.id || item.productId || 0) === Number(currentProduct.value?.id || 0)),
+);
+const canSeeProductEngagement = computed(() =>
+  appState.user?.role === "business" || appState.user?.role === "admin",
 );
 const isProductAvailable = computed(() => hasProductAvailableStock(currentProduct.value || {}));
 const outOfStockMessage = computed(() => getProductStockMessage(currentProduct.value || {}));
@@ -254,6 +259,24 @@ const backTarget = computed(() => {
 
   return getCategoryUrl(currentProduct.value?.category);
 });
+const shareUrl = computed(() => {
+  if (!currentProduct.value) {
+    return "";
+  }
+
+  const detailPath = getProductDetailUrl(currentProduct.value.id);
+  if (typeof window === "undefined") {
+    return detailPath;
+  }
+
+  return new URL(detailPath, window.location.origin).toString();
+});
+const publicEngagementItems = computed(() => ([
+  { label: "Views", value: formatCount(currentProduct.value?.viewsCount || 0) },
+  { label: "Wishlist", value: formatCount(currentProduct.value?.wishlistCount || 0) },
+  { label: "Cart", value: formatCount(currentProduct.value?.cartCount || 0) },
+  { label: "Share", value: formatCount(currentProduct.value?.shareCount || 0) },
+]));
 
 watch(
   () => route.fullPath,
@@ -638,6 +661,56 @@ async function handleReportProduct() {
   ui.type = "success";
 }
 
+function syncCurrentProductMetrics(metrics = {}) {
+  if (!currentProduct.value || !metrics || typeof metrics !== "object") {
+    return;
+  }
+
+  currentProduct.value = {
+    ...currentProduct.value,
+    ...metrics,
+  };
+}
+
+async function handleShareProduct() {
+  if (!currentProduct.value || !shareUrl.value) {
+    return;
+  }
+
+  const sharePayload = {
+    title: currentProduct.value.title,
+    text: `${currentProduct.value.title} • ${formatPrice(currentProduct.value.price)}`,
+    url: shareUrl.value,
+  };
+
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      await navigator.share(sharePayload);
+      ui.message = "Produkti u nda me sukses.";
+    } else if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(shareUrl.value);
+      ui.message = "Linku i produktit u kopjua.";
+    } else {
+      window.prompt("Kopjo linkun e produktit:", shareUrl.value);
+      ui.message = "Linku i produktit eshte gati per share.";
+    }
+
+    ui.type = "success";
+    const { response, data } = await trackProductShare(currentProduct.value.id);
+    if (response.ok && data?.ok && data.metrics) {
+      syncCurrentProductMetrics(data.metrics);
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+
+    console.error(error);
+    ui.message = "Produkti nuk u nda. Provoje perseri.";
+    ui.type = "error";
+  }
+}
+
 function nextImage() {
   if (imageGallery.value.length <= 1) {
     return;
@@ -857,12 +930,38 @@ function nextImage() {
             </button>
 
             <button
+              class="product-action-button share-action"
+              type="button"
+              @click="handleShareProduct"
+            >
+              <svg class="product-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="18" cy="5" r="2.2"></circle>
+                <circle cx="6" cy="12" r="2.2"></circle>
+                <circle cx="18" cy="19" r="2.2"></circle>
+                <path d="M8 11.2 15.9 6.7"></path>
+                <path d="m8 12.8 7.9 4.5"></path>
+              </svg>
+              <span>Shperndaje</span>
+            </button>
+
+            <button
               class="product-action-button"
               type="button"
               @click="handleReportProduct"
             >
               Raporto
             </button>
+          </div>
+
+          <div v-if="canSeeProductEngagement" class="product-detail-engagement-row" aria-label="Interesimi per produktin">
+            <span
+              v-for="item in publicEngagementItems"
+              :key="`${currentProduct.id}-${item.label}`"
+              class="product-detail-engagement-chip"
+            >
+              <small>{{ item.label }}</small>
+              <strong>{{ item.value }}</strong>
+            </span>
           </div>
 
           <div class="product-detail-trust-grid" aria-label="Arsye per te blere me besim">
