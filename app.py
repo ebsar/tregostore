@@ -89,6 +89,8 @@ PUBLIC_BUSINESSES_ENDPOINT_CACHE_TTL_SECONDS = 45
 PUBLIC_DETAIL_ENDPOINT_CACHE_TTL_SECONDS = 20
 RUNTIME_PUBLIC_CACHE: dict[str, tuple[float, object]] = {}
 RUNTIME_PUBLIC_CACHE_LOCK = threading.Lock()
+DATABASE_BOOTSTRAP_LOCK = threading.Lock()
+DATABASE_BOOTSTRAPPED = False
 SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
@@ -1027,14 +1029,17 @@ def initialize_database() -> None:
             current_schema_version = get_runtime_meta_value(connection, "schema_version")
             has_core_schema = table_exists(connection, "users") and table_exists(connection, "products")
             needs_schema_bootstrap = not has_core_schema
-            needs_migration = current_schema_version != APP_SCHEMA_VERSION or needs_schema_bootstrap
 
             if needs_schema_bootstrap:
                 connection.executescript(schema_path.read_text(encoding="utf-8"))
 
-            if needs_migration:
-                migrate_database(connection)
-                ensure_runtime_meta_table(connection)
+            # Run migrations on every startup/request bootstrap. The migration
+            # helpers are written to be idempotent, and this keeps old/live
+            # databases healthy even when the stored schema_version says "up to
+            # date" while some columns/tables are still missing.
+            migrate_database(connection)
+            ensure_runtime_meta_table(connection)
+            if current_schema_version != APP_SCHEMA_VERSION or needs_schema_bootstrap:
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
             ensure_bootstrap_admin(connection)
         finally:
@@ -1043,6 +1048,20 @@ def initialize_database() -> None:
                     "SELECT pg_advisory_unlock(?)",
                     (POSTGRES_MIGRATION_LOCK_ID,),
                 )
+
+
+def ensure_database_initialized() -> None:
+    global DATABASE_BOOTSTRAPPED
+
+    if DATABASE_BOOTSTRAPPED:
+        return
+
+    with DATABASE_BOOTSTRAP_LOCK:
+        if DATABASE_BOOTSTRAPPED:
+            return
+
+        initialize_database()
+        DATABASE_BOOTSTRAPPED = True
 
 
 def should_store_uploads_in_database() -> bool:
@@ -13659,6 +13678,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
 
     def do_GET(self) -> None:
+        ensure_database_initialized()
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = parse_qs(parsed_url.query)
@@ -13842,6 +13862,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        ensure_database_initialized()
         path = urlparse(self.path).path
         maybe_dispatch_due_sale_notifications()
 
@@ -14109,7 +14130,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         is_email_verified,
                         email_verified_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         full_name,
@@ -20829,7 +20850,7 @@ class AppServer(ThreadingHTTPServer):
 
 
 def run_server(host: str, port: int) -> None:
-    initialize_database()
+    ensure_database_initialized()
     server = AppServer((host, port), AppHandler)
 
     print(f"Serveri po punon ne http://{host}:{port}")

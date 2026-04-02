@@ -1414,8 +1414,24 @@ final class TregoAPIClient {
     }
 
     private func buildRequest(path: String, method: String, body: [String: Any]? = nil) -> URLRequest? {
-        let relative = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        let url = configuration.baseURL.appendingPathComponent(relative)
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relative = trimmed.hasPrefix("/") ? String(trimmed.dropFirst()) : trimmed
+
+        let url: URL
+        if let querySeparatorIndex = relative.firstIndex(of: "?") {
+            let rawPath = String(relative[..<querySeparatorIndex])
+            let rawQuery = String(relative[relative.index(after: querySeparatorIndex)...])
+            var components = URLComponents(
+                url: configuration.baseURL.appendingPathComponent(rawPath),
+                resolvingAgainstBaseURL: false
+            )
+            components?.percentEncodedQuery = rawQuery
+            guard let resolved = components?.url else { return nil }
+            url = resolved
+        } else {
+            url = configuration.baseURL.appendingPathComponent(relative)
+        }
+
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 25
@@ -1451,7 +1467,21 @@ final class TregoAPIClient {
 
     private func parseJSONResult(data: Data, response: HTTPURLResponse) -> TregoJSONResult? {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            return TregoJSONResult(ok: response.statusCode >= 200 && response.statusCode < 300, message: nil, object: [:])
+            let rawText = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackMessage: String?
+            if let rawText, !rawText.isEmpty {
+                fallbackMessage = rawText
+            } else {
+                fallbackMessage = response.statusCode >= 200 && response.statusCode < 300
+                    ? nil
+                    : "Serveri ktheu nje gabim (\(response.statusCode))."
+            }
+            return TregoJSONResult(
+                ok: response.statusCode >= 200 && response.statusCode < 300,
+                message: fallbackMessage,
+                object: [:]
+            )
         }
         let ok = Bool(object["ok"] as? Bool ?? (response.statusCode >= 200 && response.statusCode < 300))
         let message = (object["message"] as? String) ?? ((object["errors"] as? [String])?.joined(separator: " "))

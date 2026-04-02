@@ -890,7 +890,7 @@ private struct TregoPersonalDataScreen: View {
     @State private var firstName = ""
     @State private var lastName = ""
     @State private var birthDate = TregoNativeFormatting.defaultBirthDate
-    @State private var gender = "female"
+    @State private var gender = "femer"
     @State private var remoteProfileImagePath = ""
     @State private var selectedPhotoUpload: TregoImageSearchUpload?
     @State private var pickerSource: TregoImagePickerSource?
@@ -4332,8 +4332,8 @@ private struct TregoSignupView: View {
     @State private var email = ""
     @State private var phoneNumber = ""
     @State private var password = ""
-    @State private var birthDate = ""
-    @State private var gender = "female"
+    @State private var birthDate = TregoNativeFormatting.defaultBirthDate
+    @State private var gender = "femer"
     @State private var errorMessage = ""
     @State private var isSubmitting = false
 
@@ -4361,8 +4361,7 @@ private struct TregoSignupView: View {
                     .textContentType(.newPassword)
                     .textFieldStyle(.roundedBorder)
 
-                TextField("Birth date", text: $birthDate, prompt: Text("2000-01-01"))
-                    .textFieldStyle(.roundedBorder)
+                TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
 
                 TregoGenderPicker(selected: $gender)
 
@@ -4412,7 +4411,7 @@ private struct TregoSignupView: View {
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
             phoneNumber: phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             password: password,
-            birthDate: birthDate.trimmingCharacters(in: .whitespacesAndNewlines),
+            birthDate: TregoNativeFormatting.storageDateString(from: birthDate),
             gender: gender
         ) ?? ""
     }
@@ -4510,8 +4509,8 @@ private struct TregoAccountLoginPromptView: View {
     @State private var identifier = ""
     @State private var phoneNumber = ""
     @State private var password = ""
-    @State private var birthDate = ""
-    @State private var gender = "female"
+    @State private var birthDate = TregoNativeFormatting.defaultBirthDate
+    @State private var gender = "femer"
     @State private var errorMessage = ""
     @State private var isSubmitting = false
     @State private var failedAttempts = 0
@@ -4551,10 +4550,7 @@ private struct TregoAccountLoginPromptView: View {
                 )
 
                 if mode == .signup {
-                    authTextField(
-                        text: $birthDate,
-                        prompt: "2000-01-01"
-                    )
+                    TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
 
                     TregoGenderPicker(selected: $gender)
                 }
@@ -4734,7 +4730,7 @@ private struct TregoAccountLoginPromptView: View {
             email: identifier.trimmingCharacters(in: .whitespacesAndNewlines),
             phoneNumber: phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             password: password,
-            birthDate: birthDate.trimmingCharacters(in: .whitespacesAndNewlines),
+            birthDate: TregoNativeFormatting.storageDateString(from: birthDate),
             gender: gender
         ) ?? ""
     }
@@ -5667,7 +5663,7 @@ private struct TregoDateInputCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .tregoGlassRectBackground(cornerRadius: 22)
                 .overlay {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.42), lineWidth: 0.8)
@@ -6903,8 +6899,8 @@ private struct TregoGenderPicker: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private let options = [
-        ("female", "Femer"),
-        ("male", "Mashkull"),
+        ("femer", "Femer"),
+        ("mashkull", "Mashkull"),
     ]
 
     var body: some View {
@@ -8090,13 +8086,11 @@ private enum TregoNativeFormatting {
     static func genderPickerValue(from rawValue: String?) -> String {
         switch rawValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "mashkull", "male":
-            return "male"
+            return "mashkull"
         case "femer", "female":
-            return "female"
-        case "other", "tjeter":
-            return "other"
+            return "femer"
         default:
-            return "female"
+            return "femer"
         }
     }
 
