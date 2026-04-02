@@ -141,7 +141,9 @@ watch(
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page">
-        <AppBackButton back-to="/messages" />
+        <div class="page-back-anchor">
+          <AppBackButton back-to="/messages" />
+        </div>
         <section class="surface-card surface-card--strong section-card conversation-hero">
           <div class="conversation-hero-top">
             <div class="conversation-hero-copy">

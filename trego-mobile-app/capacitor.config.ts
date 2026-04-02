@@ -18,6 +18,10 @@ const config: CapacitorConfig = {
     CapacitorCookies: {
       enabled: true,
     },
+    Keyboard: {
+      resize: "none",
+      resizeOnFullScreen: false,
+    },
     SplashScreen: {
       launchShowDuration: 1400,
       backgroundColor: "#f5f3f1",

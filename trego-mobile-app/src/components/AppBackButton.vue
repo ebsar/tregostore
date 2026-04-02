@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { IonIcon } from "@ionic/vue";
 import { arrowBackOutline } from "ionicons/icons";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 const props = withDefaults(defineProps<{
   backTo?: string;
@@ -10,14 +10,27 @@ const props = withDefaults(defineProps<{
 });
 
 const router = useRouter();
+const route = useRoute();
 
 function handleBack() {
-  if (typeof window !== "undefined" && window.history.length > 1) {
-    router.back();
+  const fallbackTarget = props.backTo;
+  const currentPath = route.fullPath;
+  const canUseHistory =
+    typeof window !== "undefined" &&
+    window.history.length > 1 &&
+    Boolean(window.history.state?.back);
+
+  if (canUseHistory) {
+    void router.back();
+    window.setTimeout(() => {
+      if (route.fullPath === currentPath) {
+        void router.replace(fallbackTarget);
+      }
+    }, 360);
     return;
   }
 
-  router.replace(props.backTo);
+  void router.replace(fallbackTarget);
 }
 </script>
 
@@ -30,13 +43,13 @@ function handleBack() {
 <style scoped>
 .app-back-button {
   position: relative;
-  z-index: 5;
+  z-index: 20;
   display: inline-flex;
   width: 46px;
   height: 46px;
   align-items: center;
   justify-content: center;
-  margin-left: -2px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.74);
   border-radius: 999px;
   background:
@@ -50,6 +63,7 @@ function handleBack() {
   backdrop-filter: blur(24px) saturate(175%);
   -webkit-backdrop-filter: blur(24px) saturate(175%);
   color: var(--trego-dark);
+  appearance: none;
 }
 
 .app-back-button ion-icon {

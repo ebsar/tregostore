@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonPage } from "@ionic/vue";
+import { IonButton, IonContent, IonPage, IonSpinner } from "@ionic/vue";
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
@@ -40,8 +40,12 @@ async function handleAddToCart(productId: number) {
       <div class="mobile-page mobile-page--tabbed">
         <div class="compact-page-title">Wishlist</div>
 
+        <section v-if="!sessionState.sessionLoaded" class="surface-card empty-panel wishlist-loading-panel">
+          <IonSpinner name="crescent" />
+        </section>
+
         <EmptyStatePanel
-          v-if="!sessionState.user"
+          v-else-if="!sessionState.user"
           title="Kyçu per te pare wishlist"
           copy="App-i përdor po të njëjtin account dhe po të njëjtin koleksion si webfaqja."
           class="guest-tab-empty"
@@ -77,4 +81,10 @@ async function handleAddToCart(productId: number) {
   </IonPage>
 </template>
 
-<style scoped></style>
+<style scoped>
+.wishlist-loading-panel {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+}
+</style>

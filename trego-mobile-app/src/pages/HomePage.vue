@@ -8,37 +8,26 @@ import {
   IonSpinner,
 } from "@ionic/vue";
 import {
+  closeOutline,
   cameraOutline,
   cameraSharp,
-  chatbubbleEllipsesOutline,
-  flashOutline,
-  heartOutline,
   imagesOutline,
-  logInOutline,
   micOutline,
-  personAddOutline,
-  personCircleOutline,
   pricetagOutline,
   pulseOutline,
-  receiptOutline,
-  searchOutline,
-  storefrontOutline,
 } from "ionicons/icons";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
 import ProductCardMobile from "../components/ProductCardMobile.vue";
-import { addToCart, fetchMarketplaceProducts, openSupportConversation, searchProductsByImage, toggleWishlist } from "../lib/api";
-import { readRecentlyViewedProducts } from "../lib/recentlyViewed";
-import { readMobileRecentSearches } from "../lib/searchHistory";
+import { addToCart, fetchMarketplaceProducts, searchProductsByImage, toggleWishlist } from "../lib/api";
 import type { ProductItem } from "../types/models";
-import { ensureSession, isBusinessUser, refreshCounts, sessionState } from "../stores/session";
+import { ensureSession, refreshCounts } from "../stores/session";
 
 const router = useRouter();
 const route = useRoute();
 const loading = ref(true);
 const searchQuery = ref("");
-const homeSearchCollapsed = ref(false);
 const voiceListening = ref(false);
 const cameraSheetOpen = ref(false);
 const uploadInputRef = ref<HTMLInputElement | null>(null);
@@ -46,42 +35,8 @@ const cameraInputRef = ref<HTMLInputElement | null>(null);
 const products = ref<ProductItem[]>([]);
 const imageSearchResults = ref<ProductItem[]>([]);
 
-const recommendedProducts = computed(() => {
-  const recentTerms = readMobileRecentSearches().map((item) => item.toLowerCase());
-  const recentViewedIds = new Set(readRecentlyViewedProducts().map((item) => Number(item.id || 0)));
-  return products.value
-    .filter((product) => {
-      const title = String(product.title || "").toLowerCase();
-      const category = String(product.category || "").toLowerCase();
-      return recentViewedIds.has(Number(product.id || 0)) || recentTerms.some((term) => title.includes(term) || category.includes(term));
-    })
-    .slice(0, 8);
-});
-
-const discountProducts = computed(() =>
-  products.value
-    .filter((product) => Number(product.compareAtPrice || 0) > Number(product.price || 0))
-    .slice(0, 8),
-);
-
-const trendingProducts = computed(() =>
-  [...products.value]
-    .sort((left, right) => {
-      const leftScore = Number(left.viewsCount || 0) + Number(left.wishlistCount || 0) * 2 + Number(left.shareCount || 0) * 3;
-      const rightScore = Number(right.viewsCount || 0) + Number(right.wishlistCount || 0) * 2 + Number(right.shareCount || 0) * 3;
-      return rightScore - leftScore;
-    })
-    .slice(0, 8),
-);
-
 const primaryProducts = computed(() => (imageSearchResults.value.length ? imageSearchResults.value : products.value.slice(0, 10)));
 const promoCards = computed(() => [
-  {
-    key: "discounts",
-    title: "Zbritje",
-    subtitle: "Oferta qe levizin shpejt",
-    icon: pricetagOutline,
-  },
   {
     key: "trending",
     title: "Trending",
@@ -89,38 +44,12 @@ const promoCards = computed(() => [
     icon: pulseOutline,
   },
   {
-    key: "sales",
-    title: "Sales",
+    key: "sale",
+    title: "Sale",
     subtitle: "Cmimet me te mira",
-    icon: flashOutline,
+    icon: pricetagOutline,
   },
 ]);
-const homeShortcutItems = computed(() => {
-  if (!sessionState.user) {
-    return [
-      { key: "login", label: "Login", meta: "Kyçu", icon: logInOutline, route: "/login?redirect=/tabs/home" },
-      { key: "signup", label: "Sign up", meta: "Llogari e re", icon: personAddOutline, route: "/signup" },
-      { key: "support", label: "Support", meta: "Ndihmë", icon: chatbubbleEllipsesOutline, action: "support" },
-      { key: "search", label: "Kerko", meta: "Katalogu", icon: searchOutline, action: "search" },
-    ];
-  }
-
-  if (isBusinessUser.value) {
-    return [
-      { key: "studio", label: "Biznesi", meta: "Studio", icon: storefrontOutline, route: "/business/studio" },
-      { key: "orders", label: "Porosite", meta: "Menaxho", icon: receiptOutline, route: "/orders" },
-      { key: "messages", label: "Mesazhet", meta: "Inbox", icon: chatbubbleEllipsesOutline, route: "/messages" },
-      { key: "account", label: "Llogaria", meta: "Profili", icon: personCircleOutline, route: "/tabs/account" },
-    ];
-  }
-
-  return [
-    { key: "orders", label: "Porosite", meta: "Statusi", icon: receiptOutline, route: "/orders" },
-    { key: "wishlist", label: "Wishlist", meta: "Ruajtur", icon: heartOutline, route: "/tabs/wishlist" },
-    { key: "messages", label: "Mesazhet", meta: "Bisedat", icon: chatbubbleEllipsesOutline, route: "/messages" },
-    { key: "account", label: "Llogaria", meta: "Profili", icon: personCircleOutline, route: "/tabs/account" },
-  ];
-});
 
 function syncSearchQueryFromRoute() {
   const next = String(route.query.q || "").trim();
@@ -129,14 +58,9 @@ function syncSearchQueryFromRoute() {
   }
 }
 
-function handleHomeScroll(event: CustomEvent<{ scrollTop?: number }>) {
-  const scrollTop = Number(event?.detail?.scrollTop || 0);
-  homeSearchCollapsed.value = scrollTop > 72;
-}
-
 onMounted(async () => {
   syncSearchQueryFromRoute();
-  await ensureSession();
+  void ensureSession();
   try {
     products.value = await fetchMarketplaceProducts(20, 0);
   } finally {
@@ -160,38 +84,6 @@ onBeforeUnmount(() => {
 function openSearch() {
   const normalized = searchQuery.value.trim();
   router.push(normalized ? `/tabs/search?q=${encodeURIComponent(normalized)}` : "/tabs/search");
-}
-
-async function openSupport() {
-  await ensureSession();
-  if (!sessionState.user) {
-    router.push("/login?redirect=/messages");
-    return;
-  }
-
-  const { response, data } = await openSupportConversation();
-  if (!response.ok || !data?.ok || !data?.conversation?.id) {
-    return;
-  }
-
-  await refreshCounts();
-  router.push(`/messages/${data.conversation.id}`);
-}
-
-async function handleHomeShortcut(item: { route?: string; action?: string }) {
-  if (item.route) {
-    router.push(item.route);
-    return;
-  }
-
-  if (item.action === "search") {
-    openSearch();
-    return;
-  }
-
-  if (item.action === "support") {
-    await openSupport();
-  }
 }
 
 async function handleAddToCart(productId: number) {
@@ -265,50 +157,39 @@ function startVoiceSearch() {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true" :scroll-events="true" @ionScroll="handleHomeScroll">
+    <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page mobile-page--tabbed mobile-page--edge mobile-page--home">
-        <section class="home-search-hero" :class="{ 'is-collapsed': homeSearchCollapsed }">
-          <button v-if="homeSearchCollapsed" class="home-search-mini-button" type="button" @click="openSearch">
-            <IonIcon :icon="searchOutline" />
-          </button>
-
-          <div v-else class="home-search-shell">
-            <button class="home-search-camera" type="button" @click="cameraSheetOpen = true">
-              <IonIcon :icon="cameraOutline" />
-            </button>
-            <IonIcon class="home-search-leading" :icon="searchOutline" />
+        <section class="home-search-hero">
+          <form class="home-search-shell" @submit.prevent="openSearch">
             <IonInput
               v-model="searchQuery"
               class="home-search-input"
-              placeholder="Smart search"
-              clear-input
+              placeholder="Search"
               @keydown.enter.prevent="openSearch"
             />
-            <button
-              class="home-search-voice"
-              :class="{ active: voiceListening }"
-              type="button"
-              @click="startVoiceSearch"
-            >
-              <IonIcon :icon="micOutline" />
-            </button>
-          </div>
-        </section>
 
-        <section class="home-quick-access" aria-label="Veprime te shpejta">
-          <button
-            v-for="item in homeShortcutItems"
-            :key="item.key"
-            class="home-quick-access-card"
-            type="button"
-            @click="handleHomeShortcut(item)"
-          >
-            <IonIcon :icon="item.icon" />
-            <div class="home-quick-access-copy">
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.meta }}</span>
+            <div class="home-search-actions">
+              <button
+                v-if="searchQuery.trim()"
+                class="home-search-clear"
+                type="button"
+                @click="searchQuery = ''"
+              >
+                <IonIcon :icon="closeOutline" />
+              </button>
+              <button class="home-search-camera" type="button" @click="cameraSheetOpen = true">
+                <IonIcon :icon="cameraOutline" />
+              </button>
+              <button
+                class="home-search-voice"
+                :class="{ active: voiceListening }"
+                type="button"
+                @click="startVoiceSearch"
+              >
+                <IonIcon :icon="micOutline" />
+              </button>
             </div>
-          </button>
+          </form>
         </section>
 
         <section class="home-promo-rail">
@@ -323,57 +204,9 @@ function startVoiceSearch() {
           </article>
         </section>
 
-        <section v-if="discountProducts.length" class="stack-list">
-          <div class="section-head">
-            <h2>Zbritje</h2>
-          </div>
-          <div class="product-grid home-product-grid">
-            <ProductCardMobile
-              v-for="product in discountProducts"
-              :key="`discount-${product.id}`"
-              :product="product"
-              @open="(id) => router.push(`/product/${id}`)"
-              @cart="handleAddToCart"
-              @wishlist="handleWishlist"
-            />
-          </div>
-        </section>
-
-        <section v-if="trendingProducts.length" class="stack-list">
-          <div class="section-head">
-            <h2>Trending</h2>
-          </div>
-          <div class="product-grid home-product-grid">
-            <ProductCardMobile
-              v-for="product in trendingProducts"
-              :key="`trend-${product.id}`"
-              :product="product"
-              @open="(id) => router.push(`/product/${id}`)"
-              @cart="handleAddToCart"
-              @wishlist="handleWishlist"
-            />
-          </div>
-        </section>
-
-        <section v-if="recommendedProducts.length" class="stack-list">
-          <div class="section-head">
-            <h2>Per ty</h2>
-          </div>
-          <div class="product-grid home-product-grid">
-            <ProductCardMobile
-              v-for="product in recommendedProducts"
-              :key="`recommended-${product.id}`"
-              :product="product"
-              @open="(id) => router.push(`/product/${id}`)"
-              @cart="handleAddToCart"
-              @wishlist="handleWishlist"
-            />
-          </div>
-        </section>
-
         <section class="stack-list">
           <div class="section-head">
-            <h2>{{ imageSearchResults.length ? "Camera results" : "Produktet" }}</h2>
+            <h2>{{ imageSearchResults.length ? "Results" : "Products" }}</h2>
           </div>
 
           <div v-if="loading" class="surface-card empty-panel">
@@ -431,168 +264,112 @@ function startVoiceSearch() {
 
 <style scoped>
 .mobile-page--home {
-  gap: 12px;
+  gap: 14px;
 }
 
 .home-search-hero {
-  position: sticky;
-  top: calc(env(safe-area-inset-top, 0px) + 6px);
-  z-index: 22;
-  padding-top: 2px;
-}
-
-.home-search-hero.is-collapsed {
-  display: flex;
-  justify-content: flex-end;
+  position: relative;
+  z-index: 4;
 }
 
 .home-search-shell {
-  display: grid;
-  grid-template-columns: auto 20px minmax(0, 1fr) auto;
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 68px;
-  padding: 0 14px;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 18px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.64);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.12)),
-    radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.44), transparent 30%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1)),
+    radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.28), transparent 28%);
   box-shadow:
-    0 20px 48px rgba(31, 41, 55, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    inset 0 -20px 30px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(26px) saturate(175%);
-  -webkit-backdrop-filter: blur(26px) saturate(175%);
+    0 14px 28px rgba(31, 41, 55, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
 }
 
-.home-search-mini-button {
-  display: inline-flex;
-  width: 58px;
-  height: 58px;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.12)),
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.42), transparent 28%);
-  box-shadow:
-    0 16px 34px rgba(31, 41, 55, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    inset 0 -16px 22px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(26px) saturate(185%);
-  -webkit-backdrop-filter: blur(26px) saturate(185%);
-  color: var(--trego-dark);
-}
-
-.home-search-mini-button ion-icon {
-  font-size: 1.22rem;
-}
-
-.home-search-camera,
-.home-search-voice {
-  display: inline-flex;
-  width: 54px;
-  height: 54px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.24);
-  color: var(--trego-dark);
-}
-
-.home-search-camera ion-icon,
-.home-search-voice ion-icon {
-  font-size: 1.46rem;
-}
-
-.home-search-voice.active {
-  background: rgba(255, 106, 43, 0.14);
-  color: var(--trego-accent);
-}
-
-.home-search-leading {
-  color: rgba(47, 52, 70, 0.74);
-  font-size: 1.14rem;
+.home-search-shell::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 24%);
+  pointer-events: none;
 }
 
 .home-search-input {
+  flex: 1 1 auto;
   --padding-start: 0;
   --padding-end: 0;
-  --placeholder-color: rgba(47, 52, 70, 0.6);
+  --placeholder-color: rgba(47, 52, 70, 0.5);
   color: var(--trego-dark);
   font-size: 1rem;
   font-weight: 700;
 }
 
-.home-promo-rail {
+.home-search-actions {
   display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.home-quick-access {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
   gap: 10px;
+  color: rgba(47, 52, 70, 0.62);
 }
 
-.home-quick-access-card {
-  display: grid;
-  justify-items: start;
-  gap: 10px;
-  min-height: 86px;
-  padding: 14px 12px;
-  border: 1px solid var(--trego-border);
-  border-radius: 22px;
-  background: var(--trego-surface);
-  color: var(--trego-dark);
-  text-align: left;
-  box-shadow: var(--trego-shadow-soft);
+.home-search-clear,
+.home-search-camera,
+.home-search-voice {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
 }
 
-.home-quick-access-card ion-icon {
-  font-size: 1.22rem;
+.home-search-clear {
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.home-search-clear ion-icon {
+  font-size: 0.88rem;
+}
+
+.home-search-camera ion-icon,
+.home-search-voice ion-icon {
+  font-size: 1.08rem;
+}
+
+.home-search-voice.active {
   color: var(--trego-accent);
 }
 
-.home-quick-access-copy {
+.home-promo-rail {
   display: grid;
-  gap: 2px;
-}
-
-.home-quick-access-copy strong {
-  font-size: 0.8rem;
-  line-height: 1.1;
-}
-
-.home-quick-access-copy span {
-  color: var(--trego-muted);
-  font-size: 0.7rem;
-  line-height: 1.35;
-}
-
-.home-promo-rail::-webkit-scrollbar {
-  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .home-promo-card {
-  flex: 0 0 min(72vw, 240px);
   display: grid;
-  gap: 8px;
-  min-height: 112px;
-  padding: 18px;
-  border-radius: 26px;
+  gap: 7px;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 24px;
   background:
-    linear-gradient(135deg, rgba(255, 106, 43, 0.96), rgba(255, 138, 64, 0.82)),
-    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.22), transparent 26%);
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(27, 31, 41, 0.98), rgba(13, 16, 23, 0.98));
   color: #ffffff;
-  box-shadow: 0 18px 36px rgba(255, 106, 43, 0.2);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  min-width: 0;
 }
 
 .home-product-grid :deep(.product-card-mobile) {
@@ -623,32 +400,32 @@ function startVoiceSearch() {
   font-size: 0.74rem;
 }
 
-.home-promo-card:nth-child(2) {
+.home-promo-card:nth-child(1) {
   background:
-    linear-gradient(135deg, rgba(47, 52, 70, 0.96), rgba(69, 76, 99, 0.86)),
-    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.18), transparent 26%);
-  box-shadow: 0 18px 36px rgba(47, 52, 70, 0.18);
+    radial-gradient(circle at top right, rgba(118, 184, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(38, 45, 66, 0.98), rgba(19, 23, 35, 0.98));
 }
 
-.home-promo-card:nth-child(3) {
+.home-promo-card:nth-child(2) {
   background:
-    linear-gradient(135deg, rgba(255, 123, 0, 0.96), rgba(255, 173, 64, 0.86)),
-    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.22), transparent 26%);
+    radial-gradient(circle at top right, rgba(255, 154, 90, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(70, 40, 26, 0.98), rgba(38, 20, 12, 0.98));
 }
 
 .home-promo-card ion-icon {
-  font-size: 1.2rem;
+  font-size: 1rem;
+  color: rgba(255, 176, 122, 0.92);
 }
 
 .home-promo-card strong {
-  font-size: 1.3rem;
-  line-height: 1;
+  font-size: 1.12rem;
+  line-height: 1.05;
 }
 
 .home-promo-card span {
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(232, 236, 244, 0.72);
 }
 
 .recent-product-rail {
@@ -674,30 +451,20 @@ function startVoiceSearch() {
   border: 0;
 }
 
-@media (max-width: 620px) {
-  .home-quick-access {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 body[data-theme="dark"] .home-search-shell {
   border-color: rgba(255, 255, 255, 0.12);
   background:
-    linear-gradient(180deg, rgba(18, 18, 20, 0.54), rgba(10, 10, 12, 0.28)),
+    linear-gradient(180deg, rgba(18, 18, 20, 0.62), rgba(10, 10, 12, 0.34)),
     radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.08), transparent 30%);
 }
 
-body[data-theme="dark"] .home-search-mini-button {
-  border-color: rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(18, 18, 20, 0.76), rgba(10, 10, 12, 0.44)),
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.08), transparent 28%);
+body[data-theme="dark"] .home-search-actions {
   color: var(--trego-text);
 }
 
-body[data-theme="dark"] .home-search-camera,
-body[data-theme="dark"] .home-search-voice {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--trego-text);
+body[data-theme="dark"] .home-search-clear {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
+
 </style>

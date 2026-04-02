@@ -104,15 +104,17 @@ watch(
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page">
-        <section class="messages-topbar">
-          <AppBackButton back-to="/tabs/account" />
+        <section class="page-shell-with-back messages-header-shell">
+          <div class="page-back-anchor">
+            <AppBackButton back-to="/tabs/account" />
+          </div>
           <div class="messages-topbar-copy">
             <p class="section-kicker">Mesazhet</p>
             <h1>Messages</h1>
           </div>
         </section>
 
-        <section v-if="sessionState.user" class="messages-toolbar">
+        <section v-if="sessionState.sessionLoaded && sessionState.user" class="messages-toolbar">
           <button class="messages-support-button" type="button" @click="openSupport">
             <IonIcon :icon="headsetOutline" />
             <span>Contact support</span>
@@ -129,8 +131,12 @@ watch(
           </div>
         </section>
 
+        <section v-if="!sessionState.sessionLoaded" class="surface-card empty-panel messages-loading-panel">
+          <IonSpinner name="crescent" />
+        </section>
+
         <EmptyStatePanel
-          v-if="!sessionState.user"
+          v-else-if="!sessionState.user"
           title="Kyçu per te pare mesazhet"
           copy="Mesazhet ruhen ne backend-in aktual dhe shfaqen ketu me te njejtin account."
         >
@@ -177,19 +183,24 @@ watch(
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
+.messages-loading-panel {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+}
+
 .messages-login-button {
   margin-top: 14px;
 }
 
-.messages-topbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.messages-header-shell {
+  gap: 8px;
 }
 
 .messages-topbar-copy {
   display: grid;
   gap: 2px;
+  padding: 0 2px;
 }
 
 .messages-topbar-copy h1,

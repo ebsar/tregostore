@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonPage } from "@ionic/vue";
+import { IonButton, IonContent, IonPage, IonSpinner } from "@ionic/vue";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
@@ -48,8 +48,12 @@ function handleCheckout() {
       <div class="mobile-page mobile-page--tabbed">
         <div class="compact-page-title">Cart</div>
 
+        <section v-if="!sessionState.sessionLoaded" class="surface-card empty-panel cart-loading-panel">
+          <IonSpinner name="crescent" />
+        </section>
+
         <EmptyStatePanel
-          v-if="!sessionState.user"
+          v-else-if="!sessionState.user"
           title="Kyçu per te pare cart"
           copy="Per te vazhduar blerjen ne app, hyni me account-in ekzistues."
           class="guest-tab-empty"
@@ -98,6 +102,12 @@ function handleCheckout() {
 </template>
 
 <style scoped>
+.cart-loading-panel {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+}
+
 .cart-line {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);

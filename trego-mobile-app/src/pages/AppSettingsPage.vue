@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonIcon, IonPage } from "@ionic/vue";
+import { IonContent, IonIcon, IonPage } from "@ionic/vue";
 import {
   moonOutline,
   notificationsOutline,
@@ -160,10 +160,6 @@ async function handleEnablePushNotifications() {
             {{ pushUi.message }}
           </p>
         </section>
-
-        <IonButton class="ghost-button" @click="router.back()">
-          Kthehu
-        </IonButton>
       </div>
     </IonContent>
   </IonPage>

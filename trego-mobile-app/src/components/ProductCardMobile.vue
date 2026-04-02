@@ -117,11 +117,36 @@ const engagementItems = computed(() => ([
 
 <style scoped>
 .product-card-mobile {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 13px;
+  padding: 13px;
   height: 100%;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82)),
+    radial-gradient(circle at top left, rgba(255, 106, 43, 0.1), transparent 34%);
+  box-shadow:
+    0 18px 36px rgba(31, 41, 55, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.product-card-mobile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.56), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 40%);
+  pointer-events: none;
+}
+
+.product-card-mobile > * {
+  position: relative;
+  z-index: 1;
 }
 
 .product-card-mobile-media {
@@ -132,6 +157,19 @@ const engagementItems = computed(() => ([
   padding: 0;
   aspect-ratio: 0.84;
   background: var(--trego-interactive-bg-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 18px 28px rgba(31, 41, 55, 0.1);
+}
+
+.product-card-mobile-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7, 11, 20, 0.02), rgba(7, 11, 20, 0.16)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.36), transparent 28%);
+  pointer-events: none;
 }
 
 .product-card-mobile-open-hit {
@@ -152,9 +190,13 @@ const engagementItems = computed(() => ([
   justify-content: center;
   border: 1px solid var(--trego-input-border);
   border-radius: 999px;
-  background: var(--trego-interactive-bg-strong);
+  background: rgba(255, 255, 255, 0.84);
   color: var(--trego-dark);
-  box-shadow: 0 8px 18px rgba(31, 41, 55, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 10px 22px rgba(31, 41, 55, 0.12);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
   z-index: 1;
 }
 
@@ -174,10 +216,11 @@ const engagementItems = computed(() => ([
   align-items: center;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(255, 106, 43, 0.92);
+  background: linear-gradient(135deg, rgba(255, 123, 61, 0.96), rgba(255, 106, 43, 0.92));
   color: var(--trego-badge-text);
   font-size: 0.72rem;
   font-weight: 800;
+  box-shadow: 0 10px 18px rgba(255, 106, 43, 0.2);
 }
 
 .product-card-mobile-copy {
@@ -194,7 +237,7 @@ const engagementItems = computed(() => ([
   font-weight: 700;
   color: var(--trego-accent);
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.12em;
 }
 
 .product-card-mobile-title {
@@ -202,9 +245,9 @@ const engagementItems = computed(() => ([
   background: transparent;
   padding: 0;
   text-align: left;
-  font-size: 0.98rem;
+  font-size: 1rem;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.18;
   color: var(--trego-dark);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -216,7 +259,7 @@ const engagementItems = computed(() => ([
 .product-card-mobile-desc {
   margin: 0;
   color: var(--trego-muted);
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   line-height: 1.42;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -228,7 +271,7 @@ const engagementItems = computed(() => ([
 .product-card-mobile-variant {
   margin: -1px 0 0;
   color: var(--trego-accent);
-  font-size: 0.72rem;
+  font-size: 0.71rem;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -245,7 +288,7 @@ const engagementItems = computed(() => ([
   padding: 8px 10px;
   border-radius: 16px;
   border: 1px solid var(--trego-input-border);
-  background: var(--trego-interactive-bg);
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .product-card-mobile-engagement-item small {
@@ -277,8 +320,9 @@ const engagementItems = computed(() => ([
 
 .product-card-mobile-pricing strong {
   color: var(--trego-dark);
-  font-size: 1.02rem;
+  font-size: 1.06rem;
   line-height: 1;
+  letter-spacing: -0.03em;
 }
 
 .product-card-mobile-compare {
@@ -292,24 +336,52 @@ const engagementItems = computed(() => ([
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  color: var(--trego-muted);
+  color: var(--trego-dark);
   font-size: 0.78rem;
   padding: 6px 8px;
   border-radius: 999px;
-  background: var(--trego-interactive-bg);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 8px 18px rgba(31, 41, 55, 0.08);
 }
 
 .product-card-mobile-actions {
   display: flex;
   margin-top: auto;
+  padding-top: 2px;
 }
 
 .product-card-mobile-add {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   margin: 0;
   font-size: 0.82rem;
   --box-shadow: 0 14px 28px rgba(255, 106, 43, 0.18);
+}
+
+:global(body[data-native-app-shell="1"]) .product-card-mobile {
+  border-color: rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.84)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.42), transparent 32%);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+:global(body[data-theme="dark"]) .product-card-mobile {
+  background:
+    linear-gradient(180deg, rgba(12, 12, 14, 0.96), rgba(8, 8, 10, 0.9)),
+    radial-gradient(circle at top left, rgba(255, 106, 43, 0.12), transparent 34%);
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:global(body[data-theme="dark"]) .product-card-mobile-media::after {
+  background:
+    linear-gradient(180deg, rgba(7, 11, 20, 0.06), rgba(7, 11, 20, 0.24)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 28%);
 }
 
 .sr-only {

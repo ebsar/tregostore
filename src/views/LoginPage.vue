@@ -8,7 +8,7 @@ import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 const route = useRoute();
 const router = useRouter();
 const form = reactive({
-  email: "",
+  identifier: "",
   password: "",
 });
 const ui = reactive({
@@ -16,6 +16,11 @@ const ui = reactive({
   message: "",
   type: "",
 });
+
+function showSocialAuthMessage(provider) {
+  ui.message = `${provider} login po behet gati. Duhet te lidhen credential-et server-side per ta aktivizuar plotesisht.`;
+  ui.type = "success";
+}
 
 markRouteReady();
 
@@ -28,7 +33,7 @@ async function submitForm() {
     const { response, data } = await requestJson("/api/login", {
       method: "POST",
       body: JSON.stringify({
-        email: form.email.trim(),
+        identifier: form.identifier.trim(),
         password: form.password,
       }),
     });
@@ -72,12 +77,13 @@ async function submitForm() {
 
       <form class="auth-form" @submit.prevent="submitForm">
         <label class="field">
-          <span>Email</span>
+          <span>Email ose telefoni</span>
           <input
-            v-model="form.email"
-            name="email"
-            type="email"
-            placeholder="p.sh. emri@email.com"
+            v-model="form.identifier"
+            name="identifier"
+            type="text"
+            inputmode="email"
+            placeholder="p.sh. emri@email.com ose +383 44 123 456"
             required
           >
         </label>
@@ -98,6 +104,18 @@ async function submitForm() {
         </button>
       </form>
 
+      <div class="auth-social-stack" aria-label="Social login options">
+        <p class="auth-social-label">Vazhdo me</p>
+        <div class="auth-social-actions">
+          <button type="button" class="auth-social-button auth-social-button--apple" @click="showSocialAuthMessage('Apple')">
+            Continue with Apple
+          </button>
+          <button type="button" class="auth-social-button auth-social-button--google" @click="showSocialAuthMessage('Google')">
+            Continue with Google
+          </button>
+        </div>
+      </div>
+
       <div class="form-message" :class="ui.type" role="status" aria-live="polite">
         {{ ui.message }}
       </div>
@@ -112,3 +130,44 @@ async function submitForm() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.auth-social-stack {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-social-label {
+  margin: 0;
+  color: rgba(55, 65, 81, 0.72);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.auth-social-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-social-button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.78));
+  color: #1f2937;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+}
+
+.auth-social-button--apple {
+  background: linear-gradient(180deg, rgba(24, 24, 27, 0.96), rgba(39, 39, 42, 0.92));
+  color: #fff;
+}
+
+.auth-social-button--google {
+  color: #173b84;
+}
+</style>

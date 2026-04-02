@@ -136,8 +136,12 @@ async function scrollToSelectedOrder() {
           </p>
         </section>
 
+        <section v-if="!sessionState.sessionLoaded || loading" class="surface-card empty-panel">
+          <IonSpinner name="crescent" />
+        </section>
+
         <EmptyStatePanel
-          v-if="!sessionState.user"
+          v-else-if="!sessionState.user"
           title="Kyçu per te pare porosite"
           copy="Pasi te kyçesh, porosite nga i njejti backend do te shfaqen ketu."
         >
@@ -145,10 +149,6 @@ async function scrollToSelectedOrder() {
             Login
           </IonButton>
         </EmptyStatePanel>
-
-        <section v-else-if="loading" class="surface-card empty-panel">
-          <IonSpinner name="crescent" />
-        </section>
 
         <template v-else-if="orders.length">
           <section class="surface-card surface-card--strong section-card summary-surface-card">

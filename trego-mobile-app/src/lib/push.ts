@@ -74,6 +74,7 @@ function buildNotificationRoute(event: any): string {
   const messageId = normalizeNotificationValue(additionalData.messageId);
   const orderId = normalizeNotificationValue(additionalData.orderId);
   const orderItemId = normalizeNotificationValue(additionalData.orderItemId);
+  const productId = normalizeNotificationValue(additionalData.productId);
   const status = normalizeNotificationValue(additionalData.status).toLowerCase();
 
   if (type === "chat_message" && conversationId) {
@@ -99,6 +100,13 @@ function buildNotificationRoute(event: any): string {
     });
   }
 
+  if ((type === "sale_product" || type === "sale_ending") && productId) {
+    return appendNotificationQuery(`/product/${productId}`, {
+      fromPush: 1,
+      alertKind: normalizeNotificationValue(additionalData.alertKind),
+    });
+  }
+
   return appendNotificationQuery(
     normalizeNotificationPath(additionalData.path)
       || normalizeNotificationPath(additionalData.href)
@@ -109,6 +117,7 @@ function buildNotificationRoute(event: any): string {
       messageId,
       orderId,
       orderItemId,
+      productId,
       status,
       fromPush: 1,
     },

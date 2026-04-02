@@ -9,6 +9,7 @@ const router = useRouter();
 const form = reactive({
   fullName: "",
   email: "",
+  phoneNumber: "",
   birthDate: "",
   gender: "",
   password: "",
@@ -20,6 +21,11 @@ const ui = reactive({
 });
 
 markRouteReady();
+
+function showSocialAuthMessage(provider) {
+  ui.message = `${provider} sign up po behet gati. Duhet te lidhen credential-et server-side per ta aktivizuar plotesisht.`;
+  ui.type = "success";
+}
 
 function isStrongPassword(password) {
   return (
@@ -49,6 +55,7 @@ async function submitForm() {
       body: JSON.stringify({
         fullName: form.fullName.trim(),
         email: submittedEmail,
+        phoneNumber: form.phoneNumber.trim(),
         birthDate: form.birthDate,
         gender: form.gender,
         password: form.password,
@@ -72,6 +79,7 @@ async function submitForm() {
 
     form.fullName = "";
     form.email = "";
+    form.phoneNumber = "";
     form.birthDate = "";
     form.gender = "";
     form.password = "";
@@ -117,6 +125,17 @@ async function submitForm() {
           >
         </label>
 
+        <label class="field">
+          <span>Numri i telefonit</span>
+          <input
+            v-model="form.phoneNumber"
+            name="phoneNumber"
+            type="tel"
+            placeholder="p.sh. +383 44 123 456"
+            required
+          >
+        </label>
+
         <div class="field-row">
           <label class="field">
             <span>Data e lindjes</span>
@@ -153,6 +172,18 @@ async function submitForm() {
         </button>
       </form>
 
+      <div class="auth-social-stack" aria-label="Social signup options">
+        <p class="auth-social-label">Vazhdo me</p>
+        <div class="auth-social-actions">
+          <button type="button" class="auth-social-button auth-social-button--apple" @click="showSocialAuthMessage('Apple')">
+            Sign up with Apple
+          </button>
+          <button type="button" class="auth-social-button auth-social-button--google" @click="showSocialAuthMessage('Google')">
+            Sign up with Google
+          </button>
+        </div>
+      </div>
+
       <div class="form-message" :class="ui.type" role="status" aria-live="polite">
         {{ ui.message }}
       </div>
@@ -164,3 +195,44 @@ async function submitForm() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.auth-social-stack {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-social-label {
+  margin: 0;
+  color: rgba(55, 65, 81, 0.72);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.auth-social-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-social-button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.78));
+  color: #1f2937;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+}
+
+.auth-social-button--apple {
+  background: linear-gradient(180deg, rgba(24, 24, 27, 0.96), rgba(39, 39, 42, 0.92));
+  color: #fff;
+}
+
+.auth-social-button--google {
+  color: #173b84;
+}
+</style>

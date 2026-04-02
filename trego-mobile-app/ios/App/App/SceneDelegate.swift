@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -13,8 +14,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         let window = UIWindow(windowScene: windowScene)
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
-        window.rootViewController = storyboard.instantiateInitialViewController()
+        window.rootViewController = UIHostingController(rootView: TregoNativeRootView())
         window.makeKeyAndVisible()
         self.window = window
     }

@@ -100,7 +100,9 @@ watch(
         </section>
 
         <template v-else-if="business">
-          <AppBackButton back-to="/tabs/home" />
+          <div class="page-back-anchor">
+            <AppBackButton back-to="/tabs/home" />
+          </div>
           <section class="surface-card surface-card--strong store-hero">
             <div class="store-hero-media">
               <img :src="heroImage" :alt="business.businessName" />

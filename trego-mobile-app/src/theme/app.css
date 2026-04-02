@@ -44,8 +44,6 @@ body[data-theme="dark"] {
   padding: 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 20%, rgba(255, 106, 43, 0.22), transparent 20%),
-    radial-gradient(circle at 78% 16%, rgba(47, 52, 70, 0.12), transparent 22%),
     linear-gradient(180deg, rgba(251, 249, 247, 0.98), rgba(245, 243, 241, 0.98));
 }
 
@@ -74,56 +72,61 @@ body[data-theme="dark"] {
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 18px;
-  width: min(100%, 220px);
-  padding: 22px 20px;
-  border-radius: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.22)),
-    radial-gradient(circle at top center, rgba(255, 255, 255, 0.46), transparent 48%);
-  box-shadow:
-    0 24px 46px rgba(31, 41, 55, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    inset 0 -10px 18px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px) saturate(125%);
-  -webkit-backdrop-filter: blur(20px) saturate(125%);
-}
-
-.app-boot-splash__panel::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 28%),
-    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.26), transparent 34%);
-  opacity: 0.88;
-  pointer-events: none;
+  gap: 16px;
+  width: min(100%, 260px);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .app-boot-splash__logo {
   position: relative;
   z-index: 1;
-  width: min(100%, 156px);
+  width: min(100%, 250px);
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 10px 24px rgba(20, 30, 50, 0.14));
+  filter: drop-shadow(0 10px 22px rgba(20, 30, 50, 0.12));
 }
 
 .app-boot-splash__loader {
   position: relative;
   z-index: 1;
-  width: 38px;
-  height: 38px;
+  width: 52px;
+  height: 52px;
   border-radius: 999px;
-  border: 2.5px solid rgba(255, 255, 255, 0.36);
-  border-top-color: rgba(255, 106, 43, 0.92);
-  border-right-color: rgba(47, 52, 70, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.48), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.34),
-    0 10px 24px rgba(31, 41, 55, 0.1);
-  animation: boot-loader-spin 820ms linear infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    0 12px 28px rgba(31, 41, 55, 0.08);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+}
+
+.app-boot-splash__loader::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: inherit;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.88);
+  border-right-color: rgba(255, 255, 255, 0.42);
+  animation: boot-loader-spin 900ms linear infinite;
+}
+
+.app-boot-splash__loader::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.16) 62%, transparent 100%);
+  opacity: 0.82;
 }
 
 .app-status-banner {
@@ -199,9 +202,38 @@ body[data-theme="dark"] .app-gradient {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 112px);
 }
 
+body[data-ios-native-tabs="1"] .mobile-page--tabbed {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+body[data-ios-native-tabs="1"] ion-tab-bar,
+body[data-ios-native-tabs="1"] .mobile-tabbar {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body[data-ios-native-tabs="1"] ion-content {
+  --keyboard-offset: 0px !important;
+}
+
 .mobile-page--edge {
   max-width: none;
   padding-inline: 12px;
+}
+
+.page-shell-with-back {
+  display: grid;
+  gap: 12px;
+}
+
+.page-back-anchor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 46px;
+  padding-left: 1px;
 }
 
 .surface-card {
@@ -370,24 +402,38 @@ body[data-native-app-shell="1"] .product-card-mobile-add {
 
 body[data-theme="dark"] .app-boot-splash {
   background:
-    radial-gradient(circle at 18% 20%, rgba(255, 106, 43, 0.18), transparent 20%),
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.04), transparent 22%),
     linear-gradient(180deg, rgba(5, 5, 5, 0.99), rgba(0, 0, 0, 0.99));
 }
 
 body[data-theme="dark"] .app-boot-splash__panel {
-  border-color: rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(16, 16, 18, 0.52), rgba(8, 8, 10, 0.34)),
-    radial-gradient(circle at top center, rgba(255, 255, 255, 0.05), transparent 42%);
-  box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -12px 20px rgba(255, 255, 255, 0.02);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 body[data-theme="dark"] .app-boot-splash__logo {
   filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.28));
+}
+
+body[data-theme="dark"] .app-boot-splash__loader {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 28px rgba(0, 0, 0, 0.22);
+}
+
+body[data-theme="dark"] .app-boot-splash__loader::before {
+  border-color: rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.82);
+  border-right-color: rgba(255, 255, 255, 0.3);
+}
+
+body[data-theme="dark"] .app-boot-splash__loader::after {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 62%, transparent 100%);
 }
 
 .page-hero {
@@ -497,6 +543,16 @@ body[data-theme="dark"] .theme-choice-card {
 
 .cta-button {
   --border-radius: 18px;
+  --background: linear-gradient(135deg, #ff7b3d 0%, #ff6a2b 54%, #ef5e1f 100%);
+  --background-hover: linear-gradient(135deg, #ff854a 0%, #ff7234 54%, #f26525 100%);
+  --background-activated: linear-gradient(135deg, #ff6f32 0%, #f56224 54%, #e5571b 100%);
+  --box-shadow: 0 16px 34px rgba(255, 106, 43, 0.22);
+  --color: #fffdf9;
+  --padding-start: 18px;
+  --padding-end: 18px;
+  --ripple-color: rgba(255, 255, 255, 0.18);
+  position: relative;
+  overflow: hidden;
   min-height: 48px;
   font-weight: 800;
   letter-spacing: 0.01em;
@@ -512,6 +568,30 @@ body[data-theme="dark"] .theme-choice-card {
   color: var(--trego-dark);
 }
 
+body[data-native-app-shell="1"] .cta-button {
+  --border-radius: 20px;
+  --box-shadow: 0 18px 36px rgba(255, 106, 43, 0.24);
+  transform: translateZ(0);
+}
+
+body[data-native-app-shell="1"] .cta-button::part(native) {
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 18px 36px rgba(255, 106, 43, 0.22);
+}
+
+body[data-native-app-shell="1"] .ghost-button {
+  --background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.72));
+  --border-color: rgba(255, 255, 255, 0.82);
+  --box-shadow: 0 14px 30px rgba(31, 41, 55, 0.08);
+}
+
+body[data-native-app-shell="1"] .ghost-button::part(native) {
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
 body[data-theme="dark"] .ghost-button {
   --background: rgba(19, 27, 42, 0.8);
   --border-color: rgba(198, 214, 242, 0.14);
@@ -522,6 +602,104 @@ body[data-theme="dark"] .ghost-button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.auth-form-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-form-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.44), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 34%);
+  pointer-events: none;
+}
+
+.auth-form-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-native-app-shell="1"] .auth-form-card {
+  border-color: rgba(255, 255, 255, 0.84);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.8)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.42), transparent 34%);
+  box-shadow:
+    0 24px 48px rgba(31, 41, 55, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(18px) saturate(165%);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+body[data-native-app-shell="1"] .auth-form-card label span {
+  letter-spacing: 0.01em;
+}
+
+.auth-input,
+.auth-native-input {
+  display: block;
+  width: 100%;
+  --background: rgba(255, 255, 255, 0.92);
+  --border-radius: 18px;
+  --padding-start: 14px;
+  --padding-end: 14px;
+  --padding-top: 12px;
+  --padding-bottom: 12px;
+  --placeholder-color: rgba(107, 114, 128, 0.82);
+  min-height: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.84));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 10px 22px rgba(31, 41, 55, 0.05);
+}
+
+.auth-input::part(native) {
+  padding: 12px 14px;
+  color: var(--trego-dark);
+  font-size: 0.96rem;
+}
+
+.auth-input.ion-focus,
+.auth-native-input:focus {
+  border-color: rgba(255, 106, 43, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 0 0 4px rgba(255, 106, 43, 0.08),
+    0 12px 24px rgba(31, 41, 55, 0.08);
+}
+
+body[data-native-app-shell="1"] .auth-input,
+body[data-native-app-shell="1"] .auth-native-input {
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+
+body[data-native-app-shell="1"] .auth-input::part(native) {
+  background: transparent;
+}
+
+body[data-theme="dark"] .auth-input,
+body[data-theme="dark"] .auth-native-input {
+  --background: rgba(12, 12, 14, 0.94);
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(12, 12, 14, 0.94), rgba(8, 8, 10, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 26px rgba(0, 0, 0, 0.2);
+}
+
+body[data-theme="dark"] .auth-input::part(native) {
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .quick-link-card {

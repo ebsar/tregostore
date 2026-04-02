@@ -88,30 +88,46 @@ async function resendCode() {
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page auth-page">
-        <section class="auth-intro">
-          <AppBackButton back-to="/forgot-password" />
-          <h1>RESET PASSWORD</h1>
+        <section class="page-shell-with-back auth-shell">
+          <div class="page-back-anchor">
+            <AppBackButton back-to="/forgot-password" />
+          </div>
+          <div class="auth-intro">
+            <h1>RESET PASSWORD</h1>
+          </div>
         </section>
 
         <section class="surface-card surface-card--strong auth-form-card">
           <label>
             <span>Email</span>
-            <IonInput v-model="form.email" type="email" placeholder="email@domain.com" />
+            <IonInput v-model="form.email" class="auth-input" type="email" placeholder="email@domain.com" />
           </label>
 
           <label>
             <span>Kodi</span>
-            <IonInput v-model="form.code" type="text" inputmode="numeric" maxlength="6" placeholder="123456" />
+            <IonInput
+              v-model="form.code"
+              class="auth-input"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              placeholder="123456"
+            />
           </label>
 
           <label>
             <span>Fjalekalimi i ri</span>
-            <IonInput v-model="form.newPassword" type="password" placeholder="Fjalekalimi i ri" />
+            <IonInput v-model="form.newPassword" class="auth-input" type="password" placeholder="Fjalekalimi i ri" />
           </label>
 
           <label>
             <span>Konfirmo fjalekalimin</span>
-            <IonInput v-model="form.confirmPassword" type="password" placeholder="Perserite fjalekalimin" />
+            <IonInput
+              v-model="form.confirmPassword"
+              class="auth-input"
+              type="password"
+              placeholder="Perserite fjalekalimin"
+            />
           </label>
 
           <p v-if="form.message" class="auth-form-message" :class="form.type">{{ form.message }}</p>
@@ -137,9 +153,13 @@ async function resendCode() {
   min-height: 100%;
 }
 
+.auth-shell {
+  gap: 8px;
+}
+
 .auth-intro {
   text-align: center;
-  padding: 10px 8px 0;
+  padding: 0 8px;
 }
 
 .auth-intro h1 {
@@ -153,8 +173,8 @@ async function resendCode() {
 .auth-form-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 18px;
+  gap: 15px;
+  padding: 22px 18px 20px;
 }
 
 .auth-form-card label {
@@ -177,6 +197,7 @@ async function resendCode() {
 
 .auth-inline-button {
   --color: var(--trego-dark);
+  --border-radius: 16px;
   font-weight: 700;
 }
 

@@ -215,10 +215,10 @@ export async function fetchCurrentUserOptional(): Promise<SessionUser | null> {
   return data.user as SessionUser;
 }
 
-export async function loginUser(email: string, password: string) {
+export async function loginUser(identifier: string, password: string) {
   return requestJson("/api/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 }
 
@@ -244,6 +244,7 @@ export async function confirmPasswordReset(payload: {
 export async function registerUser(payload: {
   fullName: string;
   email: string;
+  phoneNumber: string;
   password: string;
   birthDate: string;
   gender: string;

@@ -52,15 +52,19 @@ async function submit() {
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page auth-page">
-        <section class="auth-intro">
-          <AppBackButton back-to="/login" />
-          <h1>FORGOT PASSWORD</h1>
+        <section class="page-shell-with-back auth-shell">
+          <div class="page-back-anchor">
+            <AppBackButton back-to="/login" />
+          </div>
+          <div class="auth-intro">
+            <h1>FORGOT PASSWORD</h1>
+          </div>
         </section>
 
         <section class="surface-card surface-card--strong auth-form-card">
           <label>
             <span>Email</span>
-            <IonInput v-model="form.email" type="email" placeholder="email@domain.com" />
+            <IonInput v-model="form.email" class="auth-input" type="email" placeholder="email@domain.com" />
           </label>
 
           <p v-if="form.message" class="auth-form-message" :class="form.type">{{ form.message }}</p>
@@ -80,9 +84,13 @@ async function submit() {
   min-height: 100%;
 }
 
+.auth-shell {
+  gap: 8px;
+}
+
 .auth-intro {
   text-align: center;
-  padding: 10px 8px 0;
+  padding: 0 8px;
 }
 
 .auth-intro h1 {
@@ -96,8 +104,8 @@ async function submit() {
 .auth-form-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 18px;
+  gap: 15px;
+  padding: 22px 18px 20px;
 }
 
 .auth-form-card label {

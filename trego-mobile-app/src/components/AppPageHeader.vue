@@ -13,8 +13,10 @@ const props = withDefaults(defineProps<{
 </script>
 
 <template>
-  <section class="page-hero-stack">
-    <AppBackButton :back-to="backTo" />
+  <section class="page-shell-with-back page-hero-stack">
+    <div class="page-back-anchor">
+      <AppBackButton :back-to="backTo" />
+    </div>
     <header class="page-hero surface-card surface-card--strong">
       <p v-if="kicker" class="section-kicker">{{ kicker }}</p>
       <h1>{{ title }}</h1>
@@ -25,7 +27,6 @@ const props = withDefaults(defineProps<{
 
 <style scoped>
 .page-hero-stack {
-  display: grid;
   gap: 10px;
 }
 </style>

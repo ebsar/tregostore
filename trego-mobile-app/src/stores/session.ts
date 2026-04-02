@@ -43,7 +43,7 @@ export async function ensureSession() {
     state.user = user;
     state.sessionLoaded = true;
     if (user) {
-      await refreshCounts();
+      void refreshCounts();
     }
     return user;
   })();

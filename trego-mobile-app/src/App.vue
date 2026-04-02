@@ -2,6 +2,7 @@
 import { IonApp, IonRouterOutlet } from "@ionic/vue";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
+import { Keyboard, KeyboardResize } from "@capacitor/keyboard";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppBootSplash from "./components/AppBootSplash.vue";
@@ -13,6 +14,7 @@ const route = useRoute();
 const router = useRouter();
 const { isOnline, isConnectionUnstable } = useConnectivity();
 const isNativeIOS = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+const useNativeIOSTabShell = false;
 const resumeListener = ref<{ remove: () => Promise<void> } | null>(null);
 const bootSplashVisible = ref(true);
 const bannerLabel = computed(() => {
@@ -115,7 +117,7 @@ function resolveTabId(path: string) {
 }
 
 function postNativeTabState() {
-  if (!isNativeIOS || typeof window === "undefined") {
+  if (!useNativeIOSTabShell || !isNativeIOS || typeof window === "undefined") {
     return;
   }
 
@@ -173,15 +175,26 @@ onMounted(async () => {
     console.warn("App state listener unavailable", error);
   }
 
+  if (isNativeIOS) {
+    try {
+      await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+    } catch (error) {
+      console.warn("Keyboard resize mode unavailable", error);
+    }
+  }
+
   if (typeof window !== "undefined") {
     window.addEventListener("touchstart", handleEdgeTouchStart, { passive: true });
     window.addEventListener("touchend", handleEdgeTouchEnd, { passive: true });
-    if (isNativeIOS) {
+    if (isNativeIOS && useNativeIOSTabShell) {
       window.addEventListener("trego:native-tab-navigate", handleNativeTabNavigate as EventListener);
       (window as any).__tregoNativeNavigateTo = navigateFromNative;
-      document.documentElement.dataset.nativeIosSwiftuiTabbar = "1";
-      document.body.dataset.nativeIosSwiftuiTabbar = "1";
+      document.documentElement.dataset.iosNativeTabs = "1";
+      document.body.dataset.iosNativeTabs = "1";
       postNativeTabState();
+    } else if (isNativeIOS) {
+      delete document.documentElement.dataset.iosNativeTabs;
+      delete document.body.dataset.iosNativeTabs;
     }
   }
 });
@@ -191,9 +204,11 @@ onUnmounted(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("touchstart", handleEdgeTouchStart);
     window.removeEventListener("touchend", handleEdgeTouchEnd);
-    if (isNativeIOS) {
+    if (isNativeIOS && useNativeIOSTabShell) {
       window.removeEventListener("trego:native-tab-navigate", handleNativeTabNavigate as EventListener);
       delete (window as any).__tregoNativeNavigateTo;
+      delete document.documentElement.dataset.iosNativeTabs;
+      delete document.body.dataset.iosNativeTabs;
     }
   }
 });

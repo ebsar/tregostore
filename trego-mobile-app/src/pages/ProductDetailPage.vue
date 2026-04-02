@@ -609,7 +609,9 @@ onUnmounted(() => {
             </div>
           </transition>
 
-          <AppBackButton back-to="/tabs/home" />
+          <div class="page-back-anchor">
+            <AppBackButton back-to="/tabs/home" />
+          </div>
 
           <p v-if="inlineMessage" class="product-inline-message" :class="inlineTone">{{ inlineMessage }}</p>
 

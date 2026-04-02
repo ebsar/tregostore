@@ -308,7 +308,16 @@ SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS = {
 USER_ROLES = {"client", "admin", "business"}
 CHAT_PARTICIPANT_ROLES = {"client", "business", "admin"}
 CHAT_MESSAGE_MAX_LENGTH = 1500
-GENDER_OPTIONS = {"mashkull", "femer"}
+GENDER_OPTIONS = {"mashkull", "femer", "other"}
+GENDER_ALIASES = {
+    "male": "mashkull",
+    "mashkull": "mashkull",
+    "female": "femer",
+    "femer": "femer",
+    "other": "other",
+    "tjeter": "other",
+    "tjetër": "other",
+}
 PAYMENT_METHODS = {"cash", "card-online"}
 DELIVERY_METHODS = {
     "standard": {
@@ -404,6 +413,9 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
 CHAT_ATTACHMENT_MAX_FILE_SIZE = 16 * 1024 * 1024
 CHAT_UNREAD_REMINDER_AFTER_HOURS = 2
 CHAT_UNREAD_REMINDER_BATCH_LIMIT = 100
+SALE_ENDING_SOON_WINDOW_HOURS = 24
+SALE_ENDING_SCAN_INTERVAL_SECONDS = 15 * 60
+SALE_ENDING_SCAN_BATCH_LIMIT = 12
 NOTIFICATIONS_PAGE_LIMIT = 50
 PAYOUT_HOLD_DAYS = 14
 STOCK_RESERVATION_HOLD_MINUTES = 15
@@ -425,6 +437,8 @@ CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
     "audio/x-wav": ".wav",
     "audio/ogg": ".ogg",
 }
+SALE_NOTIFICATION_SCAN_LOCK = threading.Lock()
+LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = 0.0
 IMAGE_CONTENT_TYPE_EXTENSIONS = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -567,6 +581,7 @@ USER_SELECT_COLUMNS = (
     "first_name, "
     "last_name, "
     "email, "
+    "phone_number, "
     "birth_date, "
     "gender, "
     "role, "
@@ -1385,10 +1400,28 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE users ADD COLUMN profile_image_path TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "users", "phone_number"):
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN phone_number TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "users", "phone_lookup"):
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN phone_lookup TEXT NOT NULL DEFAULT ''"
+        )
+
     if not column_exists(connection, "users", "last_seen_at"):
         connection.execute(
             "ALTER TABLE users ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''"
         )
+
+    connection.execute(
+        """
+        UPDATE users
+        SET phone_lookup = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '/', ''), '.', ''), ',', ''), '_', ''), CHAR(9), '')
+        WHERE COALESCE(phone_lookup, '') = '' AND COALESCE(phone_number, '') != ''
+        """
+    )
 
     connection.execute(
         """
@@ -1961,6 +1994,7 @@ def migrate_database(connection: DatabaseConnection) -> None:
             product_type,
             size,
             color,
+            sale_ends_at,
             variant_inventory,
             stock_quantity,
             ai_image_search_text,
@@ -1984,18 +2018,22 @@ def migrate_database(connection: DatabaseConnection) -> None:
         serialized_gallery = json.dumps(image_gallery, ensure_ascii=False)
         stored_gallery = str(product["image_gallery"] or "").strip()
         stored_image_path = str(product["image_path"] or "").strip()
+        normalized_sale_ends_at = datetime_to_storage_text(parsed_sale_ends_at) if (
+            (parsed_sale_ends_at := parse_storage_datetime(product["sale_ends_at"])) is not None
+        ) else ""
 
         if (
             serialized_gallery != stored_gallery
             or primary_image_path != stored_image_path
+            or normalized_sale_ends_at != str(product["sale_ends_at"] or "").strip()
         ):
             connection.execute(
                 """
                 UPDATE products
-                SET image_path = ?, image_gallery = ?
+                SET image_path = ?, image_gallery = ?, sale_ends_at = ?
                 WHERE id = ?
                 """,
-                (primary_image_path, serialized_gallery, product["id"]),
+                (primary_image_path, serialized_gallery, normalized_sale_ends_at, product["id"]),
             )
 
         heuristic_metadata = heuristic_product_image_search_metadata(
@@ -2762,6 +2800,48 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    if not table_exists(connection, "product_sale_alerts"):
+        connection.execute(
+            """
+            CREATE TABLE product_sale_alerts (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                alert_kind TEXT NOT NULL DEFAULT 'sale_live',
+                sale_signature TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE product_sale_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                alert_kind TEXT NOT NULL DEFAULT 'sale_live',
+                sale_signature TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_product_sale_alerts_unique
+        ON product_sale_alerts(product_id, user_id, alert_kind, sale_signature)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_sale_alerts_user_created
+        ON product_sale_alerts(user_id, created_at DESC)
+        """
+    )
+
     if not table_exists(connection, "reports"):
         connection.execute(
             """
@@ -3260,19 +3340,34 @@ def build_password_reset_redirect(email: str) -> str:
     return f"/ndrysho-fjalekalimin?mode=reset&email={quote(clean_email)}"
 
 
+def normalize_user_phone(raw_value: object) -> tuple[str, str]:
+    phone_number = re.sub(r"\s+", " ", str(raw_value or "").strip())
+    phone_lookup = re.sub(r"\D", "", phone_number)
+    return phone_number, phone_lookup
+
+
+def normalize_gender_value(raw_value: object) -> str:
+    return GENDER_ALIASES.get(str(raw_value or "").strip().lower(), "")
+
+
 def validate_registration(data: dict[str, str]) -> list[str]:
     errors: list[str] = []
     full_name = data.get("fullName", "").strip()
     email = data.get("email", "").strip().lower()
+    phone_number = data.get("phoneNumber", "").strip()
     password = data.get("password", "")
     birth_date = data.get("birthDate", "").strip()
-    gender = data.get("gender", "").strip().lower()
+    gender = normalize_gender_value(data.get("gender", ""))
+    phone_digits = re.sub(r"\D", "", phone_number)
 
     if len(full_name) < 2:
         errors.append("Emri duhet te kete te pakten 2 shkronja.")
 
     if not EMAIL_RE.match(email):
         errors.append("Vendos nje email valid.")
+
+    if len(phone_digits) < 6:
+        errors.append("Vendos nje numer telefoni valid.")
 
     errors.extend(validate_password_strength(password, label="Fjalekalimi"))
 
@@ -3294,11 +3389,14 @@ def validate_registration(data: dict[str, str]) -> list[str]:
 
 def validate_login(data: dict[str, str]) -> list[str]:
     errors: list[str] = []
-    email = data.get("email", "").strip().lower()
+    identifier = str(
+        data.get("identifier", data.get("email", data.get("phoneNumber", "")))
+    ).strip()
     password = data.get("password", "")
+    phone_digits = re.sub(r"\D", "", identifier)
 
-    if not EMAIL_RE.match(email):
-        errors.append("Vendos nje email valid.")
+    if not EMAIL_RE.match(identifier.lower()) and len(phone_digits) < 6:
+        errors.append("Vendos nje email ose numer telefoni valid.")
 
     if not password:
         errors.append("Shkruaje fjalekalimin.")
@@ -3416,7 +3514,7 @@ def validate_profile_update(data: dict[str, object]) -> tuple[list[str], dict[st
     first_name = str(data.get("firstName", "")).strip()
     last_name = str(data.get("lastName", "")).strip()
     birth_date = str(data.get("birthDate", "")).strip()
-    gender = str(data.get("gender", "")).strip().lower()
+    gender = normalize_gender_value(data.get("gender", ""))
     profile_image_path = normalize_image_path(data.get("profileImagePath"))
 
     if len(first_name) < 2:
@@ -3990,7 +4088,8 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
 
     if sale_ends_at:
         try:
-            datetime.fromisoformat(sale_ends_at.replace("Z", "+00:00"))
+            parsed_sale_ends_at = datetime.fromisoformat(sale_ends_at.replace("Z", "+00:00"))
+            sale_ends_at = datetime_to_storage_text(parsed_sale_ends_at)
         except ValueError:
             errors.append("Afati i zbritjes nuk eshte ne format valid.")
             sale_ends_at = ""
@@ -6951,6 +7050,7 @@ def serialize_user(row: sqlite3.Row) -> dict[str, object]:
         "firstName": row["first_name"],
         "lastName": row["last_name"],
         "email": row["email"],
+        "phoneNumber": row["phone_number"],
         "birthDate": row["birth_date"],
         "gender": row["gender"],
         "role": row["role"],
@@ -8302,6 +8402,37 @@ def fetch_user_by_email(email: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def fetch_user_by_phone_lookup(phone_lookup: str) -> sqlite3.Row | None:
+    normalized_lookup = re.sub(r"\D", "", str(phone_lookup or ""))
+    if not normalized_lookup:
+        return None
+
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+            """
+            + USER_AUTH_SELECT_COLUMNS
+            + """
+            FROM users
+            WHERE phone_lookup = ?
+            LIMIT 1
+            """,
+            (normalized_lookup,),
+        ).fetchone()
+
+
+def fetch_user_by_login_identifier(identifier: str) -> sqlite3.Row | None:
+    normalized_identifier = str(identifier or "").strip()
+    if not normalized_identifier:
+        return None
+
+    if EMAIL_RE.match(normalized_identifier.lower()):
+        return fetch_user_by_email(normalized_identifier.lower())
+
+    return fetch_user_by_phone_lookup(normalized_identifier)
+
+
 def fetch_user_by_id(user_id: int) -> sqlite3.Row | None:
     with get_db_connection() as connection:
         return connection.execute(
@@ -8879,6 +9010,467 @@ def send_push_notifications(messages: list[dict[str, object]]) -> list[str]:
     return send_push_notifications_via_onesignal(messages)
 
 
+def get_order_status_notification_copy(normalized_status: str) -> tuple[str, str]:
+    status_key = str(normalized_status or "").strip().lower()
+    title_map = {
+        "confirmed": "Porosia u konfirmua",
+        "packed": "Porosia u paketua",
+        "shipped": "Porosia u dergua",
+        "delivered": "Porosia u dorezua",
+    }
+    body_map = {
+        "confirmed": "u konfirmua dhe po pergatitet",
+        "packed": "u paketua dhe po behet gati per dergese",
+        "shipped": "u dergua dhe eshte ne transport",
+        "delivered": "u dorezua me sukses",
+    }
+    return (
+        title_map.get(status_key, "Perditesim porosie"),
+        body_map.get(status_key, "u perditesua"),
+    )
+
+
+def build_chat_alert_payload(
+    *,
+    message_row: sqlite3.Row | None,
+) -> dict[str, object] | None:
+    if not message_row:
+        return None
+
+    recipient_user_id = int(message_row["recipient_user_id"] or 0)
+    if recipient_user_id <= 0:
+        return None
+
+    sender_role = str(message_row["sender_role"] or "").strip().lower() or "client"
+    sender_name = get_chat_display_name(
+        role=sender_role,
+        full_name=str(message_row["sender_full_name"] or "").strip(),
+        business_name=str(message_row["sender_business_name"] or "").strip(),
+    )
+    preview = str(message_row["body"] or "").strip()
+    if not preview and str(message_row["attachment_path"] or "").strip():
+        preview = "Ju erdhi nje bashkangjitje e re."
+    preview = re.sub(r"\s+", " ", preview).strip()
+    if len(preview) > 120:
+        preview = f"{preview[:117].rstrip()}..."
+
+    if sender_role == "admin":
+        title = "Mesazh i ri nga support"
+    elif sender_role == "business":
+        title = f"Mesazh i ri nga {sender_name or 'biznesi'}"
+    else:
+        title = f"Mesazh i ri nga {sender_name or 'klienti'}"
+
+    conversation_id = int(message_row["conversation_id"] or 0)
+    message_id = int(message_row["id"] or 0)
+    return {
+        "external_id": str(recipient_user_id),
+        "title": title,
+        "body": preview or "Keni nje mesazh te ri ne TREGO.",
+        "path": f"/messages/{conversation_id}" if conversation_id > 0 else "/messages",
+        "href": f"/mesazhet?conversationId={conversation_id}" if conversation_id > 0 else "/mesazhet",
+        "existingAndroidChannelId": "trego_messages",
+        "data": {
+            "type": "chat_message",
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "senderRole": sender_role,
+        },
+    }
+
+
+def is_product_sale_active(product_row: sqlite3.Row | dict[str, object] | None) -> bool:
+    if not product_row:
+        return False
+
+    try:
+        price = round(float(product_row["price"] if isinstance(product_row, sqlite3.Row) else product_row.get("price", 0)) or 0, 2)
+    except (TypeError, ValueError):
+        price = 0.0
+    try:
+        compare_at_price = round(
+            float(
+                product_row["compare_at_price"]
+                if isinstance(product_row, sqlite3.Row)
+                else product_row.get("compare_at_price", product_row.get("compareAtPrice", 0))
+            )
+            or 0,
+            2,
+        )
+    except (TypeError, ValueError):
+        compare_at_price = 0.0
+
+    if compare_at_price <= 0 or compare_at_price <= price:
+        return False
+
+    raw_sale_ends_at = (
+        str(product_row["sale_ends_at"] or "").strip()
+        if isinstance(product_row, sqlite3.Row)
+        else str(product_row.get("sale_ends_at", product_row.get("saleEndsAt", "")) or "").strip()
+    )
+    sale_ends_at = parse_storage_datetime(raw_sale_ends_at)
+    if sale_ends_at and sale_ends_at <= utc_now():
+        return False
+
+    return True
+
+
+def build_product_sale_signature(product_row: sqlite3.Row | dict[str, object] | None) -> str:
+    if not product_row:
+        return ""
+
+    product_id = int(product_row["id"] if isinstance(product_row, sqlite3.Row) else product_row.get("id", 0) or 0)
+    try:
+        price = round(float(product_row["price"] if isinstance(product_row, sqlite3.Row) else product_row.get("price", 0)) or 0, 2)
+    except (TypeError, ValueError):
+        price = 0.0
+    try:
+        compare_at_price = round(
+            float(
+                product_row["compare_at_price"]
+                if isinstance(product_row, sqlite3.Row)
+                else product_row.get("compare_at_price", product_row.get("compareAtPrice", 0))
+            )
+            or 0,
+            2,
+        )
+    except (TypeError, ValueError):
+        compare_at_price = 0.0
+    sale_ends_at = (
+        str(product_row["sale_ends_at"] or "").strip()
+        if isinstance(product_row, sqlite3.Row)
+        else str(product_row.get("sale_ends_at", product_row.get("saleEndsAt", "")) or "").strip()
+    )
+    return f"{product_id}:{price:.2f}:{compare_at_price:.2f}:{sale_ends_at}"
+
+
+def calculate_product_discount_percent(product_row: sqlite3.Row | dict[str, object] | None) -> int:
+    if not product_row:
+        return 0
+
+    try:
+        price = float(product_row["price"] if isinstance(product_row, sqlite3.Row) else product_row.get("price", 0) or 0)
+        compare_at_price = float(
+            product_row["compare_at_price"]
+            if isinstance(product_row, sqlite3.Row)
+            else product_row.get("compare_at_price", product_row.get("compareAtPrice", 0))
+            or 0
+        )
+    except (TypeError, ValueError):
+        return 0
+
+    if compare_at_price <= 0 or compare_at_price <= price or price <= 0:
+        return 0
+
+    return max(0, int(round(((compare_at_price - price) / compare_at_price) * 100)))
+
+
+def fetch_product_sale_recipient_ids(
+    connection: DatabaseConnection,
+    *,
+    product_id: int,
+    exclude_user_id: int = 0,
+) -> list[int]:
+    rows = connection.execute(
+        """
+        SELECT DISTINCT user_id
+        FROM (
+            SELECT wi.user_id AS user_id
+            FROM wishlist_items wi
+            WHERE wi.product_id = ?
+            UNION
+            SELECT cl.user_id AS user_id
+            FROM cart_lines cl
+            WHERE cl.product_id = ?
+        ) interested_users
+        WHERE user_id IS NOT NULL
+        ORDER BY user_id ASC
+        """,
+        (product_id, product_id),
+    ).fetchall()
+
+    recipient_ids: list[int] = []
+    for row in rows:
+        user_id = int(row["user_id"] or 0)
+        if user_id <= 0 or (exclude_user_id > 0 and user_id == exclude_user_id):
+            continue
+        recipient_ids.append(user_id)
+    return recipient_ids
+
+
+def register_product_sale_alert(
+    connection: DatabaseConnection,
+    *,
+    product_id: int,
+    user_id: int,
+    alert_kind: str,
+    sale_signature: str,
+) -> bool:
+    existing_row = connection.execute(
+        """
+        SELECT id
+        FROM product_sale_alerts
+        WHERE product_id = ?
+          AND user_id = ?
+          AND alert_kind = ?
+          AND sale_signature = ?
+        LIMIT 1
+        """,
+        (
+            product_id,
+            user_id,
+            str(alert_kind or "").strip().lower(),
+            str(sale_signature or "").strip(),
+        ),
+    ).fetchone()
+    if existing_row:
+        return False
+
+    execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO product_sale_alerts (
+            product_id,
+            user_id,
+            alert_kind,
+            sale_signature,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            product_id,
+            user_id,
+            str(alert_kind or "").strip().lower(),
+            str(sale_signature or "").strip(),
+        ),
+    )
+    return True
+
+
+def build_product_sale_alert_copy(
+    *,
+    product_row: sqlite3.Row,
+    alert_kind: str,
+) -> tuple[str, str]:
+    product_title = str(product_row["title"] or "").strip() or "Produkti"
+    discount_percent = calculate_product_discount_percent(product_row)
+    sale_ends_at = parse_storage_datetime(str(product_row["sale_ends_at"] or "").strip())
+    deadline_copy = (
+        sale_ends_at.strftime("%d.%m ne %H:%M")
+        if sale_ends_at is not None
+        else ""
+    )
+
+    if str(alert_kind or "").strip().lower() == "sale_ending":
+        title = "Zbritja po mbaron"
+        if deadline_copy:
+            body = f"`{product_title}` mbaron se shpejti ne sale deri me {deadline_copy}."
+        else:
+            body = f"`{product_title}` eshte ende ne sale, por oferta po mbaron se shpejti."
+        return title, body
+
+    title = "Produkti hyri ne zbritje"
+    if discount_percent > 0:
+        body = f"`{product_title}` tani eshte ne sale me rreth -{discount_percent}%."
+    else:
+        body = f"`{product_title}` tani eshte ne sale."
+    return title, body
+
+
+def queue_product_sale_alert_messages(
+    connection: DatabaseConnection,
+    *,
+    product_row: sqlite3.Row | None,
+    alert_kind: str,
+) -> list[dict[str, object]]:
+    if not product_row or not is_product_sale_active(product_row):
+        return []
+
+    product_id = int(product_row["id"] or 0)
+    if product_id <= 0:
+        return []
+
+    owner_user_id = int(product_row["created_by_user_id"] or 0)
+    sale_signature = build_product_sale_signature(product_row)
+    recipient_ids = fetch_product_sale_recipient_ids(
+        connection,
+        product_id=product_id,
+        exclude_user_id=owner_user_id,
+    )
+    if not recipient_ids:
+        return []
+
+    title, body = build_product_sale_alert_copy(
+        product_row=product_row,
+        alert_kind=alert_kind,
+    )
+    product_path = f"/product/{product_id}"
+    product_href = f"/produkti?id={product_id}"
+    normalized_alert_kind = str(alert_kind or "").strip().lower() or "sale_live"
+
+    messages: list[dict[str, object]] = []
+    for recipient_user_id in recipient_ids:
+        if not register_product_sale_alert(
+            connection,
+            product_id=product_id,
+            user_id=recipient_user_id,
+            alert_kind=normalized_alert_kind,
+            sale_signature=sale_signature,
+        ):
+            continue
+
+        create_notification(
+            connection,
+            user_id=recipient_user_id,
+            notification_type="promotion",
+            title=title,
+            body=body,
+            href=product_href,
+            metadata={
+                "productId": product_id,
+                "alertKind": normalized_alert_kind,
+            },
+        )
+        messages.append(
+            {
+                "external_id": str(recipient_user_id),
+                "title": title,
+                "body": body,
+                "path": product_path,
+                "existingAndroidChannelId": "trego_updates",
+                "data": {
+                    "type": "sale_ending" if normalized_alert_kind == "sale_ending" else "sale_product",
+                    "productId": product_id,
+                    "alertKind": normalized_alert_kind,
+                },
+            }
+        )
+
+    return messages
+
+
+def prepare_product_sale_notifications_for_change(
+    connection: DatabaseConnection,
+    *,
+    product_row: sqlite3.Row | None,
+    previous_product_row: sqlite3.Row | None = None,
+) -> list[dict[str, object]]:
+    if not product_row or not bool(product_row["is_public"]):
+        return []
+
+    messages: list[dict[str, object]] = []
+    previous_sale_active = is_product_sale_active(previous_product_row)
+    current_sale_active = is_product_sale_active(product_row)
+    if not current_sale_active:
+        return []
+
+    just_entered_sale = not previous_sale_active
+    if not previous_sale_active:
+        messages.extend(
+            queue_product_sale_alert_messages(
+                connection,
+                product_row=product_row,
+                alert_kind="sale_live",
+            )
+        )
+
+    sale_ends_at = parse_storage_datetime(str(product_row["sale_ends_at"] or "").strip())
+    if sale_ends_at is not None and not just_entered_sale:
+        now_value = utc_now()
+        if now_value < sale_ends_at <= now_value + timedelta(hours=SALE_ENDING_SOON_WINDOW_HOURS):
+            previous_sale_ends_at = parse_storage_datetime(
+                str(previous_product_row["sale_ends_at"] or "").strip()
+            ) if previous_product_row else None
+            was_already_in_window = bool(
+                previous_sale_active
+                and previous_sale_ends_at is not None
+                and now_value < previous_sale_ends_at <= now_value + timedelta(hours=SALE_ENDING_SOON_WINDOW_HOURS)
+            )
+            if not was_already_in_window:
+                messages.extend(
+                    queue_product_sale_alert_messages(
+                        connection,
+                        product_row=product_row,
+                        alert_kind="sale_ending",
+                    )
+                )
+
+    return messages
+
+
+def prepare_due_sale_ending_notifications(
+    connection: DatabaseConnection,
+    *,
+    limit: int = SALE_ENDING_SCAN_BATCH_LIMIT,
+) -> list[dict[str, object]]:
+    now_value = utc_now()
+    window_end = now_value + timedelta(hours=SALE_ENDING_SOON_WINDOW_HOURS)
+    product_rows = connection.execute(
+        """
+        SELECT
+        """
+        + PRODUCT_SELECT_COLUMNS
+        + """
+        FROM products
+        """
+        + PRODUCT_SELECT_RELATION_JOINS
+        + """
+        WHERE products.is_public = 1
+          AND COALESCE(products.compare_at_price, 0) > COALESCE(products.price, 0)
+          AND TRIM(COALESCE(products.sale_ends_at, '')) <> ''
+          AND products.sale_ends_at > ?
+          AND products.sale_ends_at <= ?
+        ORDER BY products.sale_ends_at ASC, products.id ASC
+        LIMIT ?
+        """,
+        (
+            datetime_to_storage_text(now_value),
+            datetime_to_storage_text(window_end),
+            max(1, int(limit)),
+        ),
+    ).fetchall()
+
+    messages: list[dict[str, object]] = []
+    for product_row in product_rows:
+        messages.extend(
+            queue_product_sale_alert_messages(
+                connection,
+                product_row=product_row,
+                alert_kind="sale_ending",
+            )
+        )
+    return messages
+
+
+def maybe_dispatch_due_sale_notifications() -> None:
+    global LAST_SALE_NOTIFICATION_SCAN_MONOTONIC
+
+    now_monotonic = time.monotonic()
+    if now_monotonic - LAST_SALE_NOTIFICATION_SCAN_MONOTONIC < SALE_ENDING_SCAN_INTERVAL_SECONDS:
+        return
+
+    if not SALE_NOTIFICATION_SCAN_LOCK.acquire(blocking=False):
+        return
+
+    try:
+        now_monotonic = time.monotonic()
+        if now_monotonic - LAST_SALE_NOTIFICATION_SCAN_MONOTONIC < SALE_ENDING_SCAN_INTERVAL_SECONDS:
+            return
+        LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = now_monotonic
+
+        with get_db_connection() as connection:
+            messages = prepare_due_sale_ending_notifications(connection)
+
+        push_warnings = send_push_notifications(messages)
+        for warning in push_warnings:
+            print(f"[TREGO] Push warning: {warning}", flush=True)
+    except Exception as error:
+        print(f"[TREGO] Sale notification scan skipped: {error}", flush=True)
+    finally:
+        SALE_NOTIFICATION_SCAN_LOCK.release()
+
+
 def build_business_order_push_messages(order_rows: list[sqlite3.Row]) -> list[dict[str, object]]:
     grouped_rows: dict[int, list[sqlite3.Row]] = defaultdict(list)
     for row in order_rows:
@@ -8930,27 +9522,18 @@ def build_customer_order_status_push_message(
         return []
 
     normalized_status = str(next_status or "").strip().lower()
-    if normalized_status not in {"confirmed", "shipped", "delivered"}:
+    if normalized_status not in {"confirmed", "packed", "shipped", "delivered"}:
         return []
 
     product_title = str(order_item_row["product_title"] or "").strip() or "Produkti juaj"
     order_id = int(order_item_row["order_id"] or 0)
-    status_copy_map = {
-        "confirmed": "u konfirmua dhe po pergatitet",
-        "shipped": "u dergua dhe eshte ne transport",
-        "delivered": "u dorezua me sukses",
-    }
-    title_map = {
-        "confirmed": "Porosia u konfirmua",
-        "shipped": "Porosia u dergua",
-        "delivered": "Porosia u dorezua",
-    }
+    title, body_copy = get_order_status_notification_copy(normalized_status)
 
     return [
         {
             "external_id": str(customer_user_id),
-            "title": title_map.get(normalized_status, "Perditesim porosie"),
-            "body": f"{product_title} {status_copy_map.get(normalized_status, 'u perditesua')}.",
+            "title": title,
+            "body": f"{product_title} {body_copy}.",
             "path": "/orders",
             "existingAndroidChannelId": "trego_orders",
             "data": {
@@ -8967,47 +9550,18 @@ def build_chat_push_messages(
     *,
     message_row: sqlite3.Row | None,
 ) -> list[dict[str, object]]:
-    if not message_row:
+    payload = build_chat_alert_payload(message_row=message_row)
+    if not payload:
         return []
-
-    sender_role = str(message_row["sender_role"] or "").strip().lower()
-    if sender_role not in {"business", "admin"}:
-        return []
-
-    recipient_user_id = int(message_row["recipient_user_id"] or 0)
-    if recipient_user_id <= 0:
-        return []
-
-    sender_name = get_chat_display_name(
-        role=sender_role,
-        full_name=str(message_row["sender_full_name"] or "").strip(),
-        business_name=str(message_row["sender_business_name"] or "").strip(),
-    )
-    preview = str(message_row["body"] or "").strip()
-    if not preview and str(message_row["attachment_path"] or "").strip():
-        preview = "Ju erdhi nje bashkangjitje e re."
-    preview = re.sub(r"\s+", " ", preview).strip()
-    if len(preview) > 120:
-        preview = f"{preview[:117].rstrip()}..."
-
-    if sender_role == "admin":
-        title = "Mesazh i ri nga support"
-    else:
-        title = f"Mesazh i ri nga {sender_name or 'biznesi'}"
 
     return [
         {
-            "external_id": str(recipient_user_id),
-            "title": title,
-            "body": preview or "Keni nje mesazh te ri ne TREGO.",
-            "path": "/messages",
-            "existingAndroidChannelId": "trego_messages",
-            "data": {
-                "type": "chat_message",
-                "conversationId": int(message_row["conversation_id"] or 0),
-                "messageId": int(message_row["id"] or 0),
-                "senderRole": sender_role,
-            },
+            "external_id": str(payload["external_id"]),
+            "title": str(payload["title"]),
+            "body": str(payload["body"]),
+            "path": str(payload["path"]),
+            "existingAndroidChannelId": str(payload["existingAndroidChannelId"]),
+            "data": dict(payload["data"]) if isinstance(payload.get("data"), dict) else {},
         }
     ]
 
@@ -13108,6 +13662,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = parse_qs(parsed_url.query)
+        maybe_dispatch_due_sale_notifications()
 
         if path.startswith("/uploads/"):
             self.handle_uploaded_file(path)
@@ -13288,6 +13843,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        maybe_dispatch_due_sale_notifications()
 
         if path == "/api/register":
             self.handle_register()
@@ -13505,13 +14061,37 @@ class AppHandler(SimpleHTTPRequestHandler):
         full_name = payload["fullName"].strip()
         first_name, last_name = split_full_name(full_name)
         email = payload["email"].strip().lower()
+        phone_number, phone_lookup = normalize_user_phone(payload.get("phoneNumber", ""))
         password_hash = hash_password(payload["password"])
         birth_date = payload["birthDate"].strip()
-        gender = payload["gender"].strip().lower()
+        gender = normalize_gender_value(payload.get("gender", ""))
         verification_code = generate_email_verification_code()
 
         try:
             with get_db_connection() as connection:
+                existing_user = connection.execute(
+                    """
+                    SELECT id, email, phone_lookup
+                    FROM users
+                    WHERE email = ? OR (phone_lookup != '' AND phone_lookup = ?)
+                    LIMIT 1
+                    """,
+                    (email, phone_lookup),
+                ).fetchone()
+                if existing_user:
+                    if str(existing_user["email"] or "").strip().lower() == email:
+                        self.send_json(
+                            409,
+                            {"ok": False, "message": "Ky email ekziston tashme ne databaze."},
+                        )
+                        return
+
+                    self.send_json(
+                        409,
+                        {"ok": False, "message": "Ky numer telefoni ekziston tashme ne databaze."},
+                    )
+                    return
+
                 user_id = execute_insert_and_get_id(
                     connection,
                     """
@@ -13520,6 +14100,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                         first_name,
                         last_name,
                         email,
+                        phone_number,
+                        phone_lookup,
                         password_hash,
                         birth_date,
                         gender,
@@ -13534,6 +14116,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                         first_name,
                         last_name,
                         email,
+                        phone_number,
+                        phone_lookup,
                         password_hash,
                         birth_date,
                         gender,
@@ -13546,7 +14130,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
-                {"ok": False, "message": "Ky email ekziston tashme ne databaze."},
+                {"ok": False, "message": "Ky email ose numer telefoni ekziston tashme ne databaze."},
             )
             return
 
@@ -13575,6 +14159,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "id": user_id,
                     "fullName": full_name,
                     "email": email,
+                    "phoneNumber": phone_number,
                     "role": "client",
                     "profileImagePath": "",
                 },
@@ -13594,16 +14179,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
-        email = payload["email"].strip().lower()
+        identifier = str(
+            payload.get("identifier", payload.get("email", payload.get("phoneNumber", "")))
+        ).strip()
         password = payload["password"]
-        user = fetch_user_by_email(email)
+        user = fetch_user_by_login_identifier(identifier)
 
         if not user:
             self.send_json(
                 401,
                 {
                     "ok": False,
-                    "message": "Nuk ekziston nje llogari me kete email.",
+                    "message": "Nuk ekziston nje llogari me kete email ose numer telefoni.",
                 },
             )
             return
@@ -13627,7 +14214,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "Duhet ta verifikosh email-in para se te kyçesh. "
                         "Po kalon te faqja e verifikimit."
                     ),
-                    "redirectTo": build_email_verification_redirect(email),
+                    "redirectTo": build_email_verification_redirect(str(user["email"] or "").strip().lower()),
                 },
             )
             return
@@ -15371,6 +15958,23 @@ class AppHandler(SimpleHTTPRequestHandler):
         if serialized_conversation is not None:
             serialized_conversation["counterpartTyping"] = False
 
+        chat_alert_payload = build_chat_alert_payload(message_row=message_row)
+        if chat_alert_payload:
+            with get_db_connection() as connection:
+                create_notification(
+                    connection,
+                    user_id=int(chat_alert_payload["external_id"]),
+                    notification_type="message",
+                    title=str(chat_alert_payload["title"]),
+                    body=str(chat_alert_payload["body"]),
+                    href=str(chat_alert_payload.get("href") or "/mesazhet"),
+                    metadata=(
+                        dict(chat_alert_payload["data"])
+                        if isinstance(chat_alert_payload.get("data"), dict)
+                        else {}
+                    ),
+                )
+
         push_warnings = send_push_notifications(
             build_chat_push_messages(message_row=message_row)
         )
@@ -16419,6 +17023,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        sale_push_messages: list[dict[str, object]] = []
         with get_db_connection() as connection:
             product_id = insert_product_for_owner(
                 connection,
@@ -16440,6 +17045,14 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (product_id,),
             ).fetchone()
+            sale_push_messages = prepare_product_sale_notifications_for_change(
+                connection,
+                product_row=product_row,
+            )
+
+        push_warnings = send_push_notifications(sale_push_messages)
+        for warning in push_warnings:
+            print(f"[TREGO] Push warning: {warning}", flush=True)
 
         self.send_json(
             201,
@@ -16525,6 +17138,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             ),
         )
 
+        sale_push_messages: list[dict[str, object]] = []
         with get_db_connection() as connection:
             connection.execute(
                 """
@@ -16589,6 +17203,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (product_id,),
             ).fetchone()
+            sale_push_messages = prepare_product_sale_notifications_for_change(
+                connection,
+                product_row=product_row,
+                previous_product_row=product,
+            )
+
+        push_warnings = send_push_notifications(sale_push_messages)
+        for warning in push_warnings:
+            print(f"[TREGO] Push warning: {warning}", flush=True)
 
         self.send_json(
             200,
@@ -17992,12 +18615,13 @@ class AppHandler(SimpleHTTPRequestHandler):
 
             customer_user_id = int(order_item_row["customer_user_id"] or 0)
             if customer_user_id > 0:
+                status_title, status_body_copy = get_order_status_notification_copy(next_status)
                 create_notification(
                     connection,
                     user_id=customer_user_id,
                     notification_type="order",
-                    title="Porosia juaj u perditesua",
-                    body=f"`{order_item_row['product_title']}` tani eshte `{next_status}`.",
+                    title=status_title,
+                    body=f"`{order_item_row['product_title']}` {status_body_copy}.",
                     href="/porosite",
                     metadata={"orderItemId": order_item_id, "orderId": int(order_item_row['order_id'])},
                 )

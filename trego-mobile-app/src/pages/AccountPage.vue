@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonIcon, IonPage } from "@ionic/vue";
+import { IonButton, IonContent, IonIcon, IonPage, IonSpinner } from "@ionic/vue";
 import {
   briefcaseOutline,
   chatbubblesOutline,
@@ -139,7 +139,11 @@ async function handleLogout() {
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
       <div class="mobile-page mobile-page--tabbed mobile-page--account" :class="{ 'is-guest': !sessionState.user }">
-        <template v-if="!sessionState.user">
+        <section v-if="!sessionState.sessionLoaded" class="surface-card surface-card--strong guest-account-card account-loading-card">
+          <IonSpinner name="crescent" />
+        </section>
+
+        <template v-else-if="!sessionState.user">
           <section class="surface-card surface-card--strong guest-account-card">
             <p class="section-kicker">Account</p>
             <h1>Kyçuni ose krijoni llogari.</h1>
@@ -249,6 +253,10 @@ async function handleLogout() {
   padding: 24px 20px;
   align-content: center;
   text-align: center;
+}
+
+.account-loading-card {
+  place-items: center;
 }
 
 .guest-account-card h1,

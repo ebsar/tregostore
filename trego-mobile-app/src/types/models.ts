@@ -3,6 +3,7 @@ export interface SessionUser {
   role: "client" | "business" | "admin" | "";
   fullName?: string;
   email?: string;
+  phoneNumber?: string;
   profileImagePath?: string;
   businessName?: string;
   businessLogoPath?: string;
