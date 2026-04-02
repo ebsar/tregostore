@@ -939,8 +939,10 @@ private struct TregoPersonalDataScreen: View {
 
                         TregoInputCard(title: "Emri", text: $firstName, placeholder: "Shkruaj emrin")
                         TregoInputCard(title: "Mbiemri", text: $lastName, placeholder: "Shkruaj mbiemrin")
-                        TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
-                        TregoGenderPicker(selected: $gender)
+                        TregoBirthDateGenderRow(
+                            birthDate: $birthDate,
+                            gender: $gender
+                        )
 
                         HStack(spacing: 12) {
                             Button {
@@ -4361,9 +4363,10 @@ private struct TregoSignupView: View {
                     .textContentType(.newPassword)
                     .textFieldStyle(.roundedBorder)
 
-                TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
-
-                TregoGenderPicker(selected: $gender)
+                TregoBirthDateGenderRow(
+                    birthDate: $birthDate,
+                    gender: $gender
+                )
 
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
@@ -4550,9 +4553,10 @@ private struct TregoAccountLoginPromptView: View {
                 )
 
                 if mode == .signup {
-                    TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
-
-                    TregoGenderPicker(selected: $gender)
+                    TregoBirthDateGenderRow(
+                        birthDate: $birthDate,
+                        gender: $gender
+                    )
                 }
             }
             .onChange(of: password) { newValue in
@@ -5668,6 +5672,21 @@ private struct TregoDateInputCard: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.42), lineWidth: 0.8)
                 }
+        }
+    }
+}
+
+private struct TregoBirthDateGenderRow: View {
+    @Binding var birthDate: Date
+    @Binding var gender: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            TregoDateInputCard(title: "Data e lindjes", date: $birthDate)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            TregoGenderPicker(selected: $gender)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 }
@@ -6909,21 +6928,21 @@ private struct TregoGenderPicker: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
             ForEach(options, id: \.0) { option in
                     Button {
                         selected = option.0
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             Image(systemName: selected == option.0 ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(.system(size: 14, weight: .bold))
                             Text(option.1)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundStyle(selected == option.0 ? TregoNativeTheme.accent : Color.primary.opacity(0.82))
                         .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 13)
                         .tregoGlassRectBackground(cornerRadius: 20)
                         .overlay {
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
