@@ -1042,6 +1042,10 @@ def initialize_database() -> None:
             if current_schema_version != APP_SCHEMA_VERSION or needs_schema_bootstrap:
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
             ensure_bootstrap_admin(connection)
+        except Exception:
+            if acquired_postgres_lock:
+                connection.rollback()
+            raise
         finally:
             if acquired_postgres_lock:
                 connection.execute(
@@ -1434,13 +1438,24 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE users ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''"
         )
 
-    connection.execute(
+    users_missing_phone_lookup = connection.execute(
         """
-        UPDATE users
-        SET phone_lookup = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone_number, ''), ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '/', ''), '.', ''), ',', ''), '_', ''), CHAR(9), '')
+        SELECT id, phone_number
+        FROM users
         WHERE COALESCE(phone_lookup, '') = '' AND COALESCE(phone_number, '') != ''
         """
-    )
+    ).fetchall()
+
+    for row in users_missing_phone_lookup:
+        _, normalized_lookup = normalize_user_phone(row["phone_number"])
+        connection.execute(
+            """
+            UPDATE users
+            SET phone_lookup = ?
+            WHERE id = ?
+            """,
+            (normalized_lookup, row["id"]),
+        )
 
     connection.execute(
         """
