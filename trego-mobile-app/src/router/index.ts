@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "@ionic/vue-router";
 const TabsPage = () => import("../pages/TabsPage.vue");
 const HomePage = () => import("../pages/HomePage.vue");
 const SearchPage = () => import("../pages/SearchPage.vue");
+const BusinessesPage = () => import("../pages/BusinessesPage.vue");
 const WishlistPage = () => import("../pages/WishlistPage.vue");
 const CartPage = () => import("../pages/CartPage.vue");
 const AccountPage = () => import("../pages/AccountPage.vue");
@@ -108,6 +109,10 @@ const router = createRouter({
         {
           path: "search",
           component: SearchPage,
+        },
+        {
+          path: "businesses",
+          component: BusinessesPage,
         },
         {
           path: "wishlist",

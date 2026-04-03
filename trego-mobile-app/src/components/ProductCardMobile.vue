@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { IonButton, IonIcon } from "@ionic/vue";
-import { addOutline, heartOutline, star } from "ionicons/icons";
+import { IonIcon } from "@ionic/vue";
+import { bagAddOutline, heartOutline, star } from "ionicons/icons";
 import { computed, withDefaults } from "vue";
 import type { ProductItem } from "../types/models";
 import { formatCount, formatPrice, getDiscountPercent, getProductImage } from "../lib/format";
@@ -8,8 +8,10 @@ import { formatCount, formatPrice, getDiscountPercent, getProductImage } from ".
 const props = withDefaults(defineProps<{
   product: ProductItem;
   analyticsMode?: boolean;
+  compact?: boolean;
 }>(), {
   analyticsMode: false,
+  compact: false,
 });
 
 const emit = defineEmits<{
@@ -20,57 +22,49 @@ const emit = defineEmits<{
 
 const discount = computed(() => getDiscountPercent(props.product));
 const hasCompareAtPrice = computed(() => Number(props.product.compareAtPrice || 0) > Number(props.product.price || 0));
-const variantSummary = computed(() => {
-  const sizeCount = new Set(
-    [
-      ...(Array.isArray(props.product.availableSizes) ? props.product.availableSizes : []),
-      ...((props.product.variantInventory || []).map((entry) => String(entry.size || "").trim().toUpperCase()).filter(Boolean)),
-    ],
-  ).size;
-  const colorCount = new Set(
-    [
-      ...(Array.isArray(props.product.availableColors) ? props.product.availableColors : []),
-      ...((props.product.variantInventory || []).map((entry) => String(entry.color || "").trim().toLowerCase()).filter(Boolean)),
-    ],
-  ).size;
-
-  const parts: string[] = [];
-  if (sizeCount) {
-    parts.push(`${sizeCount} masa`);
-  }
-  if (colorCount) {
-    parts.push(`${colorCount} ngjyra`);
-  }
-  if (!parts.length && props.product.requiresVariantSelection) {
-    parts.push("Variantet zgjidhen ne faqe");
-  }
-
-  return parts.join(" · ");
-});
 const engagementItems = computed(() => ([
   { label: "Views", value: formatCount(props.product.viewsCount || 0) },
   { label: "Wishlist", value: formatCount(props.product.wishlistCount || 0) },
   { label: "Cart", value: formatCount(props.product.cartCount || 0) },
   { label: "Share", value: formatCount(props.product.shareCount || 0) },
 ]));
+const ratingValue = computed(() => Number(props.product.averageRating || 0).toFixed(1));
+const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 </script>
 
 <template>
-  <article class="product-card-mobile surface-card">
+  <article
+    class="product-card-mobile surface-card"
+    :class="{
+      'is-compact': compact,
+      'is-analytics': analyticsMode,
+    }"
+  >
     <div class="product-card-mobile-media">
-      <img :src="getProductImage(product)" :alt="product.title" />
-      <span v-if="discount" class="product-card-mobile-badge">-{{ discount }}%</span>
+      <img :src="getProductImage(product)" :alt="product.title">
       <button class="product-card-mobile-open-hit" type="button" @click="emit('open', product.id)">
         <span class="sr-only">Hap produktin</span>
       </button>
-      <button
-        v-if="!analyticsMode"
-        class="product-card-mobile-save"
-        type="button"
-        @click.stop="emit('wishlist', product.id)"
-      >
-        <IonIcon :icon="heartOutline" />
-      </button>
+
+      <span v-if="discount" class="product-card-mobile-badge">Sale</span>
+
+      <div v-if="!analyticsMode" class="product-card-mobile-media-actions">
+        <button
+          class="product-card-mobile-action product-card-mobile-action--wish"
+          type="button"
+          @click.stop="emit('wishlist', product.id)"
+        >
+          <IonIcon :icon="heartOutline" />
+        </button>
+
+        <button
+          class="product-card-mobile-action product-card-mobile-action--cart"
+          type="button"
+          @click.stop="emit('cart', product.id)"
+        >
+          <IonIcon :icon="bagAddOutline" />
+        </button>
+      </div>
     </div>
 
     <div class="product-card-mobile-copy">
@@ -78,20 +72,18 @@ const engagementItems = computed(() => ([
       <button class="product-card-mobile-title" type="button" @click="emit('open', product.id)">
         {{ product.title }}
       </button>
-      <p class="product-card-mobile-desc">{{ product.description || "Produkt i kuruar per blerje te shpejte." }}</p>
-      <p v-if="variantSummary" class="product-card-mobile-variant">{{ variantSummary }}</p>
 
-      <div class="product-card-mobile-meta">
+      <p v-if="!compact && !analyticsMode" class="product-card-mobile-desc">
+        {{ product.description || "Produkt i kuruar per blerje te shpejte." }}
+      </p>
+
+      <div class="product-card-mobile-price-row">
         <div class="product-card-mobile-pricing">
           <strong>{{ formatPrice(product.price) }}</strong>
           <span v-if="hasCompareAtPrice" class="product-card-mobile-compare">
             {{ formatPrice(product.compareAtPrice) }}
           </span>
         </div>
-        <span class="product-card-mobile-rating">
-          <IonIcon :icon="star" />
-          {{ Number(product.averageRating || 0).toFixed(1) }}
-        </span>
       </div>
 
       <div v-if="analyticsMode" class="product-card-mobile-engagement">
@@ -105,11 +97,12 @@ const engagementItems = computed(() => ([
         </span>
       </div>
 
-      <div v-else class="product-card-mobile-actions">
-        <IonButton class="cta-button product-card-mobile-add" @click="emit('cart', product.id)">
-          <IonIcon slot="start" :icon="addOutline" />
-          Shto ne cart
-        </IonButton>
+      <div v-else class="product-card-mobile-stats">
+        <span>{{ buyersValue }} shitje</span>
+        <span class="product-card-mobile-rating">
+          <IonIcon :icon="star" />
+          {{ ratingValue }}
+        </span>
       </div>
     </div>
   </article>
@@ -119,18 +112,27 @@ const engagementItems = computed(() => ([
 .product-card-mobile {
   position: relative;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-  padding: 13px;
-  height: 100%;
-  border-radius: 26px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  min-height: 318px;
+  padding: 10px;
+  border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82)),
-    radial-gradient(circle at top left, rgba(255, 106, 43, 0.1), transparent 34%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.8)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
   box-shadow:
     0 18px 36px rgba(31, 41, 55, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.product-card-mobile.is-compact {
+  min-height: 278px;
+}
+
+.product-card-mobile.is-analytics {
+  min-height: 338px;
 }
 
 .product-card-mobile::before {
@@ -139,8 +141,8 @@ const engagementItems = computed(() => ([
   inset: 0;
   border-radius: inherit;
   background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.56), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 40%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 40%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.46), transparent 24%);
   pointer-events: none;
 }
 
@@ -152,14 +154,12 @@ const engagementItems = computed(() => ([
 .product-card-mobile-media {
   position: relative;
   overflow: hidden;
-  border: 0;
+  aspect-ratio: 0.96;
   border-radius: 22px;
-  padding: 0;
-  aspect-ratio: 0.84;
   background: var(--trego-interactive-bg-strong);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 18px 28px rgba(31, 41, 55, 0.1);
+    0 16px 28px rgba(31, 41, 55, 0.1);
 }
 
 .product-card-mobile-media::after {
@@ -167,37 +167,9 @@ const engagementItems = computed(() => ([
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(7, 11, 20, 0.02), rgba(7, 11, 20, 0.16)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.36), transparent 28%);
+    linear-gradient(180deg, rgba(7, 11, 20, 0.02), rgba(7, 11, 20, 0.18)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.32), transparent 28%);
   pointer-events: none;
-}
-
-.product-card-mobile-open-hit {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: transparent;
-}
-
-.product-card-mobile-save {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.84);
-  color: var(--trego-dark);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 10px 22px rgba(31, 41, 55, 0.12);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  z-index: 1;
 }
 
 .product-card-mobile-media img {
@@ -207,60 +179,88 @@ const engagementItems = computed(() => ([
   display: block;
 }
 
+.product-card-mobile-open-hit {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+}
+
 .product-card-mobile-badge {
   position: absolute;
   top: 10px;
   left: 10px;
   display: inline-flex;
-  min-height: 26px;
+  min-height: 25px;
   align-items: center;
   padding: 0 10px;
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(255, 123, 61, 0.96), rgba(255, 106, 43, 0.92));
-  color: var(--trego-badge-text);
-  font-size: 0.72rem;
+  background: linear-gradient(135deg, rgba(255, 96, 96, 0.96), rgba(227, 54, 54, 0.92));
+  color: #fff7f7;
+  font-size: 0.68rem;
   font-weight: 800;
-  box-shadow: 0 10px 18px rgba(255, 106, 43, 0.2);
+  letter-spacing: 0.03em;
+  box-shadow: 0 12px 20px rgba(196, 44, 44, 0.22);
+}
+
+.product-card-mobile-media-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.product-card-mobile-action {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12));
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 10px 20px rgba(17, 24, 39, 0.18);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.product-card-mobile-action ion-icon {
+  font-size: 1rem;
 }
 
 .product-card-mobile-copy {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  flex: 1 1 auto;
+  gap: 7px;
   min-height: 0;
 }
 
 .product-card-mobile-business {
   margin: 0;
-  font-size: 0.7rem;
+  color: var(--trego-muted);
+  font-size: 0.68rem;
   font-weight: 700;
-  color: var(--trego-accent);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
 }
 
 .product-card-mobile-title {
   border: 0;
-  background: transparent;
   padding: 0;
-  text-align: left;
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1.18;
+  background: transparent;
   color: var(--trego-dark);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 2.35em;
-}
-
-.product-card-mobile-desc {
-  margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.79rem;
-  line-height: 1.42;
+  font-size: 0.94rem;
+  font-weight: 800;
+  line-height: 1.16;
+  text-align: left;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -268,18 +268,79 @@ const engagementItems = computed(() => ([
   min-height: 2.3em;
 }
 
-.product-card-mobile-variant {
-  margin: -1px 0 0;
+.product-card-mobile.is-compact .product-card-mobile-title {
+  font-size: 0.88rem;
+  min-height: 2.1em;
+}
+
+.product-card-mobile-desc {
+  margin: 0;
+  color: var(--trego-muted);
+  font-size: 0.76rem;
+  line-height: 1.42;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.15em;
+}
+
+.product-card-mobile-price-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.product-card-mobile-pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.product-card-mobile-pricing strong {
   color: var(--trego-accent);
-  font-size: 0.71rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.product-card-mobile.is-compact .product-card-mobile-pricing strong {
+  font-size: 0.95rem;
+}
+
+.product-card-mobile-compare {
+  color: var(--trego-muted);
+  font-size: 0.72rem;
+  text-decoration: line-through;
+}
+
+.product-card-mobile-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--trego-muted);
+  font-size: 0.73rem;
   font-weight: 700;
-  line-height: 1.35;
+}
+
+.product-card-mobile-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.product-card-mobile-rating ion-icon {
+  color: #f4b41a;
+  font-size: 0.85rem;
 }
 
 .product-card-mobile-engagement {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  margin-top: auto;
 }
 
 .product-card-mobile-engagement-item {
@@ -288,7 +349,7 @@ const engagementItems = computed(() => ([
   padding: 8px 10px;
   border-radius: 16px;
   border: 1px solid var(--trego-input-border);
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .product-card-mobile-engagement-item small {
@@ -303,95 +364,5 @@ const engagementItems = computed(() => ([
   color: var(--trego-dark);
   font-size: 0.92rem;
   line-height: 1;
-}
-
-.product-card-mobile-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.product-card-mobile-pricing {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.product-card-mobile-pricing strong {
-  color: var(--trego-dark);
-  font-size: 1.06rem;
-  line-height: 1;
-  letter-spacing: -0.03em;
-}
-
-.product-card-mobile-compare {
-  color: var(--trego-muted);
-  font-size: 0.76rem;
-  text-decoration: line-through;
-}
-
-.product-card-mobile-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  color: var(--trego-dark);
-  font-size: 0.78rem;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 8px 18px rgba(31, 41, 55, 0.08);
-}
-
-.product-card-mobile-actions {
-  display: flex;
-  margin-top: auto;
-  padding-top: 2px;
-}
-
-.product-card-mobile-add {
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  font-size: 0.82rem;
-  --box-shadow: 0 14px 28px rgba(255, 106, 43, 0.18);
-}
-
-:global(body[data-native-app-shell="1"]) .product-card-mobile {
-  border-color: rgba(255, 255, 255, 0.82);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.84)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.42), transparent 32%);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-}
-
-:global(body[data-theme="dark"]) .product-card-mobile {
-  background:
-    linear-gradient(180deg, rgba(12, 12, 14, 0.96), rgba(8, 8, 10, 0.9)),
-    radial-gradient(circle at top left, rgba(255, 106, 43, 0.12), transparent 34%);
-  box-shadow:
-    0 18px 36px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-:global(body[data-theme="dark"]) .product-card-mobile-media::after {
-  background:
-    linear-gradient(180deg, rgba(7, 11, 20, 0.06), rgba(7, 11, 20, 0.24)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 28%);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
 }
 </style>

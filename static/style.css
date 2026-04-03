@@ -80,7 +80,7 @@
   --layout-page-width: 1120px;
   --layout-wide-width: 1380px;
   --layout-inline-gap: clamp(16px, 2vw, 24px);
-  --page-nav-clearance: clamp(108px, 11vw, 128px);
+  --page-nav-clearance: clamp(124px, 12vw, 144px);
   --page-section-gap: clamp(22px, 2.8vw, 34px);
   --app-vh: 100vh;
   --app-vh: 100dvh;
@@ -436,7 +436,7 @@ body[data-page="home"] .page-shell-home-full {
   width: min(var(--layout-wide-width), calc(100% - var(--safe-space-left) - var(--safe-space-right)));
   max-width: calc(100% - var(--safe-space-left) - var(--safe-space-right));
   min-height: 76px;
-  margin: 0 auto 24px;
+  margin: 0 auto 32px;
   padding: 10px 14px;
   border: 1px solid var(--glass-border);
   border-radius: 34px;
@@ -2326,18 +2326,18 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
   display: grid;
   place-items: center;
   min-height: calc(var(--app-vh) - 170px);
-  padding: 16px 0 24px;
+  padding: calc(var(--page-nav-clearance) - 24px) 0 24px;
 }
 
 .page-main-home {
   align-items: stretch;
   min-height: calc(var(--app-vh) - 120px);
-  padding-top: 4px;
+  padding-top: calc(var(--page-nav-clearance) - 28px);
 }
 
 body[data-page="home"] .page-main-home {
   min-height: var(--app-vh);
-  padding: 0;
+  padding: calc(var(--page-nav-clearance) - 20px) 0 0;
 }
 
 .page-main-about {
@@ -5194,21 +5194,21 @@ body[data-page="cart"] .page-shell::before {
 .page-main-product {
   width: 100%;
   min-height: var(--app-vh);
-  padding: 108px 0 40px;
+  padding: calc(var(--page-nav-clearance) + 4px) 0 40px;
   display: block;
 }
 
 .page-main-admin {
   width: 100%;
   min-height: var(--app-vh);
-  padding: 138px 0 48px;
+  padding: calc(var(--page-nav-clearance) + 12px) 0 48px;
   display: block;
 }
 
 .page-main-account {
   width: 100%;
   min-height: var(--app-vh);
-  padding: 138px 0 48px;
+  padding: calc(var(--page-nav-clearance) + 12px) 0 48px;
   display: block;
 }
 
@@ -5457,7 +5457,7 @@ body[data-page="cart"] .page-shell::before {
 .page-main-collection {
   width: 100%;
   min-height: var(--app-vh);
-  padding: var(--page-nav-clearance) 0 48px;
+  padding: calc(var(--page-nav-clearance) + 8px) 0 48px;
   display: block;
 }
 

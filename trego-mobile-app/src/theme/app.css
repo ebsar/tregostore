@@ -239,17 +239,23 @@ body[data-ios-native-tabs="1"] ion-content {
 .surface-card {
   position: relative;
   isolation: isolate;
-  background: var(--trego-surface);
-  border: 1px solid var(--trego-border);
+  background:
+    linear-gradient(180deg, var(--trego-ios-glass-bg-strong), var(--trego-ios-glass-bg)),
+    radial-gradient(circle at top left, var(--trego-ios-glass-highlight), transparent 32%);
+  border: 1px solid var(--trego-ios-glass-border);
   border-radius: var(--trego-radius-xl);
-  box-shadow: var(--trego-shadow-soft);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  box-shadow: var(--trego-ios-glass-shadow);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 .surface-card--strong {
-  background: var(--trego-surface-strong);
-  box-shadow: var(--trego-shadow);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.22)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%);
+  box-shadow:
+    0 18px 46px rgba(31, 41, 55, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 body[data-native-app-shell="1"] .surface-card,
@@ -388,11 +394,13 @@ body[data-native-app-shell="1"] .product-card-mobile-add {
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.12));
   color: var(--trego-dark);
   font-size: 0.76rem;
   font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .meta-pill ion-icon {
@@ -479,13 +487,14 @@ body[data-theme="dark"] .app-boot-splash__loader::after {
   min-height: 40px;
   padding: 0 14px;
   border-radius: var(--trego-radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
   color: var(--trego-dark);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 body[data-theme="dark"] .chip,

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { IonIcon, IonRouterOutlet, IonTabs } from "@ionic/vue";
-import { cartOutline, heartOutline, homeOutline, personCircleOutline, searchOutline } from "ionicons/icons";
+import { cartOutline, homeOutline, personCircleOutline, searchOutline, storefrontOutline } from "ionicons/icons";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { activityBadgeCount, sessionState } from "../stores/session";
 
 type TabShellItem = {
-  key: "home" | "wishlist" | "cart" | "llogaria" | "kerko";
+  key: "home" | "bizneset" | "cart" | "llogaria" | "kerko";
   label: string;
   icon: string;
   path: string;
@@ -17,7 +17,7 @@ const router = useRouter();
 
 const groupedTabs: TabShellItem[] = [
   { key: "home", label: "Home", icon: homeOutline, path: "/tabs/home" },
-  { key: "wishlist", label: "Wishlist", icon: heartOutline, path: "/tabs/wishlist" },
+  { key: "bizneset", label: "Bizneset", icon: storefrontOutline, path: "/tabs/businesses" },
   { key: "cart", label: "Cart", icon: cartOutline, path: "/tabs/cart" },
   { key: "llogaria", label: "Llogaria", icon: personCircleOutline, path: "/tabs/account" },
 ];
@@ -30,7 +30,6 @@ const searchTab: TabShellItem = {
 };
 
 const cartBadge = computed(() => (sessionState.cartCount > 0 ? String(sessionState.cartCount) : ""));
-const wishlistBadge = computed(() => (sessionState.wishlistCount > 0 ? String(sessionState.wishlistCount) : ""));
 const activityBadge = computed(() => {
   const total = Math.max(0, Number(activityBadgeCount.value || 0));
   if (total <= 0) {
@@ -40,7 +39,6 @@ const activityBadge = computed(() => {
 });
 
 const badgeMap = computed<Record<string, string>>(() => ({
-  wishlist: wishlistBadge.value,
   cart: cartBadge.value,
   llogaria: activityBadge.value,
 }));
@@ -54,8 +52,11 @@ const activeTab = computed<TabShellItem["key"]>(() => {
   if (path.startsWith("/tabs/search")) {
     return "kerko";
   }
+  if (path.startsWith("/tabs/businesses")) {
+    return "bizneset";
+  }
   if (path.startsWith("/tabs/wishlist")) {
-    return "wishlist";
+    return "cart";
   }
   if (path.startsWith("/tabs/cart")) {
     return "cart";

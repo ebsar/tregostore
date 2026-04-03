@@ -78,6 +78,11 @@ BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 ONESIGNAL_APP_ID = str(os.environ.get("ONESIGNAL_APP_ID", "")).strip()
 ONESIGNAL_REST_API_KEY = str(os.environ.get("ONESIGNAL_REST_API_KEY", "")).strip()
 ONESIGNAL_API_URL = "https://api.onesignal.com/notifications?c=push"
+GOOGLE_WEB_CLIENT_ID = str(
+    os.environ.get("GOOGLE_WEB_CLIENT_ID") or os.environ.get("VITE_GOOGLE_WEB_CLIENT_ID") or ""
+).strip()
+GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+GOOGLE_AUTH_TIMEOUT_SECONDS = 10
 CRON_SECRET = str(os.environ.get("CRON_SECRET") or os.environ.get("TREGO_CRON_SECRET") or "").strip()
 SEARCH_INTENT_CACHE_TTL_SECONDS = 10 * 60
 SEARCH_INTENT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
@@ -8467,6 +8472,72 @@ def fetch_user_by_login_identifier(identifier: str) -> sqlite3.Row | None:
     return fetch_user_by_phone_lookup(normalized_identifier)
 
 
+def verify_google_identity_token(id_token: str) -> tuple[list[str], dict[str, str]]:
+    normalized_token = str(id_token or "").strip()
+    if not normalized_token:
+        return ["Google credential mungon."], {}
+
+    if not GOOGLE_WEB_CLIENT_ID:
+        return ["Google login nuk eshte aktivizuar ne server."], {}
+
+    token_query = urlencode({"id_token": normalized_token})
+    request = Request(
+        f"{GOOGLE_TOKENINFO_URL}?{token_query}",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "TREGO-Google-Auth/1.0",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=GOOGLE_AUTH_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        error_message = "Google credential nuk eshte valide."
+        try:
+            payload = json.loads(error.read().decode("utf-8"))
+            error_message = str(
+                payload.get("error_description")
+                or payload.get("error")
+                or error_message
+            ).strip() or error_message
+        except Exception:
+            pass
+        return [error_message], {}
+    except (URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return ["Google login nuk mund te verifikohet per momentin. Provoje perseri."], {}
+
+    audience = str(payload.get("aud") or "").strip()
+    if audience != GOOGLE_WEB_CLIENT_ID:
+        return ["Google credential nuk i perket ketij aplikacioni."], {}
+
+    email = str(payload.get("email") or "").strip().lower()
+    if not email or not EMAIL_RE.match(email):
+        return ["Google nuk ktheu nje email valid."], {}
+
+    email_verified_raw = str(payload.get("email_verified") or "").strip().lower()
+    if email_verified_raw not in {"true", "1"}:
+        return ["Google account duhet te kete email te verifikuar."], {}
+
+    full_name = str(payload.get("name") or "").strip()
+    first_name = str(payload.get("given_name") or "").strip()
+    last_name = str(payload.get("family_name") or "").strip()
+    if not full_name:
+        full_name = email.split("@", 1)[0]
+    if not first_name or not last_name:
+        parsed_first_name, parsed_last_name = split_full_name(full_name)
+        first_name = first_name or parsed_first_name
+        last_name = last_name or parsed_last_name
+
+    return [], {
+        "email": email,
+        "full_name": full_name,
+        "first_name": first_name,
+        "last_name": last_name,
+        "google_sub": str(payload.get("sub") or "").strip(),
+    }
+
+
 def fetch_user_by_id(user_id: int) -> sqlite3.Row | None:
     with get_db_connection() as connection:
         return connection.execute(
@@ -13887,6 +13958,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/login":
             self.handle_login()
             return
+        if path == "/api/auth/google":
+            self.handle_google_auth()
+            return
         if path == "/api/email/verify":
             self.handle_email_verification()
             return
@@ -14262,6 +14336,150 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "message": "U kyqe me sukses.",
                 "redirectTo": "/",
+                "user": serialize_session_user(user),
+            },
+            headers={"Set-Cookie": build_session_cookie(session_token)},
+        )
+
+    def handle_google_auth(self) -> None:
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        credential = str(payload.get("credential", payload.get("idToken", ""))).strip()
+        intent = str(payload.get("intent", "login") or "login").strip().lower()
+        errors, google_identity = verify_google_identity_token(credential)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        email = str(google_identity["email"]).strip().lower()
+        full_name = str(google_identity["full_name"]).strip()
+        first_name = str(google_identity["first_name"]).strip()
+        last_name = str(google_identity["last_name"]).strip()
+        timestamp = now_text()
+        is_new_user = False
+
+        try:
+            with get_db_connection() as connection:
+                existing_user = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + USER_AUTH_SELECT_COLUMNS
+                    + """
+                    FROM users
+                    WHERE email = ?
+                    LIMIT 1
+                    """,
+                    (email,),
+                ).fetchone()
+
+                if existing_user:
+                    connection.execute(
+                        """
+                        UPDATE users
+                        SET
+                            full_name = CASE
+                                WHEN COALESCE(TRIM(full_name), '') = '' THEN ?
+                                ELSE full_name
+                            END,
+                            first_name = CASE
+                                WHEN COALESCE(TRIM(first_name), '') = '' THEN ?
+                                ELSE first_name
+                            END,
+                            last_name = CASE
+                                WHEN COALESCE(TRIM(last_name), '') = '' THEN ?
+                                ELSE last_name
+                            END,
+                            is_email_verified = 1,
+                            email_verified_at = CASE
+                                WHEN COALESCE(TRIM(email_verified_at), '') = '' THEN ?
+                                ELSE email_verified_at
+                            END
+                        WHERE id = ?
+                        """,
+                        (
+                            full_name,
+                            first_name,
+                            last_name,
+                            timestamp,
+                            int(existing_user["id"]),
+                        ),
+                    )
+                    user_id = int(existing_user["id"])
+                else:
+                    is_new_user = True
+                    user_id = execute_insert_and_get_id(
+                        connection,
+                        """
+                        INSERT INTO users (
+                            full_name,
+                            first_name,
+                            last_name,
+                            email,
+                            phone_number,
+                            phone_lookup,
+                            password_hash,
+                            birth_date,
+                            gender,
+                            role,
+                            is_email_verified,
+                            email_verified_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            full_name,
+                            first_name,
+                            last_name,
+                            email,
+                            "",
+                            "",
+                            hash_password(secrets.token_urlsafe(24)),
+                            "",
+                            "",
+                            "client",
+                            1,
+                            timestamp,
+                        ),
+                    )
+
+                user = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + USER_AUTH_SELECT_COLUMNS
+                    + """
+                    FROM users
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                ).fetchone()
+        except DB_INTEGRITY_ERRORS:
+            self.send_json(409, {"ok": False, "message": "Ky email ekziston tashme ne databaze."})
+            return
+
+        if not user:
+            self.send_json(500, {"ok": False, "message": "Useri nuk u ngarkua pas Google login."})
+            return
+
+        session_token = create_session(int(user["id"]))
+        success_message = (
+            "Llogaria u krijua dhe u kyqe me sukses me Google."
+            if is_new_user or intent == "signup"
+            else "U kyqe me sukses me Google."
+        )
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": success_message,
+                "redirectTo": "/",
+                "isNewUser": is_new_user,
                 "user": serialize_session_user(user),
             },
             headers={"Set-Cookie": build_session_cookie(session_token)},

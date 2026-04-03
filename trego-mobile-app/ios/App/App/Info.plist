@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Use the camera to search products by photo.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Use your location to fill your shipping address automatically.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Use the microphone for voice search.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

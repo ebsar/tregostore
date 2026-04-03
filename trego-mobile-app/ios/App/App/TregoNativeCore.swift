@@ -111,9 +111,17 @@ struct TregoProduct: Codable, Identifiable, Equatable {
     let isPublic: Bool?
     let createdByUserId: Int?
     let businessProfileId: Int?
+    let isTrending: Bool?
     let businessVerificationStatus: String?
     let createdAt: String?
     let updatedAt: String?
+}
+
+struct TregoViewedHistoryEntry: Codable, Identifiable, Equatable {
+    let product: TregoProduct
+    let viewedAt: String
+
+    var id: Int { product.id }
 }
 
 struct TregoProductReview: Codable, Identifiable, Equatable {
@@ -134,6 +142,8 @@ struct TregoCartItem: Codable, Identifiable, Equatable {
     let price: Double?
     let compareAtPrice: Double?
     let quantity: Int?
+    let businessName: String?
+    let businessProfileId: Int?
     let selectedSize: String?
     let selectedColor: String?
     let variantKey: String?
@@ -402,7 +412,12 @@ struct TregoAdminUser: Codable, Identifiable, Equatable {
     let id: Int
     let fullName: String?
     let email: String?
+    let phoneNumber: String?
+    let birthDate: String?
+    let gender: String?
     let role: String?
+    let isEmailVerified: Bool?
+    let emailVerifiedAt: String?
     let city: String?
     let createdAt: String?
     let updatedAt: String?
@@ -468,6 +483,7 @@ struct TregoAppSettings: Equatable {
     var currency: String
     var notificationMode: String
     var privacyMode: String
+    var personalizationConsentStatus: String
 
     static let storageKey = "trego-ios-native-settings"
     static let defaultValue = TregoAppSettings(
@@ -475,7 +491,8 @@ struct TregoAppSettings: Equatable {
         language: "sq",
         currency: "EUR",
         notificationMode: "all",
-        privacyMode: "standard"
+        privacyMode: "standard",
+        personalizationConsentStatus: "pending"
     )
 
     static func load() -> TregoAppSettings {
@@ -489,7 +506,10 @@ struct TregoAppSettings: Equatable {
             language: String(payload["language"] as? String ?? defaultValue.language),
             currency: String(payload["currency"] as? String ?? defaultValue.currency),
             notificationMode: String(payload["notificationMode"] as? String ?? defaultValue.notificationMode),
-            privacyMode: String(payload["privacyMode"] as? String ?? defaultValue.privacyMode)
+            privacyMode: String(payload["privacyMode"] as? String ?? defaultValue.privacyMode),
+            personalizationConsentStatus: String(
+                payload["personalizationConsentStatus"] as? String ?? defaultValue.personalizationConsentStatus
+            )
         )
     }
 
@@ -501,6 +521,7 @@ struct TregoAppSettings: Equatable {
                 "currency": currency,
                 "notificationMode": notificationMode,
                 "privacyMode": privacyMode,
+                "personalizationConsentStatus": personalizationConsentStatus,
             ],
             forKey: Self.storageKey
         )
@@ -535,6 +556,21 @@ struct TregoStatusResponse: Codable {
     let ok: Bool?
     let message: String?
     let errors: [String]?
+}
+
+struct TregoWishlistToggleResponse: Codable {
+    let ok: Bool?
+    let message: String?
+    let errors: [String]?
+    let action: String?
+    let items: [TregoProduct]?
+}
+
+struct TregoCartMutationResponse: Codable {
+    let ok: Bool?
+    let message: String?
+    let errors: [String]?
+    let items: [TregoCartItem]?
 }
 
 struct TregoAdminBusinessCreatePayload: Equatable {
@@ -603,10 +639,18 @@ final class TregoAPIClient {
         return TregoAPIConfiguration.load().baseURL.appendingPathComponent(raw.hasPrefix("/") ? String(raw.dropFirst()) : raw)
     }
 
-    func fetchCurrentUser() async -> TregoSessionUser? {
-        guard let json = await sendJSONRequest(path: "/api/me") else { return nil }
-        guard json.ok, let user: TregoSessionUser = decode(json.object["user"]) else { return nil }
-        return user
+    fileprivate func fetchCurrentUserState() async -> TregoCurrentUserFetchState {
+        if let immediate = await fetchCurrentUserStateOnce() {
+            return immediate
+        }
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+
+        if let retry = await fetchCurrentUserStateOnce() {
+            return retry
+        }
+
+        return .failed("Lidhja me serverin deshtoi.")
     }
 
     func login(identifier: String, password: String) async -> TregoStatusResponse {
@@ -930,6 +974,14 @@ final class TregoAPIClient {
         return decodeArray(json.object["reviews"]) ?? []
     }
 
+    func trackProductShare(productId: Int) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/products/share",
+            method: "POST",
+            body: ["productId": productId]
+        )
+    }
+
     func createProductReview(productId: Int, rating: Int, title: String, body: String) async -> TregoStatusResponse {
         await sendStatusRequest(
             path: "/api/product/reviews",
@@ -972,8 +1024,14 @@ final class TregoAPIClient {
         await fetchList(path: "/api/wishlist", keyPreference: [.items, .products])
     }
 
-    func toggleWishlist(productId: Int) async -> TregoStatusResponse {
-        await sendStatusRequest(path: "/api/wishlist/toggle", method: "POST", body: ["productId": productId])
+    func toggleWishlist(productId: Int) async -> TregoWishlistToggleResponse {
+        guard let json = await sendJSONRequest(path: "/api/wishlist/toggle", method: "POST", body: ["productId": productId]) else {
+            return TregoWishlistToggleResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil, action: nil, items: nil)
+        }
+        if let decoded: TregoWishlistToggleResponse = decode(json.object) {
+            return decoded
+        }
+        return TregoWishlistToggleResponse(ok: json.ok, message: json.message, errors: nil, action: nil, items: nil)
     }
 
     func fetchCart() async -> [TregoCartItem] {
@@ -994,8 +1052,26 @@ final class TregoAPIClient {
         )
     }
 
-    func removeFromCart(productId: Int) async -> TregoStatusResponse {
-        await sendStatusRequest(path: "/api/cart/remove", method: "POST", body: ["productId": productId])
+    func updateCartQuantity(cartLineId: Int, quantity: Int) async -> (TregoStatusResponse, [TregoCartItem]?) {
+        guard let json = await sendJSONRequest(
+            path: "/api/cart/quantity",
+            method: "POST",
+            body: [
+                "cartLineId": cartLineId,
+                "quantity": quantity,
+            ]
+        ) else {
+            return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
+        }
+
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let items: [TregoCartItem]? = decodeArray(json.object["items"])
+        return (response, items)
+    }
+
+    func removeFromCart(cartLineId: Int) async -> TregoStatusResponse {
+        await sendStatusRequest(path: "/api/cart/remove", method: "POST", body: ["cartLineId": cartLineId])
     }
 
     func fetchOrders() async -> [TregoOrderItem] {
@@ -1479,13 +1555,25 @@ final class TregoAPIClient {
             }
             return TregoJSONResult(
                 ok: response.statusCode >= 200 && response.statusCode < 300,
+                statusCode: response.statusCode,
                 message: fallbackMessage,
                 object: [:]
             )
         }
         let ok = Bool(object["ok"] as? Bool ?? (response.statusCode >= 200 && response.statusCode < 300))
         let message = (object["message"] as? String) ?? ((object["errors"] as? [String])?.joined(separator: " "))
-        return TregoJSONResult(ok: ok, message: message, object: object)
+        return TregoJSONResult(ok: ok, statusCode: response.statusCode, message: message, object: object)
+    }
+
+    private func fetchCurrentUserStateOnce() async -> TregoCurrentUserFetchState? {
+        guard let json = await sendJSONRequest(path: "/api/me") else { return nil }
+        if json.ok, let user: TregoSessionUser = decode(json.object["user"]) {
+            return .authenticated(user)
+        }
+        if json.statusCode == 401 || json.statusCode == 403 {
+            return .unauthenticated
+        }
+        return .failed(json.message)
     }
 
     private func decode<T: Decodable>(_ value: Any?) -> T? {
@@ -1521,15 +1609,25 @@ final class TregoAPIClient {
 
 private struct TregoJSONResult {
     let ok: Bool
+    let statusCode: Int
     let message: String?
     let object: [String: Any]
 }
 
+fileprivate enum TregoCurrentUserFetchState {
+    case authenticated(TregoSessionUser)
+    case unauthenticated
+    case failed(String?)
+}
+
 @MainActor
 final class TregoNativeAppStore: ObservableObject {
+    private static let viewedHistoryStorageKey = "trego-ios-native-viewed-history"
+
     @Published var selectedTab: LiquidGlassTab = .home
     @Published var user: TregoSessionUser?
     @Published var sessionLoaded = false
+    @Published var sessionRefreshing = false
     @Published var appSettings = TregoAppSettings.load()
     @Published var homeProducts: [TregoProduct] = []
     @Published var homeLoading = false
@@ -1538,6 +1636,8 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var searchQuery = ""
     @Published var searchResults: [TregoProduct] = []
     @Published var searchLoading = false
+    @Published var viewedHistory: [TregoViewedHistoryEntry] = []
+    @Published var recentlyViewedProducts: [TregoProduct] = []
     @Published var wishlist: [TregoProduct] = []
     @Published var wishlistLoading = false
     @Published var cart: [TregoCartItem] = []
@@ -1558,6 +1658,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var adminOrders: [TregoOrderItem] = []
     @Published var adminWorkspaceLoading = false
     @Published var authRoute: TregoAuthRoute?
+    @Published var accountAuthRoute: TregoAuthRoute = .login
     @Published var selectedProduct: TregoProduct?
     @Published var selectedConversation: TregoConversation?
     @Published var selectedBusiness: TregoBusinessSelection?
@@ -1567,12 +1668,16 @@ final class TregoNativeAppStore: ObservableObject {
     let api = TregoAPIClient()
     private var hasLoadedHome = false
     private var toastTask: Task<Void, Never>?
+    private var lastSessionRefreshAt: Date?
+
+    init() {
+        let history = Self.loadViewedHistory()
+        viewedHistory = history
+        recentlyViewedProducts = history.map(\.product)
+    }
 
     var tabBadges: [LiquidGlassTab: String] {
         var map: [LiquidGlassTab: String] = [:]
-        if !wishlist.isEmpty {
-            map[.wishlist] = badgeText(for: wishlist.count)
-        }
         let cartCount = cart.reduce(0) { $0 + max(1, $1.quantity ?? 1) }
         if cartCount > 0 {
             map[.cart] = badgeText(for: cartCount)
@@ -1580,8 +1685,12 @@ final class TregoNativeAppStore: ObservableObject {
         return map
     }
 
+    var isResolvingSession: Bool {
+        !sessionLoaded || (sessionRefreshing && user == nil)
+    }
+
     func bootstrap() async {
-        await refreshSession()
+        await refreshSession(force: true)
         await loadHomeIfNeeded(force: true)
         if user != nil {
             async let wishlistTask: Void = loadWishlist()
@@ -1590,41 +1699,34 @@ final class TregoNativeAppStore: ObservableObject {
         }
     }
 
-    func refreshSession() async {
-        let fetchedUser = await api.fetchCurrentUser()
-        user = fetchedUser
-        sessionLoaded = true
-
-        guard let fetchedUser else {
-            wishlist = []
-            cart = []
-            orders = []
-            conversations = []
-            businessProfile = nil
-            businessAnalytics = nil
-            businessProducts = []
-            businessOrders = []
-            businessPromotions = []
-            adminUsers = []
-            adminBusinesses = []
-            adminReports = []
-            adminOrders = []
+    func refreshSession(force: Bool = false) async {
+        if sessionRefreshing { return }
+        if !force, let lastSessionRefreshAt, Date().timeIntervalSince(lastSessionRefreshAt) < 1.2 {
             return
         }
 
-        if fetchedUser.role != "business" {
-            businessProfile = nil
-            businessAnalytics = nil
-            businessProducts = []
-            businessOrders = []
-            businessPromotions = []
+        sessionRefreshing = true
+        let previousUser = user
+        defer {
+            sessionRefreshing = false
+            sessionLoaded = true
+            lastSessionRefreshAt = Date()
         }
 
-        if fetchedUser.role != "admin" {
-            adminUsers = []
-            adminBusinesses = []
-            adminReports = []
-            adminOrders = []
+        switch await api.fetchCurrentUserState() {
+        case .authenticated(let fetchedUser):
+            user = fetchedUser
+            clearRoleScopedData(for: fetchedUser)
+        case .unauthenticated:
+            user = nil
+            clearAuthenticatedData()
+        case .failed:
+            if previousUser == nil {
+                user = nil
+            } else {
+                user = previousUser
+                clearRoleScopedData(for: previousUser)
+            }
         }
     }
 
@@ -1634,6 +1736,51 @@ final class TregoNativeAppStore: ObservableObject {
         homeProducts = await api.fetchMarketplaceProducts(limit: 24)
         homeLoading = false
         hasLoadedHome = true
+    }
+
+    var personalizationConsentPending: Bool {
+        appSettings.personalizationConsentStatus == "pending"
+    }
+
+    var personalizedRecommendationsEnabled: Bool {
+        appSettings.personalizationConsentStatus == "allowed" && appSettings.privacyMode != "strict"
+    }
+
+    func allowPersonalizedRecommendations() {
+        appSettings.personalizationConsentStatus = "allowed"
+        appSettings.persist()
+        showToast("Rekomandimet personale u aktivizuan.")
+    }
+
+    func declinePersonalizedRecommendations() {
+        appSettings.personalizationConsentStatus = "declined"
+        appSettings.persist()
+        showToast("Rekomandimet personale mbeten te fikura.")
+    }
+
+    func personalizedHomeProducts(from products: [TregoProduct]) -> [TregoProduct] {
+        guard personalizedRecommendationsEnabled, !products.isEmpty else { return products }
+
+        let recentCategories = recentlyViewedProducts.compactMap { normalizedCategoryKey(for: $0) }
+        let wishlistCategories = wishlist.compactMap { normalizedCategoryKey(for: $0) }
+        let preferredCategories = recentCategories + wishlistCategories
+
+        let recentBusinesses = recentlyViewedProducts.compactMap { normalizedBusinessName(for: $0) }
+        let wishlistBusinesses = wishlist.compactMap { normalizedBusinessName(for: $0) }
+        let preferredBusinesses = recentBusinesses + wishlistBusinesses
+
+        guard !preferredCategories.isEmpty || !preferredBusinesses.isEmpty else {
+            return products
+        }
+
+        return products.sorted { lhs, rhs in
+            let leftScore = personalizedScore(for: lhs, preferredCategories: preferredCategories, preferredBusinesses: preferredBusinesses)
+            let rightScore = personalizedScore(for: rhs, preferredCategories: preferredCategories, preferredBusinesses: preferredBusinesses)
+            if leftScore == rightScore {
+                return lhs.id < rhs.id
+            }
+            return leftScore > rightScore
+        }
     }
 
     func loadPublicBusinesses(force: Bool = false) async {
@@ -1646,7 +1793,7 @@ final class TregoNativeAppStore: ObservableObject {
     func openSearch(with query: String = "") async {
         selectedTab = .kerko
         searchQuery = query
-        await performSearch(forceProductsFallback: true)
+        await performSearch()
     }
 
     func performSearch(forceProductsFallback: Bool = false) async {
@@ -1668,6 +1815,23 @@ final class TregoNativeAppStore: ObservableObject {
         searchLoading = true
         searchResults = await api.searchProducts(imageUpload: upload)
         searchLoading = false
+    }
+
+    func trackViewedProduct(_ product: TregoProduct) {
+        let entry = TregoViewedHistoryEntry(
+            product: product,
+            viewedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        let filtered = viewedHistory.filter { $0.product.id != product.id }
+        viewedHistory = [entry] + filtered.prefix(29)
+        persistViewedHistory()
+        recentlyViewedProducts = viewedHistory.map(\.product)
+    }
+
+    func removeViewedHistoryProduct(productID: Int) {
+        viewedHistory.removeAll { $0.product.id == productID }
+        persistViewedHistory()
+        recentlyViewedProducts = viewedHistory.map(\.product)
     }
 
     func loadWishlist() async {
@@ -1817,16 +1981,28 @@ final class TregoNativeAppStore: ObservableObject {
             requireAuthentication(defaultRoute: .login)
             return
         }
+        let wasWishlisted = wishlist.contains(where: { $0.id == product.id })
+        let previousWishlist = wishlist
+
+        if wasWishlisted {
+            wishlist.removeAll { $0.id == product.id }
+        } else {
+            wishlist = [product] + wishlist.filter { $0.id != product.id }
+        }
+
         let response = await api.toggleWishlist(productId: product.id)
         if response.ok == true {
-            await loadWishlist()
+            if let items = response.items {
+                wishlist = items
+            }
             await loadHomeIfNeeded(force: true)
             if selectedTab == .kerko {
-                await performSearch(forceProductsFallback: true)
+                await performSearch()
             }
             showToast(response.message ?? "Wishlist u perditesua.")
         } else {
-            globalMessage = response.message ?? "Wishlist nuk u perditesua."
+            wishlist = previousWishlist
+            globalMessage = response.message ?? response.errors?.joined(separator: " ") ?? "Wishlist nuk u perditesua."
         }
     }
 
@@ -1836,12 +2012,22 @@ final class TregoNativeAppStore: ObservableObject {
             return
         }
 
+        guard let selection = resolvedCartSelection(for: product) else {
+            if product.requiresVariantSelection == true {
+                globalMessage = "Zgjidh madhesine ose ngjyren te faqja e produktit para se ta shtosh ne cart."
+                selectedProduct = product
+            } else {
+                globalMessage = "Produkti nuk ka stok te disponueshem."
+            }
+            return
+        }
+
         let response = await api.addToCart(
             productId: product.id,
             quantity: 1,
-            variantKey: product.variantKey ?? "",
-            selectedSize: product.selectedSize ?? "",
-            selectedColor: product.selectedColor ?? ""
+            variantKey: selection.variantKey,
+            selectedSize: selection.selectedSize,
+            selectedColor: selection.selectedColor
         )
 
         if response.ok == true {
@@ -1852,13 +2038,91 @@ final class TregoNativeAppStore: ObservableObject {
         }
     }
 
-    func removeFromCart(productId: Int) async {
-        let response = await api.removeFromCart(productId: productId)
+    private func resolvedCartSelection(for product: TregoProduct) -> (variantKey: String, selectedSize: String, selectedColor: String)? {
+        let variants = (product.variantInventory ?? []).filter { max(0, $0.quantity ?? 0) > 0 }
+        let requestedVariantKey = normalizedVariantToken(product.variantKey)
+        let requestedSize = normalizedSizeToken(product.selectedSize ?? product.size)
+        let requestedColor = normalizedColorToken(product.selectedColor ?? product.color)
+
+        if let explicitMatch = variants.first(where: { variant in
+            normalizedVariantToken(variant.key) == requestedVariantKey && !requestedVariantKey.isEmpty
+        }) {
+            return (
+                variantKey: normalizedVariantToken(explicitMatch.key),
+                selectedSize: normalizedSizeToken(explicitMatch.size),
+                selectedColor: normalizedColorToken(explicitMatch.color)
+            )
+        }
+
+        if !requestedSize.isEmpty || !requestedColor.isEmpty {
+            if let inferredMatch = variants.first(where: { variant in
+                let variantSize = normalizedSizeToken(variant.size)
+                let variantColor = normalizedColorToken(variant.color)
+                let sizeMatches = requestedSize.isEmpty || variantSize == requestedSize
+                let colorMatches = requestedColor.isEmpty || variantColor == requestedColor
+                return sizeMatches && colorMatches
+            }) {
+                return (
+                    variantKey: normalizedVariantToken(inferredMatch.key),
+                    selectedSize: normalizedSizeToken(inferredMatch.size),
+                    selectedColor: normalizedColorToken(inferredMatch.color)
+                )
+            }
+        }
+
+        if product.requiresVariantSelection == true && variants.count > 1 {
+            return nil
+        }
+
+        if let onlyVariant = variants.first {
+            return (
+                variantKey: normalizedVariantToken(onlyVariant.key),
+                selectedSize: normalizedSizeToken(onlyVariant.size),
+                selectedColor: normalizedColorToken(onlyVariant.color)
+            )
+        }
+
+        if requestedVariantKey.isEmpty && requestedSize.isEmpty && requestedColor.isEmpty {
+            return (variantKey: "default", selectedSize: "", selectedColor: "")
+        }
+
+        return nil
+    }
+
+    private func normalizedVariantToken(_ value: String?) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "" : trimmed
+    }
+
+    private func normalizedSizeToken(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    }
+
+    private func normalizedColorToken(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
+    func removeFromCart(cartLineId: Int) async {
+        let response = await api.removeFromCart(cartLineId: cartLineId)
         if response.ok == true {
             await loadCart()
             showToast(response.message ?? "Produkti u hoq nga cart.")
         } else {
             globalMessage = response.message ?? "Produkti nuk u hoq."
+        }
+    }
+
+    func updateCartQuantity(cartLineId: Int, quantity: Int) async {
+        let (response, items) = await api.updateCartQuantity(cartLineId: cartLineId, quantity: quantity)
+        if response.ok == true {
+            if let items {
+                cart = items
+            } else {
+                await loadCart()
+            }
+            showToast(response.message ?? "Sasia u perditesua.")
+        } else {
+            globalMessage = response.message ?? response.errors?.joined(separator: " ") ?? "Sasia nuk u perditesua."
         }
     }
 
@@ -1872,11 +2136,12 @@ final class TregoNativeAppStore: ObservableObject {
             return response.message ?? response.errors?.joined(separator: " ") ?? "Login deshtoi."
         }
 
-        await refreshSession()
+        await refreshSession(force: true)
         async let wishlistTask: Void = loadWishlist()
         async let cartTask: Void = loadCart()
         _ = await (wishlistTask, cartTask)
         authRoute = nil
+        accountAuthRoute = .login
         selectedTab = .home
         showToast(response.message ?? "Mire se erdhe.")
         return nil
@@ -1900,12 +2165,13 @@ final class TregoNativeAppStore: ObservableObject {
             return response.message ?? response.errors?.joined(separator: " ") ?? "Regjistrimi deshtoi."
         }
 
-        await refreshSession()
+        await refreshSession(force: true)
         if user != nil {
             async let wishlistTask: Void = loadWishlist()
             async let cartTask: Void = loadCart()
             _ = await (wishlistTask, cartTask)
             authRoute = nil
+            accountAuthRoute = .login
             selectedTab = .home
         } else {
             authRoute = .login
@@ -1953,6 +2219,7 @@ final class TregoNativeAppStore: ObservableObject {
     func resetSessionState() {
         user = nil
         sessionLoaded = true
+        sessionRefreshing = false
         wishlist = []
         cart = []
         orders = []
@@ -1968,12 +2235,56 @@ final class TregoNativeAppStore: ObservableObject {
         adminOrders = []
         selectedTab = .home
         authRoute = nil
+        accountAuthRoute = .login
         selectedConversation = nil
         selectedBusiness = nil
     }
 
+    private func clearAuthenticatedData() {
+        wishlist = []
+        cart = []
+        orders = []
+        conversations = []
+        businessProfile = nil
+        businessAnalytics = nil
+        businessProducts = []
+        businessOrders = []
+        businessPromotions = []
+        adminUsers = []
+        adminBusinesses = []
+        adminReports = []
+        adminOrders = []
+    }
+
+    private func clearRoleScopedData(for sessionUser: TregoSessionUser?) {
+        guard let sessionUser else {
+            clearAuthenticatedData()
+            return
+        }
+
+        if sessionUser.role != "business" {
+            businessProfile = nil
+            businessAnalytics = nil
+            businessProducts = []
+            businessOrders = []
+            businessPromotions = []
+        }
+
+        if sessionUser.role != "admin" {
+            adminUsers = []
+            adminBusinesses = []
+            adminReports = []
+            adminOrders = []
+        }
+    }
+
     func requireAuthentication(defaultRoute: TregoAuthRoute) {
         authRoute = defaultRoute
+    }
+
+    func openAccountAuth(_ route: TregoAuthRoute) {
+        accountAuthRoute = route == .forgotPassword ? .login : route
+        selectedTab = .llogaria
     }
 
     func requestBusinessVerification() async {
@@ -2201,6 +2512,53 @@ final class TregoNativeAppStore: ObservableObject {
     func updateAppPrivacyMode(_ value: String) {
         appSettings.privacyMode = value
         appSettings.persist()
+    }
+
+    private func personalizedScore(
+        for product: TregoProduct,
+        preferredCategories: [String],
+        preferredBusinesses: [String]
+    ) -> Int {
+        var score = 0
+        if let category = normalizedCategoryKey(for: product) {
+            score += preferredCategories.filter { $0 == category }.count * 6
+        }
+        if let business = normalizedBusinessName(for: product) {
+            score += preferredBusinesses.filter { $0 == business }.count * 4
+        }
+        if recentlyViewedProducts.contains(where: { $0.id == product.id }) {
+            score += 2
+        }
+        if wishlist.contains(where: { $0.id == product.id }) {
+            score += 3
+        }
+        return score
+    }
+
+    private func normalizedCategoryKey(for product: TregoProduct) -> String? {
+        let rawCategory = (product.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !rawCategory.isEmpty else { return nil }
+        return TregoNativeProductCatalog.section(for: rawCategory)
+    }
+
+    private func normalizedBusinessName(for product: TregoProduct) -> String? {
+        let value = (product.businessName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value.isEmpty ? nil : value
+    }
+
+    private static func loadViewedHistory() -> [TregoViewedHistoryEntry] {
+        guard let data = UserDefaults.standard.data(forKey: viewedHistoryStorageKey) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([TregoViewedHistoryEntry].self, from: data)) ?? []
+    }
+
+    private func persistViewedHistory() {
+        let trimmed = Array(viewedHistory.prefix(30))
+        viewedHistory = trimmed
+        if let data = try? JSONEncoder().encode(trimmed) {
+            UserDefaults.standard.set(data, forKey: Self.viewedHistoryStorageKey)
+        }
     }
 
     func presentToast(_ message: String) {

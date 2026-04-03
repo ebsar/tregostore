@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonPage, IonSpinner } from "@ionic/vue";
+import { IonButton, IonContent, IonIcon, IonPage, IonSpinner } from "@ionic/vue";
+import { heart } from "ionicons/icons";
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
@@ -37,9 +38,7 @@ async function handleAddToCart(productId: number) {
 <template>
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page mobile-page--tabbed">
-        <div class="compact-page-title">Wishlist</div>
-
+      <div class="mobile-page mobile-page--tabbed mobile-page--edge wishlist-page">
         <section v-if="!sessionState.sessionLoaded" class="surface-card empty-panel wishlist-loading-panel">
           <IonSpinner name="crescent" />
         </section>
@@ -60,31 +59,66 @@ async function handleAddToCart(productId: number) {
           </div>
         </EmptyStatePanel>
 
-        <div v-else-if="items.length" class="product-grid">
-          <ProductCardMobile
-            v-for="product in items"
-            :key="product.id"
-            :product="product"
-            @open="(id) => router.push(`/product/${id}`)"
-            @cart="handleAddToCart"
-            @wishlist="handleWishlist"
-          />
-        </div>
+        <template v-else-if="items.length">
+          <div class="wishlist-inline-head">
+            <span class="wishlist-inline-title">Wishlist</span>
+          </div>
 
-        <EmptyStatePanel
-          v-else
-          title="Wishlist eshte bosh"
-          copy="Sapo te ruash produkte, ato do te shfaqen ketu nga e njejta databaze."
-        />
+          <div class="product-grid">
+            <ProductCardMobile
+              v-for="product in items"
+              :key="product.id"
+              :product="product"
+              @open="(id) => router.push(`/product/${id}`)"
+              @cart="handleAddToCart"
+              @wishlist="handleWishlist"
+            />
+          </div>
+        </template>
+
+        <section v-else class="surface-card empty-panel wishlist-empty-shell">
+          <IonIcon :icon="heart" />
+          <h3>Wishlist eshte bosh</h3>
+          <p>Sapo te ruash produkte, ato do te shfaqen ketu nga e njejta databaze.</p>
+        </section>
       </div>
     </IonContent>
   </IonPage>
 </template>
 
 <style scoped>
+.wishlist-page {
+  gap: 14px;
+}
+
 .wishlist-loading-panel {
   display: grid;
   place-items: center;
   min-height: 180px;
+}
+
+.wishlist-inline-head {
+  display: flex;
+  justify-content: center;
+}
+
+.wishlist-inline-title {
+  color: var(--trego-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.wishlist-empty-shell {
+  min-height: 260px;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.wishlist-empty-shell ion-icon {
+  color: #d64d63;
+  font-size: 1.6rem;
 }
 </style>

@@ -331,6 +331,13 @@ export async function fetchPublicBusinesses(): Promise<BusinessItem[]> {
   return Array.isArray(data.businesses) ? data.businesses : [];
 }
 
+export async function toggleBusinessFollow(businessId: number | string) {
+  return requestJson<any>("/api/business/follow-toggle", {
+    method: "POST",
+    body: JSON.stringify({ businessId }),
+  });
+}
+
 export async function fetchPublicBusinessDetail(businessId: number | string): Promise<BusinessItem | null> {
   const params = new URLSearchParams();
   params.set("id", String(businessId));

@@ -165,11 +165,16 @@ function handleAddToCart() {
   height: 100%;
   padding: 14px;
   border-radius: 28px;
-  background: var(--glass-medium-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
   backdrop-filter: blur(var(--glass-blur-medium));
   -webkit-backdrop-filter: blur(var(--glass-blur-medium));
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-soft);
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  box-shadow:
+    0 22px 42px rgba(31, 41, 55, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .marketplace-card.is-compact {
@@ -185,6 +190,7 @@ function handleAddToCart() {
   overflow: hidden;
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 243, 240, 0.94));
+  box-shadow: 0 16px 28px rgba(31, 41, 55, 0.1);
 }
 
 .marketplace-card.is-compact .marketplace-card-media {
@@ -232,7 +238,7 @@ function handleAddToCart() {
 
 .marketplace-card-body {
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .marketplace-card-meta {
@@ -270,7 +276,7 @@ function handleAddToCart() {
 }
 
 .marketplace-card-pricing strong {
-  color: var(--accent-dark);
+  color: var(--accent);
   font-size: 1.16rem;
   letter-spacing: -0.03em;
 }
@@ -324,6 +330,7 @@ function handleAddToCart() {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 10px;
+  margin-top: auto;
 }
 
 .marketplace-card-link,
@@ -341,8 +348,9 @@ function handleAddToCart() {
 .marketplace-card-link {
   padding: 0 14px;
   color: var(--text);
-  background: var(--glass-soft-bg);
-  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.12));
+  border: 1px solid rgba(255, 255, 255, 0.56);
   backdrop-filter: blur(var(--glass-blur-soft));
   -webkit-backdrop-filter: blur(var(--glass-blur-soft));
 }

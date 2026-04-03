@@ -1,7 +1,8 @@
 <script setup>
-import { reactive } from "vue";
+import { nextTick, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
+import { isGoogleWebAuthEnabled, renderGoogleAuthButton } from "../lib/google-auth";
 import { persistLoginGreeting } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
@@ -16,11 +17,73 @@ const ui = reactive({
   message: "",
   type: "",
 });
+const googleButtonElement = ref(null);
+const googleEnabled = isGoogleWebAuthEnabled();
 
 function showSocialAuthMessage(provider) {
   ui.message = `${provider} login po behet gati. Duhet te lidhen credential-et server-side per ta aktivizuar plotesisht.`;
   ui.type = "success";
 }
+
+async function handleGoogleCredential(googleResponse) {
+  const credential = String(googleResponse?.credential || "").trim();
+  if (!credential) {
+    ui.message = "Google login nuk ktheu credential valide.";
+    ui.type = "error";
+    return;
+  }
+
+  ui.loading = true;
+  ui.message = "";
+  ui.type = "";
+
+  try {
+    const { response, data } = await requestJson("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({
+        credential,
+        intent: "login",
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "Google login nuk funksionoi.");
+      ui.type = "error";
+      return;
+    }
+
+    ui.message = data.message || "U kyqe me sukses me Google.";
+    ui.type = "success";
+    persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
+    await ensureSessionLoaded({ force: true });
+    window.setTimeout(() => {
+      const redirectPath = String(route.query.redirect || "").trim();
+      router.push(data.redirectTo || redirectPath || "/");
+    }, 700);
+  } catch (error) {
+    ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
+    ui.type = "error";
+    console.error(error);
+  } finally {
+    ui.loading = false;
+  }
+}
+
+onMounted(async () => {
+  if (!googleEnabled) {
+    return;
+  }
+
+  await nextTick();
+  try {
+    await renderGoogleAuthButton(googleButtonElement.value, handleGoogleCredential, {
+      text: "continue_with",
+      width: 320,
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
 
 markRouteReady();
 
@@ -110,7 +173,8 @@ async function submitForm() {
           <button type="button" class="auth-social-button auth-social-button--apple" @click="showSocialAuthMessage('Apple')">
             Continue with Apple
           </button>
-          <button type="button" class="auth-social-button auth-social-button--google" @click="showSocialAuthMessage('Google')">
+          <div v-if="googleEnabled" ref="googleButtonElement" class="auth-social-google-render" />
+          <button v-else type="button" class="auth-social-button auth-social-button--google" @click="showSocialAuthMessage('Google')">
             Continue with Google
           </button>
         </div>
@@ -149,6 +213,17 @@ async function submitForm() {
 .auth-social-actions {
   display: grid;
   gap: 10px;
+}
+
+.auth-social-google-render {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.auth-social-google-render :deep(div[role="button"]) {
+  width: 100% !important;
+  border-radius: 18px !important;
 }
 
 .auth-social-button {

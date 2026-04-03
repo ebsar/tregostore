@@ -4,7 +4,7 @@ import UIKit
 enum LiquidGlassTab: String, CaseIterable, Identifiable {
     case home
     case kerko
-    case wishlist
+    case businesses
     case cart
     case llogaria
 
@@ -14,7 +14,7 @@ enum LiquidGlassTab: String, CaseIterable, Identifiable {
         switch self {
         case .home: return "Home"
         case .kerko: return "Kerko"
-        case .wishlist: return "Wishlist"
+        case .businesses: return "Bizneset"
         case .cart: return "Cart"
         case .llogaria: return "Llogaria"
         }
@@ -24,7 +24,7 @@ enum LiquidGlassTab: String, CaseIterable, Identifiable {
         switch self {
         case .home: return "house"
         case .kerko: return "magnifyingglass"
-        case .wishlist: return "heart"
+        case .businesses: return "storefront"
         case .cart: return "cart"
         case .llogaria: return "person.circle"
         }
@@ -42,7 +42,7 @@ struct LiquidGlassTabBar: View {
 
     @State private var animatedProgress: CGFloat = 0
 
-    private let groupedTabs: [LiquidGlassTab] = [.home, .wishlist, .cart, .llogaria]
+    private let groupedTabs: [LiquidGlassTab] = [.home, .businesses, .cart, .llogaria]
     private let shellHeight: CGFloat = 68
     private let searchOrbSize: CGFloat = 66
     private let innerInset: CGFloat = 5

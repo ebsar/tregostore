@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonPage, IonSpinner } from "@ionic/vue";
+import { IonButton, IonContent, IonIcon, IonPage, IonSpinner } from "@ionic/vue";
+import { arrowForwardOutline, heartOutline, trashOutline } from "ionicons/icons";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
@@ -45,8 +46,18 @@ function handleCheckout() {
 <template>
   <IonPage>
     <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page mobile-page--tabbed">
-        <div class="compact-page-title">Cart</div>
+      <div class="mobile-page mobile-page--tabbed mobile-page--edge cart-page">
+        <section class="surface-card cart-page-hero">
+          <div class="cart-page-hero-copy">
+            <p class="section-kicker">Cart</p>
+            <h1>Shporta juaj ne format mobile.</h1>
+          </div>
+
+          <button class="cart-page-wishlist" type="button" @click="router.push('/tabs/wishlist')">
+            <IonIcon :icon="heartOutline" />
+            <span>Wishlist</span>
+          </button>
+        </section>
 
         <section v-if="!sessionState.sessionLoaded" class="surface-card empty-panel cart-loading-panel">
           <IonSpinner name="crescent" />
@@ -68,28 +79,36 @@ function handleCheckout() {
           </div>
         </EmptyStatePanel>
 
-        <section v-else-if="items.length" class="stack-list">
-          <article v-for="item in items" :key="item.id" class="surface-card cart-line">
-            <img :src="getProductImage(item)" :alt="item.title" />
-            <div class="cart-line-copy">
-              <h3>{{ item.title }}</h3>
-              <p>{{ item.businessName || "TREGO" }}</p>
-              <strong>{{ formatPrice(item.price) }}</strong>
-              <span>Sasia: {{ item.quantity || 1 }}</span>
-            </div>
-            <IonButton fill="clear" @click="handleRemove(item.productId || item.id)">Hiqe</IonButton>
-          </article>
+        <template v-else-if="items.length">
+          <section class="stack-list">
+            <article v-for="item in items" :key="item.id" class="surface-card cart-line">
+              <img :src="getProductImage(item)" :alt="item.title">
 
-          <section class="surface-card surface-card--strong summary-surface-card">
-            <div class="section-head">
-              <div>
-                <p class="section-kicker">Subtotal</p>
-                <h2>{{ formatPrice(subtotal) }}</h2>
+              <div class="cart-line-copy">
+                <p>{{ item.businessName || "TREGO" }}</p>
+                <h3>{{ item.title }}</h3>
+                <strong>{{ formatPrice(item.price) }}</strong>
+                <span>Sasia: {{ item.quantity || 1 }}</span>
               </div>
-              <IonButton class="cta-button" @click="handleCheckout">Checkout</IonButton>
-            </div>
+
+              <button class="cart-line-remove" type="button" @click="handleRemove(item.productId || item.id)">
+                <IonIcon :icon="trashOutline" />
+              </button>
+            </article>
           </section>
-        </section>
+
+          <section class="surface-card surface-card--strong summary-surface-card cart-summary-card">
+            <div>
+              <p class="section-kicker">Subtotal</p>
+              <h2>{{ formatPrice(subtotal) }}</h2>
+            </div>
+
+            <IonButton class="cta-button cart-summary-button" @click="handleCheckout">
+              Checkout
+              <IonIcon slot="end" :icon="arrowForwardOutline" />
+            </IonButton>
+          </section>
+        </template>
 
         <EmptyStatePanel
           v-else
@@ -102,6 +121,51 @@ function handleCheckout() {
 </template>
 
 <style scoped>
+.cart-page {
+  gap: 14px;
+}
+
+.cart-page-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.cart-page-hero-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.cart-page-hero-copy h1 {
+  margin: 0;
+  color: var(--trego-dark);
+  font-size: 1.18rem;
+  line-height: 1.06;
+}
+
+.cart-page-wishlist {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  color: var(--trego-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.cart-page-wishlist ion-icon {
+  color: var(--trego-accent);
+  font-size: 0.95rem;
+}
+
 .cart-loading-panel {
   display: grid;
   place-items: center;
@@ -109,23 +173,24 @@ function handleCheckout() {
 }
 
 .cart-line {
+  position: relative;
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 12px;
   padding: 12px;
+  align-items: start;
 }
 
 .cart-line img {
-  width: 84px;
-  height: 84px;
-  border-radius: 20px;
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
   object-fit: cover;
 }
 
 .cart-line-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  gap: 4px;
 }
 
 .cart-line-copy h3,
@@ -135,13 +200,48 @@ function handleCheckout() {
   margin: 0;
 }
 
-.cart-line-copy h3 {
-  color: var(--trego-dark);
-  font-size: 1rem;
-}
-
 .cart-line-copy p,
 .cart-line-copy span {
   color: var(--trego-muted);
+  font-size: 0.76rem;
+}
+
+.cart-line-copy h3 {
+  color: var(--trego-dark);
+  font-size: 0.95rem;
+  line-height: 1.18;
+}
+
+.cart-line-copy strong {
+  color: var(--trego-accent);
+  font-size: 0.95rem;
+}
+
+.cart-line-remove {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--trego-input-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #d15a52;
+}
+
+.cart-summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.cart-summary-card h2 {
+  margin: 0;
+  color: var(--trego-dark);
+}
+
+.cart-summary-button {
+  min-width: 144px;
 }
 </style>

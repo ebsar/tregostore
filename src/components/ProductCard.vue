@@ -236,3 +236,183 @@ const shortDescription = computed(() => {
     </div>
   </article>
 </template>
+
+<style scoped>
+.pet-product-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 14px;
+  height: 100%;
+  padding: 14px;
+  border-radius: 30px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  box-shadow:
+    0 22px 42px rgba(31, 41, 55, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+}
+
+.pet-product-media {
+  position: relative;
+}
+
+.pet-product-image-wrap {
+  overflow: hidden;
+  border-radius: 24px;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(246, 243, 240, 0.94));
+}
+
+.pet-product-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-card-overlay-button {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.14));
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 12px 24px rgba(17, 24, 39, 0.16);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.product-card-overlay-button .nav-icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+
+.pet-product-content-shell {
+  display: grid;
+}
+
+.pet-product-content {
+  display: grid;
+  gap: 8px;
+}
+
+.pet-product-title {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.22;
+}
+
+.pet-product-title-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pet-product-business-name {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pet-product-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.48;
+}
+
+.pet-product-price-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pet-product-price {
+  color: var(--accent);
+  font-size: 1.08rem;
+  line-height: 1;
+}
+
+.pet-product-price-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.pet-product-price-compare,
+.pet-product-discount-empty {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.pet-product-discount-chip {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(214, 75, 75, 0.12);
+  color: #c34747;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.pet-product-rating-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pet-product-rating-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.pet-product-rating-star {
+  width: 14px;
+  height: 14px;
+  fill: rgba(244, 180, 26, 0.18);
+}
+
+.pet-product-rating-star.is-filled {
+  fill: #f4b41a;
+}
+
+.pet-product-rating-divider {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(107, 114, 128, 0.4);
+}
+
+@media (max-width: 640px) {
+  .pet-product-card {
+    padding: 12px;
+    border-radius: 24px;
+  }
+
+  .pet-product-title {
+    font-size: 0.96rem;
+  }
+}
+</style>

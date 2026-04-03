@@ -42,11 +42,6 @@ const accountInitials = computed(() => {
 const actionItems = computed(() =>
   [
     {
-      title: "Profile",
-      icon: personCircleOutline,
-      to: "/tabs/account",
-    },
-    {
       title: "Wishlist",
       icon: heartOutline,
       to: "/tabs/wishlist",
@@ -76,7 +71,12 @@ const actionItems = computed(() =>
         }
       : null,
     {
-      title: "App settings",
+      title: "Te dhenat",
+      icon: personCircleOutline,
+      to: "/tabs/account",
+    },
+    {
+      title: "Settings",
       icon: settingsOutline,
       to: "/app/settings",
     },
@@ -359,32 +359,43 @@ async function handleLogout() {
 
 .account-shortcuts-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .account-shortcut-card {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   justify-items: start;
-  min-height: 86px;
-  padding: 14px 12px;
-  border: 1px solid var(--trego-border);
-  border-radius: 20px;
-  background: var(--trego-surface);
+  min-height: 104px;
+  padding: 16px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.34), transparent 34%);
   color: var(--trego-dark);
   text-align: left;
-  box-shadow: var(--trego-shadow-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 16px 28px rgba(31, 41, 55, 0.08);
 }
 
 .account-shortcut-card ion-icon {
-  font-size: 1.1rem;
-  color: var(--trego-accent);
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(64, 124, 255, 0.18), rgba(64, 124, 255, 0.1));
+  font-size: 1rem;
+  color: #3d6cff;
 }
 
 .account-shortcut-card span {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 800;
   line-height: 1.15;
 }
 
