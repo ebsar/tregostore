@@ -153,7 +153,7 @@ function initializeBrandLogo() {
 
     brandLink.classList.add("has-logo");
     brandLink.innerHTML = `
-      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGIO">
+      <img class="brand-logo" src="/trego-logo.png?v=20260410" alt="Logo e TREGIO">
       <span class="sr-only">TREGIO</span>
     `;
   });

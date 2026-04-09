@@ -372,7 +372,7 @@ function updateSpeedInsightsRoute() {
     <footer v-if="showSiteFooter" class="site-footer" aria-label="Footer i faqes">
       <div class="site-footer-grid">
         <div class="site-footer-brand">
-          <img class="site-footer-logo" src="/trego-logo.webp" alt="TREGIO" width="1024" height="1024">
+          <img class="site-footer-logo" src="/trego-logo.webp?v=20260410" alt="TREGIO" width="1024" height="1024">
         </div>
 
         <nav class="site-footer-links" aria-label="Marketplace links">

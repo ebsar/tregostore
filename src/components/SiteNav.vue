@@ -1065,7 +1065,7 @@ onBeforeUnmount(() => {
     aria-label="Navigimi kryesor"
   >
     <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGIO" width="1024" height="1024" fetchpriority="high">
+      <img class="brand-logo" src="/trego-logo.webp?v=20260410" alt="Logo e TREGIO" width="1024" height="1024" fetchpriority="high">
       <span class="sr-only">TREGIO</span>
     </RouterLink>
 
