@@ -2,6 +2,13 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
+trego-mobile-app/node_modules/
+trego-mobile-app/dist/
+trego-mobile-app/.vercel/
+trego-mobile-app/android/.gradle/
+trego-mobile-app/android/build/
+trego-mobile-app/android/app/build/
+trego-mobile-app/ios/App/build/
 data/*.db
 data/*.sqlite
 data/*.sqlite3
@@ -11,3 +18,5 @@ data/*.sqlite3
 static/uploads/
 .vercel
 .env*.local
+.derived-*/
+.swift-module-cache/
