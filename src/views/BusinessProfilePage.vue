@@ -35,6 +35,8 @@ const ui = reactive({
   type: "",
 });
 let stopProductsPageSizeSubscription = () => {};
+let businessRequestId = 0;
+let businessProductsRequestId = 0;
 const { target: loadMoreSentinel, supportsAutoLoad } = useInfiniteScrollSentinel({
   hasMore: hasMoreProducts,
   loading: loadingMoreProducts,
@@ -192,6 +194,7 @@ async function refreshCollectionState() {
 }
 
 async function loadBusiness() {
+  const requestId = ++businessRequestId;
   const businessId = Number(route.query.id || "");
   if (!Number.isFinite(businessId) || businessId <= 0) {
     business.value = null;
@@ -205,8 +208,10 @@ async function loadBusiness() {
     {},
     { cacheTtlMs: 20000 },
   );
+  if (requestId !== businessRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok || !data.business) {
-    business.value = null;
     ui.message = resolveApiMessage(data, "Biznesi nuk u gjet.");
     ui.type = "error";
     return;
@@ -219,6 +224,7 @@ async function loadBusiness() {
 
 async function loadProducts(options = {}) {
   const { append = false } = options;
+  const requestId = ++businessProductsRequestId;
   const businessId = Number(route.query.id || "");
   if (!Number.isFinite(businessId) || businessId <= 0) {
     products.value = [];
@@ -232,12 +238,12 @@ async function loadProducts(options = {}) {
     `/api/business/public-products?id=${encodeURIComponent(businessId)}&limit=${productsPageSize.value}&offset=${offset}`,
     {},
   );
+  if (requestId !== businessProductsRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-    }
+    ui.message = resolveApiMessage(data, "Produktet e biznesit nuk u ngarkuan.");
+    ui.type = "error";
     return;
   }
 
@@ -246,6 +252,8 @@ async function loadProducts(options = {}) {
   products.value = append ? [...products.value, ...availableProducts] : availableProducts;
   totalProductsCount.value = Number(data.total || products.value.length || 0);
   hasMoreProducts.value = Boolean(data.hasMore);
+  ui.message = "";
+  ui.type = "";
 }
 
 function handleCompare(product) {
@@ -584,7 +592,7 @@ async function handleReportBusiness() {
       <div class="collection-page-header business-public-products-header">
         <p class="section-label">Artikujt e biznesit</p>
         <h2>Produktet publike</h2>
-        <p>Shfleto artikujt qe ky biznes i ka publikuar ne TREGO.</p>
+        <p>Shfleto artikujt qe ky biznes i ka publikuar ne TREGIO.</p>
       </div>
 
       <section v-if="products.length > 0" class="pet-products-grid" aria-label="Produktet e biznesit">

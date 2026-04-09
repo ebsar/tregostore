@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "store.trego.mobile",
-  appName: "Trego Mobile",
+  appName: "Tregio",
   webDir: "dist",
   bundledWebRuntime: false,
   ios: {
@@ -24,12 +24,12 @@ const config: CapacitorConfig = {
     },
     SplashScreen: {
       launchShowDuration: 1400,
-      backgroundColor: "#f5f3f1",
+      backgroundColor: "#ffffff",
       showSpinner: false,
     },
     StatusBar: {
       style: "dark",
-      backgroundColor: "#f5f3f1"
+      backgroundColor: "#ffffff"
     }
   }
 };

@@ -70,7 +70,7 @@ onMounted(async () => {
       return;
     }
 
-    ui.accessNote = "Je kycur si admin. Ketu shfaqen bizneset e regjistruara ne TREGO dhe statistikat baze te tyre.";
+    ui.accessNote = "Je kycur si admin. Ketu shfaqen bizneset e regjistruara ne TREGIO dhe statistikat baze te tyre.";
     await loadBusinesses();
   } finally {
     markRouteReady();

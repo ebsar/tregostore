@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { isGoogleWebAuthEnabled, renderGoogleAuthButton } from "../lib/google-auth";
 import { persistLoginGreeting } from "../lib/shop";
-import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
+import { applyAuthenticatedSession, markRouteReady } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
@@ -55,11 +55,9 @@ async function handleGoogleCredential(googleResponse) {
     ui.message = data.message || "U kyqe me sukses me Google.";
     ui.type = "success";
     persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
-    await ensureSessionLoaded({ force: true });
-    window.setTimeout(() => {
-      const redirectPath = String(route.query.redirect || "").trim();
-      router.push(data.redirectTo || redirectPath || "/");
-    }, 700);
+    await applyAuthenticatedSession(data.user || null);
+    const redirectPath = String(route.query.redirect || "").trim();
+    await router.push(redirectPath || data.redirectTo || "/");
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
     ui.type = "error";
@@ -108,9 +106,7 @@ async function submitForm() {
       );
       ui.type = "error";
       if (data?.redirectTo) {
-        window.setTimeout(() => {
-          router.push(data.redirectTo);
-        }, 1100);
+        await router.push(data.redirectTo);
       }
       return;
     }
@@ -118,11 +114,9 @@ async function submitForm() {
     ui.message = data.message || "U kyqe me sukses.";
     ui.type = "success";
     persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
-    await ensureSessionLoaded({ force: true });
-    window.setTimeout(() => {
-      const redirectPath = String(route.query.redirect || "").trim();
-      router.push(data.redirectTo || redirectPath || "/");
-    }, 700);
+    await applyAuthenticatedSession(data.user || null);
+    const redirectPath = String(route.query.redirect || "").trim();
+    await router.push(redirectPath || data.redirectTo || "/");
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
     ui.type = "error";

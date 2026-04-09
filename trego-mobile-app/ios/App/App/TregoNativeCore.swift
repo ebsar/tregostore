@@ -124,6 +124,23 @@ struct TregoViewedHistoryEntry: Codable, Identifiable, Equatable {
     var id: Int { product.id }
 }
 
+struct TregoPaginatedPayload<Item: Equatable>: Equatable {
+    let items: [Item]
+    let limit: Int
+    let offset: Int
+    let total: Int?
+    let hasMore: Bool
+}
+
+struct TregoRecommendationSection: Codable, Identifiable, Equatable {
+    let key: String
+    let title: String
+    let subtitle: String?
+    let products: [TregoProduct]
+
+    var id: String { key }
+}
+
 struct TregoProductReview: Codable, Identifiable, Equatable {
     let id: Int
     let rating: Int?
@@ -366,6 +383,21 @@ struct TregoPromotion: Codable, Identifiable, Equatable {
     }
 }
 
+struct TregoLaunchAd: Codable, Identifiable, Equatable {
+    let id: Int
+    let badge: String?
+    let title: String?
+    let subtitle: String?
+    let imagePath: String?
+    let ctaLabel: String?
+    let sortOrder: Int?
+    let isActive: Bool?
+    let startsAt: String?
+    let endsAt: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
 struct TregoConversation: Codable, Identifiable, Equatable {
     let id: Int
     let businessName: String?
@@ -469,10 +501,17 @@ struct TregoImageSearchUpload: Equatable {
     let mimeType: String
 }
 
+struct TregoAttachmentUpload: Equatable {
+    let data: Data
+    let filename: String
+    let mimeType: String
+}
+
 enum TregoAuthRoute: String, Identifiable {
     case login
     case signup
     case forgotPassword
+    case verifyEmail
 
     var id: String { rawValue }
 }
@@ -542,13 +581,84 @@ struct TregoAppSettings: Equatable {
 struct TregoAPIConfiguration {
     let baseURL: URL
 
-    static func load() -> TregoAPIConfiguration {
-        if let value = Bundle.main.object(forInfoDictionaryKey: "TregoAPIBaseURL") as? String,
-           let url = URL(string: value), let scheme = url.scheme {
-            let normalized = scheme.isEmpty ? URL(string: "https://www.tregos.store")! : url
-            return TregoAPIConfiguration(baseURL: normalized)
+    private static let productionBaseURL = URL(string: "https://www.tregos.store")!
+    private static let debugOverrideDefaultsKey = "trego.debug.apiBaseURL"
+
+    var isLocalDevelopmentServer: Bool {
+        let host = baseURL.host?.lowercased() ?? ""
+        if host == "127.0.0.1" || host == "localhost" {
+            return true
         }
-        return TregoAPIConfiguration(baseURL: URL(string: "https://www.tregos.store")!)
+        if host.hasPrefix("192.168.") || host.hasPrefix("10.") {
+            return true
+        }
+        if host.hasPrefix("172.16.") || host.hasPrefix("172.17.") || host.hasPrefix("172.18.") || host.hasPrefix("172.19.") {
+            return true
+        }
+        if host.hasPrefix("172.2") || host.hasPrefix("172.30.") || host.hasPrefix("172.31.") {
+            return true
+        }
+        return false
+    }
+
+    static func load() -> TregoAPIConfiguration {
+        #if DEBUG
+        if
+            let overrideURL = normalizedURL(from: UserDefaults.standard.string(forKey: debugOverrideDefaultsKey)),
+            !isLocalDevelopmentURL(overrideURL)
+        {
+            return TregoAPIConfiguration(baseURL: overrideURL)
+        }
+
+        if let debugURL = normalizedURL(
+            from: Bundle.main.object(forInfoDictionaryKey: "TregoDebugAPIBaseURL") as? String
+        ) {
+            return TregoAPIConfiguration(baseURL: debugURL)
+        }
+
+        #if targetEnvironment(simulator)
+        if let simulatorDebugURL = normalizedURL(
+            from: Bundle.main.object(forInfoDictionaryKey: "TregoDebugSimulatorAPIBaseURL") as? String
+        ) {
+            return TregoAPIConfiguration(baseURL: simulatorDebugURL)
+        }
+        #endif
+        #endif
+
+        if let configuredURL = normalizedURL(
+            from: Bundle.main.object(forInfoDictionaryKey: "TregoAPIBaseURL") as? String
+        ) {
+            return TregoAPIConfiguration(baseURL: configuredURL)
+        }
+
+        return TregoAPIConfiguration(baseURL: productionBaseURL)
+    }
+
+    private static func normalizedURL(from rawValue: String?) -> URL? {
+        guard let rawValue else { return nil }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+            return url
+        }
+        return URL(string: "https://\(trimmed)")
+    }
+
+    private static func isLocalDevelopmentURL(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        if host == "127.0.0.1" || host == "localhost" {
+            return true
+        }
+        if host.hasPrefix("192.168.") || host.hasPrefix("10.") {
+            return true
+        }
+        if host.hasPrefix("172.16.") || host.hasPrefix("172.17.") || host.hasPrefix("172.18.") || host.hasPrefix("172.19.") {
+            return true
+        }
+        if host.hasPrefix("172.2") || host.hasPrefix("172.30.") || host.hasPrefix("172.31.") {
+            return true
+        }
+        return false
     }
 }
 
@@ -556,6 +666,16 @@ struct TregoStatusResponse: Codable {
     let ok: Bool?
     let message: String?
     let errors: [String]?
+    let redirectTo: String?
+    let user: TregoSessionUser?
+
+    init(ok: Bool?, message: String?, errors: [String]?, redirectTo: String? = nil, user: TregoSessionUser? = nil) {
+        self.ok = ok
+        self.message = message
+        self.errors = errors
+        self.redirectTo = redirectTo
+        self.user = user
+    }
 }
 
 struct TregoWishlistToggleResponse: Codable {
@@ -610,9 +730,28 @@ private struct TregoListResponse<T: Codable>: Codable {
     let reports: [T]?
     let conversations: [T]?
     let promotions: [T]?
+    let launchAds: [T]?
+}
+
+struct TregoListFetchResult<T> {
+    let items: [T]
+    let didSucceed: Bool
+    let message: String?
+}
+
+struct TregoPageFetchResult<T: Equatable> {
+    let page: TregoPaginatedPayload<T>
+    let didSucceed: Bool
+    let message: String?
 }
 
 final class TregoAPIClient {
+    private struct TregoMultipartUpload {
+        let data: Data
+        let filename: String
+        let mimeType: String
+    }
+
     private let configuration: TregoAPIConfiguration
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -639,12 +778,20 @@ final class TregoAPIClient {
         return TregoAPIConfiguration.load().baseURL.appendingPathComponent(raw.hasPrefix("/") ? String(raw.dropFirst()) : raw)
     }
 
+    var currentBaseURLString: String {
+        configuration.baseURL.absoluteString
+    }
+
+    var usesLocalDevelopmentServer: Bool {
+        configuration.isLocalDevelopmentServer
+    }
+
     fileprivate func fetchCurrentUserState() async -> TregoCurrentUserFetchState {
         if let immediate = await fetchCurrentUserStateOnce() {
             return immediate
         }
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
+        try? await Task.sleep(nanoseconds: 150_000_000)
 
         if let retry = await fetchCurrentUserStateOnce() {
             return retry
@@ -679,6 +826,25 @@ final class TregoAPIClient {
     func requestPasswordReset(email: String) async -> TregoStatusResponse {
         await sendStatusRequest(
             path: "/api/forgot-password",
+            method: "POST",
+            body: ["email": email]
+        )
+    }
+
+    func verifyEmail(email: String, code: String) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/email/verify",
+            method: "POST",
+            body: [
+                "email": email,
+                "code": code,
+            ]
+        )
+    }
+
+    func resendEmailVerification(email: String) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/email/resend",
             method: "POST",
             body: ["email": email]
         )
@@ -943,13 +1109,38 @@ final class TregoAPIClient {
     }
 
     func fetchMarketplaceProducts(limit: Int = 24, offset: Int = 0) async -> [TregoProduct] {
+        let page = await fetchMarketplaceProductsPage(limit: limit, offset: offset)
+        return page.items
+    }
+
+    func fetchMarketplaceProductsPageResult(limit: Int = 24, offset: Int = 0) async -> TregoPageFetchResult<TregoProduct> {
         let path = "/api/products?limit=\(limit)&offset=\(offset)"
-        return await fetchList(path: path, keyPreference: [.products, .items])
+        return await fetchPageResult(path: path, keyPreference: [.products, .items])
+    }
+
+    func fetchMarketplaceProductsPage(limit: Int = 24, offset: Int = 0) async -> TregoPaginatedPayload<TregoProduct> {
+        let result = await fetchMarketplaceProductsPageResult(limit: limit, offset: offset)
+        return result.page
+    }
+
+    func fetchHomeRecommendations(limit: Int = 8) async -> [TregoRecommendationSection] {
+        guard let json = await sendJSONRequest(path: "/api/recommendations/home?limit=\(limit)") else { return [] }
+        guard json.ok else { return [] }
+        return (decodeArray(json.object["sections"]) ?? []).filter { !$0.products.isEmpty }
     }
 
     func searchProducts(query: String) async -> [TregoProduct] {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return await fetchList(path: "/api/products/search?query=\(encoded)&limit=30", keyPreference: [.products, .items])
+        let page = await searchProductsPage(query: encoded, encoded: true)
+        return page.items
+    }
+
+    func searchProductsPage(query: String, limit: Int = 18, offset: Int = 0, encoded: Bool = false) async -> TregoPaginatedPayload<TregoProduct> {
+        let rawQuery = encoded ? query : (query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")
+        return await fetchPage(
+            path: "/api/products/search?q=\(rawQuery)&limit=\(limit)&offset=\(offset)",
+            keyPreference: [.products, .items]
+        )
     }
 
     func searchProducts(imageUpload: TregoImageSearchUpload) async -> [TregoProduct] {
@@ -972,6 +1163,13 @@ final class TregoAPIClient {
         guard let json = await sendJSONRequest(path: path) else { return [] }
         guard json.ok else { return [] }
         return decodeArray(json.object["reviews"]) ?? []
+    }
+
+    func fetchProductRecommendations(id: Int, limit: Int = 6) async -> [TregoRecommendationSection] {
+        let path = "/api/recommendations/product?id=\(id)&limit=\(limit)"
+        guard let json = await sendJSONRequest(path: path) else { return [] }
+        guard json.ok else { return [] }
+        return (decodeArray(json.object["sections"]) ?? []).filter { !$0.products.isEmpty }
     }
 
     func trackProductShare(productId: Int) async -> TregoStatusResponse {
@@ -1134,11 +1332,25 @@ final class TregoAPIClient {
         await fetchList(path: "/api/businesses/public", keyPreference: [.businesses, .items])
     }
 
+    func fetchPublicBusinessesResult() async -> TregoListFetchResult<TregoPublicBusinessProfile> {
+        await fetchListResult(path: "/api/businesses/public", keyPreference: [.businesses, .items])
+    }
+
     func fetchPublicBusinessProducts(id: Int, limit: Int = 24, offset: Int = 0) async -> [TregoProduct] {
-        await fetchList(
+        let page = await fetchPublicBusinessProductsPage(id: id, limit: limit, offset: offset)
+        return page.items
+    }
+
+    func fetchPublicBusinessProductsPageResult(id: Int, limit: Int = 24, offset: Int = 0) async -> TregoPageFetchResult<TregoProduct> {
+        await fetchPageResult(
             path: "/api/business/public-products?id=\(id)&limit=\(limit)&offset=\(offset)",
             keyPreference: [.products, .items]
         )
+    }
+
+    func fetchPublicBusinessProductsPage(id: Int, limit: Int = 24, offset: Int = 0) async -> TregoPaginatedPayload<TregoProduct> {
+        let result = await fetchPublicBusinessProductsPageResult(id: id, limit: limit, offset: offset)
+        return result.page
     }
 
     func toggleBusinessFollow(businessId: Int) async -> (TregoStatusResponse, TregoPublicBusinessProfile?) {
@@ -1161,6 +1373,21 @@ final class TregoAPIClient {
             path: "/api/chat/open",
             method: "POST",
             body: ["businessId": businessId]
+        ) else {
+            return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
+        }
+
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let conversation: TregoConversation? = decode(json.object["conversation"])
+        return (response, conversation)
+    }
+
+    func openSupportConversation() async -> (TregoStatusResponse, TregoConversation?) {
+        guard let json = await sendJSONRequest(
+            path: "/api/chat/open",
+            method: "POST",
+            body: ["target": "support"]
         ) else {
             return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
         }
@@ -1263,6 +1490,10 @@ final class TregoAPIClient {
         await fetchList(path: "/api/business/promotions", keyPreference: [.promotions, .items])
     }
 
+    func fetchLaunchAds() async -> [TregoLaunchAd] {
+        await fetchList(path: "/api/launch-ads", keyPreference: [.launchAds, .items])
+    }
+
     func saveBusinessPromotion(payload: [String: Any]) async -> ([TregoPromotion], TregoStatusResponse) {
         guard let json = await sendJSONRequest(path: "/api/business/promotions", method: "POST", body: payload) else {
             return ([], TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil))
@@ -1282,6 +1513,24 @@ final class TregoAPIClient {
             payload["code"] = code
         }
         return await saveBusinessPromotion(payload: payload)
+    }
+
+    func fetchAdminLaunchAds() async -> [TregoLaunchAd] {
+        await fetchList(path: "/api/admin/launch-ads", keyPreference: [.launchAds, .items])
+    }
+
+    func saveAdminLaunchAd(payload: [String: Any]) async -> ([TregoLaunchAd], TregoStatusResponse) {
+        guard let json = await sendJSONRequest(path: "/api/admin/launch-ads", method: "POST", body: payload) else {
+            return ([], TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil))
+        }
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let launchAds: [TregoLaunchAd] = decodeArray(json.object["launchAds"]) ?? []
+        return (launchAds, response)
+    }
+
+    func deleteAdminLaunchAd(id: Int) async -> ([TregoLaunchAd], TregoStatusResponse) {
+        await saveAdminLaunchAd(payload: ["action": "delete", "deleteLaunchAd": true, "launchAdId": id])
     }
 
     func updateOrderStatus(
@@ -1399,13 +1648,79 @@ final class TregoAPIClient {
     }
 
     func sendMessage(conversationId: Int, body: String) async -> TregoChatMessage? {
+        let (_, message, _) = await sendChatMessage(conversationId: conversationId, body: body)
+        return message
+    }
+
+    func sendChatMessage(
+        conversationId: Int,
+        body: String,
+        attachment: TregoAttachmentUpload? = nil
+    ) async -> (TregoStatusResponse, TregoChatMessage?, TregoConversation?) {
+        let json: TregoJSONResult?
+        if let attachment {
+            json = await sendMultipartRequest(
+                path: "/api/chat/messages",
+                uploads: [
+                    TregoMultipartUpload(
+                        data: attachment.data,
+                        filename: attachment.filename,
+                        mimeType: attachment.mimeType
+                    ),
+                ],
+                fieldName: "attachment",
+                fields: [
+                    "conversationId": String(conversationId),
+                    "body": body,
+                ]
+            )
+        } else {
+            json = await sendJSONRequest(
+                path: "/api/chat/messages",
+                method: "POST",
+                body: ["conversationId": conversationId, "body": body]
+            )
+        }
+
+        guard let json else {
+            return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil, nil)
+        }
+
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let message: TregoChatMessage? = decode(json.object["message"])
+        let conversation: TregoConversation? = decode(json.object["conversation"])
+        return (response, message, conversation)
+    }
+
+    func updateChatMessage(messageId: Int, body: String) async -> (TregoStatusResponse, TregoChatMessage?) {
         guard let json = await sendJSONRequest(
-            path: "/api/chat/messages",
+            path: "/api/chat/messages/update",
             method: "POST",
-            body: ["conversationId": conversationId, "body": body]
-        ) else { return nil }
-        guard json.ok else { return nil }
-        return decode(json.object["message"])
+            body: ["messageId": messageId, "body": body]
+        ) else {
+            return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
+        }
+
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let message: TregoChatMessage? = decode(json.object["message"])
+        return (response, message)
+    }
+
+    func deleteChatMessage(messageId: Int) async -> (TregoStatusResponse, TregoChatMessage?) {
+        guard let json = await sendJSONRequest(
+            path: "/api/chat/messages/delete",
+            method: "POST",
+            body: ["messageId": messageId]
+        ) else {
+            return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
+        }
+
+        let response = decode(json.object) as TregoStatusResponse?
+            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+        let message: TregoChatMessage? = decode(json.object["message"])
+        return (response, message)
     }
 
     private enum ListKeyPreference {
@@ -1417,6 +1732,7 @@ final class TregoAPIClient {
         case reports
         case conversations
         case promotions
+        case launchAds
 
         var rawKey: String {
             switch self {
@@ -1428,23 +1744,101 @@ final class TregoAPIClient {
             case .reports: return "reports"
             case .conversations: return "conversations"
             case .promotions: return "promotions"
+            case .launchAds: return "launchAds"
             }
         }
     }
 
     private func fetchList<T: Decodable>(path: String, keyPreference: [ListKeyPreference]) async -> [T] {
-        guard let json = await sendJSONRequest(path: path), json.ok else {
-            return []
+        let result: TregoListFetchResult<T> = await fetchListResult(path: path, keyPreference: keyPreference)
+        return result.items
+    }
+
+    private func fetchListResult<T: Decodable>(path: String, keyPreference: [ListKeyPreference]) async -> TregoListFetchResult<T> {
+        guard let json = await sendJSONRequest(path: path) else {
+            return TregoListFetchResult(items: [], didSucceed: false, message: "Lidhja me serverin deshtoi.")
+        }
+        guard json.ok else {
+            return TregoListFetchResult(items: [], didSucceed: false, message: json.message)
         }
         for key in keyPreference {
             if let items: [T] = decodeArray(json.object[key.rawKey]) {
-                return items
+                return TregoListFetchResult(items: items, didSucceed: true, message: json.message)
             }
         }
         if let direct: [T] = decodeArray(json.object) {
-            return direct
+            return TregoListFetchResult(items: direct, didSucceed: true, message: json.message)
         }
-        return []
+        return TregoListFetchResult(items: [], didSucceed: true, message: json.message)
+    }
+
+    private func fetchPage<T: Decodable & Equatable>(path: String, keyPreference: [ListKeyPreference]) async -> TregoPaginatedPayload<T> {
+        let result: TregoPageFetchResult<T> = await fetchPageResult(path: path, keyPreference: keyPreference)
+        return result.page
+    }
+
+    private func fetchPageResult<T: Decodable & Equatable>(path: String, keyPreference: [ListKeyPreference]) async -> TregoPageFetchResult<T> {
+        guard let json = await sendJSONRequest(path: path) else {
+            return TregoPageFetchResult(
+                page: TregoPaginatedPayload(items: [], limit: 0, offset: 0, total: nil, hasMore: false),
+                didSucceed: false,
+                message: "Lidhja me serverin deshtoi."
+            )
+        }
+        guard json.ok else {
+            return TregoPageFetchResult(
+                page: TregoPaginatedPayload(items: [], limit: 0, offset: 0, total: nil, hasMore: false),
+                didSucceed: false,
+                message: json.message
+            )
+        }
+
+        let items: [T]
+        if let decodedItems = keyPreference.compactMap({ decodeArray(json.object[$0.rawKey]) as [T]? }).first {
+            items = decodedItems
+        } else if let direct: [T] = decodeArray(json.object) {
+            items = direct
+        } else {
+            items = []
+        }
+
+        return TregoPageFetchResult(
+            page: TregoPaginatedPayload(
+                items: items,
+                limit: intValue(in: json.object["limit"]) ?? items.count,
+                offset: intValue(in: json.object["offset"]) ?? 0,
+                total: intValue(in: json.object["total"]),
+                hasMore: boolValue(in: json.object["hasMore"]) ?? false
+            ),
+            didSucceed: true,
+            message: json.message
+        )
+    }
+
+    private func intValue(in value: Any?) -> Int? {
+        switch value {
+        case let int as Int:
+            return int
+        case let number as NSNumber:
+            return number.intValue
+        case let text as String:
+            return Int(text)
+        default:
+            return nil
+        }
+    }
+
+    private func boolValue(in value: Any?) -> Bool? {
+        switch value {
+        case let bool as Bool:
+            return bool
+        case let number as NSNumber:
+            return number.boolValue
+        case let text as String:
+            return NSString(string: text).boolValue
+        default:
+            return nil
+        }
     }
 
     private func sendStatusRequest(path: String, method: String, body: [String: Any] = [:]) async -> TregoStatusResponse {
@@ -1457,7 +1851,8 @@ final class TregoAPIClient {
         return TregoStatusResponse(
             ok: json.ok,
             message: json.message,
-            errors: nil
+            errors: nil,
+            redirectTo: json.object["redirectTo"] as? String
         )
     }
 
@@ -1474,11 +1869,40 @@ final class TregoAPIClient {
     }
 
     private func sendMultipartRequest(path: String, upload: TregoImageSearchUpload) async -> TregoJSONResult? {
-        await sendMultipartRequest(path: path, uploads: [upload], fieldName: "image")
+        await sendMultipartRequest(
+            path: path,
+            uploads: [
+                TregoMultipartUpload(
+                    data: upload.data,
+                    filename: upload.filename,
+                    mimeType: upload.mimeType
+                ),
+            ],
+            fieldName: "image"
+        )
     }
 
     private func sendMultipartRequest(path: String, uploads: [TregoImageSearchUpload], fieldName: String) async -> TregoJSONResult? {
-        guard let request = buildMultipartRequest(path: path, uploads: uploads, fieldName: fieldName) else { return nil }
+        await sendMultipartRequest(
+            path: path,
+            uploads: uploads.map {
+                TregoMultipartUpload(
+                    data: $0.data,
+                    filename: $0.filename,
+                    mimeType: $0.mimeType
+                )
+            },
+            fieldName: fieldName
+        )
+    }
+
+    private func sendMultipartRequest(
+        path: String,
+        uploads: [TregoMultipartUpload],
+        fieldName: String,
+        fields: [String: String] = [:]
+    ) async -> TregoJSONResult? {
+        guard let request = buildMultipartRequest(path: path, uploads: uploads, fieldName: fieldName, fields: fields) else { return nil }
 
         do {
             let (data, response) = try await session.upload(for: request, from: request.httpBody ?? Data())
@@ -1510,7 +1934,7 @@ final class TregoAPIClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 25
+        request.timeoutInterval = 8
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(visitorToken, forHTTPHeaderField: "X-Trego-Visitor")
 
@@ -1522,13 +1946,24 @@ final class TregoAPIClient {
         return request
     }
 
-    private func buildMultipartRequest(path: String, uploads: [TregoImageSearchUpload], fieldName: String) -> URLRequest? {
+    private func buildMultipartRequest(
+        path: String,
+        uploads: [TregoMultipartUpload],
+        fieldName: String,
+        fields: [String: String] = [:]
+    ) -> URLRequest? {
         let boundary = "Boundary-\(UUID().uuidString)"
         guard let base = buildRequest(path: path, method: "POST") else { return nil }
         var request = base
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
+        for (key, value) in fields.sorted(by: { $0.key < $1.key }) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append(value.data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
+        }
         for upload in uploads {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(upload.filename)\"\r\n".data(using: .utf8)!)
@@ -1620,9 +2055,16 @@ fileprivate enum TregoCurrentUserFetchState {
     case failed(String?)
 }
 
+struct TregoAuthenticationPrompt: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
 @MainActor
 final class TregoNativeAppStore: ObservableObject {
     private static let viewedHistoryStorageKey = "trego-ios-native-viewed-history"
+    private let sessionRefreshThrottleSeconds: TimeInterval = 12
 
     @Published var selectedTab: LiquidGlassTab = .home
     @Published var user: TregoSessionUser?
@@ -1630,12 +2072,17 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var sessionRefreshing = false
     @Published var appSettings = TregoAppSettings.load()
     @Published var homeProducts: [TregoProduct] = []
+    @Published var homeRecommendationSections: [TregoRecommendationSection] = []
     @Published var homeLoading = false
+    @Published var homeLoadingMore = false
+    @Published var homeHasMore = false
     @Published var publicBusinesses: [TregoPublicBusinessProfile] = []
     @Published var publicBusinessesLoading = false
     @Published var searchQuery = ""
     @Published var searchResults: [TregoProduct] = []
     @Published var searchLoading = false
+    @Published var searchLoadingMore = false
+    @Published var searchHasMore = false
     @Published var viewedHistory: [TregoViewedHistoryEntry] = []
     @Published var recentlyViewedProducts: [TregoProduct] = []
     @Published var wishlist: [TregoProduct] = []
@@ -1652,23 +2099,30 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var businessOrders: [TregoOrderItem] = []
     @Published var businessPromotions: [TregoPromotion] = []
     @Published var businessWorkspaceLoading = false
+    @Published var launchAds: [TregoLaunchAd] = []
     @Published var adminUsers: [TregoAdminUser] = []
     @Published var adminBusinesses: [TregoAdminBusiness] = []
     @Published var adminReports: [TregoAdminReport] = []
     @Published var adminOrders: [TregoOrderItem] = []
+    @Published var adminLaunchAds: [TregoLaunchAd] = []
     @Published var adminWorkspaceLoading = false
     @Published var authRoute: TregoAuthRoute?
     @Published var accountAuthRoute: TregoAuthRoute = .login
+    @Published var pendingEmailVerificationEmail = ""
+    @Published var pendingEmailVerificationMessage: String?
     @Published var selectedProduct: TregoProduct?
     @Published var selectedConversation: TregoConversation?
-    @Published var selectedBusiness: TregoBusinessSelection?
     @Published var toastMessage: String?
     @Published var globalMessage: String?
+    @Published var authenticationPrompt: TregoAuthenticationPrompt?
 
     let api = TregoAPIClient()
     private var hasLoadedHome = false
     private var toastTask: Task<Void, Never>?
     private var lastSessionRefreshAt: Date?
+    private var homeOffset = 0
+    private var searchOffset = 0
+    private var lastSearchTerm = ""
 
     init() {
         let history = Self.loadViewedHistory()
@@ -1690,18 +2144,23 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     func bootstrap() async {
+        let launchAdsTask = Task { await self.api.fetchLaunchAds() }
+        let homeTask = Task { await self.loadHomeIfNeeded(force: true) }
         await refreshSession(force: true)
-        await loadHomeIfNeeded(force: true)
+        _ = await homeTask.value
+        launchAds = await launchAdsTask.value
         if user != nil {
-            async let wishlistTask: Void = loadWishlist()
-            async let cartTask: Void = loadCart()
-            _ = await (wishlistTask, cartTask)
+            Task {
+                async let wishlistTask: Void = loadWishlist()
+                async let cartTask: Void = loadCart()
+                _ = await (wishlistTask, cartTask)
+            }
         }
     }
 
     func refreshSession(force: Bool = false) async {
         if sessionRefreshing { return }
-        if !force, let lastSessionRefreshAt, Date().timeIntervalSince(lastSessionRefreshAt) < 1.2 {
+        if !force, let lastSessionRefreshAt, Date().timeIntervalSince(lastSessionRefreshAt) < sessionRefreshThrottleSeconds {
             return
         }
 
@@ -1717,6 +2176,8 @@ final class TregoNativeAppStore: ObservableObject {
         case .authenticated(let fetchedUser):
             user = fetchedUser
             clearRoleScopedData(for: fetchedUser)
+            authenticationPrompt = nil
+            authRoute = nil
         case .unauthenticated:
             user = nil
             clearAuthenticatedData()
@@ -1728,14 +2189,72 @@ final class TregoNativeAppStore: ObservableObject {
                 clearRoleScopedData(for: previousUser)
             }
         }
+
+        if user?.role == "business" {
+            homeRecommendationSections = []
+        } else {
+            Task { [weak self] in
+                await self?.loadHomeRecommendations()
+            }
+        }
+    }
+
+    func warmSessionRefreshInBackground(force: Bool = false) {
+        if sessionRefreshing { return }
+        if !force, let lastSessionRefreshAt, Date().timeIntervalSince(lastSessionRefreshAt) < sessionRefreshThrottleSeconds {
+            return
+        }
+
+        Task {
+            await refreshSession(force: force)
+        }
     }
 
     func loadHomeIfNeeded(force: Bool = false) async {
+        if homeLoading && !force { return }
         guard force || !hasLoadedHome else { return }
         homeLoading = true
-        homeProducts = await api.fetchMarketplaceProducts(limit: 24)
-        homeLoading = false
+        defer {
+            homeLoading = false
+        }
+
+        async let recommendations = api.fetchHomeRecommendations(limit: 10)
+        let result = await api.fetchMarketplaceProductsPageResult(limit: 24, offset: 0)
+        guard result.didSucceed else {
+            homeRecommendationSections = await recommendations
+            if !homeProducts.isEmpty {
+                showToast(result.message ?? "Produktet aktuale u ruajten. Rifreskimi deshtoi.")
+            }
+            return
+        }
+
+        let page = result.page
+        homeProducts = page.items
+        homeRecommendationSections = await recommendations
+        homeOffset = page.offset + page.items.count
+        homeHasMore = page.hasMore
         hasLoadedHome = true
+    }
+
+    func loadHomeRecommendations() async {
+        homeRecommendationSections = await api.fetchHomeRecommendations(limit: 10)
+    }
+
+    func loadMoreHomeIfNeeded() async {
+        guard hasLoadedHome, homeHasMore, !homeLoading, !homeLoadingMore else { return }
+        homeLoadingMore = true
+        defer { homeLoadingMore = false }
+
+        let result = await api.fetchMarketplaceProductsPageResult(limit: 24, offset: homeOffset)
+        guard result.didSucceed else {
+            showToast(result.message ?? "Produktet aktuale u ruajten. Ngarkimi i metejshem deshtoi.")
+            return
+        }
+
+        let page = result.page
+        homeProducts = mergeUniqueProducts(existing: homeProducts, incoming: page.items)
+        homeOffset = page.offset + page.items.count
+        homeHasMore = page.hasMore
     }
 
     var personalizationConsentPending: Bool {
@@ -1783,11 +2302,22 @@ final class TregoNativeAppStore: ObservableObject {
         }
     }
 
-    func loadPublicBusinesses(force: Bool = false) async {
-        if publicBusinessesLoading && !force { return }
+    @discardableResult
+    func loadPublicBusinesses(force: Bool = false) async -> Bool {
+        if publicBusinessesLoading && !force { return false }
         publicBusinessesLoading = true
-        publicBusinesses = await api.fetchPublicBusinesses()
-        publicBusinessesLoading = false
+        defer { publicBusinessesLoading = false }
+
+        let result = await api.fetchPublicBusinessesResult()
+        guard result.didSucceed else {
+            if !publicBusinesses.isEmpty {
+                showToast(result.message ?? "Bizneset dhe produktet aktuale u ruajten. Rifreskimi deshtoi.")
+            }
+            return false
+        }
+
+        publicBusinesses = result.items
+        return true
     }
 
     func openSearch(with query: String = "") async {
@@ -1797,23 +2327,72 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     func performSearch(forceProductsFallback: Bool = false) async {
+        await performSearch(forceProductsFallback: forceProductsFallback, append: false)
+    }
+
+    func performSearch(forceProductsFallback: Bool = false, append: Bool) async {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        searchLoading = true
-        if trimmed.isEmpty {
-            searchResults = await api.fetchMarketplaceProducts(limit: 18)
+        let normalizedQuery = trimmed.lowercased()
+        let isFreshSearch = !append || normalizedQuery != lastSearchTerm
+
+        if append {
+            guard searchHasMore, !searchLoadingMore else { return }
+            searchLoadingMore = true
         } else {
-            searchResults = await api.searchProducts(query: trimmed)
-            if searchResults.isEmpty && forceProductsFallback {
-                searchResults = await api.fetchMarketplaceProducts(limit: 18)
+            searchLoading = true
+        }
+
+        defer {
+            if append {
+                searchLoadingMore = false
+            } else {
+                searchLoading = false
             }
         }
-        searchLoading = false
+
+        if isFreshSearch {
+            lastSearchTerm = normalizedQuery
+            searchOffset = 0
+            searchHasMore = false
+        }
+
+        if trimmed.isEmpty {
+            let page = await api.fetchMarketplaceProductsPage(limit: 18, offset: append ? searchOffset : 0)
+            searchResults = append
+                ? mergeUniqueProducts(existing: searchResults, incoming: page.items)
+                : page.items
+            searchOffset = page.offset + page.items.count
+            searchHasMore = page.hasMore
+            return
+        }
+
+        let page = await api.searchProductsPage(query: trimmed, limit: 18, offset: append ? searchOffset : 0)
+        if page.items.isEmpty && forceProductsFallback && !append {
+            let fallbackPage = await api.fetchMarketplaceProductsPage(limit: 18, offset: 0)
+            searchResults = fallbackPage.items
+            searchOffset = fallbackPage.offset + fallbackPage.items.count
+            searchHasMore = fallbackPage.hasMore
+            return
+        }
+
+        searchResults = append
+            ? mergeUniqueProducts(existing: searchResults, incoming: page.items)
+            : page.items
+        searchOffset = page.offset + page.items.count
+        searchHasMore = page.hasMore
+    }
+
+    func loadMoreSearchIfNeeded() async {
+        await performSearch(append: true)
     }
 
     func performImageSearch(upload: TregoImageSearchUpload) async {
         selectedTab = .kerko
         searchLoading = true
         searchResults = await api.searchProducts(imageUpload: upload)
+        searchOffset = searchResults.count
+        searchHasMore = false
+        lastSearchTerm = ""
         searchLoading = false
     }
 
@@ -1832,6 +2411,15 @@ final class TregoNativeAppStore: ObservableObject {
         viewedHistory.removeAll { $0.product.id == productID }
         persistViewedHistory()
         recentlyViewedProducts = viewedHistory.map(\.product)
+    }
+
+    private func mergeUniqueProducts(existing: [TregoProduct], incoming: [TregoProduct]) -> [TregoProduct] {
+        var seen = Set(existing.map(\.id))
+        var merged = existing
+        for product in incoming where seen.insert(product.id).inserted {
+            merged.append(product)
+        }
+        return merged
     }
 
     func loadWishlist() async {
@@ -1874,20 +2462,14 @@ final class TregoNativeAppStore: ObservableObject {
         conversationsLoading = false
     }
 
-    func openBusinessProfile(id: Int) {
-        guard id > 0 else { return }
-        selectedBusiness = TregoBusinessSelection(id: id)
-    }
-
     func openConversation(with conversation: TregoConversation) {
         selectedConversation = conversation
     }
 
     func startConversationWithBusiness(businessId: Int) async {
-        guard user != nil else {
-            requireAuthentication(defaultRoute: .login)
-            return
-        }
+        guard await ensureAuthenticatedSessionOrPrompt(
+            message: "Per te derguar mesazh biznesit duhet te kyqeni ose te krijoni llogari."
+        ) else { return }
 
         let (response, conversation) = await api.openBusinessConversation(businessId: businessId)
         guard response.ok == true, let conversation else {
@@ -1898,11 +2480,22 @@ final class TregoNativeAppStore: ObservableObject {
         selectedConversation = conversation
     }
 
-    func togglePublicBusinessFollow(_ business: TregoPublicBusinessProfile) async {
-        guard user != nil else {
-            requireAuthentication(defaultRoute: .login)
+    func startSupportConversation() async {
+        guard await ensureAuthenticatedSessionOrPrompt(
+            message: "Per te folur me customer support duhet te kyqeni ose te krijoni llogari."
+        ) else { return }
+
+        let (response, conversation) = await api.openSupportConversation()
+        guard response.ok == true, let conversation else {
+            globalMessage = response.message ?? "Customer support nuk u hap."
             return
         }
+
+        selectedConversation = conversation
+    }
+
+    func togglePublicBusinessFollow(_ business: TregoPublicBusinessProfile) async {
+        guard await ensureAuthenticatedSession(route: .login) else { return }
 
         let (response, updatedBusiness) = await api.toggleBusinessFollow(businessId: business.id)
         guard response.ok == true else {
@@ -1948,12 +2541,17 @@ final class TregoNativeAppStore: ObservableObject {
         businessWorkspaceLoading = false
     }
 
+    func loadLaunchAds() async {
+        launchAds = await api.fetchLaunchAds()
+    }
+
     func loadAdminWorkspace(force: Bool = false) async {
         guard user?.role == "admin" else {
             adminUsers = []
             adminBusinesses = []
             adminReports = []
             adminOrders = []
+            adminLaunchAds = []
             return
         }
 
@@ -1964,11 +2562,13 @@ final class TregoNativeAppStore: ObservableObject {
         async let businesses = api.fetchAdminBusinesses()
         async let reports = api.fetchAdminReports()
         async let orders = api.fetchAdminOrders()
+        async let launchAds = api.fetchAdminLaunchAds()
 
         adminUsers = await users
         adminBusinesses = await businesses
         adminReports = await reports
         adminOrders = await orders
+        adminLaunchAds = await launchAds
         adminWorkspaceLoading = false
     }
 
@@ -1977,10 +2577,9 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     func toggleWishlist(for product: TregoProduct) async {
-        guard user != nil else {
-            requireAuthentication(defaultRoute: .login)
-            return
-        }
+        guard await ensureAuthenticatedSessionOrPrompt(
+            message: "Per ta ruajtur produktin ne wishlist duhet te kyqeni ose te krijoni llogari."
+        ) else { return }
         let wasWishlisted = wishlist.contains(where: { $0.id == product.id })
         let previousWishlist = wishlist
 
@@ -1995,7 +2594,7 @@ final class TregoNativeAppStore: ObservableObject {
             if let items = response.items {
                 wishlist = items
             }
-            await loadHomeIfNeeded(force: true)
+            await loadHomeRecommendations()
             if selectedTab == .kerko {
                 await performSearch()
             }
@@ -2007,10 +2606,9 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     func addToCart(product: TregoProduct) async {
-        guard user != nil else {
-            requireAuthentication(defaultRoute: .login)
-            return
-        }
+        guard await ensureAuthenticatedSessionOrPrompt(
+            message: "Per ta vendosur produktin ne cart duhet te kyqeni ose te krijoni llogari."
+        ) else { return }
 
         guard let selection = resolvedCartSelection(for: product) else {
             if product.requiresVariantSelection == true {
@@ -2032,6 +2630,7 @@ final class TregoNativeAppStore: ObservableObject {
 
         if response.ok == true {
             await loadCart()
+            await loadHomeRecommendations()
             showToast(response.message ?? "Produkti u shtua ne cart.")
         } else {
             globalMessage = response.message ?? "Produkti nuk u shtua ne cart."
@@ -2133,16 +2732,30 @@ final class TregoNativeAppStore: ObservableObject {
 
         let response = await api.login(identifier: identifier, password: password)
         guard response.ok == true else {
+            if shouldOpenEmailVerification(for: response) {
+                openEmailVerification(
+                    email: emailFromVerificationRedirect(response.redirectTo) ?? pendingEmailVerificationEmail,
+                    fallbackIdentifier: identifier,
+                    message: response.message
+                )
+                return nil
+            }
             return response.message ?? response.errors?.joined(separator: " ") ?? "Login deshtoi."
         }
 
-        await refreshSession(force: true)
-        async let wishlistTask: Void = loadWishlist()
-        async let cartTask: Void = loadCart()
-        _ = await (wishlistTask, cartTask)
+        if let authenticatedUser = response.user {
+            applyAuthenticatedUserSnapshot(authenticatedUser)
+        }
+        pendingEmailVerificationMessage = nil
         authRoute = nil
         accountAuthRoute = .login
         selectedTab = .home
+        Task {
+            await refreshSession(force: true)
+            guard self.user != nil else { return }
+            await loadWishlist()
+            await loadCart()
+        }
         showToast(response.message ?? "Mire se erdhe.")
         return nil
     }
@@ -2163,6 +2776,15 @@ final class TregoNativeAppStore: ObservableObject {
 
         guard response.ok == true else {
             return response.message ?? response.errors?.joined(separator: " ") ?? "Regjistrimi deshtoi."
+        }
+
+        if shouldOpenEmailVerification(for: response) {
+            openEmailVerification(
+                email: emailFromVerificationRedirect(response.redirectTo) ?? email,
+                fallbackIdentifier: email,
+                message: response.message
+            )
+            return nil
         }
 
         await refreshSession(force: true)
@@ -2210,6 +2832,67 @@ final class TregoNativeAppStore: ObservableObject {
         return nil
     }
 
+    func verifyEmail(email: String, code: String) async -> String? {
+        guard !email.isEmpty, !code.isEmpty else {
+            return "Shkruaj email-in dhe kodin e verifikimit."
+        }
+
+        let response = await api.verifyEmail(email: email, code: code)
+        guard response.ok == true else {
+            return response.message ?? response.errors?.joined(separator: " ") ?? "Verifikimi deshtoi."
+        }
+
+        pendingEmailVerificationEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        pendingEmailVerificationMessage = nil
+        authRoute = .login
+        accountAuthRoute = .login
+        showToast(response.message ?? "Email-i u verifikua me sukses.")
+        return nil
+    }
+
+    func resendEmailVerification(email: String) async -> String? {
+        guard !email.isEmpty else {
+            return "Shkruaj email-in."
+        }
+
+        let response = await api.resendEmailVerification(email: email)
+        guard response.ok == true else {
+            return response.message ?? response.errors?.joined(separator: " ") ?? "Kodi nuk u dergua."
+        }
+
+        pendingEmailVerificationEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        pendingEmailVerificationMessage = response.message
+        return nil
+    }
+
+    private func isEmailVerificationRedirect(_ redirectTo: String) -> Bool {
+        redirectTo.contains("/verifiko-email")
+    }
+
+    private func isEmailVerificationMessage(_ message: String?) -> Bool {
+        guard let message else { return false }
+        let normalized = message.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        return normalized.contains("verifiko") && normalized.contains("email")
+    }
+
+    private func shouldOpenEmailVerification(for response: TregoStatusResponse) -> Bool {
+        if let redirectTo = response.redirectTo, isEmailVerificationRedirect(redirectTo) {
+            return true
+        }
+        return isEmailVerificationMessage(response.message)
+    }
+
+    private func emailFromVerificationRedirect(_ redirectTo: String?) -> String? {
+        guard let redirectTo, !redirectTo.isEmpty else { return nil }
+        let candidate = redirectTo.hasPrefix("http")
+            ? redirectTo
+            : "https://www.tregos.store\(redirectTo)"
+        guard let components = URLComponents(string: candidate) else { return nil }
+        return components.queryItems?.first(where: { $0.name == "email" })?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
     func logout() async {
         await api.logout()
         resetSessionState()
@@ -2233,11 +2916,13 @@ final class TregoNativeAppStore: ObservableObject {
         adminBusinesses = []
         adminReports = []
         adminOrders = []
+        adminLaunchAds = []
+        pendingEmailVerificationEmail = ""
+        pendingEmailVerificationMessage = nil
         selectedTab = .home
         authRoute = nil
         accountAuthRoute = .login
         selectedConversation = nil
-        selectedBusiness = nil
     }
 
     private func clearAuthenticatedData() {
@@ -2254,6 +2939,15 @@ final class TregoNativeAppStore: ObservableObject {
         adminBusinesses = []
         adminReports = []
         adminOrders = []
+        adminLaunchAds = []
+    }
+
+    private func applyAuthenticatedUserSnapshot(_ sessionUser: TregoSessionUser) {
+        user = sessionUser
+        sessionLoaded = true
+        clearRoleScopedData(for: sessionUser)
+        authenticationPrompt = nil
+        authRoute = nil
     }
 
     private func clearRoleScopedData(for sessionUser: TregoSessionUser?) {
@@ -2275,16 +2969,82 @@ final class TregoNativeAppStore: ObservableObject {
             adminBusinesses = []
             adminReports = []
             adminOrders = []
+            adminLaunchAds = []
         }
     }
 
     func requireAuthentication(defaultRoute: TregoAuthRoute) {
-        authRoute = defaultRoute
+        openAccountAuth(defaultRoute)
     }
 
     func openAccountAuth(_ route: TregoAuthRoute) {
-        accountAuthRoute = route == .forgotPassword ? .login : route
-        selectedTab = .llogaria
+        let normalizedRoute: TregoAuthRoute = route == .signup ? .signup : .login
+        accountAuthRoute = normalizedRoute
+        authRoute = route
+        if user == nil {
+            warmSessionRefreshInBackground(force: !sessionLoaded)
+        }
+    }
+
+    func dismissPresentedNativeFlow() {
+        selectedProduct = nil
+        selectedConversation = nil
+    }
+
+    func openEmailVerification(email: String, fallbackIdentifier: String = "", message: String? = nil) {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !trimmedEmail.isEmpty {
+            pendingEmailVerificationEmail = trimmedEmail
+        } else if fallbackIdentifier.contains("@") {
+            pendingEmailVerificationEmail = fallbackIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        pendingEmailVerificationMessage = message
+        authRoute = .verifyEmail
+        accountAuthRoute = .login
+    }
+
+    @discardableResult
+    func ensureAuthenticatedSession(route: TregoAuthRoute = .login) async -> Bool {
+        if user != nil { return true }
+
+        if sessionRefreshing {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            if user != nil { return true }
+        }
+
+        warmSessionRefreshInBackground(force: !sessionLoaded)
+        if !sessionLoaded {
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            if user != nil { return true }
+        }
+        openAccountAuth(route)
+        return false
+    }
+
+    @discardableResult
+    func ensureAuthenticatedSessionOrPrompt(message: String) async -> Bool {
+        if user != nil { return true }
+
+        if sessionRefreshing {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            if user != nil { return true }
+        }
+
+        warmSessionRefreshInBackground(force: !sessionLoaded)
+        if !sessionLoaded {
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            if user != nil { return true }
+        }
+        let hadPresentedFlow = selectedProduct != nil || selectedConversation != nil
+        if hadPresentedFlow {
+            dismissPresentedNativeFlow()
+            try? await Task.sleep(nanoseconds: 160_000_000)
+        }
+        authenticationPrompt = TregoAuthenticationPrompt(
+            title: "Kycu ose krijo llogari",
+            message: message
+        )
+        return false
     }
 
     func requestBusinessVerification() async {
@@ -2466,6 +3226,31 @@ final class TregoNativeAppStore: ObservableObject {
         }
         await loadAdminWorkspace(force: true)
         showToast(response.message ?? "Statusi i porosise u perditesua.")
+        return nil
+    }
+
+    func saveAdminLaunchAd(payload: [String: Any]) async -> String? {
+        let (updatedLaunchAds, response) = await api.saveAdminLaunchAd(payload: payload)
+        guard response.ok == true else {
+            if api.usesLocalDevelopmentServer, response.message == "Lidhja me serverin deshtoi." {
+                return "Lidhja me serverin deshtoi. Backend-i lokal nuk po pergjigjet te \(api.currentBaseURLString). Nise `python3 app.py` ose vendos `TregoDebugAPIBaseURL`."
+            }
+            return response.message ?? response.errors?.joined(separator: " ") ?? "Launch ad nuk u ruajt."
+        }
+        adminLaunchAds = updatedLaunchAds
+        await loadLaunchAds()
+        showToast(response.message ?? "Launch ad u ruajt.")
+        return nil
+    }
+
+    func deleteAdminLaunchAd(_ launchAd: TregoLaunchAd) async -> String? {
+        let (updatedLaunchAds, response) = await api.deleteAdminLaunchAd(id: launchAd.id)
+        guard response.ok == true else {
+            return response.message ?? "Launch ad nuk u fshi."
+        }
+        adminLaunchAds = updatedLaunchAds
+        await loadLaunchAds()
+        showToast(response.message ?? "Launch ad u fshi.")
         return nil
     }
 

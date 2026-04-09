@@ -259,7 +259,7 @@ watch(
     >
       <span class="app-status-dot" />
       <span>{{ bannerLabel }}</span>
-      <small>{{ route.meta?.tabLabel || "TREGO Mobile" }}</small>
+      <small>{{ route.meta?.tabLabel || "TREGIO Mobile" }}</small>
     </div>
     <IonRouterOutlet :swipe-gesture="allowSwipeBack" />
   </IonApp>

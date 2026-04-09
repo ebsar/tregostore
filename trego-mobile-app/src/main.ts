@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import { IonicVue } from "@ionic/vue";
 import { Capacitor } from "@capacitor/core";
-import { StatusBar, Style } from "@capacitor/status-bar";
+import { StatusBar } from "@capacitor/status-bar";
 import App from "./App.vue";
 import router from "./router";
 
@@ -33,7 +33,6 @@ async function setupNativeChrome() {
   }
 
   try {
-    await StatusBar.setStyle({ style: Style.Dark });
     await StatusBar.setOverlaysWebView({ overlay: true });
   } catch (error) {
     console.warn("Status bar setup skipped", error);

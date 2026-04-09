@@ -48,7 +48,7 @@ watch(
 watch(
   () => route.meta.title,
   (title) => {
-    document.title = String(title || "TREGO");
+    document.title = String(title || "TREGIO");
   },
   { immediate: true },
 );
@@ -362,33 +362,75 @@ function updateSpeedInsightsRoute() {
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
 
-  <div :class="shellClass">
+  <div class="app-shell" :class="shellClass">
     <SiteNav />
 
-    <main :class="mainClass">
+    <main class="app-main" :class="mainClass">
       <RouterView />
     </main>
 
     <footer v-if="showSiteFooter" class="site-footer" aria-label="Footer i faqes">
       <div class="site-footer-grid">
         <div class="site-footer-brand">
-          <img class="site-footer-logo" src="/trego-logo.webp" alt="TREGO" width="420" height="159">
-          <p class="site-footer-copy">
-            TREGO eshte nje platforme per prezantim, shitje dhe komunikim profesional mes bizneseve dhe bleresve.
-          </p>
+          <img class="site-footer-logo" src="/trego-logo.webp" alt="TREGIO" width="1024" height="1024">
         </div>
 
-        <nav class="site-footer-links" aria-label="Lidhjet e footer-it">
-          <RouterLink to="/">Ballina</RouterLink>
-          <RouterLink to="/kerko">Produktet</RouterLink>
-          <RouterLink to="/wishlist">Wishlist</RouterLink>
-          <RouterLink to="/cart">Cart</RouterLink>
+        <nav class="site-footer-links" aria-label="Marketplace links">
+          <p class="site-footer-heading">Marketplace</p>
+          <RouterLink to="/">Home</RouterLink>
+          <RouterLink to="/kerko">Products</RouterLink>
+          <RouterLink to="/bizneset-e-regjistruara">Businesses</RouterLink>
         </nav>
 
-        <div class="site-footer-meta">
-          <p class="site-footer-note">Katalog, komunikim dhe porosi ne nje eksperience te qarte dhe te besueshme.</p>
-          <p class="site-footer-note">© TREGO. Te gjitha te drejtat e rezervuara.</p>
+        <nav class="site-footer-links" aria-label="Services links">
+          <p class="site-footer-heading">Services</p>
+          <RouterLink to="/cart">Cart</RouterLink>
+          <RouterLink to="/porosite">Orders</RouterLink>
+          <RouterLink to="/mesazhet">Support</RouterLink>
+        </nav>
+
+        <nav class="site-footer-links" aria-label="Account links">
+          <p class="site-footer-heading">Account</p>
+          <RouterLink to="/login">Login</RouterLink>
+          <RouterLink to="/signup">Sign Up</RouterLink>
+          <RouterLink to="/llogaria">My Account</RouterLink>
+        </nav>
+
+        <nav class="site-footer-links" aria-label="About links">
+          <p class="site-footer-heading">About</p>
+          <RouterLink to="/njoftimet">Updates</RouterLink>
+          <RouterLink to="/wishlist">Wishlist</RouterLink>
+          <RouterLink to="/refund-returne">Returns</RouterLink>
+        </nav>
+      </div>
+
+      <div class="site-footer-divider" aria-hidden="true"></div>
+
+      <div class="site-footer-bottom">
+        <div class="site-footer-socials" aria-label="Footer social icons">
+          <span class="site-footer-social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M13.5 21v-8h2.7l.4-3h-3.1V8.1c0-.9.3-1.6 1.7-1.6h1.5V3.8c-.3 0-1.2-.1-2.3-.1-2.3 0-3.8 1.4-3.8 4v2.3H8v3h2.6v8z" />
+            </svg>
+          </span>
+          <span class="site-footer-social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M18.9 7.2c.7-.4 1.2-1 1.5-1.8-.6.4-1.4.7-2.1.8a3.5 3.5 0 0 0-6 3.2 9.9 9.9 0 0 1-7.2-3.6 3.5 3.5 0 0 0 1.1 4.7c-.6 0-1.1-.2-1.6-.4 0 1.7 1.2 3.1 2.8 3.4-.3.1-.7.1-1 .1-.2 0-.5 0-.7-.1.5 1.5 1.9 2.6 3.6 2.6A7.1 7.1 0 0 1 4 17.9a9.9 9.9 0 0 0 5.4 1.6c6.5 0 10.1-5.4 10.1-10.1v-.5c.7-.5 1.3-1.1 1.8-1.7-.7.3-1.4.5-2.1.6.7-.4 1.3-1 1.7-1.7-.7.4-1.5.7-2.3.9z" />
+            </svg>
+          </span>
+          <span class="site-footer-social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M6.9 8.7a5.1 5.1 0 0 1 8.7-1.5l1.3-1.3v4.2h-4.2l1.5-1.5a3 3 0 1 0 .9 2.1h2.1a5.1 5.1 0 1 1-10.3 0c0-.3 0-.7.1-1zM17.1 15.3a5.1 5.1 0 0 1-8.7 1.5L7.1 18v-4.2h4.2l-1.5 1.5a3 3 0 1 0-.9-2.1H6.8a5.1 5.1 0 1 1 10.3 0c0 .3 0 .7-.1 1z" />
+            </svg>
+          </span>
+          <span class="site-footer-social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6.1 3 3 0 0 1 0 6.1zm5.9-7.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2z" />
+              <path d="M12 3.8c2.7 0 3 .1 4 .1 1 0 1.7.2 2.3.5.7.2 1.2.6 1.7 1.1.5.5.9 1 1.1 1.7.3.6.4 1.3.5 2.3.1 1 .1 1.3.1 4s-.1 3-.1 4c0 1-.2 1.7-.5 2.3-.2.7-.6 1.2-1.1 1.7-.5.5-1 .9-1.7 1.1-.6.3-1.3.4-2.3.5-1 .1-1.3.1-4 .1s-3-.1-4-.1c-1 0-1.7-.2-2.3-.5a4.7 4.7 0 0 1-1.7-1.1 4.7 4.7 0 0 1-1.1-1.7c-.3-.6-.4-1.3-.5-2.3-.1-1-.1-1.3-.1-4s.1-3 .1-4c0-1 .2-1.7.5-2.3.2-.7.6-1.2 1.1-1.7.5-.5 1-.9 1.7-1.1.6-.3 1.3-.4 2.3-.5 1-.1 1.3-.1 4-.1zm0-1.8c-2.7 0-3 .1-4.1.1-1.1 0-1.9.2-2.6.5-.8.3-1.6.7-2.2 1.4-.7.6-1.1 1.4-1.4 2.2-.3.7-.5 1.5-.5 2.6C1.1 10 1 10.3 1 13s.1 3 .1 4.1c0 1.1.2 1.9.5 2.6.3.8.7 1.6 1.4 2.2.6.7 1.4 1.1 2.2 1.4.7.3 1.5.5 2.6.5 1.1 0 1.4.1 4.1.1s3-.1 4.1-.1c1.1 0 1.9-.2 2.6-.5.8-.3 1.6-.7 2.2-1.4.7-.6 1.1-1.4 1.4-2.2.3-.7.5-1.5.5-2.6.1-1.1.1-1.4.1-4.1s0-3-.1-4.1c0-1.1-.2-1.9-.5-2.6-.3-.8-.7-1.6-1.4-2.2-.6-.7-1.4-1.1-2.2-1.4-.7-.3-1.5-.5-2.6-.5C15 2.1 14.7 2 12 2z" />
+            </svg>
+          </span>
         </div>
+        <p class="site-footer-copyright">©Copyright. All rights reserved.</p>
       </div>
     </footer>
   </div>

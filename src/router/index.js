@@ -34,7 +34,7 @@ const routes = [
     component: HomePage,
     meta: {
       pageKey: "home",
-      title: "TREGO | Home",
+      title: "TREGIO | Home",
       shellClass: "page-shell page-shell-home-full",
       mainClass: "page-main page-main-home",
     },
@@ -44,7 +44,7 @@ const routes = [
     component: SearchPage,
     meta: {
       pageKey: "search",
-      title: "TREGO | Kerko produkte",
+      title: "TREGIO | Kerko produkte",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
     },
@@ -58,7 +58,7 @@ const routes = [
     component: ProductDetailPage,
     meta: {
       pageKey: "product-detail",
-      title: "TREGO | Produkti",
+      title: "TREGIO | Produkti",
       shellClass: "page-shell",
       mainClass: "page-main page-main-product",
     },
@@ -68,7 +68,7 @@ const routes = [
     component: BusinessProfilePage,
     meta: {
       pageKey: "business-profile",
-      title: "TREGO | Profili i biznesit",
+      title: "TREGIO | Profili i biznesit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
     },
@@ -78,7 +78,7 @@ const routes = [
     component: LoginPage,
     meta: {
       pageKey: "login",
-      title: "TREGO | Login",
+      title: "TREGIO | Login",
       shellClass: "page-shell page-shell-login",
       mainClass: "page-main page-main-login",
     },
@@ -88,7 +88,7 @@ const routes = [
     component: SignupPage,
     meta: {
       pageKey: "signup",
-      title: "TREGO | Sign Up",
+      title: "TREGIO | Sign Up",
       shellClass: "page-shell page-shell-signup",
       mainClass: "page-main page-main-signup",
     },
@@ -98,7 +98,7 @@ const routes = [
     component: VerifyEmailPage,
     meta: {
       pageKey: "verify-email",
-      title: "TREGO | Verifiko Emailin",
+      title: "TREGIO | Verifiko Emailin",
       shellClass: "page-shell page-shell-login",
       mainClass: "page-main page-main-login",
     },
@@ -108,7 +108,7 @@ const routes = [
     component: ForgotPasswordPage,
     meta: {
       pageKey: "forgot-password",
-      title: "TREGO | Kam harruar fjalekalimin",
+      title: "TREGIO | Kam harruar fjalekalimin",
       shellClass: "page-shell",
       mainClass: "page-main",
     },
@@ -118,7 +118,7 @@ const routes = [
     component: ChangePasswordPage,
     meta: {
       pageKey: "change-password",
-      title: "TREGO | Ndryshimi i fjalekalimit",
+      title: "TREGIO | Ndryshimi i fjalekalimit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
     },
@@ -128,7 +128,7 @@ const routes = [
     component: WishlistPage,
     meta: {
       pageKey: "wishlist",
-      title: "TREGO | Wishlist",
+      title: "TREGIO | Wishlist",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
       routeLoader: true,
@@ -139,7 +139,7 @@ const routes = [
     component: CartPage,
     meta: {
       pageKey: "cart",
-      title: "TREGO | Cart",
+      title: "TREGIO | Cart",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
       routeLoader: true,
@@ -150,7 +150,7 @@ const routes = [
     component: AccountPage,
     meta: {
       pageKey: "account",
-      title: "TREGO | Llogaria",
+      title: "TREGIO | Llogaria",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -161,7 +161,7 @@ const routes = [
     component: MessagesPage,
     meta: {
       pageKey: "account",
-      title: "TREGO | Mesazhet",
+      title: "TREGIO | Mesazhet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -172,7 +172,7 @@ const routes = [
     component: PersonalDataPage,
     meta: {
       pageKey: "personal-data",
-      title: "TREGO | Te dhenat personale",
+      title: "TREGIO | Te dhenat personale",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -183,7 +183,7 @@ const routes = [
     component: AddressesPage,
     meta: {
       pageKey: "addresses",
-      title: "TREGO | Adresat",
+      title: "TREGIO | Adresat",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -194,7 +194,7 @@ const routes = [
     component: OrdersPage,
     meta: {
       pageKey: "orders",
-      title: "TREGO | Porosite",
+      title: "TREGIO | Porosite",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -205,7 +205,7 @@ const routes = [
     component: RefundReturnsPage,
     meta: {
       pageKey: "refund-returns",
-      title: "TREGO | Refund / Returne",
+      title: "TREGIO | Refund / Returne",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -216,7 +216,7 @@ const routes = [
     component: NotificationsPage,
     meta: {
       pageKey: "notifications",
-      title: "TREGO | Njoftimet",
+      title: "TREGIO | Njoftimet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -227,7 +227,7 @@ const routes = [
     component: BusinessOrdersPage,
     meta: {
       pageKey: "business-orders",
-      title: "TREGO | Porosite e biznesit",
+      title: "TREGIO | Porosite e biznesit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -238,7 +238,7 @@ const routes = [
     component: AdminOrdersPage,
     meta: {
       pageKey: "admin-orders",
-      title: "TREGO | Porosit e adminit",
+      title: "TREGIO | Porosit e adminit",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -249,7 +249,7 @@ const routes = [
     component: CheckoutAddressPage,
     meta: {
       pageKey: "checkout-address",
-      title: "TREGO | Adresa e porosise",
+      title: "TREGIO | Adresa e porosise",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -260,7 +260,7 @@ const routes = [
     component: PaymentOptionsPage,
     meta: {
       pageKey: "payment-options",
-      title: "TREGO | Menyra e pageses",
+      title: "TREGIO | Menyra e pageses",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,
@@ -271,7 +271,7 @@ const routes = [
     component: AdminProductsPage,
     meta: {
       pageKey: "admin-products",
-      title: "TREGO | Admin Products",
+      title: "TREGIO | Admin Products",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
       routeLoader: true,
@@ -282,7 +282,7 @@ const routes = [
     component: BusinessDashboardPage,
     meta: {
       pageKey: "business-dashboard",
-      title: "TREGO | Biznesi juaj",
+      title: "TREGIO | Biznesi juaj",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
       routeLoader: true,
@@ -293,7 +293,7 @@ const routes = [
     component: RegisteredBusinessesPage,
     meta: {
       pageKey: "registered-businesses",
-      title: "TREGO | Bizneset e regjistruara",
+      title: "TREGIO | Bizneset e regjistruara",
       shellClass: "page-shell",
       mainClass: "page-main page-main-admin",
       routeLoader: true,
@@ -304,7 +304,7 @@ const routes = [
     component: ProductComparePage,
     meta: {
       pageKey: "product-compare",
-      title: "TREGO | Krahaso produktet",
+      title: "TREGIO | Krahaso produktet",
       shellClass: "page-shell",
       mainClass: "page-main page-main-collection",
     },

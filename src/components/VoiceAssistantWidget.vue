@@ -15,13 +15,13 @@ const isScriptReady = ref(false);
 
 const publicKey = String(import.meta.env.VITE_VAPI_PUBLIC_KEY || "").trim();
 const assistantId = String(import.meta.env.VITE_VAPI_ASSISTANT_ID || "").trim();
-const assistantLabel = String(import.meta.env.VITE_VAPI_ASSISTANT_LABEL || "Asistenti zanor TREGO").trim();
+const assistantLabel = String(import.meta.env.VITE_VAPI_ASSISTANT_LABEL || "Asistenti zanor TREGIO").trim();
 const isConfigured = computed(() => Boolean(publicKey && assistantId));
 
 const assistantOverrides = computed(() =>
   JSON.stringify({
     variableValues: {
-      siteName: "TREGO",
+      siteName: "TREGIO",
       currentPage: route.fullPath,
       visitorRole: String(appState.user?.role || "guest"),
       visitorName: String(appState.user?.fullName || "").trim(),
@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
         :main-label="assistantLabel"
         start-button-text="Fillo biseden"
         end-button-text="Mbylle"
-        empty-voice-message="Preke dhe fol me asistentin e TREGO."
+        empty-voice-message="Preke dhe fol me asistentin e TREGIO."
         require-consent="true"
         terms-content="Duke përdorur asistentin zanor, pranon që biseda mund të përpunohet nga ofruesi i voice assistant për të kthyer përgjigje dhe transkript."
         local-storage-key="trego_voice_assistant_consent"

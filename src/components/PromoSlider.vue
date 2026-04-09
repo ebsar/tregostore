@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 const props = defineProps({
@@ -104,10 +104,6 @@ function handleTouchEnd(event) {
   restartAutoplay();
 }
 
-onMounted(() => {
-  startAutoplay();
-});
-
 onBeforeUnmount(() => {
   stopAutoplay();
 });
@@ -131,7 +127,8 @@ onBeforeUnmount(() => {
           <article
             v-for="(slide, index) in slides"
             :key="slide.title"
-            class="home-promo-slide"
+            class="home-promo-slide home-promo-slide--tall"
+            :class="{ 'home-promo-slide--image-only': slide.hideCopy }"
           >
             <img
               class="home-promo-image"
@@ -143,7 +140,13 @@ onBeforeUnmount(() => {
               decoding="async"
               :fetchpriority="index === 0 ? 'high' : 'auto'"
             >
-            <div class="home-promo-copy">
+            <RouterLink
+              v-if="slide.hideCopy && slide.ctaHref"
+              class="home-promo-slide-link"
+              :to="slide.ctaHref"
+              :aria-label="slide.title"
+            />
+            <div v-if="!slide.hideCopy" class="home-promo-copy">
               <span class="home-promo-badge">{{ slide.badge }}</span>
               <h2>{{ slide.title }}</h2>
               <p>{{ slide.description }}</p>

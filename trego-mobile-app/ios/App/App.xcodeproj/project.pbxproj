@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
+		A1B2C3D4E5F6000100000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000100000002 /* LaunchScreen.storyboard */; };
 		5EAA110226A5B001D0C0D001 /* LiquidGlassTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAA110126A5B001D0C0D001 /* LiquidGlassTabBar.swift */; };
 		5EAA110626A5BC01D0C0D001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAA110526A5BC01D0C0D001 /* SceneDelegate.swift */; };
 		5EAA110A26A5D001D0C0D001 /* NativeMarketplaceScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAA110926A5D001D0C0D001 /* NativeMarketplaceScreens.swift */; };
@@ -20,6 +21,7 @@
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000100000002 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		5EAA110126A5B001D0C0D001 /* LiquidGlassTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlassTabBar.swift; sourceTree = "<group>"; };
 		5EAA110526A5BC01D0C0D001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		5EAA110926A5D001D0C0D001 /* NativeMarketplaceScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMarketplaceScreens.swift; sourceTree = "<group>"; };
@@ -61,6 +63,7 @@
 				8C2B49AA26B1000100EAF001 /* TregoNativeCore.swift */,
 				5EAA110526A5BC01D0C0D001 /* SceneDelegate.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				A1B2C3D4E5F6000100000002 /* LaunchScreen.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3131FED79650016851F /* Info.plist */,
 			);
@@ -128,6 +131,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+				A1B2C3D4E5F6000100000001 /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { IonIcon } from "@ionic/vue";
 import { bagAddOutline, heartOutline, star } from "ionicons/icons";
-import { computed, withDefaults } from "vue";
+import { computed } from "vue";
 import type { ProductItem } from "../types/models";
 import { formatCount, formatPrice, getDiscountPercent, getProductImage } from "../lib/format";
+import SmartImageMobile from "./SmartImageMobile.vue";
 
 const props = withDefaults(defineProps<{
   product: ProductItem;
@@ -41,7 +42,7 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
     }"
   >
     <div class="product-card-mobile-media">
-      <img :src="getProductImage(product)" :alt="product.title">
+      <SmartImageMobile :src="getProductImage(product)" :alt="product.title" />
       <button class="product-card-mobile-open-hit" type="button" @click="emit('open', product.id)">
         <span class="sr-only">Hap produktin</span>
       </button>
@@ -68,14 +69,10 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
     </div>
 
     <div class="product-card-mobile-copy">
-      <p class="product-card-mobile-business">{{ product.businessName || "TREGO" }}</p>
+      <p class="product-card-mobile-business">{{ product.businessName || "TREGIO" }}</p>
       <button class="product-card-mobile-title" type="button" @click="emit('open', product.id)">
         {{ product.title }}
       </button>
-
-      <p v-if="!compact && !analyticsMode" class="product-card-mobile-desc">
-        {{ product.description || "Produkt i kuruar per blerje te shpejte." }}
-      </p>
 
       <div class="product-card-mobile-price-row">
         <div class="product-card-mobile-pricing">
@@ -114,21 +111,22 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
   overflow: hidden;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 10px;
-  min-height: 318px;
-  padding: 10px;
-  border-radius: 28px;
+  gap: 8px;
+  min-height: 286px;
+  padding: 9px;
+  border-radius: 24px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.8)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.82)),
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
+    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.1), transparent 34%),
+    radial-gradient(circle at top right, rgba(22, 163, 74, 0.08), transparent 30%);
   box-shadow:
-    0 18px 36px rgba(31, 41, 55, 0.08),
+    0 14px 28px rgba(31, 41, 55, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .product-card-mobile.is-compact {
-  min-height: 278px;
+  min-height: 252px;
 }
 
 .product-card-mobile.is-analytics {
@@ -155,11 +153,11 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
   position: relative;
   overflow: hidden;
   aspect-ratio: 0.96;
-  border-radius: 22px;
+  border-radius: 18px;
   background: var(--trego-interactive-bg-strong);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 16px 28px rgba(31, 41, 55, 0.1);
+    0 12px 22px rgba(31, 41, 55, 0.1);
 }
 
 .product-card-mobile-media::after {
@@ -188,12 +186,12 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 
 .product-card-mobile-badge {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 9px;
+  left: 9px;
   display: inline-flex;
-  min-height: 25px;
+  min-height: 23px;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 9px;
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(255, 96, 96, 0.96), rgba(227, 54, 54, 0.92));
   color: #fff7f7;
@@ -205,9 +203,9 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 
 .product-card-mobile-media-actions {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
-  left: 10px;
+  right: 9px;
+  bottom: 9px;
+  left: 9px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -216,8 +214,8 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 
 .product-card-mobile-action {
   display: inline-flex;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -227,9 +225,7 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 10px 20px rgba(17, 24, 39, 0.18);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+    0 8px 16px rgba(17, 24, 39, 0.14);
 }
 
 .product-card-mobile-action ion-icon {
@@ -239,14 +235,14 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 .product-card-mobile-copy {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   min-height: 0;
 }
 
 .product-card-mobile-business {
   margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.68rem;
+  color: rgba(37, 99, 235, 0.86);
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -257,7 +253,7 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
   padding: 0;
   background: transparent;
   color: var(--trego-dark);
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 800;
   line-height: 1.16;
   text-align: left;
@@ -269,27 +265,15 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 }
 
 .product-card-mobile.is-compact .product-card-mobile-title {
-  font-size: 0.88rem;
-  min-height: 2.1em;
-}
-
-.product-card-mobile-desc {
-  margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.76rem;
-  line-height: 1.42;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 2.15em;
+  font-size: 0.84rem;
+  min-height: 2em;
 }
 
 .product-card-mobile-price-row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin-top: auto;
 }
 
@@ -300,13 +284,13 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 }
 
 .product-card-mobile-pricing strong {
-  color: var(--trego-accent);
-  font-size: 1rem;
+  color: #1d4ed8;
+  font-size: 0.96rem;
   line-height: 1;
 }
 
 .product-card-mobile.is-compact .product-card-mobile-pricing strong {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .product-card-mobile-compare {
@@ -319,9 +303,9 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   color: var(--trego-muted);
-  font-size: 0.73rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 

@@ -1,8 +1,10 @@
+import { Capacitor } from "@capacitor/core";
+import { StatusBar, Style } from "@capacitor/status-bar";
 import { computed, ref } from "vue";
 
 export type ThemePreference = "system" | "light" | "dark";
 
-const THEME_STORAGE_KEY = "trego_mobile_theme_preference";
+const THEME_STORAGE_KEY = "tregio_mobile_theme_preference";
 const preference = ref<ThemePreference>("system");
 const activeTheme = ref<"light" | "dark">("light");
 let themeMediaQuery: MediaQueryList | null = null;
@@ -48,6 +50,13 @@ function applyTheme() {
   document.documentElement.dataset.theme = nextTheme;
   document.body.dataset.theme = nextTheme;
   document.documentElement.style.colorScheme = nextTheme;
+
+  if (Capacitor.isNativePlatform()) {
+    const style = nextTheme === "dark" ? Style.Light : Style.Dark;
+    const backgroundColor = nextTheme === "dark" ? "#000000" : "#ffffff";
+    void StatusBar.setStyle({ style }).catch(() => undefined);
+    void StatusBar.setBackgroundColor({ color: backgroundColor }).catch(() => undefined);
+  }
 }
 
 function handleSystemThemeChange() {

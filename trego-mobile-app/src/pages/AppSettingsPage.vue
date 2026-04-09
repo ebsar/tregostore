@@ -7,12 +7,12 @@ import {
   shieldCheckmarkOutline,
   walletOutline,
 } from "ionicons/icons";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppPageHeader from "../components/AppPageHeader.vue";
 import { useTheme } from "../composables/useTheme";
 import { readMobilePreferences, writeMobilePreferences } from "../lib/preferences";
-import { isPushConfigured, requestPushPermissionIfNeeded } from "../lib/push";
+import { getPushClientStatus, isPushConfigured, requestPushPermissionIfNeeded } from "../lib/push";
 
 const router = useRouter();
 const { themePreference, setThemePreference } = useTheme();
@@ -21,6 +21,14 @@ const canManagePush = computed(() => isPushConfigured());
 const pushUi = ref({
   message: "",
   type: "",
+});
+const pushStatus = ref({
+  configured: false,
+  nativeRuntime: false,
+  initialized: false,
+  permission: "unavailable",
+  subscribed: false,
+  platform: "web",
 });
 
 const settingOptions = [
@@ -95,6 +103,7 @@ const settingOptions = [
 
 async function handleEnablePushNotifications() {
   const accepted = await requestPushPermissionIfNeeded(true, router);
+  pushStatus.value = await getPushClientStatus(router);
   pushUi.value = {
     message: accepted
       ? "Njoftimet jane aktive ne kete pajisje."
@@ -102,6 +111,10 @@ async function handleEnablePushNotifications() {
     type: accepted ? "success" : "info",
   };
 }
+
+onMounted(async () => {
+  pushStatus.value = await getPushClientStatus(router);
+});
 </script>
 
 <template>
@@ -158,6 +171,38 @@ async function handleEnablePushNotifications() {
 
           <p v-if="pushUi.message" class="settings-feedback" :class="`is-${pushUi.type}`">
             {{ pushUi.message }}
+          </p>
+        </section>
+
+        <section class="surface-card section-card app-settings-card">
+          <div class="section-head app-settings-head">
+            <div>
+              <p class="section-kicker">Push status</p>
+              <h2>APNs / FCM readiness</h2>
+            </div>
+          </div>
+
+          <div class="settings-select-list">
+            <div class="settings-select-row push-status-row">
+              <span class="settings-select-label">Provider</span>
+              <strong>{{ pushStatus.configured ? "OneSignal → APNs/FCM" : "I pakonfiguruar" }}</strong>
+            </div>
+            <div class="settings-select-row push-status-row">
+              <span class="settings-select-label">Platforma</span>
+              <strong>{{ pushStatus.platform }}</strong>
+            </div>
+            <div class="settings-select-row push-status-row">
+              <span class="settings-select-label">Permission</span>
+              <strong>{{ pushStatus.permission }}</strong>
+            </div>
+            <div class="settings-select-row push-status-row">
+              <span class="settings-select-label">Subscription</span>
+              <strong>{{ pushStatus.subscribed ? "Aktive" : "Jo aktive" }}</strong>
+            </div>
+          </div>
+
+          <p class="settings-feedback is-info">
+            Push-et reale varen edhe nga konfigurimi i OneSignal, APNs per iOS, dhe FCM per Android.
           </p>
         </section>
       </div>
@@ -244,6 +289,12 @@ async function handleEnablePushNotifications() {
 
 .settings-feedback.is-info {
   color: var(--trego-muted);
+}
+
+.push-status-row strong {
+  color: var(--trego-dark);
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 @media (max-width: 420px) {

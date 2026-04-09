@@ -42,6 +42,11 @@ onMounted(async () => {
 
     const stripeStatus = String(route.query.stripeStatus || "").trim().toLowerCase();
     const stripeSessionId = String(route.query.session_id || "").trim();
+    if (!stripeStatus && !stripeSessionId) {
+      router.replace("/adresa-e-porosise");
+      return;
+    }
+
     if (stripeStatus === "cancelled") {
       ui.message = "Pagesa online u anulua. Mund te provosh perseri kur te jesh gati.";
       ui.type = "error";

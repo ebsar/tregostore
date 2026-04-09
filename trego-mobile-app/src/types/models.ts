@@ -9,6 +9,14 @@ export interface SessionUser {
   businessLogoPath?: string;
 }
 
+export interface PaginatedResult<T> {
+  items: T[];
+  limit: number;
+  offset: number;
+  total: number | null;
+  hasMore: boolean;
+}
+
 export interface AppPreferenceOption {
   value: string;
   label: string;
@@ -55,6 +63,13 @@ export interface ProductItem {
   businessVerificationStatus?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface RecommendationSection {
+  key: string;
+  title: string;
+  subtitle?: string;
+  products: ProductItem[];
 }
 
 export interface BusinessAnalytics {

@@ -26,6 +26,7 @@ import ProductCardMobile from "../components/ProductCardMobile.vue";
 import {
   addToCart,
   fetchMarketplaceProducts,
+  fetchProductRecommendations,
   fetchProductDetail,
   fetchProductReviews,
   fetchPublicBusinessProducts,
@@ -37,7 +38,7 @@ import { API_BASE_URL } from "../lib/config";
 import { formatCount, formatDateLabel, formatPrice, getDiscountPercent, getProductImage } from "../lib/format";
 import { rememberRecentlyViewedProduct, readRecentlyViewedProducts } from "../lib/recentlyViewed";
 import { readMobileRecentSearches } from "../lib/searchHistory";
-import type { ProductItem, ProductReview, ProductVariant } from "../types/models";
+import type { ProductItem, ProductReview, ProductVariant, RecommendationSection } from "../types/models";
 import { ensureSession, refreshCounts, sessionState } from "../stores/session";
 
 const route = useRoute();
@@ -50,6 +51,7 @@ const cartBusy = ref(false);
 const messageBusy = ref(false);
 const product = ref<ProductItem | null>(null);
 const reviews = ref<ProductReview[]>([]);
+const recommendationSections = ref<RecommendationSection[]>([]);
 const relatedProductsPool = ref<ProductItem[]>([]);
 const canSubmitReview = ref(false);
 const selectedColor = ref("");
@@ -280,6 +282,25 @@ const recommendedProducts = computed(() => {
     .slice(0, 8);
 });
 
+const displayRecommendationSections = computed<RecommendationSection[]>(() => {
+  if (recommendationSections.value.length) {
+    return recommendationSections.value;
+  }
+
+  if (!recommendedProducts.value.length) {
+    return [];
+  }
+
+  return [
+    {
+      key: "recommended-fallback",
+      title: "Te rekomanduara per ty",
+      subtitle: "Bazuar ne kerkimin dhe produktet e shikuara me heret.",
+      products: recommendedProducts.value,
+    },
+  ];
+});
+
 function clearInlineMessage() {
   inlineMessage.value = "";
 }
@@ -430,6 +451,12 @@ function handleRecommendationCart(productId: number) {
   router.push(`/product/${productId}`);
 }
 
+async function handleRecommendationWishlist(productId: number) {
+  await toggleWishlist(productId);
+  await refreshCounts();
+  showToast("Produkti u ruajt ne wishlist.");
+}
+
 async function handleShare() {
   if (!product.value) {
     return;
@@ -535,8 +562,9 @@ async function loadProduct() {
       reviewsLoading.value = true;
       relatedLoading.value = true;
 
-      const [reviewPayload, marketplaceProducts, sameStoreProducts] = await Promise.all([
+      const [reviewPayload, productRecommendations, marketplaceProducts, sameStoreProducts] = await Promise.all([
         fetchProductReviews(nextProduct.id),
+        fetchProductRecommendations(nextProduct.id, 6).catch(() => []),
         fetchMarketplaceProducts(24, 0).catch(() => []),
         nextProduct.businessProfileId
           ? fetchPublicBusinessProducts(nextProduct.businessProfileId, 12, 0).catch(() => [])
@@ -545,6 +573,7 @@ async function loadProduct() {
 
       reviews.value = reviewPayload.reviews;
       canSubmitReview.value = reviewPayload.canSubmitReview;
+      recommendationSections.value = productRecommendations;
       relatedProductsPool.value = [
         ...sameStoreProducts,
         ...readRecentlyViewedProducts(),
@@ -552,6 +581,7 @@ async function loadProduct() {
       ];
     } else {
       canSubmitReview.value = false;
+      recommendationSections.value = [];
     }
   } finally {
     reviewsLoading.value = false;
@@ -748,7 +778,7 @@ onUnmounted(() => {
             <section class="seller-mini-panel">
               <div class="seller-mini-copy">
                 <div class="seller-mini-title">
-                  <strong>{{ product.businessName || "TREGO Marketplace" }}</strong>
+                  <strong>{{ product.businessName || "TREGIO Marketplace" }}</strong>
                   <IonIcon
                     v-if="String(product.businessVerificationStatus || '').trim().toLowerCase() === 'verified'"
                     :icon="checkmarkCircle"
@@ -800,26 +830,28 @@ onUnmounted(() => {
             </p>
           </section>
 
-          <section v-if="recommendedProducts.length" class="stack-list product-recommendations">
-            <div class="section-head">
-              <h2>Te rekomanduara per ty</h2>
-              <small class="section-copy">Bazuar ne kerkimin dhe produktet e shikuara me heret.</small>
-            </div>
+          <section v-if="displayRecommendationSections.length" class="stack-list product-recommendations">
+            <template v-for="section in displayRecommendationSections" :key="section.key">
+              <div class="section-head">
+                <h2>{{ section.title }}</h2>
+                <small v-if="section.subtitle" class="section-copy">{{ section.subtitle }}</small>
+              </div>
 
-            <div v-if="relatedLoading" class="surface-card empty-panel">
-              <IonSpinner name="crescent" />
-            </div>
+              <div v-if="relatedLoading" class="surface-card empty-panel">
+                <IonSpinner name="crescent" />
+              </div>
 
-            <div v-else class="product-grid product-grid--recommended">
-              <ProductCardMobile
-                v-for="item in recommendedProducts"
-                :key="`recommended-${item.id}`"
-                :product="item"
-                @open="(id) => router.push(`/product/${id}`)"
-                @cart="handleRecommendationCart"
-                @wishlist="handleWishlist"
-              />
-            </div>
+              <div v-else class="product-grid product-grid--recommended">
+                <ProductCardMobile
+                  v-for="item in section.products"
+                  :key="`${section.key}-${item.id}`"
+                  :product="item"
+                  @open="(id) => router.push(`/product/${id}`)"
+                  @cart="handleRecommendationCart"
+                  @wishlist="handleRecommendationWishlist"
+                />
+              </div>
+            </template>
           </section>
 
           <div class="product-bottom-spacer" />

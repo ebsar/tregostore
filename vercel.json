@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/(trego-logo.png|trego-logo.webp|bujqesia.jpg|gjelbert.jpeg|gruri.webp|signup-background-shopping.webp|signup-background-mobile.webp)",
+      "source": "/(trego-logo.png|trego-logo.webp|favicon.png|apple-touch-icon.png|bujqesia.jpg|gjelbert.jpeg|gruri.webp|signup-background-shopping.webp|signup-background-mobile.webp)",
       "headers": [
         {
           "key": "Cache-Control",

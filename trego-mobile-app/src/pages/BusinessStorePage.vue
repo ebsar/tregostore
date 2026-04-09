@@ -117,7 +117,7 @@ watch(
                 />
               </div>
               <p class="section-copy">
-                {{ business.businessDescription || business.description || "Dyqan aktiv ne TREGO marketplace." }}
+                {{ business.businessDescription || business.description || "Dyqan aktiv ne TREGIO marketplace." }}
               </p>
 
               <div class="meta-pill-row">

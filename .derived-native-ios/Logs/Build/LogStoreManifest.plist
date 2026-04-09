@@ -6,7 +6,7 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>949F386F-C149-43AB-83F1-6ACBE9BACA93</key>
+		<key>B6E43128-2E20-4F95-9FD0-CC7134DE6802</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -15,7 +15,7 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>949F386F-C149-43AB-83F1-6ACBE9BACA93.xcactivitylog</string>
+			<string>B6E43128-2E20-4F95-9FD0-CC7134DE6802.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
@@ -25,7 +25,7 @@
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
-				<integer>1</integer>
+				<integer>2</integer>
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
@@ -38,15 +38,15 @@
 			<key>schemeIdentifier-sharedScheme</key>
 			<integer>1</integer>
 			<key>signature</key>
-			<string>Building project App with scheme App</string>
+			<string>Building project App with scheme App and configuration Debug</string>
 			<key>timeStartedRecording</key>
-			<real>796837072.03055894</real>
+			<real>797296461.56772494</real>
 			<key>timeStoppedRecording</key>
-			<real>796837078.54995799</real>
+			<real>797296465.92066705</real>
 			<key>title</key>
-			<string>Building project App with scheme App</string>
+			<string>Building project App with scheme App and configuration Debug</string>
 			<key>uniqueIdentifier</key>
-			<string>949F386F-C149-43AB-83F1-6ACBE9BACA93</string>
+			<string>B6E43128-2E20-4F95-9FD0-CC7134DE6802</string>
 		</dict>
 	</dict>
 </dict>

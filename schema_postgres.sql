@@ -203,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_public_category_id ON products(is_public, category, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_public_stock_id ON products(is_public, stock_quantity, id DESC);
 CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public, created_by_user_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_products_public_created_at ON products(is_public, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title_lower ON products ((LOWER(title)));
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
 
@@ -328,6 +329,36 @@ CREATE INDEX IF NOT EXISTS idx_order_items_business_user_id
 
 CREATE INDEX IF NOT EXISTS idx_order_items_fulfillment_status
     ON order_items(fulfillment_status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_product_category_created
+    ON order_items(product_category, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS product_engagements (
+    id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL,
+    business_user_id BIGINT NOT NULL,
+    event_type TEXT NOT NULL,
+    actor_key TEXT NOT NULL,
+    user_id BIGINT,
+    visitor_token TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_engagements_actor_unique
+    ON product_engagements(product_id, event_type, actor_key);
+
+CREATE INDEX IF NOT EXISTS idx_product_engagements_product_event
+    ON product_engagements(product_id, event_type, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_product_engagements_business_event
+    ON product_engagements(business_user_id, event_type, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_product_engagements_user_event_updated
+    ON product_engagements(user_id, event_type, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS product_reviews (
     id BIGSERIAL PRIMARY KEY,
@@ -464,6 +495,29 @@ CREATE INDEX IF NOT EXISTS idx_promo_codes_active_code
 
 CREATE INDEX IF NOT EXISTS idx_promo_codes_business_created
     ON promo_codes(business_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS launch_ads (
+    id BIGSERIAL PRIMARY KEY,
+    badge TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    subtitle TEXT NOT NULL DEFAULT '',
+    image_path TEXT NOT NULL DEFAULT '',
+    cta_label TEXT NOT NULL DEFAULT 'Shop now',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    starts_at TEXT NOT NULL DEFAULT '',
+    ends_at TEXT NOT NULL DEFAULT '',
+    created_by_user_id BIGINT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_launch_ads_active_sort
+    ON launch_ads(is_active, sort_order, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_launch_ads_schedule
+    ON launch_ads(starts_at, ends_at);
 
 CREATE TABLE IF NOT EXISTS stock_reservations (
     id BIGSERIAL PRIMARY KEY,

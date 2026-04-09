@@ -2,7 +2,7 @@ import { computed, reactive } from "vue";
 import {
   fetchCart,
   fetchConversations,
-  fetchCurrentUserOptional,
+  fetchCurrentUserSessionState,
   fetchNotificationsCount,
   fetchWishlist,
   logoutUser,
@@ -39,13 +39,26 @@ export async function ensureSession() {
   }
 
   sessionPromise = (async () => {
-    const user = await fetchCurrentUserOptional();
-    state.user = user;
-    state.sessionLoaded = true;
-    if (user) {
+    const session = await fetchCurrentUserSessionState();
+    if (session.status === "authenticated") {
+      state.user = session.user;
+      state.sessionLoaded = true;
       void refreshCounts();
+      return session.user;
     }
-    return user;
+
+    if (session.status === "unreachable" && state.user) {
+      state.sessionLoaded = true;
+      return state.user;
+    }
+
+    state.user = null;
+    state.sessionLoaded = true;
+    state.wishlistCount = 0;
+    state.cartCount = 0;
+    state.messageUnreadCount = 0;
+    state.notificationUnreadCount = 0;
+    return null;
   })();
 
   try {

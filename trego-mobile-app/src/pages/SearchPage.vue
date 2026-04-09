@@ -3,27 +3,42 @@ import {
   IonActionSheet,
   IonContent,
   IonIcon,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
   IonInput,
   IonPage,
   IonRefresher,
   IonRefresherContent,
-  IonSpinner,
 } from "@ionic/vue";
 import { cameraOutline, cameraSharp, closeOutline, imagesOutline, micOutline } from "ionicons/icons";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
 import ProductCardMobile from "../components/ProductCardMobile.vue";
-import { addToCart, fetchMarketplaceProducts, searchMarketplaceProducts, searchProductsByImage, toggleWishlist } from "../lib/api";
+import ProductCardSkeleton from "../components/ProductCardSkeleton.vue";
+import {
+  addToCart,
+  fetchMarketplaceProductsPage,
+  searchMarketplaceProductsPage,
+  searchProductsByImage,
+  toggleWishlist,
+} from "../lib/api";
 import { readRecentlyViewedProducts } from "../lib/recentlyViewed";
-import { pushMobileRecentSearch, readMobileRecentSearches } from "../lib/searchHistory";
+import { pushMobileRecentSearch } from "../lib/searchHistory";
 import type { ProductItem } from "../types/models";
 import { refreshCounts } from "../stores/session";
 
+type SearchMode = "discover" | "query" | "visual";
+
+const PAGE_SIZE = 18;
 const router = useRouter();
 const route = useRoute();
 const query = ref("");
 const loading = ref(false);
+const loadingMore = ref(false);
+const hasMore = ref(false);
+const nextOffset = ref(0);
+const mode = ref<SearchMode>("discover");
 const products = ref<ProductItem[]>([]);
 const historyProducts = ref<ProductItem[]>([]);
 const voiceListening = ref(false);
@@ -31,53 +46,101 @@ const cameraSheetOpen = ref(false);
 const uploadInputRef = ref<HTMLInputElement | null>(null);
 const cameraInputRef = ref<HTMLInputElement | null>(null);
 let searchTimeout = 0;
+let activeSearchRequest = 0;
 
-const visibleProducts = computed(() => (query.value.trim() ? products.value : historyProducts.value));
+const visibleProducts = computed(() => (mode.value === "discover" ? historyProducts.value : products.value));
 
-async function loadSeedProducts() {
-  loading.value = true;
+function mergeUniqueProducts(existing: ProductItem[], incoming: ProductItem[]) {
+  const merged = [...existing];
+  for (const nextItem of incoming) {
+    const nextId = Number(nextItem?.id || 0);
+    if (nextId <= 0 || merged.some((item) => Number(item?.id || 0) === nextId)) {
+      continue;
+    }
+    merged.push(nextItem);
+  }
+  return merged;
+}
+
+function buildDiscoveryProducts(pageProducts: ProductItem[], existing: ProductItem[] = []) {
+  return mergeUniqueProducts(
+    existing,
+    [...readRecentlyViewedProducts(), ...pageProducts],
+  );
+}
+
+async function loadSeedProducts(reset = true) {
+  if (reset) {
+    loading.value = true;
+  } else {
+    loadingMore.value = true;
+  }
+
   try {
-    const defaultProducts = await fetchMarketplaceProducts(18, 0);
-    const recent = readMobileRecentSearches();
-
-    const seeded = recent[0]
-      ? await searchMarketplaceProducts(recent[0]).catch(() => [])
-      : [];
-
-    const merged = [
-      ...seeded,
-      ...readRecentlyViewedProducts(),
-      ...defaultProducts,
-    ].filter((product, index, list) => {
-      const id = Number(product?.id || 0);
-      return id > 0 && list.findIndex((item) => Number(item?.id || 0) === id) === index;
-    });
-
-    historyProducts.value = merged.slice(0, 12);
-    if (!query.value.trim()) {
+    const page = await fetchMarketplaceProductsPage(PAGE_SIZE, reset ? 0 : nextOffset.value);
+    mode.value = "discover";
+    historyProducts.value = reset
+      ? buildDiscoveryProducts(page.items)
+      : buildDiscoveryProducts(page.items, historyProducts.value);
+    nextOffset.value = page.offset + page.items.length;
+    hasMore.value = page.hasMore;
+    if (reset) {
       products.value = [];
     }
   } finally {
-    loading.value = false;
+    if (reset) {
+      loading.value = false;
+    } else {
+      loadingMore.value = false;
+    }
   }
 }
 
-async function runSearch(nextQuery: string) {
+async function runSearch(nextQuery: string, append = false) {
   const normalized = nextQuery.trim();
-  loading.value = true;
+  const requestId = ++activeSearchRequest;
+  if (append) {
+    loadingMore.value = true;
+  } else {
+    loading.value = true;
+  }
+
   try {
     if (!normalized) {
       router.replace({ path: "/tabs/search", query: {} });
       products.value = [];
-      await loadSeedProducts();
+      nextOffset.value = 0;
+      hasMore.value = false;
+      await loadSeedProducts(true);
       return;
     }
 
-    products.value = await searchMarketplaceProducts(normalized);
-    pushMobileRecentSearch(normalized);
-    router.replace({ path: "/tabs/search", query: { q: normalized } });
+    const page = await searchMarketplaceProductsPage(
+      normalized,
+      PAGE_SIZE,
+      append ? nextOffset.value : 0,
+    );
+
+    if (requestId !== activeSearchRequest) {
+      return;
+    }
+
+    mode.value = "query";
+    products.value = append
+      ? mergeUniqueProducts(products.value, page.items)
+      : page.items;
+    nextOffset.value = page.offset + page.items.length;
+    hasMore.value = page.hasMore;
+    if (!append) {
+      pushMobileRecentSearch(normalized);
+      router.replace({ path: "/tabs/search", query: { q: normalized } });
+    }
   } finally {
-    loading.value = false;
+    if (append) {
+      loadingMore.value = false;
+    } else {
+      loading.value = false;
+    }
   }
 }
 
@@ -100,6 +163,7 @@ watch(
       query.value = next;
       return;
     }
+
     if (!next && query.value) {
       query.value = "";
     }
@@ -109,7 +173,7 @@ watch(
 
 onMounted(async () => {
   if (!query.value.trim()) {
-    await loadSeedProducts();
+    await loadSeedProducts(true);
   }
 });
 
@@ -124,7 +188,7 @@ async function handleWishlist(productId: number) {
 }
 
 async function handleRefresh(event: CustomEvent) {
-  await (query.value.trim() ? runSearch(query.value) : loadSeedProducts())
+  await (mode.value === "query" ? runSearch(query.value) : loadSeedProducts(true))
     .finally(() => {
       event.detail.complete();
     });
@@ -140,8 +204,11 @@ async function handleVisualSearch(event: Event) {
   try {
     const result = await searchProductsByImage(file, { limit: 16, includeFacets: 1 });
     if (result.ok) {
+      mode.value = "visual";
       products.value = result.products;
       query.value = "";
+      nextOffset.value = result.products.length;
+      hasMore.value = false;
       router.replace({ path: "/tabs/search", query: {} });
     }
   } finally {
@@ -189,6 +256,27 @@ function startVoiceSearch() {
   };
   recognition.start();
 }
+
+async function handleLoadMore(event: CustomEvent) {
+  const infinite = event.target as HTMLIonInfiniteScrollElement & { complete: () => void; disabled: boolean };
+  if (!hasMore.value || loadingMore.value) {
+    infinite.complete();
+    return;
+  }
+
+  if (mode.value === "query" && query.value.trim()) {
+    await runSearch(query.value, true);
+  } else if (mode.value === "discover") {
+    await loadSeedProducts(false);
+  } else {
+    hasMore.value = false;
+  }
+
+  infinite.complete();
+  if (!hasMore.value) {
+    infinite.disabled = true;
+  }
+}
 </script>
 
 <template>
@@ -233,8 +321,8 @@ function startVoiceSearch() {
         </section>
 
         <section class="stack-list">
-          <div v-if="loading" class="surface-card empty-panel">
-            <IonSpinner name="crescent" />
+          <div v-if="loading" class="product-grid">
+            <ProductCardSkeleton v-for="index in 6" :key="index" />
           </div>
 
           <div v-else-if="visibleProducts.length" class="product-grid">
@@ -253,6 +341,17 @@ function startVoiceSearch() {
             title="Asnje rezultat"
             copy="Provo nje kerkese tjeter ose perdor camera search."
           />
+
+          <IonInfiniteScroll
+            v-if="!loading && hasMore"
+            threshold="160px"
+            @ionInfinite="handleLoadMore"
+          >
+            <IonInfiniteScrollContent
+              loading-spinner="crescent"
+              loading-text="Po ngarkohen produkte te tjera..."
+            />
+          </IonInfiniteScroll>
         </section>
 
         <input

@@ -2,9 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import HomeMarketplaceCard from "../components/HomeMarketplaceCard.vue";
+import PromoSlider from "../components/PromoSlider.vue";
 import ProductCard from "../components/ProductCard.vue";
+import RecommendationSections from "../components/RecommendationSections.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
-import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import {
+  fetchHomeRecommendations,
+  fetchProtectedCollection,
+  requestJson,
+  resolveApiMessage,
+} from "../lib/api";
 import { PRODUCT_PAGE_SECTION_OPTIONS, deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { readRecentlyViewedProducts } from "../lib/recently-viewed";
@@ -30,6 +37,7 @@ const heroSearchQuery = ref("");
 const heroVisualSearchInputElement = ref(null);
 const products = ref([]);
 const homeCatalogProducts = ref([]);
+const homeRecommendationSections = ref([]);
 const businesses = ref([]);
 const recentlyViewedProducts = ref([]);
 const newsletterEmail = ref("");
@@ -43,7 +51,7 @@ const totalProductsCount = ref(0);
 const hasMoreProducts = ref(false);
 const loadingMoreProducts = ref(false);
 const filtersVisible = ref(false);
-const statusText = ref("Po ngarkohen produktet publike te TREGO.");
+const statusText = ref("Po ngarkohen produktet publike te TREGIO.");
 const productsPageSize = ref(getProductsPageSize());
 const availableFilters = ref(createEmptyProductFacets());
 const filters = reactive({
@@ -63,6 +71,12 @@ const businessUi = reactive({
   type: "",
 });
 let stopProductsPageSizeSubscription = () => {};
+let publicProductsRequestId = 0;
+let homeCatalogRequestId = 0;
+let publicBusinessesRequestId = 0;
+let businessProfileRequestId = 0;
+let businessProductsRequestId = 0;
+let homeRecommendationsRequestId = 0;
 const isBusinessUser = computed(() => appState.user?.role === "business");
 const homeAnnouncementItems = [
   {
@@ -336,6 +350,28 @@ const businessWorkspaceActions = computed(() => ([
   },
 ]));
 const featuredBusinesses = computed(() => businesses.value.slice(0, 6));
+function normalizeLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getBusinessLeadProduct(business) {
+  const businessName = normalizeLookupValue(business?.businessName);
+  if (!businessName) {
+    return null;
+  }
+
+  return (
+    [...marketplaceProducts.value, ...homeCatalogProducts.value, ...products.value]
+      .find((product) => normalizeLookupValue(product?.businessName) === businessName)
+    || null
+  );
+}
+
+const spotlightBusiness = computed(() =>
+  featuredBusinesses.value.find((business) => Boolean(business?.logoPath) || Boolean(getBusinessLeadProduct(business)))
+  || featuredBusinesses.value[0]
+  || null,
+);
 const flashDealProducts = computed(() =>
   buildUniqueProducts(
     [...marketplaceProducts.value]
@@ -407,6 +443,329 @@ const popularNowProducts = computed(() =>
     8,
   ),
 );
+const curatedHomeHeroSlides = [
+  {
+    badge: "Clearance Sale",
+    title: "Clearance Sale 70% Off",
+    description: "",
+    ctaHref: "/kerko",
+    ctaLabel: "Shop now",
+    imagePath: "/home-slider-zbritje.webp",
+    hideCopy: true,
+  },
+  {
+    badge: "Mega Sale",
+    title: "Mega Sale Special Offer",
+    description: "",
+    ctaHref: "/kerko",
+    ctaLabel: "Shop now",
+    imagePath: "/home-slider-megasales.webp",
+    hideCopy: true,
+  },
+  {
+    badge: "Mega Sale 90%",
+    title: "90 Percent Off Mega Sale",
+    description: "",
+    ctaHref: "/kerko",
+    ctaLabel: "Shop now",
+    imagePath: "/home-slider-megasales90.webp",
+    hideCopy: true,
+  },
+];
+const homeHeroSlides = computed(() => {
+  const curatedSlides = curatedHomeHeroSlides.filter((slide) => Boolean(slide.imagePath));
+  if (curatedSlides.length) {
+    return curatedSlides;
+  }
+
+  const slides = [];
+  const seenEntries = new Set();
+
+  function pushSlide(key, slide) {
+    if (!key || seenEntries.has(key) || !slide?.imagePath) {
+      return;
+    }
+
+    seenEntries.add(key);
+    slides.push(slide);
+  }
+
+  const flashDeal = flashDealProducts.value[0];
+  if (flashDeal) {
+    pushSlide(`product-${flashDeal.id}`, {
+      badge: "Oferta javore",
+      title: flashDeal.title,
+      description: `Zbritje reale nga ${flashDeal.businessName || "katalogu aktiv"} me stok live dhe checkout te paster.`,
+      ctaHref: getProductDetailUrl(flashDeal.id, "/"),
+      ctaLabel: "Shiko oferten",
+      imagePath: flashDeal.imagePath,
+    });
+  }
+
+  const trendingProduct = bestSellerProducts.value[0] || popularNowProducts.value[0] || null;
+  if (trendingProduct) {
+    pushSlide(`product-${trendingProduct.id}`, {
+      badge: "Trending tani",
+      title: trendingProduct.title,
+      description: `Produkt me interes te larte nga ${trendingProduct.businessName || "marketplace-i"} dhe sinjale reale shitjeje.`,
+      ctaHref: getProductDetailUrl(trendingProduct.id, "/"),
+      ctaLabel: "Hape produktin",
+      imagePath: trendingProduct.imagePath,
+    });
+  }
+
+  const highlightedBusiness = spotlightBusiness.value;
+  if (highlightedBusiness) {
+    const relatedProduct = getBusinessLeadProduct(highlightedBusiness);
+    pushSlide(`business-${highlightedBusiness.id}`, {
+      badge: "Biznes spotlight",
+      title: highlightedBusiness.businessName,
+      description: highlightedBusiness.city
+        ? `${highlightedBusiness.city} · Shiko produktet dhe prezantimin publik te biznesit.`
+        : "Njih biznesin, ofertat dhe produktet qe po reklamohen tani.",
+      ctaHref: highlightedBusiness.profileUrl || getBusinessProfileUrl(highlightedBusiness.id),
+      ctaLabel: "Hape biznesin",
+      imagePath: relatedProduct?.imagePath || highlightedBusiness.logoPath,
+    });
+  }
+
+  const freshProduct = newArrivalProducts.value[0] || popularNowProducts.value[1] || marketplaceProducts.value[0] || null;
+  if (freshProduct) {
+    pushSlide(`product-${freshProduct.id}`, {
+      badge: "Drop i ri",
+      title: freshProduct.title,
+      description: `Artikull i publikuar se fundi me pamje te paster dhe rruge direkte drejt faqes se produktit.`,
+      ctaHref: getProductDetailUrl(freshProduct.id, "/"),
+      ctaLabel: "Shiko detajet",
+      imagePath: freshProduct.imagePath,
+    });
+  }
+
+  return slides.slice(0, 4);
+});
+const homeHeroMiniPanels = computed(() => {
+  const panels = [];
+  const flashDeal = flashDealProducts.value[0];
+  const trendingProduct = bestSellerProducts.value[0] || popularNowProducts.value[0] || null;
+  const highlightedBusiness = spotlightBusiness.value;
+
+  if (flashDeal?.imagePath) {
+    panels.push({
+      key: "sale",
+      tone: "sale",
+      label: "Sale",
+      title: flashDeal.title,
+      copy: `${Math.max(getProductDiscountPercent(flashDeal), 0)}% ulje · ${formatPrice(flashDeal.price)}`,
+      imagePath: flashDeal.imagePath,
+      to: getProductDetailUrl(flashDeal.id, "/"),
+    });
+  }
+
+  if (trendingProduct?.imagePath) {
+    panels.push({
+      key: "trending",
+      tone: "trending",
+      label: "Trending",
+      title: trendingProduct.title,
+      copy: `${trendingProduct.businessName || "Marketplace"} · ${formatPrice(trendingProduct.price)}`,
+      imagePath: trendingProduct.imagePath,
+      to: getProductDetailUrl(trendingProduct.id, "/"),
+    });
+  }
+
+  if (highlightedBusiness) {
+    const relatedProduct = getBusinessLeadProduct(highlightedBusiness);
+    const imagePath = relatedProduct?.imagePath || highlightedBusiness.logoPath || trendingProduct?.imagePath || flashDeal?.imagePath || "";
+    if (imagePath) {
+      panels.push({
+        key: "business",
+        tone: "business",
+        label: "Bizneset",
+        title: highlightedBusiness.businessName,
+        copy: highlightedBusiness.city || "Profil publik me produkte lokale",
+        imagePath,
+        to: highlightedBusiness.profileUrl || getBusinessProfileUrl(highlightedBusiness.id),
+      });
+    }
+  }
+
+  return panels.slice(0, 3);
+});
+const homeFeatureCards = computed(() => {
+  const cards = [];
+  const seen = new Set();
+
+  function pushCard(key, card) {
+    if (!key || seen.has(key) || !card?.imagePath) {
+      return;
+    }
+
+    seen.add(key);
+    cards.push(card);
+  }
+
+  const candidates = [
+    {
+      key: flashDealProducts.value[1]?.id ? `sale-${flashDealProducts.value[1].id}` : "",
+      product: flashDealProducts.value[1] || flashDealProducts.value[0] || null,
+      label: "Oferta",
+      tone: "sale",
+    },
+    {
+      key: bestSellerProducts.value[1]?.id ? `trend-${bestSellerProducts.value[1].id}` : "",
+      product: bestSellerProducts.value[1] || bestSellerProducts.value[0] || null,
+      label: "Trending",
+      tone: "trending",
+    },
+    {
+      key: newArrivalProducts.value[0]?.id ? `new-${newArrivalProducts.value[0].id}` : "",
+      product: newArrivalProducts.value[0] || popularNowProducts.value[2] || null,
+      label: "Drop i ri",
+      tone: "fresh",
+    },
+  ];
+
+  candidates.forEach((entry) => {
+    if (!entry.product?.imagePath) {
+      return;
+    }
+
+    pushCard(entry.key, {
+      label: entry.label,
+      tone: entry.tone,
+      title: entry.product.title,
+      copy: `${entry.product.businessName || "Marketplace"} · ${formatPrice(entry.product.price)}`,
+      imagePath: entry.product.imagePath,
+      to: getProductDetailUrl(entry.product.id, "/"),
+    });
+  });
+
+  const businessCandidate = featuredBusinesses.value.find((business) => Boolean(getBusinessLeadProduct(business)));
+  if (businessCandidate) {
+    const product = getBusinessLeadProduct(businessCandidate);
+    pushCard(`business-${businessCandidate.id}`, {
+      label: "Biznes",
+      tone: "business",
+      title: businessCandidate.businessName,
+      copy: businessCandidate.city || "Profil publik dhe produkte lokale",
+      imagePath: product?.imagePath || businessCandidate.logoPath,
+      to: businessCandidate.profileUrl || getBusinessProfileUrl(businessCandidate.id),
+    });
+  }
+
+  return cards.slice(0, 4);
+});
+const homeMiniSliderCards = computed(() => {
+  const cards = [...homeFeatureCards.value];
+  const seenTargets = new Set(cards.map((card) => card.to));
+  const fallbackProducts = buildUniqueProducts(
+    [
+      ...popularNowProducts.value,
+      ...marketplaceProducts.value,
+      ...homeCatalogProducts.value,
+    ],
+    8,
+  );
+
+  fallbackProducts.forEach((product, index) => {
+    if (cards.length >= 4 || !product?.imagePath) {
+      return;
+    }
+
+    const to = getProductDetailUrl(product.id, "/");
+    if (seenTargets.has(to)) {
+      return;
+    }
+
+    seenTargets.add(to);
+    cards.push({
+      label: index % 2 === 0 ? "Produkt" : "Oferta",
+      tone: index % 2 === 0 ? "fresh" : "sale",
+      title: product.title,
+      copy: `${product.businessName || "TREGIO"} · ${formatPrice(product.price)}`,
+      imagePath: product.imagePath,
+      to,
+    });
+  });
+
+  return cards.slice(0, 4);
+});
+const personalizedProducts = computed(() => {
+  const viewedIds = new Set(recentlyViewedProducts.value.map((product) => Number(product?.id || 0)));
+  const preferredCategories = new Set(
+    recentlyViewedProducts.value
+      .map((product) => normalizeLookupValue(product?.category))
+      .filter(Boolean),
+  );
+  const preferredBusinesses = new Set(
+    recentlyViewedProducts.value
+      .map((product) => normalizeLookupValue(product?.businessName))
+      .filter(Boolean),
+  );
+
+  const scoredProducts = [...marketplaceProducts.value]
+    .map((product) => {
+      const productId = Number(product?.id || 0);
+      const categoryKey = normalizeLookupValue(product?.category);
+      const businessKey = normalizeLookupValue(product?.businessName);
+      let score = getProductPopularityScore(product);
+
+      if (preferredCategories.has(categoryKey)) {
+        score += 28;
+      }
+
+      if (preferredBusinesses.has(businessKey)) {
+        score += 34;
+      }
+
+      if (!viewedIds.has(productId)) {
+        score += 6;
+      } else {
+        score -= 12;
+      }
+
+      if (getProductDiscountPercent(product) > 0) {
+        score += 8;
+      }
+
+      return { product, score };
+    })
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.product);
+
+  const fallbackProducts = buildUniqueProducts(
+    [
+      ...scoredProducts,
+      ...popularNowProducts.value,
+      ...recentlyViewedProducts.value,
+      ...marketplaceProducts.value,
+    ],
+    10,
+  );
+
+  return fallbackProducts.slice(0, 8);
+});
+const homeBusinessBillboard = computed(() => {
+  const business = spotlightBusiness.value || featuredBusinesses.value[0] || null;
+  if (!business) {
+    return null;
+  }
+
+  const leadProduct = getBusinessLeadProduct(business);
+  const relatedProducts = buildUniqueProducts(
+    marketplaceProducts.value.filter(
+      (product) => normalizeLookupValue(product?.businessName) === normalizeLookupValue(business.businessName),
+    ),
+    3,
+  );
+
+  return {
+    business,
+    leadProduct,
+    relatedProducts,
+    target: business.profileUrl || getBusinessProfileUrl(business.id),
+  };
+});
 const heroSpotlightProduct = computed(() =>
   flashDealProducts.value[0]
   || bestSellerProducts.value[0]
@@ -485,7 +844,7 @@ const collectionLabel = computed(() => {
 
   if (!filters.size && !filters.color && !filters.sort) {
     return totalProductsCount.value > products.value.length
-      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGIO.`
       : statusText.value;
   }
 
@@ -516,8 +875,9 @@ onMounted(async () => {
     }
 
     const publicProductsPromise = loadProducts();
-    const homeHighlightsPromise = loadHomeCatalogProducts();
-    const publicBusinessesPromise = loadBusinesses();
+    void loadHomeRecommendations();
+    void loadHomeCatalogProducts();
+    void loadBusinesses();
     void ensureSessionLoaded()
       .then(async (user) => {
         if (user?.role === "business") {
@@ -525,13 +885,13 @@ onMounted(async () => {
           return;
         }
 
-        await refreshCollectionState();
+        await Promise.all([refreshCollectionState(), loadHomeRecommendations()]);
       })
       .catch((error) => {
         console.error(error);
       });
 
-    await Promise.all([publicProductsPromise, homeHighlightsPromise, publicBusinessesPromise]);
+    await publicProductsPromise;
     markRouteReady();
   } catch (error) {
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
@@ -545,6 +905,17 @@ onBeforeUnmount(() => {
 });
 
 watch(
+  () => `${appState.user?.id || 0}:${appState.user?.role || ""}`,
+  async (nextValue, previousValue) => {
+    if (nextValue === previousValue) {
+      return;
+    }
+
+    await loadHomeRecommendations();
+  },
+);
+
+watch(
   () => appState.catalogRevision,
   async (nextRevision, previousRevision) => {
     if (nextRevision === previousRevision) {
@@ -556,7 +927,7 @@ watch(
       return;
     }
 
-    await Promise.all([loadProducts(), loadHomeCatalogProducts(), loadBusinesses()]);
+    await Promise.all([loadProducts(), loadHomeCatalogProducts(), loadBusinesses(), loadHomeRecommendations()]);
   },
 );
 
@@ -579,6 +950,7 @@ async function refreshCollectionState() {
 
 async function loadProducts(options = {}) {
   const { append = false, forceFacets = false } = options;
+  const requestId = ++publicProductsRequestId;
   const offset = append ? products.value.length : 0;
   const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
@@ -608,14 +980,11 @@ async function loadProducts(options = {}) {
     {},
     { cacheTtlMs: append ? 0 : 15000 },
   );
+  if (requestId !== publicProductsRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
     statusText.value = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-      availableFilters.value = createEmptyProductFacets();
-    }
     return;
   }
 
@@ -629,8 +998,23 @@ async function loadProducts(options = {}) {
   }
   statusText.value =
     totalProductsCount.value > 0
-      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGO.`
+      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte publike te TREGIO.`
       : "Nuk ka produkte publike ende.";
+}
+
+async function loadHomeRecommendations() {
+  if (isBusinessUser.value) {
+    homeRecommendationSections.value = [];
+    return;
+  }
+
+  const requestId = ++homeRecommendationsRequestId;
+  const payload = await fetchHomeRecommendations(8);
+  if (requestId !== homeRecommendationsRequestId) {
+    return;
+  }
+
+  homeRecommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
 }
 
 async function loadMoreProducts() {
@@ -647,7 +1031,11 @@ async function loadMoreProducts() {
 }
 
 async function loadBusinesses() {
+  const requestId = ++publicBusinessesRequestId;
   const { response, data } = await requestJson("/api/businesses/public", {}, { cacheTtlMs: 30000 });
+  if (requestId !== publicBusinessesRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
     return;
   }
@@ -656,13 +1044,16 @@ async function loadBusinesses() {
 }
 
 async function loadHomeCatalogProducts() {
+  const requestId = ++homeCatalogRequestId;
   const { response, data } = await requestJson(
     "/api/products?limit=24&offset=0",
     {},
     { cacheTtlMs: 30000 },
   );
+  if (requestId !== homeCatalogRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
-    homeCatalogProducts.value = [];
     return;
   }
 
@@ -671,9 +1062,12 @@ async function loadHomeCatalogProducts() {
 }
 
 async function loadBusinessProfile() {
+  const requestId = ++businessProfileRequestId;
   const { response, data } = await requestJson("/api/business-profile");
+  if (requestId !== businessProfileRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
-    businessProfile.value = null;
     businessUi.message = resolveApiMessage(data, "Profili i biznesit nuk u ngarkua.");
     businessUi.type = "error";
     return;
@@ -691,9 +1085,12 @@ async function loadBusinessProfile() {
 }
 
 async function loadBusinessProducts() {
+  const requestId = ++businessProductsRequestId;
   const { response, data } = await requestJson("/api/business/products");
+  if (requestId !== businessProductsRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
-    businessProducts.value = [];
     businessUi.message = resolveApiMessage(data, "Artikujt e biznesit nuk u ngarkuan.");
     businessUi.type = "error";
     return;
@@ -947,6 +1344,7 @@ async function handleWishlist(productId) {
       detail: { message: "Artikulli eshte shtuar ne wishlist." },
     }));
   }
+  void loadHomeRecommendations();
 }
 
 async function handleCart(productId) {
@@ -987,6 +1385,7 @@ async function handleCart(productId) {
   cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   setMessage(data.message || "Produkti u shtua ne shporte.", "success");
+  void loadHomeRecommendations();
 }
 </script>
 
@@ -1143,405 +1542,61 @@ async function handleCart(productId) {
   </section>
 
   <section v-else class="collection-page home-marketplace-page" aria-label="Faqja kryesore">
-    <section class="home-marketplace-quick-chips" aria-label="Shkurtore te shpejta">
-      <template v-for="chip in homeQuickChips" :key="chip.label">
-        <button
-          v-if="chip.type === 'scroll'"
-          class="home-marketplace-quick-chip"
-          type="button"
-          @click="scrollToMarketplaceSection(chip.target)"
-        >
-          {{ chip.label }}
-        </button>
-        <RouterLink
-          v-else
-          class="home-marketplace-quick-chip"
-          :to="chip.to"
-        >
-          {{ chip.label }}
-        </RouterLink>
-      </template>
-    </section>
-
     <section
-      v-if="saleTickerProducts.length > 0"
-      class="home-marketplace-sale-strip"
-      aria-label="Sale"
+      v-if="homeHeroSlides.length > 0 || homeMiniSliderCards.length > 0"
+      class="home-marketplace-showcase home-marketplace-showcase--top"
+      aria-label="Slideri kryesor i faqes"
     >
-      <header class="home-marketplace-sale-head">
-        <div>
-          <p class="section-label">Sale</p>
-          <h2>Produktet me zbritje levizin ketu pa nderprerje.</h2>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/kerko">
-          Shiko ofertat
-        </RouterLink>
-      </header>
+      <PromoSlider v-if="homeHeroSlides.length > 0" :slides="homeHeroSlides" />
 
-      <div class="home-marketplace-sale-marquee">
-        <div class="home-marketplace-sale-track">
-          <RouterLink
-            v-for="product in saleTickerProducts"
-            :key="`sale-primary-${product.id}`"
-            class="home-marketplace-sale-item"
-            :to="getProductDetailUrl(product.id, '/')"
-          >
-            <img
-              :src="product.imagePath"
-              :alt="product.title"
-              width="96"
-              height="96"
-              loading="lazy"
-              decoding="async"
-            >
-            <div class="home-marketplace-sale-copy">
-              <strong>{{ product.title }}</strong>
-              <span>{{ formatPrice(product.price) }}</span>
-            </div>
-            <small>{{ getProductDiscountPercent(product) > 0 ? `-${getProductDiscountPercent(product)}%` : "Sale" }}</small>
-          </RouterLink>
-
-          <RouterLink
-            v-for="product in saleTickerProducts"
-            :key="`sale-loop-${product.id}`"
-            class="home-marketplace-sale-item"
-            :to="getProductDetailUrl(product.id, '/')"
-            aria-hidden="true"
-            tabindex="-1"
-          >
-            <img
-              :src="product.imagePath"
-              :alt="product.title"
-              width="96"
-              height="96"
-              loading="lazy"
-              decoding="async"
-            >
-            <div class="home-marketplace-sale-copy">
-              <strong>{{ product.title }}</strong>
-              <span>{{ formatPrice(product.price) }}</span>
-            </div>
-            <small>{{ getProductDiscountPercent(product) > 0 ? `-${getProductDiscountPercent(product)}%` : "Sale" }}</small>
-          </RouterLink>
-        </div>
-      </div>
-    </section>
-
-    <section class="home-marketplace-announcement" aria-label="Highlights te marketplace-it">
-      <article
-        v-for="item in homeAnnouncementItems"
-        :key="item.title"
-        class="home-marketplace-announcement-item"
-      >
-        <strong>{{ item.title }}</strong>
-        <span>{{ item.description }}</span>
-      </article>
-    </section>
-
-    <section
-      v-if="bestSellerProducts.length > 0"
-      class="home-marketplace-section home-marketplace-best-sellers"
-      aria-label="Produktet me te shitura"
-    >
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Produktet me te shitura</p>
-          <h2>Keto kater produkte po levizin me shpejt ne marketplace.</h2>
-          <p>Renditur sipas shitjeve, reviews dhe sinjaleve reale te interesit nga katalogu aktiv.</p>
-        </div>
+      <div v-if="homeMiniSliderCards.length > 0" class="home-marketplace-feature-row" aria-label="Slideret e vegjel">
         <RouterLink
-          class="home-marketplace-section-link"
-          :to="{ path: '/kerko', query: { featured: 'best-sellers' } }"
+          v-for="card in homeMiniSliderCards"
+          :key="`${card.label}-${card.title}`"
+          class="home-marketplace-feature-card"
+          :class="`is-${card.tone}`"
+          :to="card.to"
         >
-          Shiko produktet me te shitura
+          <img
+            :src="card.imagePath"
+            :alt="card.title"
+            width="420"
+            height="240"
+            loading="lazy"
+            decoding="async"
+          >
+          <div class="home-marketplace-feature-copy">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.title }}</strong>
+            <small>{{ card.copy }}</small>
+          </div>
         </RouterLink>
-      </header>
-
-      <div class="home-marketplace-products-grid home-marketplace-best-sellers-grid">
-        <HomeMarketplaceCard
-          v-for="product in bestSellerProducts"
-          :key="`home-best-seller-${product.id}`"
-          :product="product"
-          badge="Best seller"
-          badge-tone="premium"
-          :cart-busy="busyCartIds.includes(product.id)"
-          @cart="handleCart"
-        />
       </div>
-    </section>
-
-    <section class="home-marketplace-masthead" aria-label="Hyrja kryesore ne marketplace">
-      <aside class="home-marketplace-category-rail">
-        <header class="home-marketplace-rail-head">
-          <p class="section-label">Shop categories</p>
-          <h2>Hyr shpejt ne seksionin qe te duhet.</h2>
-        </header>
-
-        <nav class="home-marketplace-category-list" aria-label="Navigimi kryesor sipas kategorive">
-          <RouterLink
-            v-for="item in quickNavigationItems"
-            :key="item.key"
-            class="home-marketplace-category-link"
-            :class="`is-${item.icon.tone}`"
-            :to="item.href"
-          >
-            <span class="home-marketplace-category-icon" :class="`is-${item.icon.tone}`" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path
-                  v-for="path in item.icon.paths"
-                  :key="path"
-                  :d="path"
-                />
-              </svg>
-            </span>
-            <span class="home-marketplace-category-text">{{ item.label }}</span>
-            <small>{{ item.groups.length }} hyrje</small>
-          </RouterLink>
-        </nav>
-
-        <RouterLink class="home-marketplace-category-all" to="/kerko">
-          Shiko gjithe katalogun
-        </RouterLink>
-      </aside>
-
-      <section class="home-marketplace-hero-surface" aria-label="Hero banner i marketplace-it">
-        <div class="home-marketplace-hero-copy">
-          <p class="home-marketplace-kicker">Marketplace premium per produkte lokale</p>
-          <h1>
-            Trego i ben produktet reale te duken
-            <span>gati per shitje, te pastra dhe te besueshme.</span>
-          </h1>
-          <p>
-            Nje homepage e ndertuar si nje dyqan i vertete online: kategori te qarta, oferta
-            reale, karta produktesh me besim dhe hyrje te shpejte drejt checkout-it.
-          </p>
-
-          <div class="home-marketplace-hero-actions">
-            <RouterLink class="nav-action nav-action-primary" to="/kerko">
-              Eksploro produktet
-            </RouterLink>
-            <RouterLink class="nav-action nav-action-secondary" to="/bizneset-e-regjistruara">
-              Shiko markat lokale
-            </RouterLink>
-          </div>
-
-          <div class="home-marketplace-hero-stats">
-            <article class="home-marketplace-stat">
-              <strong>{{ curatedProductsDisplay }}</strong>
-              <span>Produkte live</span>
-            </article>
-            <article class="home-marketplace-stat">
-              <strong>{{ localBrandsDisplay }}</strong>
-              <span>Marka lokale</span>
-            </article>
-            <article class="home-marketplace-stat">
-              <strong>{{ highestDiscountDisplay }}</strong>
-              <span>Ulja me e larte</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="home-marketplace-hero-visual">
-          <RouterLink
-            v-if="heroSpotlightProduct"
-            class="home-marketplace-spotlight"
-            :to="getProductDetailUrl(heroSpotlightProduct.id, '/')"
-          >
-            <div class="home-marketplace-spotlight-media">
-              <img
-                :src="heroSpotlightProduct.imagePath"
-                :alt="heroSpotlightProduct.title"
-                width="920"
-                height="760"
-                loading="eager"
-                decoding="async"
-              >
-              <span class="home-marketplace-spotlight-badge">
-                {{ getProductDiscountPercent(heroSpotlightProduct) > 0 ? `${getProductDiscountPercent(heroSpotlightProduct)}% OFF` : "Featured pick" }}
-              </span>
-            </div>
-
-            <div class="home-marketplace-spotlight-copy">
-              <p>
-                {{ formatCategoryLabel(heroSpotlightProduct.category) }}
-                <span v-if="heroSpotlightProduct.businessName">· {{ heroSpotlightProduct.businessName }}</span>
-              </p>
-              <h2>{{ heroSpotlightProduct.title }}</h2>
-              <div class="home-marketplace-spotlight-pricing">
-                <strong>{{ formatPrice(heroSpotlightProduct.price) }}</strong>
-                <span v-if="getProductCompareAtPrice(heroSpotlightProduct)">
-                  {{ formatPrice(getProductCompareAtPrice(heroSpotlightProduct)) }}
-                </span>
-              </div>
-            </div>
-          </RouterLink>
-
-          <article v-else class="home-marketplace-spotlight is-placeholder">
-            <div class="home-marketplace-spotlight-copy">
-              <p>Marketplace spotlight</p>
-              <h2>Po ngarkohet vitrini kryesor i faqes.</h2>
-              <div class="home-marketplace-spotlight-pricing">
-                <strong>—</strong>
-              </div>
-            </div>
-          </article>
-
-          <div v-if="heroMiniProducts.length > 0" class="home-marketplace-mini-strip">
-            <RouterLink
-              v-for="product in heroMiniProducts"
-              :key="`mini-${product.id}`"
-              class="home-marketplace-mini-card"
-              :to="getProductDetailUrl(product.id, '/')"
-            >
-              <img
-                :src="product.imagePath"
-                :alt="product.title"
-                width="240"
-                height="240"
-                loading="lazy"
-                decoding="async"
-              >
-              <div>
-                <span>{{ formatCategoryLabel(product.category) }}</span>
-                <strong>{{ product.title }}</strong>
-                <small>{{ formatPrice(product.price) }}</small>
-              </div>
-            </RouterLink>
-          </div>
-        </div>
-      </section>
-
-      <aside class="home-marketplace-insight-rail">
-        <article class="home-marketplace-insight-card is-alert">
-          <p class="section-label">Flash deals</p>
-          <strong>{{ highestDiscountDisplay }}</strong>
-          <span>Oferta me zbritjen me te forte nga produktet reale te publikuara tani.</span>
-          <RouterLink to="/kerko">Shiko ofertat</RouterLink>
-        </article>
-
-        <article class="home-marketplace-insight-card">
-          <p class="section-label">Trusted checkout</p>
-          <strong>Pagesa + transport</strong>
-          <span>Porosite llogariten me stok real, shipping dhe rregulla sipas biznesit.</span>
-        </article>
-
-        <article class="home-marketplace-insight-card">
-          <p class="section-label">Local brands</p>
-          <strong>{{ localBrandsDisplay }}</strong>
-          <span>Biznese aktive me profile publike, katalog dhe status porosie ne nje vend.</span>
-        </article>
-      </aside>
     </section>
 
     <section
       id="home-marketplace-catalog"
       class="home-marketplace-section home-marketplace-catalog"
-      aria-label="Katalogu i plote"
+      aria-label="Produktet"
     >
+      <RecommendationSections
+        v-if="homeRecommendationSections.length > 0"
+        :sections="homeRecommendationSections"
+        :wishlist-ids="wishlistIds"
+        :cart-ids="cartIds"
+        :busy-wishlist-ids="busyWishlistIds"
+        :busy-cart-ids="busyCartIds"
+        :compared-product-ids="comparedProductIds"
+        @wishlist="handleWishlist"
+        @cart="handleCart"
+        @compare="handleCompare"
+      />
+
       <header class="home-marketplace-section-head home-marketplace-catalog-head">
         <div>
-          <p class="section-label">Gjithe katalogu</p>
-          <p>{{ collectionLabel }}</p>
+          <p class="section-label">PRODUKTE</p>
         </div>
       </header>
-
-      <div class="collection-toolbar">
-        <button
-          class="filter-toggle-button"
-          type="button"
-          :aria-expanded="filtersVisible ? 'true' : 'false'"
-          @click="toggleFiltersPanel"
-        >
-          Filtro
-        </button>
-      </div>
-
-      <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet ne faqen kryesore">
-        <div class="search-filters-grid">
-          <label v-if="availablePageSectionOptions.length > 0" class="field">
-            <span>Kategoria kryesore</span>
-            <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
-              <option value="">Te gjitha kategorite</option>
-              <option
-                v-for="option in availablePageSectionOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label v-if="filters.pageSection && availableCategoryOptions.length > 0" class="field">
-            <span>Nenkategoria</span>
-            <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
-              <option value="">Te gjitha nenkategorite</option>
-              <option
-                v-for="option in availableCategoryOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label v-if="shouldShowProductTypeFilter" class="field">
-            <span>Produkti</span>
-            <select v-model="filters.productType" class="search-filter-select" @change="handleCatalogFilterChange">
-              <option value="">Te gjitha llojet</option>
-              <option
-                v-for="option in availableProductTypeOptions"
-                :key="`${option.category}-${option.value}`"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label v-if="availableSizeOptions.length > 0" class="field">
-            <span>Madhesia</span>
-            <select v-model="filters.size" class="search-filter-select" @change="handleCatalogFilterChange">
-              <option value="">Te gjitha madhesite</option>
-              <option
-                v-for="option in availableSizeOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label v-if="availableColorOptions.length > 0" class="field">
-            <span>Ngjyra</span>
-            <select v-model="filters.color" class="search-filter-select" @change="handleCatalogFilterChange">
-              <option value="">Te gjitha ngjyrat</option>
-              <option
-                v-for="option in availableColorOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Cmimi</span>
-            <select v-model="filters.sort" class="search-filter-select">
-              <option value="">Renditja standarde</option>
-              <option value="price-asc">Nga me i uleti</option>
-              <option value="price-desc">Nga me i larti</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="search-filter-actions">
-          <button class="search-reset-button" type="button" @click="resetFilters">Pastro filtrat</button>
-        </div>
-      </section>
 
       <div class="form-message" :class="ui.type" role="status" aria-live="polite">
         {{ ui.message }}
@@ -1590,117 +1645,6 @@ async function handleCart(productId) {
 
       <div v-if="products.length === 0" class="collection-empty-state">
         Nuk ka produkte publike ende.
-      </div>
-    </section>
-
-    <section class="home-marketplace-trust-grid" aria-label="Besimi dhe sherbimi">
-      <article
-        v-for="card in homeTrustCards"
-        :key="card.title"
-        class="home-marketplace-trust-card"
-      >
-        <p class="section-label">{{ card.title }}</p>
-        <h3>{{ card.title }}</h3>
-        <p>{{ card.copy }}</p>
-      </article>
-    </section>
-
-    <section
-      v-if="visibleRecentlyViewedProducts.length > 0"
-      class="home-marketplace-section"
-      aria-label="Produktet e pare se fundi"
-    >
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Pare se fundi</p>
-          <h2>Rikthehu te produktet qe i pe pak me pare.</h2>
-          <p>Nje shtrese e shpejte rikthimi per user-in pa e humbur rrjedhen e blerjes.</p>
-        </div>
-      </header>
-
-      <div class="home-marketplace-products-grid is-compact">
-        <HomeMarketplaceCard
-          v-for="product in visibleRecentlyViewedProducts"
-          :key="`home-recent-${product.id}`"
-          :product="product"
-          badge="Viewed"
-          badge-tone="premium"
-          compact
-          :cart-busy="busyCartIds.includes(product.id)"
-          @cart="handleCart"
-        />
-      </div>
-    </section>
-
-    <section class="home-marketplace-proof-layout" aria-label="Reviews dhe newsletter">
-      <article class="home-marketplace-proof-column home-marketplace-newsletter">
-        <header class="home-marketplace-column-head">
-          <p class="section-label">Newsletter</p>
-          <h2>Merri drop-et, ofertat dhe produktet e reja ne inbox.</h2>
-          <p>
-            Nje CTA e thjeshte qe e kthen faqen nga katalog pasiv ne nje kanal te rregullt rikthimi.
-          </p>
-        </header>
-
-        <form class="home-marketplace-newsletter-form" @submit.prevent="handleNewsletterSubmit">
-          <input
-            v-model="newsletterEmail"
-            type="email"
-            inputmode="email"
-            autocomplete="email"
-            placeholder="Shkruaj email-in tend"
-            aria-label="Email per newsletter"
-          >
-          <button type="submit">Regjistrohu</button>
-        </form>
-
-        <ul class="home-marketplace-newsletter-list">
-          <li v-for="benefit in homeNewsletterBenefits" :key="benefit">{{ benefit }}</li>
-        </ul>
-      </article>
-    </section>
-
-    <section
-      v-if="featuredBusinesses.length > 0"
-      id="home-marketplace-local-brands"
-      class="home-marketplace-section"
-      aria-label="Markat lokale"
-    >
-      <header class="home-marketplace-section-head">
-        <div>
-          <p class="section-label">Local brands</p>
-          <h2>Biznese reale qe i japin fytyre marketplace-it.</h2>
-          <p>Profile publike me katalog, produkte te publikuara dhe identitet te qarte vizual.</p>
-        </div>
-        <RouterLink class="home-marketplace-section-link" to="/bizneset-e-regjistruara">
-          Shiko te gjitha markat
-        </RouterLink>
-      </header>
-
-      <div class="home-marketplace-brand-grid">
-        <RouterLink
-          v-for="business in featuredBusinesses"
-          :key="business.id"
-          class="home-marketplace-brand-card"
-          :to="business.profileUrl || getBusinessProfileUrl(business.id)"
-        >
-          <div class="home-marketplace-brand-logo">
-            <img
-              v-if="business.logoPath"
-              :src="business.logoPath"
-              :alt="business.businessName"
-              width="140"
-              height="140"
-              loading="lazy"
-              decoding="async"
-            >
-            <span v-else>{{ getBusinessInitials(business.businessName) }}</span>
-          </div>
-          <div class="home-marketplace-brand-copy">
-            <strong>{{ business.businessName }}</strong>
-            <span>{{ business.city || "Partner i TREGO" }}</span>
-          </div>
-        </RouterLink>
       </div>
     </section>
   </section>

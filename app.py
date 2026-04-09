@@ -1,7 +1,7 @@
 import argparse
 import base64
 import csv
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from email.parser import BytesParser
 from email.policy import default
@@ -92,6 +92,7 @@ PUBLIC_FACETS_CACHE_TTL_SECONDS = 30
 PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS = 15
 PUBLIC_BUSINESSES_ENDPOINT_CACHE_TTL_SECONDS = 45
 PUBLIC_DETAIL_ENDPOINT_CACHE_TTL_SECONDS = 20
+PUBLIC_RECOMMENDATIONS_CACHE_TTL_SECONDS = 45
 RUNTIME_PUBLIC_CACHE: dict[str, tuple[float, object]] = {}
 RUNTIME_PUBLIC_CACHE_LOCK = threading.Lock()
 DATABASE_BOOTSTRAP_LOCK = threading.Lock()
@@ -100,6 +101,35 @@ SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
 PRODUCTS_PAGE_MAX_LIMIT = 24
+RECOMMENDATIONS_DEFAULT_LIMIT = 8
+RECOMMENDATIONS_MAX_LIMIT = 12
+RECOMMENDATION_CANDIDATE_POOL_LIMIT = 240
+RECOMMENDATION_ACTIVITY_LIMIT = 28
+RECOMMENDATION_TERM_STOPWORDS = {
+    "and",
+    "for",
+    "the",
+    "with",
+    "nga",
+    "dhe",
+    "per",
+    "nje",
+    "njejta",
+    "produkt",
+    "produkte",
+    "produkti",
+    "artikull",
+    "artikuj",
+    "artikulli",
+    "biznes",
+    "biznesi",
+    "marketplace",
+    "tregio",
+    "trego",
+    "new",
+    "sale",
+    "off",
+}
 SPA_FRONTEND_ROUTES = {
     "/",
     "/about",
@@ -497,7 +527,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-03-30-marketplace-6"
+APP_SCHEMA_VERSION = "2026-04-07-launch-ads-1"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -2229,6 +2259,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
         ON products(is_public, image_fingerprint)
         """
     )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_created_at
+        ON products(is_public, created_at DESC)
+        """
+    )
 
     if not column_exists(connection, "cart_items", "created_at"):
         connection.execute(
@@ -2375,6 +2411,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_product_engagements_business_event
         ON product_engagements(business_user_id, event_type, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_engagements_user_event_updated
+        ON product_engagements(user_id, event_type, updated_at DESC)
         """
     )
     connection.execute(
@@ -2652,6 +2694,12 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_order_items_fulfillment_status
         ON order_items(fulfillment_status, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_order_items_product_category_created
+        ON order_items(product_category, created_at DESC)
         """
     )
 
@@ -3008,6 +3056,60 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_promo_codes_business_created
         ON promo_codes(business_user_id, created_at DESC)
+        """
+    )
+
+    if not table_exists(connection, "launch_ads"):
+        connection.execute(
+            """
+            CREATE TABLE launch_ads (
+                id BIGSERIAL PRIMARY KEY,
+                badge TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                subtitle TEXT NOT NULL DEFAULT '',
+                image_path TEXT NOT NULL DEFAULT '',
+                cta_label TEXT NOT NULL DEFAULT 'Shop now',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                created_by_user_id BIGINT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE launch_ads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                badge TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                subtitle TEXT NOT NULL DEFAULT '',
+                image_path TEXT NOT NULL DEFAULT '',
+                cta_label TEXT NOT NULL DEFAULT 'Shop now',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                created_by_user_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_launch_ads_active_sort
+        ON launch_ads(is_active, sort_order, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_launch_ads_schedule
+        ON launch_ads(starts_at, ends_at)
         """
     )
 
@@ -6679,13 +6781,19 @@ def build_business_shipping_quote(
 
     free_shipping_threshold = round(float(normalized_settings.get("freeShippingThreshold") or 0), 2)
     half_off_threshold = round(float(normalized_settings.get("halfOffThreshold") or 0), 2)
+    qualifies_for_free_shipping = free_shipping_threshold > 0 and subtotal >= free_shipping_threshold
+    qualifies_for_half_off_shipping = (
+        not qualifies_for_free_shipping
+        and half_off_threshold > 0
+        and subtotal >= half_off_threshold
+    )
 
-    if free_shipping_threshold > 0 and subtotal >= free_shipping_threshold:
+    if qualifies_for_free_shipping:
         subtotal_discount = pre_discount_amount
         rule_message = (
             f"Transporti u be falas sepse shporta e ketij biznesi kaloi {free_shipping_threshold:.2f}€."
         )
-    elif half_off_threshold > 0 and subtotal >= half_off_threshold:
+    elif qualifies_for_half_off_shipping:
         subtotal_discount = round(pre_discount_amount * 0.5, 2)
         rule_message = (
             f"Transporti mori 50% zbritje sepse shporta e ketij biznesi kaloi {half_off_threshold:.2f}€."
@@ -6703,6 +6811,12 @@ def build_business_shipping_quote(
         "cityZoneLabel": str(city_zone.get("label") or "Zone e zgjeruar"),
         "cityRateSource": str(city_zone.get("source") or "marketplace"),
         "ruleMessage": rule_message,
+        "subtotalForShippingRule": round(subtotal, 2),
+        "freeShippingThreshold": free_shipping_threshold,
+        "halfOffThreshold": half_off_threshold,
+        "qualifiesForFreeShipping": qualifies_for_free_shipping,
+        "qualifiesForHalfOffShipping": qualifies_for_half_off_shipping,
+        "chargesOncePerBusiness": True,
     }
 
 
@@ -6775,6 +6889,8 @@ def build_checkout_shipping_groups(
                 "businessUserId": int(business_user_id),
                 "businessName": business_name,
                 "subtotal": subtotal,
+                "itemCount": len(grouped["items"]),
+                "quantityTotal": sum(max(1, int(item.get("quantity") or 1)) for item in grouped["items"]),
                 "items": list(grouped["items"]),
                 "shippingSettings": {
                     **normalized_shipping_settings,
@@ -6816,6 +6932,8 @@ def build_checkout_shipping_quote(
                 "businessUserId": int(group.get("businessUserId") or 0),
                 "businessName": str(group.get("businessName") or "").strip() or "Marketplace",
                 "subtotal": round(float(group.get("subtotal") or 0), 2),
+                "itemCount": max(0, int(group.get("itemCount") or 0)),
+                "quantityTotal": max(0, int(group.get("quantityTotal") or 0)),
             }
         )
 
@@ -6853,9 +6971,25 @@ def build_checkout_shipping_quote(
     total_subtotal_discount = round(sum(float(quote.get("subtotalDiscount") or 0) for quote in group_quotes), 2)
 
     if len(group_quotes) == 1:
-        rule_message = str(group_quotes[0].get("ruleMessage") or "").strip()
+        single_quote = group_quotes[0]
+        quantity_total = max(0, int(single_quote.get("quantityTotal") or 0))
+        base_rule_message = str(single_quote.get("ruleMessage") or "").strip()
+        if quantity_total > 1:
+            quantity_message = (
+                f"Transporti u llogarit nje here per {quantity_total} produkte te ketij biznesi."
+            )
+            rule_message = (
+                f"{quantity_message} {base_rule_message}".strip()
+                if base_rule_message
+                else quantity_message
+            )
+        else:
+            rule_message = base_rule_message
     else:
-        rule_message = "Transporti llogaritet vecmas per secilin biznes ne shporte."
+        rule_message = (
+            "Transporti llogaritet nje here per secilin biznes ne shporte, "
+            "sipas subtotalit te produkteve te zgjedhura per ate biznes."
+        )
         if total_subtotal_discount > 0:
             rule_message += " Zbritja e transportit u aplikua sipas pragjeve te bizneseve."
 
@@ -7506,6 +7640,600 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         if "review_count" in row.keys()
         else 0,
     }
+
+
+def parse_recommendation_limit_query(
+    query_params: dict[str, list[str]],
+    *,
+    default_limit: int = RECOMMENDATIONS_DEFAULT_LIMIT,
+) -> int:
+    raw_limit = str(query_params.get("limit", [str(default_limit)])[0] or "").strip()
+    try:
+        parsed_limit = int(raw_limit or default_limit)
+    except ValueError:
+        parsed_limit = default_limit
+    return max(1, min(RECOMMENDATIONS_MAX_LIMIT, parsed_limit))
+
+
+def recommendation_record_value(
+    record: sqlite3.Row | dict[str, object] | None,
+    *keys: str,
+    default: object = None,
+) -> object:
+    if record is None:
+        return default
+
+    if isinstance(record, sqlite3.Row):
+        available_keys = set(record.keys())
+        for key in keys:
+            if key in available_keys:
+                return record[key]
+        return default
+
+    if isinstance(record, dict):
+        for key in keys:
+            if key in record:
+                return record[key]
+        return default
+
+    return default
+
+
+def extract_recommendation_terms(*values: object) -> set[str]:
+    terms: set[str] = set()
+    for value in values:
+        for token in tokenize_search_intent_text(str(value or "")):
+            normalized_token = str(token or "").strip().lower()
+            if (
+                not normalized_token
+                or len(normalized_token) <= 1
+                or normalized_token in RECOMMENDATION_TERM_STOPWORDS
+                or normalized_token.isdigit()
+            ):
+                continue
+            if "-" in normalized_token:
+                for part in normalized_token.split("-"):
+                    part = part.strip().lower()
+                    if (
+                        part
+                        and len(part) > 1
+                        and part not in RECOMMENDATION_TERM_STOPWORDS
+                        and not part.isdigit()
+                    ):
+                        terms.add(part)
+            terms.add(normalized_token)
+    return terms
+
+
+def normalize_recommendation_business_key(record: sqlite3.Row | dict[str, object] | None) -> str:
+    business_name = str(
+        recommendation_record_value(record, "business_name", "businessName", default="")
+        or ""
+    ).strip().lower()
+    if business_name:
+        return business_name
+
+    try:
+        owner_user_id = int(
+            recommendation_record_value(record, "created_by_user_id", "createdByUserId", "business_user_id", default=0)
+            or 0
+        )
+    except (TypeError, ValueError):
+        owner_user_id = 0
+    return f"user:{owner_user_id}" if owner_user_id > 0 else ""
+
+
+def resolve_recommendation_price(record: sqlite3.Row | dict[str, object] | None) -> float:
+    try:
+        return round(float(recommendation_record_value(record, "price", "unit_price", "unitPrice", default=0) or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def resolve_recommendation_created_at(record: sqlite3.Row | dict[str, object] | None) -> datetime | None:
+    created_at = str(
+        recommendation_record_value(record, "created_at", "createdAt", "updated_at", "updatedAt", default="")
+        or ""
+    ).strip()
+    if not created_at:
+        return None
+    return parse_storage_datetime(created_at)
+
+
+def build_recommendation_candidate(record: sqlite3.Row | dict[str, object]) -> dict[str, object]:
+    category = str(recommendation_record_value(record, "category", "product_category", default="") or "").strip().lower()
+    product_type = str(
+        recommendation_record_value(record, "product_type", "productType", "product_type_snapshot", default="")
+        or ""
+    ).strip().lower()
+    tags = extract_recommendation_terms(
+        recommendation_record_value(record, "title", "product_title", default=""),
+        recommendation_record_value(record, "description", "product_description", default=""),
+        category,
+        product_type,
+        recommendation_record_value(record, "ai_image_search_text", "search_text", default=""),
+        recommendation_record_value(record, "ai_image_color_terms", default=""),
+        recommendation_record_value(record, "size", "selected_size", "selectedSize", "product_size", default=""),
+        recommendation_record_value(record, "color", "selected_color", "selectedColor", "product_color", default=""),
+        recommendation_record_value(record, "business_name", "businessName", "business_name_snapshot", default=""),
+    )
+
+    buyers_count = max(
+        0,
+        int(recommendation_record_value(record, "buyers_count", "buyersCount", default=0) or 0),
+    )
+    wishlist_count = max(
+        0,
+        int(recommendation_record_value(record, "wishlist_count", "wishlistCount", default=0) or 0),
+    )
+    views_count = max(
+        0,
+        int(recommendation_record_value(record, "views_count", "viewsCount", default=0) or 0),
+    )
+    review_count = max(
+        0,
+        int(recommendation_record_value(record, "review_count", "reviewCount", default=0) or 0),
+    )
+    share_count = max(
+        0,
+        int(recommendation_record_value(record, "share_count", "shareCount", default=0) or 0),
+    )
+    try:
+        average_rating = round(
+            float(recommendation_record_value(record, "average_rating", "averageRating", default=0) or 0),
+            2,
+        )
+    except (TypeError, ValueError):
+        average_rating = 0.0
+
+    created_at_value = resolve_recommendation_created_at(record)
+    created_timestamp = created_at_value.timestamp() if created_at_value is not None else 0.0
+    popularity_score = (
+        math.log1p(buyers_count) * 16.0
+        + math.log1p(review_count) * 8.0
+        + average_rating * 4.4
+        + math.log1p(wishlist_count) * 5.0
+        + math.log1p(views_count) * 2.2
+        + math.log1p(share_count) * 2.8
+    )
+
+    recentness_score = 0.0
+    if created_at_value is not None:
+        age_days = max(0.0, (utc_now() - created_at_value).total_seconds() / 86400.0)
+        recentness_score = max(0.0, 28.0 - min(age_days, 28.0))
+
+    return {
+        "id": int(recommendation_record_value(record, "id", default=0) or 0),
+        "category": category,
+        "categoryGroup": derive_category_group_from_category(category) or category,
+        "productType": product_type,
+        "businessKey": normalize_recommendation_business_key(record),
+        "price": resolve_recommendation_price(record),
+        "tags": tags,
+        "buyersCount": buyers_count,
+        "wishlistCount": wishlist_count,
+        "viewsCount": views_count,
+        "reviewCount": review_count,
+        "shareCount": share_count,
+        "averageRating": average_rating,
+        "popularityScore": popularity_score,
+        "recentnessScore": recentness_score,
+        "createdTimestamp": created_timestamp,
+        "record": record,
+    }
+
+
+def recommendation_price_affinity_score(reference_price: float, target_price: float) -> float:
+    if reference_price <= 0 or target_price <= 0:
+        return 0.0
+
+    relative_gap = abs(target_price - reference_price) / max(reference_price, target_price)
+    return max(0.0, (1.0 - min(relative_gap, 0.7) / 0.7) * 13.0)
+
+
+def build_user_recommendation_profile(user_id: int) -> dict[str, object]:
+    profile = {
+        "categoryWeights": defaultdict(float),
+        "productTypeWeights": defaultdict(float),
+        "businessWeights": defaultdict(float),
+        "tagWeights": defaultdict(float),
+        "pricePoints": [],
+        "interactedProductIds": set(),
+        "activityCount": 0,
+    }
+
+    def absorb_signal(record: sqlite3.Row | dict[str, object], *, weight: float) -> None:
+        candidate = build_recommendation_candidate(record)
+        if candidate["id"] > 0:
+            profile["interactedProductIds"].add(candidate["id"])
+        if candidate["category"]:
+            profile["categoryWeights"][candidate["category"]] += weight * 2.4
+        if candidate["productType"]:
+            profile["productTypeWeights"][candidate["productType"]] += weight * 1.6
+        if candidate["businessKey"]:
+            profile["businessWeights"][candidate["businessKey"]] += weight * 1.3
+        for tag in candidate["tags"]:
+            profile["tagWeights"][tag] += weight
+        if candidate["price"] > 0:
+            profile["pricePoints"].append(candidate["price"])
+        profile["activityCount"] += 1
+
+    with get_db_connection() as connection:
+        viewed_rows = connection.execute(
+            """
+            SELECT
+            """
+            + PRODUCT_SELECT_COLUMNS
+            + """
+            FROM product_engagements pe
+            INNER JOIN products ON products.id = pe.product_id
+            """
+            + PRODUCT_SELECT_RELATION_JOINS
+            + """
+            WHERE pe.user_id = ?
+              AND pe.event_type = 'view'
+              AND products.is_public = 1
+            ORDER BY pe.updated_at DESC, pe.id DESC
+            LIMIT ?
+            """,
+            (user_id, RECOMMENDATION_ACTIVITY_LIMIT),
+        ).fetchall()
+
+        cart_rows = connection.execute(
+            """
+            SELECT
+                cl.id AS cart_line_id,
+                p.id,
+                p.title,
+                p.description,
+                p.price,
+                p.category,
+                p.product_type,
+                p.size,
+                p.color,
+                p.created_by_user_id,
+                COALESCE(bp.business_name, '') AS business_name
+            FROM cart_lines cl
+            INNER JOIN products p ON p.id = cl.product_id
+            LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            WHERE cl.user_id = ?
+              AND p.is_public = 1
+            ORDER BY cl.updated_at DESC, cl.id DESC
+            LIMIT ?
+            """,
+            (user_id, RECOMMENDATION_ACTIVITY_LIMIT),
+        ).fetchall()
+
+        wishlist_rows = connection.execute(
+            """
+            SELECT
+                p.id,
+                p.title,
+                p.description,
+                p.price,
+                p.category,
+                p.product_type,
+                p.size,
+                p.color,
+                p.created_by_user_id,
+                COALESCE(bp.business_name, '') AS business_name
+            FROM wishlist_items wi
+            INNER JOIN products p ON p.id = wi.product_id
+            LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            WHERE wi.user_id = ?
+              AND p.is_public = 1
+            ORDER BY wi.created_at DESC
+            LIMIT ?
+            """,
+            (user_id, RECOMMENDATION_ACTIVITY_LIMIT),
+        ).fetchall()
+
+        order_rows = connection.execute(
+            """
+            SELECT
+                oi.product_id AS id,
+                oi.product_title AS title,
+                oi.product_description AS description,
+                oi.unit_price AS unit_price,
+                oi.product_category AS product_category,
+                oi.product_type AS product_type,
+                oi.product_size AS product_size,
+                oi.product_color AS product_color,
+                oi.business_name_snapshot AS business_name_snapshot,
+                o.created_at AS created_at
+            FROM order_items oi
+            INNER JOIN orders o ON o.id = oi.order_id
+            WHERE o.user_id = ?
+            ORDER BY o.created_at DESC, oi.id DESC
+            LIMIT ?
+            """,
+            (user_id, RECOMMENDATION_ACTIVITY_LIMIT * 2),
+        ).fetchall()
+
+    for row in viewed_rows:
+        absorb_signal(row, weight=2.2)
+    for row in cart_rows:
+        absorb_signal(row, weight=4.8)
+    for row in wishlist_rows:
+        absorb_signal(row, weight=3.8)
+    for row in order_rows:
+        absorb_signal(row, weight=5.4)
+
+    sorted_prices = sorted(float(price) for price in profile["pricePoints"] if float(price) > 0)
+    if sorted_prices:
+        middle_index = len(sorted_prices) // 2
+        profile["referencePrice"] = (
+            sorted_prices[middle_index]
+            if len(sorted_prices) % 2 == 1
+            else round((sorted_prices[middle_index - 1] + sorted_prices[middle_index]) / 2, 2)
+        )
+    else:
+        profile["referencePrice"] = 0.0
+
+    return profile
+
+
+def compute_profile_affinity_boost(
+    candidate: dict[str, object],
+    profile: dict[str, object] | None,
+) -> float:
+    if not profile or int(profile.get("activityCount") or 0) <= 0:
+        return 0.0
+
+    category_weights = profile.get("categoryWeights") or {}
+    product_type_weights = profile.get("productTypeWeights") or {}
+    business_weights = profile.get("businessWeights") or {}
+    tag_weights = profile.get("tagWeights") or {}
+    reference_price = float(profile.get("referencePrice") or 0.0)
+
+    affinity_score = 0.0
+    if candidate["category"]:
+        affinity_score += float(category_weights.get(candidate["category"], 0.0)) * 3.6
+    if candidate["productType"]:
+        affinity_score += float(product_type_weights.get(candidate["productType"], 0.0)) * 2.1
+    if candidate["businessKey"]:
+        affinity_score += float(business_weights.get(candidate["businessKey"], 0.0)) * 2.4
+
+    shared_tag_weight = sum(float(tag_weights.get(tag, 0.0)) for tag in candidate["tags"])
+    affinity_score += min(shared_tag_weight * 0.68, 18.0)
+    affinity_score += recommendation_price_affinity_score(reference_price, float(candidate["price"] or 0.0))
+    return affinity_score
+
+
+def fetch_recommendation_candidates(
+    *,
+    limit: int = RECOMMENDATION_CANDIDATE_POOL_LIMIT,
+    exclude_product_ids: set[int] | None = None,
+) -> list[dict[str, object]]:
+    rows = fetch_products(limit=max(1, int(limit)), include_hidden=False)
+    excluded_ids = exclude_product_ids or set()
+    return [
+        build_recommendation_candidate(row)
+        for row in rows
+        if int(row["id"] or 0) > 0 and int(row["id"] or 0) not in excluded_ids
+    ]
+
+
+def choose_recommendation_products(
+    candidates: list[dict[str, object]],
+    *,
+    score_builder,
+    limit: int,
+    excluded_ids: set[int] | None = None,
+    minimum_score: float | None = None,
+) -> list[dict[str, object]]:
+    scored_candidates: list[tuple[float, dict[str, object]]] = []
+    for candidate in candidates:
+        score = float(score_builder(candidate))
+        if minimum_score is not None and score < minimum_score:
+            continue
+        scored_candidates.append((score, candidate))
+
+    scored_candidates.sort(
+        key=lambda item: (
+            item[0],
+            float(item[1]["popularityScore"]),
+            float(item[1]["createdTimestamp"]),
+            int(item[1]["id"]),
+        ),
+        reverse=True,
+    )
+
+    selected: list[dict[str, object]] = []
+    blocked_ids = set(excluded_ids or set())
+    for _score, candidate in scored_candidates:
+        candidate_id = int(candidate["id"])
+        if candidate_id <= 0 or candidate_id in blocked_ids:
+            continue
+        blocked_ids.add(candidate_id)
+        selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def serialize_recommendation_section(
+    *,
+    key: str,
+    title: str,
+    subtitle: str,
+    candidates: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "key": key,
+        "title": title,
+        "subtitle": subtitle,
+        "products": [serialize_product(candidate["record"]) for candidate in candidates],
+    }
+
+
+def build_home_recommendation_sections(
+    *,
+    current_user: sqlite3.Row | None,
+    limit: int,
+) -> tuple[list[dict[str, object]], bool]:
+    candidates = fetch_recommendation_candidates()
+    profile = build_user_recommendation_profile(int(current_user["id"])) if current_user else None
+    personalized = bool(profile and int(profile.get("activityCount") or 0) > 0)
+    chosen_ids: set[int] = set()
+
+    recommended_candidates = choose_recommendation_products(
+        candidates,
+        score_builder=lambda candidate: (
+            float(candidate["popularityScore"]) * 0.58
+            + float(candidate["recentnessScore"]) * 0.95
+            + compute_profile_affinity_boost(candidate, profile)
+            - (4.0 if personalized and int(candidate["id"]) in set(profile.get("interactedProductIds") or set()) else 0.0)
+        ),
+        limit=limit,
+        excluded_ids=chosen_ids,
+    )
+    chosen_ids.update(int(candidate["id"]) for candidate in recommended_candidates)
+
+    new_arrival_candidates = choose_recommendation_products(
+        candidates,
+        score_builder=lambda candidate: float(candidate["createdTimestamp"]) + float(candidate["popularityScore"]) * 0.12,
+        limit=limit,
+        excluded_ids=chosen_ids,
+    )
+    chosen_ids.update(int(candidate["id"]) for candidate in new_arrival_candidates)
+
+    best_seller_candidates = choose_recommendation_products(
+        candidates,
+        score_builder=lambda candidate: (
+            float(candidate["buyersCount"]) * 14.0
+            + float(candidate["popularityScore"]) * 1.35
+            + float(candidate["averageRating"]) * 4.0
+        ),
+        limit=limit,
+        excluded_ids=chosen_ids,
+    )
+
+    sections: list[dict[str, object]] = []
+    if recommended_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="recommended-for-you",
+                title="Recommended for you",
+                subtitle=(
+                    "Based on your views, cart activity, orders and favorite categories."
+                    if personalized
+                    else "A balanced mix of fresh, popular products across the marketplace."
+                ),
+                candidates=recommended_candidates,
+            )
+        )
+    if new_arrival_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="new-arrivals",
+                title="New arrivals",
+                subtitle="Fresh products added recently by local businesses.",
+                candidates=new_arrival_candidates,
+            )
+        )
+    if best_seller_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="best-sellers",
+                title="Best sellers",
+                subtitle="Products with the strongest sales and shopper interest right now.",
+                candidates=best_seller_candidates,
+            )
+        )
+
+    return sections, personalized
+
+
+def build_product_recommendation_sections(
+    *,
+    anchor_product: sqlite3.Row,
+    current_user: sqlite3.Row | None,
+    limit: int,
+) -> tuple[list[dict[str, object]], bool]:
+    anchor_candidate = build_recommendation_candidate(anchor_product)
+    candidates = fetch_recommendation_candidates(exclude_product_ids={int(anchor_product["id"])})
+    profile = build_user_recommendation_profile(int(current_user["id"])) if current_user else None
+    personalized = bool(profile and int(profile.get("activityCount") or 0) > 0)
+    anchor_category = str(anchor_candidate["category"] or "").strip().lower()
+    anchor_group = str(anchor_candidate["categoryGroup"] or "").strip().lower()
+    chosen_ids: set[int] = set()
+
+    similar_candidates = choose_recommendation_products(
+        candidates,
+        score_builder=lambda candidate: (
+            (28.0 if candidate["category"] == anchor_category else 0.0)
+            + (12.0 if candidate["categoryGroup"] == anchor_group and candidate["category"] != anchor_category else 0.0)
+            + (14.0 if candidate["productType"] and candidate["productType"] == anchor_candidate["productType"] else 0.0)
+            + min(len(set(anchor_candidate["tags"]) & set(candidate["tags"])) * 5.8, 24.0)
+            + (8.0 if candidate["businessKey"] and candidate["businessKey"] == anchor_candidate["businessKey"] else 0.0)
+            + recommendation_price_affinity_score(float(anchor_candidate["price"] or 0.0), float(candidate["price"] or 0.0))
+            + float(candidate["popularityScore"]) * 0.18
+            + float(candidate["recentnessScore"]) * 0.22
+            + compute_profile_affinity_boost(candidate, profile) * 0.22
+        ),
+        limit=limit,
+        excluded_ids=chosen_ids,
+        minimum_score=8.0,
+    )
+    chosen_ids.update(int(candidate["id"]) for candidate in similar_candidates)
+
+    same_category_candidates = choose_recommendation_products(
+        [candidate for candidate in candidates if str(candidate["category"] or "") == anchor_category],
+        score_builder=lambda candidate: (
+            32.0
+            + (9.0 if candidate["productType"] and candidate["productType"] == anchor_candidate["productType"] else 0.0)
+            + recommendation_price_affinity_score(float(anchor_candidate["price"] or 0.0), float(candidate["price"] or 0.0)) * 0.9
+            + float(candidate["popularityScore"]) * 0.22
+            + float(candidate["recentnessScore"]) * 0.55
+        ),
+        limit=limit,
+        excluded_ids=chosen_ids,
+    )
+    chosen_ids.update(int(candidate["id"]) for candidate in same_category_candidates)
+
+    best_seller_category_candidates = choose_recommendation_products(
+        [candidate for candidate in candidates if str(candidate["category"] or "") == anchor_category],
+        score_builder=lambda candidate: (
+            float(candidate["buyersCount"]) * 16.0
+            + float(candidate["popularityScore"]) * 1.45
+            + float(candidate["averageRating"]) * 3.4
+            + float(candidate["recentnessScore"]) * 0.18
+        ),
+        limit=limit,
+        excluded_ids=chosen_ids,
+    )
+
+    sections: list[dict[str, object]] = []
+    if similar_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="similar-products",
+                title="Similar products",
+                subtitle="Matched by category, shared terms, price range and marketplace performance.",
+                candidates=similar_candidates,
+            )
+        )
+    if same_category_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="same-category",
+                title="Products from the same category",
+                subtitle="More options from the same category as the product you are viewing.",
+                candidates=same_category_candidates,
+            )
+        )
+    if best_seller_category_candidates:
+        sections.append(
+            serialize_recommendation_section(
+                key="best-sellers-in-category",
+                title="Best sellers in this category",
+                subtitle="Top-performing products in the same category, ranked by sales and demand.",
+                candidates=best_seller_category_candidates,
+            )
+        )
+
+    return sections, personalized
 
 
 def serialize_cart_item(row: sqlite3.Row) -> dict[str, object]:
@@ -8862,7 +9590,7 @@ def build_chat_unread_reminder_message(
     )
     normalized_origin = public_app_origin.rstrip("/")
     messages_url = f"{normalized_origin}/mesazhet?conversationId={conversation_id}"
-    logo_url = f"{normalized_origin}/trego-logo.webp"
+    logo_url = f"{normalized_origin}/trego-logo.png"
     preview_text = (
         f"Keni nje mesazh te pa lexuar nga {sender_name}. "
         f"Hapeni biseden ne TREGO."
@@ -9558,22 +10286,34 @@ def maybe_dispatch_due_sale_notifications() -> None:
     if not SALE_NOTIFICATION_SCAN_LOCK.acquire(blocking=False):
         return
 
-    try:
-        now_monotonic = time.monotonic()
-        if now_monotonic - LAST_SALE_NOTIFICATION_SCAN_MONOTONIC < SALE_ENDING_SCAN_INTERVAL_SECONDS:
-            return
-        LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = now_monotonic
-
-        with get_db_connection() as connection:
-            messages = prepare_due_sale_ending_notifications(connection)
-
-        push_warnings = send_push_notifications(messages)
-        for warning in push_warnings:
-            print(f"[TREGO] Push warning: {warning}", flush=True)
-    except Exception as error:
-        print(f"[TREGO] Sale notification scan skipped: {error}", flush=True)
-    finally:
+    now_monotonic = time.monotonic()
+    if now_monotonic - LAST_SALE_NOTIFICATION_SCAN_MONOTONIC < SALE_ENDING_SCAN_INTERVAL_SECONDS:
         SALE_NOTIFICATION_SCAN_LOCK.release()
+        return
+    LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = now_monotonic
+
+    def _worker() -> None:
+        try:
+            with get_db_connection() as connection:
+                messages = prepare_due_sale_ending_notifications(connection)
+
+            push_warnings = send_push_notifications(messages)
+            for warning in push_warnings:
+                print(f"[TREGO] Push warning: {warning}", flush=True)
+        except Exception as error:
+            print(f"[TREGO] Sale notification scan skipped: {error}", flush=True)
+        finally:
+            SALE_NOTIFICATION_SCAN_LOCK.release()
+
+    try:
+        threading.Thread(
+            target=_worker,
+            name="trego-sale-notification-scan",
+            daemon=True,
+        ).start()
+    except Exception:
+        SALE_NOTIFICATION_SCAN_LOCK.release()
+        raise
 
 
 def build_business_order_push_messages(order_rows: list[sqlite3.Row]) -> list[dict[str, object]]:
@@ -11362,6 +12102,8 @@ def create_order_from_checkout_items(
                 unit_price,
                 quantity,
                 fulfillment_status,
+                confirmed_at,
+                confirmation_due_at,
                 commission_rate,
                 commission_amount,
                 seller_earnings_amount,
@@ -12811,6 +13553,93 @@ def serialize_promo_code(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
+def fetch_launch_ad_by_id(connection: DatabaseConnection, launch_ad_id: int) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT *
+        FROM launch_ads
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(launch_ad_id),),
+    ).fetchone()
+
+
+def parse_launch_ad_schedule_value(raw_value: object, *, is_end: bool) -> datetime | None:
+    normalized_value = str(raw_value or "").strip()
+    if not normalized_value:
+        return None
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized_value):
+        parsed_date = datetime.fromisoformat(normalized_value)
+        if is_end:
+            return parsed_date + timedelta(days=1) - timedelta(seconds=1)
+        return parsed_date
+
+    parsed_datetime = parse_storage_datetime(normalized_value)
+    if parsed_datetime and is_end and re.fullmatch(r"\d{4}-\d{2}-\d{2} 00:00:00", normalized_value):
+        return parsed_datetime + timedelta(days=1) - timedelta(seconds=1)
+    return parsed_datetime
+
+
+def launch_ad_is_currently_visible(row: sqlite3.Row, *, now_value: datetime | None = None) -> bool:
+    if not row or not bool(row["is_active"]):
+        return False
+
+    active_now = now_value or utc_now()
+    starts_at = parse_launch_ad_schedule_value(row["starts_at"], is_end=False)
+    ends_at = parse_launch_ad_schedule_value(row["ends_at"], is_end=True)
+
+    if starts_at and starts_at > active_now:
+        return False
+    if ends_at and ends_at < active_now:
+        return False
+    return True
+
+
+def fetch_public_launch_ads() -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM launch_ads
+            WHERE COALESCE(is_active, 0) = 1
+            ORDER BY COALESCE(sort_order, 0) ASC, updated_at DESC, id DESC
+            """
+        ).fetchall()
+
+    now_value = utc_now()
+    return [row for row in rows if launch_ad_is_currently_visible(row, now_value=now_value)]
+
+
+def fetch_admin_launch_ads() -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM launch_ads
+            ORDER BY COALESCE(sort_order, 0) ASC, updated_at DESC, id DESC
+            """
+        ).fetchall()
+
+
+def serialize_launch_ad(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "badge": str(row["badge"] or "").strip(),
+        "title": str(row["title"] or "").strip(),
+        "subtitle": str(row["subtitle"] or "").strip(),
+        "imagePath": str(row["image_path"] or "").strip(),
+        "ctaLabel": str(row["cta_label"] or "").strip(),
+        "sortOrder": int(row["sort_order"] or 0),
+        "isActive": bool(row["is_active"]),
+        "startsAt": str(row["starts_at"] or "").strip(),
+        "endsAt": str(row["ends_at"] or "").strip(),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+    }
+
+
 def fetch_promo_code_by_code(connection: DatabaseConnection, promo_code: str) -> sqlite3.Row | None:
     normalized_code = str(promo_code or "").strip().upper()
     if not normalized_code:
@@ -13801,6 +14630,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/business-profile":
             self.handle_business_profile()
             return
+        if path == "/api/launch-ads":
+            self.handle_launch_ads_list()
+            return
         if path == "/api/business/products":
             self.handle_business_products_list()
             return
@@ -13824,6 +14656,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/products/search":
             self.handle_products_search(query_params)
+            return
+        if path == "/api/recommendations/home":
+            self.handle_home_recommendations(query_params)
+            return
+        if path == "/api/recommendations/product":
+            self.handle_product_recommendations(query_params)
             return
         if path == "/api/product":
             self.handle_product_detail(query_params)
@@ -13863,6 +14701,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/admin/reports":
             self.handle_admin_reports_list()
+            return
+        if path == "/api/admin/launch-ads":
+            self.handle_admin_launch_ads_list()
             return
         if path == "/api/returns":
             self.handle_returns_list()
@@ -14029,6 +14870,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/admin/businesses/logo":
             self.handle_admin_update_business_logo()
+            return
+        if path == "/api/admin/launch-ads":
+            self.handle_save_admin_launch_ad()
             return
         if path == "/api/uploads":
             self.handle_image_uploads()
@@ -14773,6 +15617,103 @@ class AppHandler(SimpleHTTPRequestHandler):
             ttl_seconds=PUBLIC_PRODUCTS_ENDPOINT_CACHE_TTL_SECONDS,
         )
         self.send_json(200, payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+
+    def handle_home_recommendations(self, query_params: dict[str, list[str]]) -> None:
+        limit = parse_recommendation_limit_query(query_params)
+        current_user = self.get_current_user()
+
+        cache_key = build_runtime_public_cache_key(
+            "recommendations:home",
+            {"limit": limit},
+        )
+        if not current_user:
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+                return
+
+        sections, personalized = build_home_recommendation_sections(
+            current_user=current_user,
+            limit=limit,
+        )
+        payload = {
+            "ok": True,
+            "personalized": personalized,
+            "limit": limit,
+            "sections": sections,
+        }
+
+        if not current_user:
+            write_runtime_public_cache(
+                cache_key,
+                payload,
+                ttl_seconds=PUBLIC_RECOMMENDATIONS_CACHE_TTL_SECONDS,
+            )
+
+        self.send_json(
+            200,
+            payload,
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS if not current_user else None,
+        )
+
+    def handle_product_recommendations(self, query_params: dict[str, list[str]]) -> None:
+        errors, product_id = parse_product_id_query(query_params)
+        if errors or product_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        current_user = self.get_current_user()
+        product = fetch_product_by_id(product_id)
+        if not product:
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        can_view_hidden = bool(
+            current_user and can_manage_product(current_user, product)
+        )
+        if not bool(product["is_public"]) and not can_view_hidden:
+            self.send_json(404, {"ok": False, "message": "Produkti nuk u gjet."})
+            return
+
+        limit = parse_recommendation_limit_query(query_params)
+        cache_key = build_runtime_public_cache_key(
+            "recommendations:product",
+            {
+                "productId": product_id,
+                "limit": limit,
+            },
+        )
+        if not current_user and bool(product["is_public"]):
+            cached_payload = read_runtime_public_cache(cache_key)
+            if isinstance(cached_payload, dict):
+                self.send_json(200, cached_payload, headers=PUBLIC_PRODUCTS_CACHE_HEADERS)
+                return
+
+        sections, personalized = build_product_recommendation_sections(
+            anchor_product=product,
+            current_user=current_user,
+            limit=limit,
+        )
+        payload = {
+            "ok": True,
+            "productId": product_id,
+            "personalized": personalized,
+            "limit": limit,
+            "sections": sections,
+        }
+
+        if not current_user and bool(product["is_public"]):
+            write_runtime_public_cache(
+                cache_key,
+                payload,
+                ttl_seconds=PUBLIC_RECOMMENDATIONS_CACHE_TTL_SECONDS,
+            )
+
+        self.send_json(
+            200,
+            payload,
+            headers=PUBLIC_PRODUCTS_CACHE_HEADERS if bool(product["is_public"]) and not current_user else None,
+        )
 
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
         raw_search_text = query_params.get("q", [""])[0].strip()
@@ -18047,6 +18988,27 @@ class AppHandler(SimpleHTTPRequestHandler):
         promotions = [serialize_promo_code(row) for row in fetch_business_promotions(user)]
         self.send_json(200, {"ok": True, "promotions": promotions})
 
+    def handle_launch_ads_list(self) -> None:
+        launch_ads = [serialize_launch_ad(row) for row in fetch_public_launch_ads()]
+        self.send_json(
+            200,
+            {"ok": True, "launchAds": launch_ads},
+            headers={"Cache-Control": "public, max-age=30, s-maxage=120, stale-while-revalidate=120"},
+        )
+
+    def handle_admin_launch_ads_list(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admini mund t'i menaxhoje launch ads."})
+            return
+
+        launch_ads = [serialize_launch_ad(row) for row in fetch_admin_launch_ads()]
+        self.send_json(200, {"ok": True, "launchAds": launch_ads})
+
     def handle_admin_reports_list(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -18354,6 +19316,167 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         promotions = [serialize_promo_code(row) for row in fetch_business_promotions(user)]
         self.send_json(200, {"ok": True, "message": "Promocioni u ruajt me sukses.", "promotions": promotions})
+
+    def handle_save_admin_launch_ad(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admini mund t'i ruaje launch ads."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        delete_requested = str(payload.get("action", "")).strip().lower() == "delete" or bool(payload.get("deleteLaunchAd"))
+        try:
+            launch_ad_id = int(str(payload.get("launchAdId", payload.get("id", ""))).strip() or 0)
+        except ValueError:
+            launch_ad_id = 0
+
+        if delete_requested:
+            if launch_ad_id <= 0:
+                self.send_json(400, {"ok": False, "message": "Launch ad per fshirje nuk eshte valid."})
+                return
+
+            with get_db_connection() as connection:
+                existing_row = fetch_launch_ad_by_id(connection, launch_ad_id)
+                if not existing_row:
+                    self.send_json(404, {"ok": False, "message": "Launch ad nuk u gjet."})
+                    return
+
+                connection.execute(
+                    """
+                    DELETE FROM launch_ads
+                    WHERE id = ?
+                    """,
+                    (launch_ad_id,),
+                )
+
+            launch_ads = [serialize_launch_ad(row) for row in fetch_admin_launch_ads()]
+            self.send_json(200, {"ok": True, "message": "Launch ad u fshi me sukses.", "launchAds": launch_ads})
+            return
+
+        title = re.sub(r"\s+", " ", str(payload.get("title", "")).strip())[:140]
+        badge = re.sub(r"\s+", " ", str(payload.get("badge", "")).strip())[:60]
+        subtitle = re.sub(r"\s+", " ", str(payload.get("subtitle", "")).strip())[:240]
+        image_path = str(payload.get("imagePath", "") or "").strip()
+        cta_label = re.sub(r"\s+", " ", str(payload.get("ctaLabel", "")).strip())[:40] or "Shop now"
+        starts_at = str(payload.get("startsAt", "") or "").strip()
+        ends_at = str(payload.get("endsAt", "") or "").strip()
+
+        active_errors, is_active = parse_boolean_flag(payload, "isActive")
+        if active_errors or is_active is None:
+            self.send_json(400, {"ok": False, "errors": active_errors})
+            return
+
+        try:
+            sort_order = int(str(payload.get("sortOrder", "")).strip() or 0)
+        except ValueError:
+            self.send_json(400, {"ok": False, "message": "Renditja e launch ad nuk eshte valide."})
+            return
+
+        if not title:
+            self.send_json(400, {"ok": False, "message": "Titulli i launch ad nuk mund te jete bosh."})
+            return
+
+        if not image_path:
+            self.send_json(400, {"ok": False, "message": "Ngarko nje foto per launch ad."})
+            return
+
+        parsed_starts_at = parse_launch_ad_schedule_value(starts_at, is_end=False)
+        parsed_ends_at = parse_launch_ad_schedule_value(ends_at, is_end=True)
+
+        if starts_at and parsed_starts_at is None:
+            self.send_json(400, {"ok": False, "message": "Data e nisjes nuk eshte valide."})
+            return
+
+        if ends_at and parsed_ends_at is None:
+            self.send_json(400, {"ok": False, "message": "Data e perfundimit nuk eshte valide."})
+            return
+
+        if parsed_starts_at and parsed_ends_at and parsed_ends_at < parsed_starts_at:
+            self.send_json(400, {"ok": False, "message": "Data e perfundimit duhet te jete pas dates se nisjes."})
+            return
+
+        with get_db_connection() as connection:
+            if launch_ad_id > 0:
+                existing_row = fetch_launch_ad_by_id(connection, launch_ad_id)
+                if not existing_row:
+                    self.send_json(404, {"ok": False, "message": "Launch ad nuk u gjet."})
+                    return
+
+                connection.execute(
+                    """
+                    UPDATE launch_ads
+                    SET
+                        badge = ?,
+                        title = ?,
+                        subtitle = ?,
+                        image_path = ?,
+                        cta_label = ?,
+                        sort_order = ?,
+                        is_active = ?,
+                        starts_at = ?,
+                        ends_at = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        badge,
+                        title,
+                        subtitle,
+                        image_path,
+                        cta_label,
+                        sort_order,
+                        1 if is_active else 0,
+                        starts_at,
+                        ends_at,
+                        launch_ad_id,
+                    ),
+                )
+                success_message = "Launch ad u perditesua me sukses."
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO launch_ads (
+                        badge,
+                        title,
+                        subtitle,
+                        image_path,
+                        cta_label,
+                        sort_order,
+                        is_active,
+                        starts_at,
+                        ends_at,
+                        created_by_user_id,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        badge,
+                        title,
+                        subtitle,
+                        image_path,
+                        cta_label,
+                        sort_order,
+                        1 if is_active else 0,
+                        starts_at,
+                        ends_at,
+                        int(user["id"]),
+                    ),
+                )
+                success_message = "Launch ad u ruajt me sukses."
+
+        launch_ads = [serialize_launch_ad(row) for row in fetch_admin_launch_ads()]
+        self.send_json(200, {"ok": True, "message": success_message, "launchAds": launch_ads})
 
     def handle_create_report(self) -> None:
         user = self.get_current_user()

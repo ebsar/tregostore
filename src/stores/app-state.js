@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { fetchCurrentUserOptional, fetchProtectedCollection, requestJson } from "../lib/api";
+import { fetchCurrentUserSession, fetchProtectedCollection, requestJson } from "../lib/api";
 import {
   APP_LOADER_MIN_DURATION_MS,
   calculateCartItemsCount,
@@ -20,6 +20,8 @@ let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
 let sessionLoadPromise = null;
 let cartWarmupPromise = null;
+let sessionLoadRequestId = 0;
+let sessionEnrichmentRequestId = 0;
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
@@ -88,36 +90,77 @@ export function bumpCatalogRevision() {
   appState.catalogRevision += 1;
 }
 
-async function enrichUserSessionData(user) {
-  if (!user || user.role !== "business") {
-    return user;
-  }
-
+async function fetchBusinessSessionData() {
   try {
     const { response, data } = await requestJson("/api/business-profile");
     if (!response.ok || !data?.ok || !data.profile) {
-      return user;
+      return null;
     }
 
     return {
-      ...user,
       businessName: String(data.profile.businessName || "").trim(),
       businessLogoPath: String(data.profile.logoPath || "").trim(),
       businessProfileUrl: String(data.profile.publicProfileUrl || "").trim(),
     };
   } catch (error) {
     console.error(error);
-    return user;
+    return null;
   }
 }
 
+async function enrichBusinessUserSessionInBackground(user, requestId) {
+  if (!user || user.role !== "business") {
+    return;
+  }
+
+  const businessSessionData = await fetchBusinessSessionData();
+  if (!businessSessionData || requestId !== sessionEnrichmentRequestId) {
+    return;
+  }
+
+  if (!appState.user || Number(appState.user.id) !== Number(user.id) || appState.user.role !== "business") {
+    return;
+  }
+
+  appState.user = {
+    ...appState.user,
+    ...businessSessionData,
+  };
+}
+
+function setAuthenticatedUser(user) {
+  sessionEnrichmentRequestId += 1;
+  const enrichmentRequestId = sessionEnrichmentRequestId;
+
+  if (!user) {
+    appState.user = null;
+    appState.sessionLoaded = true;
+    setCartCount(0);
+    return null;
+  }
+
+  appState.user = user;
+  appState.sessionLoaded = true;
+  void warmCartForActiveSession(user).catch((error) => {
+    console.error(error);
+  });
+
+  if (user.role === "business") {
+    void enrichBusinessUserSessionInBackground(user, enrichmentRequestId).catch((error) => {
+      console.error(error);
+    });
+  }
+
+  return user;
+}
+
+export async function applyAuthenticatedSession(user) {
+  return setAuthenticatedUser(user);
+}
+
 export async function ensureSessionLoaded(options = {}) {
-  const { force = false } = options;
-  if (
-    appState.sessionLoaded &&
-    !force &&
-    !(appState.user?.role === "business" && !String(appState.user?.businessName || "").trim())
-  ) {
+  const { force = false, preserveAuthenticatedUser = true } = options;
+  if (appState.sessionLoaded && !force) {
     return appState.user;
   }
 
@@ -126,20 +169,22 @@ export async function ensureSessionLoaded(options = {}) {
   }
 
   const nextSessionLoadPromise = (async () => {
-    const currentUser = await fetchCurrentUserOptional();
-    const user = await enrichUserSessionData(currentUser);
-    appState.user = user;
-    appState.sessionLoaded = true;
-
-    if (!user) {
-      setCartCount(0);
-      return null;
+    const requestId = ++sessionLoadRequestId;
+    const currentSession = await fetchCurrentUserSession();
+    if (requestId !== sessionLoadRequestId) {
+      return appState.user;
     }
 
-    void warmCartForActiveSession(user).catch((error) => {
-      console.error(error);
-    });
-    return user;
+    if (currentSession.status === "unreachable") {
+      if (preserveAuthenticatedUser && appState.user) {
+        appState.sessionLoaded = true;
+        return appState.user;
+      }
+
+      return setAuthenticatedUser(null);
+    }
+
+    return setAuthenticatedUser(currentSession.user);
   })();
 
   sessionLoadPromise = nextSessionLoadPromise;

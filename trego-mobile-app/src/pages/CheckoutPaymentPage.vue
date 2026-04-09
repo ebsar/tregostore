@@ -294,6 +294,7 @@ function selectDelivery(method: string) {
 
           <IonButton
             class="cta-button"
+            data-testid="checkout-payment-submit"
             :disabled="ui.busy"
             @click="selectedPaymentMethod === 'card-online' ? openStripeCheckout() : submitCashOrder()"
           >

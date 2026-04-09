@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Trego Mobile</string>
+        <string>Tregio</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -32,7 +32,16 @@
 	<string>Use your photo library to search products by image.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Use speech recognition for voice search.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>TregoAPIBaseURL</key>
+	<string>https://www.tregos.store</string>
+	<key>TregoDebugAPIBaseURL</key>
+	<string>https://www.tregos.store</string>
+	<key>TregoDebugSimulatorAPIBaseURL</key>
 	<string>https://www.tregos.store</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
@@ -55,11 +64,8 @@
 	<array>
 		<string>armv7</string>
 	</array>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIImageName</key>
-		<string>Splash</string>
-	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

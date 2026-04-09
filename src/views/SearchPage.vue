@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import ProductCard from "../components/ProductCard.vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
 import { deriveSectionFromCategory } from "../lib/product-catalog";
@@ -9,6 +8,7 @@ import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-p
 import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
 import {
   formatCategoryLabel,
+  formatPrice,
   getProductDetailUrl,
   hasProductAvailableStock,
 } from "../lib/shop";
@@ -30,7 +30,6 @@ const SEARCH_PROMPT_SUGGESTIONS = [
   "dua atlete te bardha",
   "kerkoj produkte per shtepi",
 ];
-
 const draftQuery = ref("");
 const recentSearches = ref([]);
 const products = ref([]);
@@ -64,6 +63,7 @@ const ui = reactive({
 });
 let searchDebounceTimeoutId = 0;
 let stopProductsPageSizeSubscription = () => {};
+let catalogRequestId = 0;
 const { target: loadMoreSentinel, supportsAutoLoad } = useInfiniteScrollSentinel({
   hasMore: hasMoreProducts,
   loading: loadingMoreProducts,
@@ -218,6 +218,65 @@ const resultsLabel = computed(() => {
     ? `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte te ngarkuara (${totalProductsCount.value} gjithsej)${scopeLabel}.`
     : `Po shfaqen ${filteredProducts.value.length} produkte${scopeLabel}.`;
 });
+function getProductAverageRating(product) {
+  const rawValue = Number(product?.averageRating ?? product?.ratingAverage ?? 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(5, rawValue));
+}
+
+function getProductFilledStars(product) {
+  return Math.max(0, Math.min(5, Math.round(getProductAverageRating(product))));
+}
+
+function getProductRatingSummary(product) {
+  const averageRating = getProductAverageRating(product);
+  return averageRating > 0 ? averageRating.toFixed(1) : "0.0";
+}
+
+function getProductReviewCount(product) {
+  const rawValue = Number(product?.reviewCount || 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(rawValue));
+}
+
+function getProductUnitLabel(product) {
+  const unit = String(product?.packageAmountUnit || "").trim();
+  if (!unit) {
+    return "";
+  }
+
+  return `/ ${unit}`;
+}
+
+function getProductMetaLine(product) {
+  const productType = String(product?.productType || "").trim();
+  const category = formatCategoryLabel(product?.category || "");
+  return [productType, category].filter(Boolean).join(" • ");
+}
+
+function getSearchResultBadge(product) {
+  const compareAt = Number(product?.compareAtPrice ?? product?.originalPrice ?? 0);
+  const price = Number(product?.price ?? 0);
+  if (Number.isFinite(compareAt) && compareAt > price && price > 0) {
+    return "Sale";
+  }
+
+  if (String(product?.createdAt || "").trim()) {
+    return "New";
+  }
+
+  return "";
+}
+
+function isComparedProduct(product) {
+  return comparedProductIds.value.includes(Number(product?.id || 0));
+}
 
 watch(
   () => route.fullPath,
@@ -458,6 +517,7 @@ function buildVisualSearchScope() {
 
 async function loadProducts(options = {}) {
   const { append = false, forceFacets = false } = options;
+  const requestId = ++catalogRequestId;
   const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
   const params = new URLSearchParams();
   params.set("limit", String(productsPageSize.value));
@@ -499,15 +559,12 @@ async function loadProducts(options = {}) {
     {},
     { cacheTtlMs: append ? 0 : 10000 },
   );
+  if (requestId !== catalogRequestId) {
+    return;
+  }
   if (!response.ok || !data?.ok) {
     ui.message = resolveApiMessage(data, "Produktet nuk u ngarkuan.");
     ui.type = "error";
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-      availableFilters.value = createEmptyProductFacets();
-    }
     return;
   }
 
@@ -628,6 +685,7 @@ async function runVisualSearch(options = {}) {
   }
 
   const { append = false, forceFacets = false } = options;
+  const requestId = ++catalogRequestId;
   visualSearchBusy.value = true;
   const visualScope = buildVisualSearchScope();
   const includeFacets = !append && (forceFacets || shouldRequestFacets.value);
@@ -645,14 +703,11 @@ async function runVisualSearch(options = {}) {
   });
 
   visualSearchBusy.value = false;
+  if (requestId !== catalogRequestId) {
+    return;
+  }
 
   if (!result.ok) {
-    if (!append) {
-      products.value = [];
-      totalProductsCount.value = 0;
-      hasMoreProducts.value = false;
-      availableFilters.value = createEmptyProductFacets();
-    }
     ui.message = result.message;
     ui.type = "error";
     return;
@@ -918,10 +973,10 @@ function handleCompare(product) {
       </div>
     </section>
 
-    <div class="collection-toolbar">
+    <div class="collection-toolbar search-results-toolbar">
       <div class="collection-toolbar-group">
         <button
-          class="filter-toggle-button"
+          class="filter-toggle-button filter-toggle-button--sidebar"
           type="button"
           :aria-expanded="filtersVisible ? 'true' : 'false'"
           @click="toggleFiltersPanel"
@@ -969,131 +1024,576 @@ function handleCompare(product) {
       </div>
     </section>
 
-    <section v-if="filtersVisible" class="search-filters-panel" aria-label="Filtro produktet">
-      <div class="search-filters-grid">
-        <label v-if="availablePageSectionOptions.length > 0" class="field">
-          <span>Kategoria kryesore</span>
-          <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
-            <option value="">Te gjitha kategorite</option>
-            <option
-              v-for="option in availablePageSectionOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label v-if="filters.pageSection && availableCategoryOptions.length > 0" class="field">
-          <span>Nenkategoria</span>
-          <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
-            <option value="">Te gjitha nenkategorite</option>
-            <option
-              v-for="option in availableCategoryOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label v-if="shouldShowProductTypeFilter" class="field">
-          <span>Produkti</span>
-          <select v-model="filters.productType" class="search-filter-select" @change="handleProductTypeChange">
-            <option value="">Te gjitha llojet</option>
-            <option
-              v-for="option in availableProductTypeOptions"
-              :key="`${option.category}-${option.value}`"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label v-if="availableSizeOptions.length > 0" class="field">
-          <span>Madhesia</span>
-          <select v-model="filters.size" class="search-filter-select" @change="handleCatalogFilterChange">
-            <option value="">Te gjitha madhesite</option>
-            <option
-              v-for="option in availableSizeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label v-if="availableColorOptions.length > 0" class="field">
-          <span>Ngjyra</span>
-          <select v-model="filters.color" class="search-filter-select" @change="handleCatalogFilterChange">
-            <option value="">Te gjitha ngjyrat</option>
-            <option
-              v-for="option in availableColorOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Cmimi</span>
-          <select v-model="filters.sort" class="search-filter-select">
-            <option value="">Renditja standarde</option>
-            <option value="price-asc">Nga me i uleti</option>
-            <option value="price-desc">Nga me i larti</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="search-filter-actions">
-        <button class="search-reset-button" type="button" @click="resetFilters">Pastro filtrat</button>
-      </div>
-    </section>
-
     <p class="search-results-label">{{ resultsLabel }}</p>
     <div class="form-message" :class="ui.type" role="status" aria-live="polite">
       {{ ui.message }}
     </div>
 
-    <section v-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Rezultatet e kerkimit">
-      <ProductCard
-        v-for="product in filteredProducts"
-        :key="product.id"
-        :product="product"
-        :is-wishlisted="wishlistIds.includes(product.id)"
-        :is-in-cart="cartIds.includes(product.id)"
-        :wishlist-busy="busyWishlistIds.includes(product.id)"
-        :cart-busy="busyCartIds.includes(product.id)"
-        :is-compared="comparedProductIds.includes(product.id)"
-        @wishlist="handleWishlist"
-        @cart="handleCart"
-        @compare="handleCompare"
-      />
-    </section>
+    <div class="search-results-layout">
+      <aside class="search-results-sidebar" :class="{ 'is-open': filtersVisible }" aria-label="Filtra">
+        <section class="search-filters-panel search-filters-panel--sidebar" aria-label="Filtro produktet">
+          <div class="search-sidebar-head">
+            <div>
+              <p class="search-sidebar-label">Filters</p>
+              <h2>Filtro rezultatet</h2>
+            </div>
+            <button class="search-reset-button search-sidebar-close" type="button" @click="filtersVisible = false">
+              Mbyll
+            </button>
+          </div>
 
-    <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more" :class="{ 'is-auto-loading': supportsAutoLoad }">
-      <div
-        v-if="supportsAutoLoad"
-        ref="loadMoreSentinel"
-        class="collection-load-more-sentinel"
-        aria-hidden="true"
-      ></div>
-      <p v-if="loadingMoreProducts" class="collection-load-more-copy">
-        Duke ngarkuar edhe 6 produkte...
-      </p>
-      <button v-else-if="!supportsAutoLoad" class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
-        {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
-      </button>
-    </div>
+          <div class="search-filters-grid">
+            <label v-if="availablePageSectionOptions.length > 0" class="field">
+              <span>Kategoria kryesore</span>
+              <select v-model="filters.pageSection" class="search-filter-select" @change="handlePageSectionChange">
+                <option value="">Te gjitha kategorite</option>
+                <option
+                  v-for="option in availablePageSectionOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
 
-    <div v-if="products.length === 0" class="collection-empty-state">
-      {{ visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim." }}
+            <label v-if="filters.pageSection && availableCategoryOptions.length > 0" class="field">
+              <span>Nenkategoria</span>
+              <select v-model="filters.category" class="search-filter-select" @change="handleCategoryChange">
+                <option value="">Te gjitha nenkategorite</option>
+                <option
+                  v-for="option in availableCategoryOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label v-if="shouldShowProductTypeFilter" class="field">
+              <span>Produkti</span>
+              <select v-model="filters.productType" class="search-filter-select" @change="handleProductTypeChange">
+                <option value="">Te gjitha llojet</option>
+                <option
+                  v-for="option in availableProductTypeOptions"
+                  :key="`${option.category}-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label v-if="availableSizeOptions.length > 0" class="field">
+              <span>Madhesia</span>
+              <select v-model="filters.size" class="search-filter-select" @change="handleCatalogFilterChange">
+                <option value="">Te gjitha madhesite</option>
+                <option
+                  v-for="option in availableSizeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label v-if="availableColorOptions.length > 0" class="field">
+              <span>Ngjyra</span>
+              <select v-model="filters.color" class="search-filter-select" @change="handleCatalogFilterChange">
+                <option value="">Te gjitha ngjyrat</option>
+                <option
+                  v-for="option in availableColorOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Cmimi</span>
+              <select v-model="filters.sort" class="search-filter-select">
+                <option value="">Renditja standarde</option>
+                <option value="price-asc">Nga me i uleti</option>
+                <option value="price-desc">Nga me i larti</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="search-filter-actions">
+            <button class="search-reset-button" type="button" @click="resetFilters">Pastro filtrat</button>
+          </div>
+        </section>
+      </aside>
+
+      <div class="search-results-content">
+        <section v-if="filteredProducts.length > 0" class="search-results-list" aria-label="Rezultatet e kerkimit">
+          <article
+            v-for="product in filteredProducts"
+            :key="product.id"
+            class="search-result-card"
+          >
+            <RouterLink class="search-result-media" :to="getProductDetailUrl(product.id, route.fullPath)">
+              <img
+                class="search-result-image"
+                :src="product.imagePath"
+                :alt="product.title"
+                width="320"
+                height="320"
+                loading="lazy"
+                decoding="async"
+              >
+              <span v-if="getSearchResultBadge(product)" class="search-result-badge">
+                {{ getSearchResultBadge(product) }}
+              </span>
+            </RouterLink>
+
+            <div class="search-result-copy">
+              <div class="search-result-copy-top">
+                <div class="search-result-headline">
+                  <h3 class="search-result-title">
+                    <RouterLink class="search-result-title-link" :to="getProductDetailUrl(product.id, route.fullPath)">
+                      {{ product.title }}
+                    </RouterLink>
+                  </h3>
+                  <p v-if="getProductMetaLine(product)" class="search-result-subtitle">
+                    {{ getProductMetaLine(product) }}
+                  </p>
+                </div>
+
+                <div class="search-result-seller">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 8.5h16v9.2a1.3 1.3 0 0 1-1.3 1.3H5.3A1.3 1.3 0 0 1 4 17.7z"></path>
+                    <path d="M7.2 8.5V6.9A2.9 2.9 0 0 1 10.1 4h3.8a2.9 2.9 0 0 1 2.9 2.9v1.6"></path>
+                  </svg>
+                  <span>Seller: {{ String(product.businessName || "Biznes i verifikuar").trim() || "Biznes i verifikuar" }}</span>
+                </div>
+
+                <div class="search-result-rating-row">
+                  <div class="search-result-stars" :aria-label="`Vleresimi ${getProductRatingSummary(product)}`">
+                    <svg
+                      v-for="index in 5"
+                      :key="`star-${product.id}-${index}`"
+                      class="search-result-star"
+                      :class="{ 'is-filled': index <= getProductFilledStars(product) }"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
+                    </svg>
+                  </div>
+                  <span class="search-result-rating-score">{{ getProductRatingSummary(product) }}</span>
+                  <span class="search-result-rating-reviews">
+                    {{ getProductReviewCount(product) > 0 ? `${getProductReviewCount(product)} reviews` : "Pa reviews" }}
+                  </span>
+                </div>
+
+                <div class="search-result-price-row">
+                  <strong class="search-result-price-current">{{ formatPrice(product.price || 0) }}</strong>
+                  <span v-if="Number(product.compareAtPrice || product.originalPrice || 0) > Number(product.price || 0)" class="search-result-price-old">
+                    {{ formatPrice(product.compareAtPrice || product.originalPrice || 0) }}
+                  </span>
+                  <span v-if="getProductUnitLabel(product)" class="search-result-price-unit">
+                    {{ getProductUnitLabel(product) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="search-result-actions">
+                <button
+                  class="search-result-action search-result-action--primary"
+                  type="button"
+                  :disabled="busyCartIds.includes(product.id)"
+                  @click="handleCart(product.id)"
+                >
+                  {{ busyCartIds.includes(product.id) ? "Duke shtuar..." : "Add to cart" }}
+                </button>
+                <button
+                  class="search-result-action search-result-action--secondary"
+                  :class="{ active: wishlistIds.includes(product.id) }"
+                  type="button"
+                  :disabled="busyWishlistIds.includes(product.id)"
+                  @click="handleWishlist(product.id)"
+                >
+                  {{ busyWishlistIds.includes(product.id) ? "Duke ruajtur..." : "Save for later" }}
+                </button>
+                <button
+                  class="search-result-action search-result-action--ghost"
+                  :class="{ active: isComparedProduct(product) }"
+                  type="button"
+                  @click="handleCompare(product)"
+                >
+                  Add to compare
+                </button>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more" :class="{ 'is-auto-loading': supportsAutoLoad }">
+          <div
+            v-if="supportsAutoLoad"
+            ref="loadMoreSentinel"
+            class="collection-load-more-sentinel"
+            aria-hidden="true"
+          ></div>
+          <p v-if="loadingMoreProducts" class="collection-load-more-copy">
+            Duke ngarkuar edhe 6 produkte...
+          </p>
+          <button v-else-if="!supportsAutoLoad" class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
+            {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
+          </button>
+        </div>
+
+        <div v-if="products.length === 0" class="collection-empty-state">
+          {{ visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim." }}
+        </div>
+      </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+.search-results-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 292px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.search-results-sidebar {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: calc(var(--page-nav-clearance) - 18px);
+}
+
+.search-filters-panel--sidebar {
+  gap: 16px;
+}
+
+.search-sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-sidebar-label {
+  margin: 0 0 6px;
+  color: rgba(107, 87, 78, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.search-sidebar-head h2 {
+  margin: 0;
+  color: #3f3127;
+  font-size: 1.08rem;
+  line-height: 1.05;
+}
+
+.search-sidebar-close {
+  display: none;
+}
+
+.search-results-content {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.search-results-list {
+  display: grid;
+  gap: 14px;
+}
+
+.search-result-card {
+  display: grid;
+  grid-template-columns: 194px minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(210, 215, 225, 0.92);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.94));
+  box-shadow:
+    0 14px 28px rgba(42, 55, 92, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+.search-result-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 20px;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  text-decoration: none;
+  border-right: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.search-result-image {
+  width: 100%;
+  height: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+
+.search-result-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 800;
+  background: linear-gradient(180deg, #ff4d7a, #f02b5c);
+  box-shadow: 0 10px 22px rgba(240, 43, 92, 0.18);
+}
+
+.search-result-copy {
+  display: grid;
+  gap: 16px;
+  padding: 22px 24px 20px;
+  min-width: 0;
+}
+
+.search-result-copy-top {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.search-result-headline {
+  display: grid;
+  gap: 4px;
+}
+
+.search-result-title {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.16rem;
+  line-height: 1.24;
+}
+
+.search-result-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-result-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.92rem;
+}
+
+.search-result-seller {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.search-result-seller svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.search-result-rating-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 0.88rem;
+}
+
+.search-result-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.search-result-star {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: rgba(249, 115, 22, 0.58);
+  stroke-width: 1.8;
+}
+
+.search-result-star.is-filled {
+  fill: #f59e0b;
+  stroke: #f59e0b;
+}
+
+.search-result-rating-score {
+  color: #f97316;
+  font-weight: 800;
+}
+
+.search-result-rating-reviews {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.search-result-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.search-result-price-current {
+  color: #1f2937;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.search-result-price-old {
+  color: #9ca3af;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: line-through;
+}
+
+.search-result-price-unit {
+  color: #6b7280;
+  font-size: 0.84rem;
+}
+
+.search-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.search-result-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.search-result-action:hover {
+  transform: translateY(-1px);
+}
+
+.search-result-action--primary {
+  color: #fff;
+  background: linear-gradient(180deg, #4763ff, #2356d8);
+  box-shadow: 0 16px 28px rgba(35, 86, 216, 0.2);
+}
+
+.search-result-action--secondary,
+.search-result-action--ghost {
+  color: #475569;
+  border-color: rgba(203, 213, 225, 0.92);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.search-result-action--secondary.active,
+.search-result-action--ghost.active {
+  border-color: rgba(35, 86, 216, 0.24);
+  color: #2356d8;
+  background: rgba(239, 243, 255, 0.98);
+}
+
+@media (min-width: 1025px) {
+  .filter-toggle-button--sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .search-results-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .search-results-sidebar {
+    display: none;
+    position: static;
+  }
+
+  .search-results-sidebar.is-open {
+    display: grid;
+  }
+
+  .search-sidebar-close {
+    display: inline-flex;
+  }
+
+  .search-result-card {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+
+  .search-result-copy {
+    padding: 18px;
+  }
+
+  .search-result-title {
+    font-size: 1.14rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .search-result-card {
+    grid-template-columns: 1fr;
+  }
+
+  .search-result-media {
+    min-height: 220px;
+  }
+
+  .search-result-image {
+    max-height: 180px;
+  }
+
+  .search-result-copy {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .search-result-title {
+    font-size: 1rem;
+  }
+
+  .search-result-subtitle,
+  .search-result-seller,
+  .search-result-rating-row,
+  .search-result-price-unit,
+  .search-result-action {
+    font-size: 0.84rem;
+  }
+
+  .search-result-price-current {
+    font-size: 1.02rem;
+  }
+}
+</style>

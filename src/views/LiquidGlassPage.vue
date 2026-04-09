@@ -111,7 +111,7 @@ watch(
       <div class="glass-controls-layout">
         <div ref="previewStageRef" class="glass-controls-preview-stage">
           <div class="glass-controls-preview-scene" aria-hidden="true"></div>
-          <div class="glass-controls-preview-scene-text" aria-hidden="true">TREGO</div>
+          <div class="glass-controls-preview-scene-text" aria-hidden="true">TREGIO</div>
           <div class="glass-controls-preview-glow is-primary" aria-hidden="true"></div>
           <div class="glass-controls-preview-glow is-secondary" aria-hidden="true"></div>
 
@@ -171,7 +171,7 @@ watch(
             :style="{ position: 'absolute', top: '22px', left: '18px', right: '18px' }"
           >
             <div class="glass-controls-navbar-preview">
-              <div class="glass-controls-navbar-brand">TREGO</div>
+              <div class="glass-controls-navbar-brand">TREGIO</div>
               <div class="glass-controls-navbar-links">
                 <span>Veshje</span>
                 <span>Beauty</span>

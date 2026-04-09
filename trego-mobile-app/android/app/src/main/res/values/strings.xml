@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Trego Mobile</string>
-    <string name="title_activity_main">Trego Mobile</string>
+    <string name="app_name">Tregio</string>
+    <string name="title_activity_main">Tregio</string>
     <string name="package_name">store.trego.mobile</string>
     <string name="custom_url_scheme">store.trego.mobile</string>
     <string name="notification_channel_orders_name">Porosite</string>
@@ -9,5 +9,5 @@
     <string name="notification_channel_messages_name">Mesazhet</string>
     <string name="notification_channel_messages_description">Mesazhe te reja nga bizneset dhe support.</string>
     <string name="notification_channel_updates_name">Perditesimet</string>
-    <string name="notification_channel_updates_description">Njoftime te pergjithshme dhe kujtesa nga TREGO.</string>
+    <string name="notification_channel_updates_description">Njoftime te pergjithshme dhe kujtesa nga TREGIO.</string>
 </resources>

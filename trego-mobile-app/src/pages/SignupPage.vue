@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { IonButton, IonContent, IonInput, IonPage } from "@ionic/vue";
+import { IonButton, IonContent, IonIcon, IonInput, IonPage } from "@ionic/vue";
+import { headsetOutline, logoFacebook } from "ionicons/icons";
 import { reactive } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import AppBackButton from "../components/AppBackButton.vue";
 import { registerUser } from "../lib/api";
 
 const router = useRouter();
+const route = useRoute();
 const form = reactive({
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   phoneNumber: "",
   password: "",
   birthDate: "",
-  gender: "female",
+  gender: "",
   message: "",
   type: "",
   busy: false,
@@ -23,16 +26,22 @@ function showSocialAuthMessage(provider: string) {
   form.type = "success";
 }
 
+function showSupportMessage() {
+  form.message = "Customer Support po behet gati ne app. Se shpejti do lidhet direkt me mesazhet.";
+  form.type = "success";
+}
+
 async function submit() {
   if (form.busy) {
     return;
   }
 
   form.busy = true;
-  form.message = "";
+    form.message = "";
   try {
+    const fullName = [form.firstName.trim(), form.lastName.trim()].filter(Boolean).join(" ");
     const { response, data } = await registerUser({
-      fullName: form.fullName.trim(),
+      fullName,
       email: form.email.trim(),
       phoneNumber: form.phoneNumber.trim(),
       password: form.password,
@@ -49,7 +58,8 @@ async function submit() {
     form.message = "Llogaria u krijua. Kontrollo email-in per verifikim dhe vazhdo me login.";
     form.type = "success";
     window.setTimeout(() => {
-      router.replace("/login");
+      const redirect = String(route.query.redirect || "").trim();
+      router.replace(redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/login");
     }, 1200);
   } finally {
     form.busy = false;
@@ -65,18 +75,29 @@ async function submit() {
           <div class="page-back-anchor">
             <AppBackButton back-to="/tabs/account" />
           </div>
+          <div class="auth-top-tools">
+            <button class="auth-support-button" type="button" @click="showSupportMessage">
+              <IonIcon :icon="headsetOutline" />
+            </button>
+          </div>
           <div class="auth-intro">
-            <h1>Krijoni llogarinë</h1>
+            <h1>Regjistrohuni</h1>
+            <span class="auth-intro-divider" />
           </div>
         </section>
 
         <section class="surface-card surface-card--strong auth-form-card">
-          <p class="auth-form-lead">Krijoni llogarinë tuaj.</p>
+          <div class="auth-form-grid">
+            <label>
+              <span>Emri</span>
+              <IonInput v-model="form.firstName" class="auth-input" type="text" placeholder="Emri" />
+            </label>
 
-          <label>
-            <span>Emri i plotë</span>
-            <IonInput v-model="form.fullName" class="auth-input" type="text" placeholder="Emri Mbiemri" />
-          </label>
+            <label>
+              <span>Mbiemri</span>
+              <IonInput v-model="form.lastName" class="auth-input" type="text" placeholder="Mbiemri" />
+            </label>
+          </div>
 
           <label>
             <span>Email</span>
@@ -99,34 +120,13 @@ async function submit() {
               <input v-model="form.birthDate" class="promo-input auth-native-input" type="date" />
             </label>
 
-            <label class="auth-gender-field">
+            <label>
               <span>Gjinia</span>
-              <div class="gender-choice-row">
-                <button
-                  type="button"
-                  class="gender-choice-button"
-                  :class="{ active: form.gender === 'female' }"
-                  @click="form.gender = 'female'"
-                >
-                  Female
-                </button>
-                <button
-                  type="button"
-                  class="gender-choice-button"
-                  :class="{ active: form.gender === 'male' }"
-                  @click="form.gender = 'male'"
-                >
-                  Male
-                </button>
-                <button
-                  type="button"
-                  class="gender-choice-button"
-                  :class="{ active: form.gender === 'other' }"
-                  @click="form.gender = 'other'"
-                >
-                  Other
-                </button>
-              </div>
+              <select v-model="form.gender" class="promo-input auth-native-input auth-select-input">
+                <option value="">Zgjedhe gjinine</option>
+                <option value="femer">Femër</option>
+                <option value="mashkull">Mashkull</option>
+              </select>
             </label>
           </div>
 
@@ -149,6 +149,10 @@ async function submit() {
             <button type="button" class="auth-social-button auth-social-button--google" @click="showSocialAuthMessage('Google')">
               Sign up with Google
             </button>
+            <button type="button" class="auth-social-button auth-social-button--facebook" @click="showSocialAuthMessage('Facebook')">
+              <IonIcon :icon="logoFacebook" />
+              <span>Sign up with Facebook</span>
+            </button>
           </div>
         </section>
       </div>
@@ -166,9 +170,32 @@ async function submit() {
   gap: 8px;
 }
 
+.auth-top-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-support-button {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.08));
+  color: var(--trego-dark);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.72),
+    0 12px 24px rgba(15, 23, 42, 0.06);
+}
+
 .auth-intro {
   text-align: center;
   padding: 0 8px;
+  display: grid;
+  gap: 10px;
 }
 
 .auth-intro h1,
@@ -182,18 +209,18 @@ async function submit() {
   line-height: 1.02;
 }
 
+.auth-intro-divider {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.44), transparent);
+}
+
 .auth-form-card {
   display: flex;
   flex-direction: column;
   gap: 15px;
   padding: 22px 18px 20px;
-}
-
-.auth-form-lead {
-  margin: 0;
-  color: var(--trego-dark);
-  font-size: 0.96rem;
-  font-weight: 700;
 }
 
 .auth-form-card label {
@@ -218,42 +245,9 @@ async function submit() {
   width: 100%;
 }
 
-.auth-gender-field {
-  justify-content: flex-end;
-}
-
-.gender-choice-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.gender-choice-button {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.74);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.76));
-  color: var(--trego-dark);
-  font-size: 0.78rem;
-  font-weight: 700;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    0 10px 20px rgba(31, 41, 55, 0.05);
-}
-
-.gender-choice-button.active {
-  border-color: rgba(255, 106, 43, 0.34);
-  background:
-    linear-gradient(180deg, rgba(255, 123, 61, 0.16), rgba(255, 106, 43, 0.12));
-  color: #c24d17;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 12px 22px rgba(255, 106, 43, 0.12);
+.auth-select-input {
+  appearance: none;
+  padding-right: 32px;
 }
 
 .auth-form-message {
@@ -321,5 +315,18 @@ async function submit() {
 
 .auth-social-button--google {
   color: #1d4ed8;
+}
+
+.auth-social-button--facebook {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #ffffff;
+  background: linear-gradient(180deg, rgba(24,119,242,0.98), rgba(18,92,208,0.94));
+}
+
+.auth-social-button--facebook ion-icon {
+  font-size: 1rem;
 }
 </style>

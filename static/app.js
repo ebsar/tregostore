@@ -153,8 +153,8 @@ function initializeBrandLogo() {
 
     brandLink.classList.add("has-logo");
     brandLink.innerHTML = `
-      <img class="brand-logo" src="/trego-logo.webp" alt="Logo e TREGO">
-      <span class="sr-only">TREGO</span>
+      <img class="brand-logo" src="/trego-logo.png" alt="Logo e TREGIO">
+      <span class="sr-only">TREGIO</span>
     `;
   });
 }
@@ -207,7 +207,7 @@ function initializeLoadingScreen() {
         </span>
       </div>
       <p class="app-loader-copy">Duke hapur dyqanin online...</p>
-      <strong class="app-loader-brand">TREGO</strong>
+      <strong class="app-loader-brand">TREGIO</strong>
     </div>
   `;
 
@@ -4018,7 +4018,7 @@ function initializeRegisteredBusinessesPage() {
     }
 
     accessElement.textContent =
-      "Je kycur si admin. Ketu shfaqen bizneset e regjistruara ne TREGO dhe statistikat baze te tyre.";
+      "Je kycur si admin. Ketu shfaqen bizneset e regjistruara ne TREGIO dhe statistikat baze te tyre.";
     form.addEventListener("submit", handleBusinessAccountCreate);
     searchForm.addEventListener("submit", handleSearchSubmit);
     searchInput.addEventListener("input", handleSearchInput);
@@ -5044,7 +5044,7 @@ function initializeHomePage() {
       return;
     }
 
-    productsStatusElement.textContent = `Po shfaqen ${allProducts.length} produkte publike ne TREGO.`;
+    productsStatusElement.textContent = `Po shfaqen ${allProducts.length} produkte publike ne TREGIO.`;
     grid.innerHTML = allProducts
       .map((product) =>
         renderPetProductCard(product, {
@@ -8001,7 +8001,7 @@ function renderHomeBusinessBadge(business) {
   const logoPath = String(business?.logoPath || "").trim();
   const city = String(business?.city || "").trim();
   const initials = getBusinessInitials(businessName);
-  const subtitle = city || "Partner i TREGO";
+  const subtitle = city || "Partner i TREGIO";
   const profileUrl = String(business?.profileUrl || "").trim() || getBusinessProfileUrl(business?.id || "");
 
   return `

@@ -1,6 +1,10 @@
 const GET_REQUEST_CACHE = new Map();
 const INFLIGHT_GET_REQUESTS = new Map();
 const VISITOR_TOKEN_STORAGE_KEY = "trego-visitor-token";
+const MIN_REQUEST_TIMEOUT_MS = 1200;
+const DEFAULT_GET_TIMEOUT_MS = 6000;
+const DEFAULT_MUTATION_TIMEOUT_MS = 8000;
+const DEFAULT_RETRY_TIMEOUT_MS = 3200;
 
 function generateVisitorToken() {
   return `visitor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
@@ -50,11 +54,22 @@ function invalidateRequestCache() {
 export async function requestJson(url, options = {}, runtime = {}) {
   const config = { ...options };
   config.headers = { ...(options.headers || {}) };
+  if (!config.credentials) {
+    config.credentials = "same-origin";
+  }
   const method = normalizeMethod(config);
   const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
+  const allowRetry = runtime.allowRetry !== false;
   const timeoutMs = Math.max(
-    1500,
-    Number(runtime.timeoutMs || (method === "GET" ? 8000 : 15000)),
+    MIN_REQUEST_TIMEOUT_MS,
+    Number(runtime.timeoutMs || (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : DEFAULT_MUTATION_TIMEOUT_MS)),
+  );
+  const retryTimeoutMs = Math.max(
+    MIN_REQUEST_TIMEOUT_MS,
+    Number(
+      runtime.retryTimeoutMs
+      || Math.min(timeoutMs, DEFAULT_RETRY_TIMEOUT_MS),
+    ),
   );
   const cacheKey = runtime.cacheKey || `${method}:${url}`;
   const canUseCache = method === "GET" && !config.body && cacheTtlMs > 0;
@@ -91,11 +106,11 @@ export async function requestJson(url, options = {}, runtime = {}) {
     }
   }
 
-  const pendingRequest = (async () => {
+  async function performRequestOnce(activeTimeoutMs) {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
       controller.abort();
-    }, timeoutMs);
+    }, activeTimeoutMs);
 
     let response = null;
     let data = {};
@@ -107,9 +122,22 @@ export async function requestJson(url, options = {}, runtime = {}) {
       });
 
       try {
-        data = await response.json();
+        const rawBody = await response.text();
+        if (rawBody) {
+          data = JSON.parse(rawBody);
+        } else if (!response.ok) {
+          data = {
+            ok: false,
+            message: `Serveri ktheu gabim ${response.status || 500}.`,
+          };
+        }
       } catch (error) {
-        console.error(error);
+        data = {
+          ok: false,
+          message: response?.ok
+            ? "Pergjigjja e serverit nuk ishte ne formatin e pritur."
+            : `Serveri ktheu gabim ${response?.status || 500}.`,
+        };
       }
     } catch (error) {
       const isAbortError = error?.name === "AbortError";
@@ -127,12 +155,30 @@ export async function requestJson(url, options = {}, runtime = {}) {
       window.clearTimeout(timeoutId);
     }
 
-    const result = {
+    return {
       response: createResponseMeta(response),
       data,
     };
+  }
 
-    if (canUseCache && response?.ok) {
+  const pendingRequest = (async () => {
+    let result = await performRequestOnce(timeoutMs);
+
+    const shouldRetryGetRequest = (
+      allowRetry
+      && method === "GET"
+      && !result.response.ok
+      && (
+        result.data?.message === "Serveri po vonon shume. Provoje perseri pas pak."
+        || result.data?.message === "Lidhja me serverin deshtoi."
+      )
+    );
+
+    if (shouldRetryGetRequest) {
+      result = await performRequestOnce(retryTimeoutMs);
+    }
+
+    if (canUseCache && result.response.ok) {
       GET_REQUEST_CACHE.set(cacheKey, {
         expiresAt: Date.now() + cacheTtlMs,
         response: result.response,
@@ -140,7 +186,7 @@ export async function requestJson(url, options = {}, runtime = {}) {
       });
     }
 
-    if (method !== "GET" && response?.ok) {
+    if (method !== "GET" && result.response.ok) {
       invalidateRequestCache();
     }
 
@@ -164,18 +210,113 @@ export async function requestJson(url, options = {}, runtime = {}) {
   }
 }
 
-export async function fetchCurrentUserOptional() {
+export async function fetchCurrentUserSession() {
   try {
-    const { response, data } = await requestJson("/api/me", {}, { cacheTtlMs: 1500 });
-    if (!response.ok || !data.ok || !data.user) {
-      return null;
+    const { response, data } = await requestJson("/api/me", {}, {
+      cacheTtlMs: 1500,
+      timeoutMs: 3500,
+      allowRetry: false,
+    });
+    if (response.ok && data?.ok && data?.user) {
+      return {
+        status: "authenticated",
+        user: data.user,
+      };
     }
 
-    return data.user;
+    if (response.status === 401 || response.status === 403) {
+      return {
+        status: "guest",
+        user: null,
+      };
+    }
+
+    return {
+      status: "unreachable",
+      user: null,
+      message: resolveApiMessage(data, "Serveri po vonon shume. Provoje perseri pas pak."),
+    };
   } catch (error) {
     console.error(error);
-    return null;
+    return {
+      status: "unreachable",
+      user: null,
+      message: "Serveri po vonon shume. Provoje perseri pas pak.",
+    };
   }
+}
+
+export async function fetchCurrentUserOptional() {
+  const session = await fetchCurrentUserSession();
+  return session.status === "authenticated" ? session.user : null;
+}
+
+function normalizeRecommendationSections(data, fallbackLimit = 8) {
+  if (!Array.isArray(data?.sections)) {
+    return [];
+  }
+
+  return data.sections
+    .map((section, index) => ({
+      key: String(section?.key || `recommendation-${index}`),
+      title: String(section?.title || "Recommended"),
+      subtitle: String(section?.subtitle || ""),
+      products: Array.isArray(section?.products)
+        ? section.products.slice(0, Math.max(1, Number(fallbackLimit || 8)))
+        : [],
+    }))
+    .filter((section) => section.products.length > 0);
+}
+
+export async function fetchHomeRecommendations(limit = 8) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+
+  const { response, data } = await requestJson(
+    `/api/recommendations/home?${params.toString()}`,
+    {},
+    { cacheTtlMs: 5000 },
+  );
+
+  if (!response.ok || !data?.ok) {
+    return {
+      sections: [],
+      personalized: false,
+      limit,
+    };
+  }
+
+  return {
+    sections: normalizeRecommendationSections(data, limit),
+    personalized: Boolean(data.personalized),
+    limit: Math.max(1, Number(data.limit || limit)),
+  };
+}
+
+export async function fetchProductRecommendations(productId, limit = 8) {
+  const params = new URLSearchParams();
+  params.set("id", String(productId));
+  params.set("limit", String(limit));
+
+  const { response, data } = await requestJson(
+    `/api/recommendations/product?${params.toString()}`,
+    {},
+    { cacheTtlMs: 5000 },
+  );
+
+  if (!response.ok || !data?.ok) {
+    return {
+      sections: [],
+      personalized: false,
+      limit,
+    };
+  }
+
+  return {
+    sections: normalizeRecommendationSections(data, limit),
+    personalized: Boolean(data.personalized),
+    limit: Math.max(1, Number(data.limit || limit)),
+  };
 }
 
 export async function fetchProtectedCollection(url, runtime = {}) {

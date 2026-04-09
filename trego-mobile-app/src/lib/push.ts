@@ -8,6 +8,15 @@ const PUSH_PERMISSION_PROMPT_KEY = "trego-mobile-push-permission-prompted";
 
 type OneSignalSdk = typeof import("onesignal-cordova-plugin").default;
 
+export interface PushClientStatus {
+  configured: boolean;
+  nativeRuntime: boolean;
+  initialized: boolean;
+  permission: "granted" | "denied" | "prompt" | "unavailable";
+  subscribed: boolean;
+  platform: string;
+}
+
 let sdkPromise: Promise<OneSignalSdk | null> | null = null;
 let initialized = false;
 let clickListenerRegistered = false;
@@ -143,6 +152,65 @@ async function loadOneSignalSdk(): Promise<OneSignalSdk | null> {
 
 export function isPushConfigured() {
   return Boolean(ONESIGNAL_APP_ID);
+}
+
+export async function getPushClientStatus(router?: Router | null): Promise<PushClientStatus> {
+  const configured = isPushConfigured();
+  const nativeRuntime = isNativePushRuntime();
+  const platform = nativeRuntime ? Capacitor.getPlatform() : "web";
+  if (!configured || !nativeRuntime) {
+    return {
+      configured,
+      nativeRuntime,
+      initialized,
+      permission: configured ? "unavailable" : "unavailable",
+      subscribed: false,
+      platform,
+    };
+  }
+
+  const OneSignal = await ensurePushClient(router);
+  if (!OneSignal) {
+    return {
+      configured,
+      nativeRuntime,
+      initialized,
+      permission: "unavailable",
+      subscribed: false,
+      platform,
+    };
+  }
+
+  let permission: PushClientStatus["permission"] = "unavailable";
+  let subscribed = false;
+
+  try {
+    const rawPermission = (OneSignal as any)?.Notifications?.permission;
+    if (typeof rawPermission === "boolean") {
+      permission = rawPermission ? "granted" : "denied";
+    } else if (typeof (OneSignal as any)?.Notifications?.canRequestPermission === "function") {
+      const canRequest = await (OneSignal as any).Notifications.canRequestPermission();
+      permission = canRequest ? "prompt" : "denied";
+    }
+  } catch {
+    permission = "unavailable";
+  }
+
+  try {
+    const subscription = (OneSignal as any)?.User?.pushSubscription;
+    subscribed = Boolean(subscription?.id || subscription?.token || subscription?.optedIn);
+  } catch {
+    subscribed = false;
+  }
+
+  return {
+    configured,
+    nativeRuntime,
+    initialized,
+    permission,
+    subscribed,
+    platform,
+  };
 }
 
 export async function ensurePushClient(router?: Router | null) {

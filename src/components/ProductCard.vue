@@ -84,16 +84,8 @@ const averageRating = computed(() => {
 
   return Math.max(0, Math.min(5, rawValue));
 });
-const reviewCount = computed(() => {
-  const rawValue = Number(props.product.reviewCount ?? 0);
-  if (!Number.isFinite(rawValue) || rawValue <= 0) {
-    return 0;
-  }
-
-  return Math.max(0, Math.trunc(rawValue));
-});
 const buyersCount = computed(() => {
-  const rawValue = Number(props.product.buyersCount ?? 0);
+  const rawValue = Number(props.product.buyersCount ?? props.product.unitsSold ?? 0);
   if (!Number.isFinite(rawValue) || rawValue <= 0) {
     return 0;
   }
@@ -108,40 +100,58 @@ const filledStars = computed(() => {
   return Math.max(0, Math.min(5, Math.round(averageRating.value)));
 });
 const ratingSummary = computed(() => {
-  if (reviewCount.value > 0 && averageRating.value > 0) {
+  if (averageRating.value > 0) {
     return averageRating.value.toFixed(1);
+  }
+
+  return "0.0";
+});
+const ratingLabel = computed(() => {
+  if (averageRating.value > 0) {
+    return `${ratingSummary.value} vleresim`;
   }
 
   return "Pa vleresime";
 });
-const shortDescription = computed(() => {
-  const rawValue = String(props.product?.description || "").trim();
-  if (rawValue) {
-    return rawValue;
+const salesLabel = computed(() => `${buyersCount.value} shitje`);
+const badgeLabel = computed(() => {
+  if (!discountPercent.value) {
+    return "";
   }
 
-  return businessName.value ? `Nga ${businessName.value}` : "Produkt i perzgjedhur ne marketplace.";
+  return `-${discountPercent.value}%`;
 });
 </script>
 
 <template>
-  <article class="pet-product-card" :aria-label="product.title">
-    <div class="pet-product-media">
-      <RouterLink class="pet-product-link" :to="detailUrl" :aria-label="`Hape produktin ${product.title}`">
-        <div class="pet-product-image-wrap">
-          <img
-            class="pet-product-image"
-            :src="product.imagePath"
-            :alt="product.title"
-            width="640"
-            height="640"
-            loading="lazy"
-            decoding="async"
-          >
-        </div>
-      </RouterLink>
+  <article class="marketplace-card marketplace-card--catalog" :aria-label="product.title">
+    <RouterLink class="marketplace-card-media" :to="detailUrl" :aria-label="`Hape produktin ${product.title}`">
+      <img
+        class="marketplace-card-image"
+        :src="product.imagePath"
+        :alt="product.title"
+        width="720"
+        height="720"
+        loading="lazy"
+        decoding="async"
+      >
+      <span v-if="badgeLabel" class="marketplace-card-badge">{{ badgeLabel }}</span>
 
       <template v-if="showOverlayActions">
+        <button
+          class="product-card-overlay-button product-card-wishlist-button wishlist-action"
+          :class="{ active: isWishlisted }"
+          type="button"
+          :disabled="wishlistBusy"
+          :aria-label="wishlistLabel"
+          :aria-pressed="isWishlisted"
+          @click.stop="emit('wishlist', product.id)"
+        >
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
+          </svg>
+        </button>
+
         <button
           class="product-card-overlay-button product-card-cart-button cart-action"
           :class="{ active: isInCart }"
@@ -157,70 +167,35 @@ const shortDescription = computed(() => {
             <circle cx="18" cy="19" r="1.4"></circle>
           </svg>
         </button>
-
-        <button
-          class="product-card-overlay-button product-card-compare-button compare-action"
-          :class="{ active: isCompared }"
-          type="button"
-          :aria-label="compareLabel"
-          :aria-pressed="isCompared"
-          @click.stop="emit('compare', product)"
-        >
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4.5" y="5.5" width="6.5" height="13" rx="1.8"></rect>
-            <rect x="13" y="7.5" width="6.5" height="11" rx="1.8"></rect>
-          </svg>
-        </button>
-
-        <button
-          class="product-card-overlay-button product-card-wishlist-button wishlist-action"
-          :class="{ active: isWishlisted }"
-          type="button"
-          :disabled="wishlistBusy"
-          :aria-label="wishlistLabel"
-          :aria-pressed="isWishlisted"
-          @click.stop="emit('wishlist', product.id)"
-        >
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-          </svg>
-        </button>
       </template>
-    </div>
+    </RouterLink>
 
-    <div class="pet-product-content-shell">
-      <div class="pet-product-content">
-        <h3 class="pet-product-title">
-          <RouterLink class="pet-product-title-link" :to="detailUrl">
-            {{ product.title }}
-          </RouterLink>
-        </h3>
+    <div class="marketplace-card-body">
+      <h3 class="marketplace-card-title">
+        <RouterLink class="marketplace-card-title-link" :to="detailUrl">
+          {{ product.title }}
+        </RouterLink>
+      </h3>
 
-        <p v-if="showBusinessName && businessName" class="pet-product-business-name">
-          {{ businessName }}
-        </p>
+      <p v-if="showBusinessName && businessName" class="marketplace-card-business-name">
+        {{ businessName }}
+      </p>
 
-        <p v-if="showDescription" class="pet-product-description">
-          {{ shortDescription }}
-        </p>
-
-        <div class="pet-product-price-row">
-          <strong class="pet-product-price">{{ formatPrice(currentPrice) }}</strong>
-          <div class="pet-product-price-meta">
-            <template v-if="compareAtPrice">
-              <span class="pet-product-price-compare">{{ formatPrice(compareAtPrice) }}</span>
-              <span v-if="discountPercent !== null" class="pet-product-discount-chip">-{{ discountPercent }}%</span>
-            </template>
-            <span v-else class="pet-product-discount-empty">Pa zbritje</span>
-          </div>
+      <div class="marketplace-card-pricing">
+        <strong class="marketplace-card-price-current">{{ formatPrice(currentPrice) }}</strong>
+        <div class="marketplace-card-price-copy">
+          <span v-if="compareAtPrice" class="marketplace-card-price-old">{{ formatPrice(compareAtPrice) }}</span>
+          <span v-else class="marketplace-card-price-old marketplace-card-price-old--empty" aria-hidden="true"></span>
         </div>
+      </div>
 
-        <div class="pet-product-rating-row">
-          <div class="pet-product-rating-stars" :aria-label="`Vleresimi ${ratingSummary}`">
+      <div class="marketplace-card-rating">
+        <div class="marketplace-card-rating-main">
+          <div class="marketplace-card-stars" :aria-label="`Vleresimi ${ratingSummary}`">
             <svg
               v-for="index in 5"
               :key="index"
-              class="pet-product-rating-star"
+              class="marketplace-card-star"
               :class="{ 'is-filled': index <= filledStars }"
               viewBox="0 0 24 24"
               aria-hidden="true"
@@ -228,58 +203,87 @@ const shortDescription = computed(() => {
               <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
             </svg>
           </div>
-          <span class="pet-product-rating-summary">{{ ratingSummary }}</span>
-          <span class="pet-product-rating-divider" aria-hidden="true"></span>
-          <span class="pet-product-buyers-count">{{ buyersCount }} blerje</span>
+          <span class="marketplace-card-rating-summary">{{ ratingLabel }}</span>
         </div>
+        <span class="marketplace-card-buyers-count">{{ salesLabel }}</span>
       </div>
     </div>
   </article>
 </template>
 
 <style scoped>
-.pet-product-card {
+.marketplace-card {
   position: relative;
-  overflow: hidden;
   display: grid;
-  gap: 14px;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
   height: 100%;
-  padding: 14px;
-  border-radius: 30px;
+  width: 100%;
+  max-width: 228px;
+  min-width: 0;
+  min-height: 392px;
+  padding: 10px;
+  border-radius: 22px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)),
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
+    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.08), transparent 34%);
   border: 1px solid rgba(255, 255, 255, 0.56);
   box-shadow:
-    0 22px 42px rgba(31, 41, 55, 0.1),
+    0 12px 24px rgba(31, 41, 55, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.84);
-  backdrop-filter: blur(20px) saturate(145%);
-  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  justify-self: center;
+  overflow: hidden;
 }
 
-.pet-product-media {
+.marketplace-card--catalog {
   position: relative;
 }
 
-.pet-product-image-wrap {
+.marketplace-card-media {
+  position: relative;
+  display: block;
+  width: 100%;
   overflow: hidden;
-  border-radius: 24px;
-  aspect-ratio: 1 / 1;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(246, 243, 240, 0.94));
+  border-radius: 16px;
+  aspect-ratio: 4 / 5;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.94));
+  box-shadow: 0 10px 18px rgba(31, 41, 55, 0.08);
 }
 
-.pet-product-image {
+.marketplace-card-image {
   display: block;
   width: 100%;
   height: 100%;
+  max-width: none;
   object-fit: cover;
+  object-position: center;
+}
+
+.marketplace-card-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.96), rgba(185, 28, 28, 0.92));
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.16);
 }
 
 .product-card-overlay-button {
+  position: absolute;
+  bottom: 10px;
   display: inline-flex;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
@@ -289,9 +293,7 @@ const shortDescription = computed(() => {
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 12px 24px rgba(17, 24, 39, 0.16);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+    0 8px 16px rgba(17, 24, 39, 0.11);
 }
 
 .product-card-overlay-button .nav-icon {
@@ -300,119 +302,290 @@ const shortDescription = computed(() => {
   stroke-width: 1.8;
 }
 
-.pet-product-content-shell {
-  display: grid;
+.product-card-wishlist-button {
+  left: 10px;
 }
 
-.pet-product-content {
-  display: grid;
-  gap: 8px;
+.product-card-cart-button {
+  right: 10px;
 }
 
-.pet-product-title {
+.marketplace-card-body {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.marketplace-card-title {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: 0.96rem;
   line-height: 1.22;
+  letter-spacing: -0.02em;
+  min-width: 0;
 }
 
-.pet-product-title-link {
+.marketplace-card-title-link {
   color: var(--text);
   text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.pet-product-business-name {
+.marketplace-card-business-name {
   margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.marketplace-card-pricing {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.marketplace-card-price-current {
+  color: var(--accent);
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+.marketplace-card-price-copy {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 18px;
+}
+
+.marketplace-card-price-old--empty {
+  visibility: hidden;
+}
+
+.marketplace-card-price-old {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-decoration: line-through;
 }
 
-.pet-product-description {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.48;
-}
-
-.pet-product-price-row {
+.marketplace-card-rating {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 7px;
+  min-width: 0;
 }
 
-.pet-product-price {
-  color: var(--accent);
-  font-size: 1.08rem;
-  line-height: 1;
-}
-
-.pet-product-price-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.marketplace-card-rating-main {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
-.pet-product-price-compare,
-.pet-product-discount-empty {
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.pet-product-discount-chip {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(214, 75, 75, 0.12);
-  color: #c34747;
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.pet-product-rating-row {
+.marketplace-card-stars {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.pet-product-rating-stars {
-  display: inline-flex;
   gap: 2px;
+  flex-shrink: 0;
 }
 
-.pet-product-rating-star {
+.marketplace-card-star {
   width: 14px;
   height: 14px;
-  fill: rgba(244, 180, 26, 0.18);
+  fill: none;
+  stroke: rgba(143, 133, 124, 0.42);
+  stroke-width: 1.8;
 }
 
-.pet-product-rating-star.is-filled {
-  fill: #f4b41a;
+.marketplace-card-star.is-filled {
+  fill: #d8aa58;
+  stroke: #d8aa58;
 }
 
-.pet-product-rating-divider {
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(107, 114, 128, 0.4);
+.marketplace-card-rating-summary {
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .pet-product-card {
-    padding: 12px;
-    border-radius: 24px;
+.marketplace-card-buyers-count {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .marketplace-card {
+    max-width: none;
+    padding: 8px;
+    border-radius: 19px;
+    width: 100%;
+    min-height: 326px;
+    justify-self: stretch;
+    gap: 8px;
   }
 
-  .pet-product-title {
-    font-size: 0.96rem;
+  .marketplace-card-media {
+    border-radius: 14px;
+    aspect-ratio: 1 / 1.18;
+  }
+
+  .marketplace-card-badge {
+    top: 8px;
+    left: 8px;
+    min-height: 22px;
+    padding: 0 8px;
+    font-size: 0.58rem;
+  }
+
+  .marketplace-card-title {
+    font-size: 0.84rem;
+    line-height: 1.18;
+  }
+
+  .marketplace-card-business-name {
+    font-size: 0.68rem;
+  }
+
+  .marketplace-card-price-current {
+    font-size: 0.94rem;
+  }
+
+  .marketplace-card-price-old {
+    font-size: 0.64rem;
+  }
+
+  .marketplace-card-rating {
+    display: grid;
+    justify-content: stretch;
+    gap: 4px;
+    padding-top: 6px;
+  }
+
+  .marketplace-card-rating-main {
+    gap: 5px;
+  }
+
+  .marketplace-card-star {
+    width: 12px;
+    height: 12px;
+  }
+
+  .marketplace-card-rating-summary,
+  .marketplace-card-buyers-count {
+    font-size: 0.65rem;
+  }
+
+  .product-card-overlay-button {
+    width: 34px;
+    height: 34px;
+    bottom: 8px;
+  }
+
+  .product-card-overlay-button .nav-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .product-card-wishlist-button {
+    left: 8px;
+  }
+
+  .product-card-cart-button {
+    right: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .marketplace-card {
+    min-height: 302px;
+    padding: 7px;
+    border-radius: 17px;
+    gap: 7px;
+  }
+
+  .marketplace-card-media {
+    border-radius: 12px;
+    aspect-ratio: 1 / 1.12;
+  }
+
+  .marketplace-card-body {
+    gap: 4px;
+  }
+
+  .marketplace-card-title {
+    font-size: 0.8rem;
+  }
+
+  .marketplace-card-business-name {
+    font-size: 0.64rem;
+  }
+
+  .marketplace-card-price-current {
+    font-size: 0.88rem;
+  }
+
+  .marketplace-card-price-copy {
+    min-height: 14px;
+    gap: 4px;
+  }
+
+  .marketplace-card-price-old {
+    font-size: 0.6rem;
+  }
+
+  .marketplace-card-rating {
+    gap: 3px;
+    padding-top: 5px;
+  }
+
+  .marketplace-card-star {
+    width: 11px;
+    height: 11px;
+  }
+
+  .marketplace-card-rating-summary,
+  .marketplace-card-buyers-count {
+    font-size: 0.62rem;
+  }
+
+  .product-card-overlay-button {
+    width: 32px;
+    height: 32px;
+    bottom: 7px;
+  }
+
+  .product-card-overlay-button .nav-icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .product-card-wishlist-button {
+    left: 7px;
+  }
+
+  .product-card-cart-button {
+    right: 7px;
   }
 }
 </style>

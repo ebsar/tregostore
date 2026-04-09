@@ -6,9 +6,11 @@ import type {
   ChatMessage,
   ConversationItem,
   OrderItem,
+  PaginatedResult,
   ProductItem,
   ProductReview,
   PromotionItem,
+  RecommendationSection,
   ReportItem,
   ReturnRequestItem,
   SessionUser,
@@ -27,9 +29,29 @@ interface JsonResult<T = Record<string, unknown>> {
   data: T;
 }
 
+interface SessionStateResult {
+  status: "authenticated" | "guest" | "unreachable";
+  user: SessionUser | null;
+}
+
 interface RequestRuntimeOptions {
   cacheTtlMs?: number;
   cacheKey?: string;
+}
+
+function createPaginatedResult<T>(
+  items: T[] = [],
+  data: any = {},
+  fallbackLimit = items.length || 0,
+  fallbackOffset = 0,
+): PaginatedResult<T> {
+  return {
+    items,
+    limit: Math.max(0, Number(data?.limit ?? fallbackLimit ?? 0)),
+    offset: Math.max(0, Number(data?.offset ?? fallbackOffset ?? 0)),
+    total: Number.isFinite(Number(data?.total)) ? Number(data.total) : null,
+    hasMore: Boolean(data?.hasMore),
+  };
 }
 
 const GET_REQUEST_CACHE = new Map<string, { expiresAt: number; response: ResponseMeta; data: any }>();
@@ -207,12 +229,30 @@ export async function requestJson<T = any>(
 }
 
 export async function fetchCurrentUserOptional(): Promise<SessionUser | null> {
+  const session = await fetchCurrentUserSessionState();
+  return session.status === "authenticated" ? session.user : null;
+}
+
+export async function fetchCurrentUserSessionState(): Promise<SessionStateResult> {
   const { response, data } = await requestJson<any>("/api/me", {}, { cacheTtlMs: 2500 });
-  if (!response.ok || !data?.ok || !data?.user) {
-    return null;
+  if (response.ok && data?.ok && data?.user) {
+    return {
+      status: "authenticated",
+      user: data.user as SessionUser,
+    };
   }
 
-  return data.user as SessionUser;
+  if (response.status === 401 || response.status === 403) {
+    return {
+      status: "guest",
+      user: null,
+    };
+  }
+
+  return {
+    status: "unreachable",
+    user: null,
+  };
 }
 
 export async function loginUser(identifier: string, password: string) {
@@ -260,32 +300,60 @@ export async function logoutUser() {
 }
 
 export async function fetchMarketplaceProducts(limit = 24, offset = 0): Promise<ProductItem[]> {
+  const result = await fetchMarketplaceProductsPage(limit, offset);
+  return result.items;
+}
+
+export async function fetchMarketplaceProductsPage(
+  limit = 24,
+  offset = 0,
+): Promise<PaginatedResult<ProductItem>> {
   const { response, data } = await requestJson<any>(
     `/api/products?limit=${limit}&offset=${offset}`,
     {},
     { cacheTtlMs: 30000 },
   );
   if (!response.ok || !data?.ok) {
-    return [];
+    return createPaginatedResult([], {}, limit, offset);
   }
 
-  return Array.isArray(data.products) ? data.products : [];
+  return createPaginatedResult(
+    Array.isArray(data.products) ? data.products : [],
+    data,
+    limit,
+    offset,
+  );
 }
 
 export async function searchMarketplaceProducts(query: string): Promise<ProductItem[]> {
+  const result = await searchMarketplaceProductsPage(query);
+  return result.items;
+}
+
+export async function searchMarketplaceProductsPage(
+  query: string,
+  limit = 30,
+  offset = 0,
+): Promise<PaginatedResult<ProductItem>> {
   const params = new URLSearchParams();
-  params.set("query", query);
-  params.set("limit", "30");
+  params.set("q", query);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
   const { response, data } = await requestJson<any>(
     `/api/products/search?${params.toString()}`,
     {},
     { cacheTtlMs: 12000 },
   );
   if (!response.ok || !data?.ok) {
-    return [];
+    return createPaginatedResult([], {}, limit, offset);
   }
 
-  return Array.isArray(data.products) ? data.products : [];
+  return createPaginatedResult(
+    Array.isArray(data.products) ? data.products : [],
+    data,
+    limit,
+    offset,
+  );
 }
 
 export async function fetchProductDetail(productId: string | number): Promise<ProductItem | null> {
@@ -299,6 +367,54 @@ export async function fetchProductDetail(productId: string | number): Promise<Pr
   }
 
   return data.product as ProductItem;
+}
+
+function normalizeRecommendationSections(data: any, limit: number): RecommendationSection[] {
+  if (!Array.isArray(data?.sections)) {
+    return [];
+  }
+
+  return data.sections
+    .map((section: any, index: number) => ({
+      key: String(section?.key || `recommendation-${index}`),
+      title: String(section?.title || "Recommended"),
+      subtitle: String(section?.subtitle || ""),
+      products: Array.isArray(section?.products) ? section.products.slice(0, Math.max(1, limit)) : [],
+    }))
+    .filter((section: RecommendationSection) => section.products.length > 0);
+}
+
+export async function fetchHomeRecommendations(limit = 8): Promise<RecommendationSection[]> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+
+  const { response, data } = await requestJson<any>(
+    `/api/recommendations/home?${params.toString()}`,
+    {},
+    { cacheTtlMs: 5000 },
+  );
+  if (!response.ok || !data?.ok) {
+    return [];
+  }
+
+  return normalizeRecommendationSections(data, limit);
+}
+
+export async function fetchProductRecommendations(productId: string | number, limit = 6): Promise<RecommendationSection[]> {
+  const params = new URLSearchParams();
+  params.set("id", String(productId));
+  params.set("limit", String(limit));
+
+  const { response, data } = await requestJson<any>(
+    `/api/recommendations/product?${params.toString()}`,
+    {},
+    { cacheTtlMs: 5000 },
+  );
+  if (!response.ok || !data?.ok) {
+    return [];
+  }
+
+  return normalizeRecommendationSections(data, limit);
 }
 
 export async function trackProductShare(productId: number | string) {
@@ -331,6 +447,23 @@ export async function fetchPublicBusinesses(): Promise<BusinessItem[]> {
   return Array.isArray(data.businesses) ? data.businesses : [];
 }
 
+export async function fetchPublicBusinessesPage(
+  limit = 12,
+  offset = 0,
+): Promise<PaginatedResult<BusinessItem>> {
+  const businesses = await fetchPublicBusinesses();
+  const safeOffset = Math.max(0, Math.min(offset, businesses.length));
+  const safeLimit = Math.max(1, limit);
+  const pageItems = businesses.slice(safeOffset, safeOffset + safeLimit);
+  return {
+    items: pageItems,
+    limit: safeLimit,
+    offset: safeOffset,
+    total: businesses.length,
+    hasMore: safeOffset + pageItems.length < businesses.length,
+  };
+}
+
 export async function toggleBusinessFollow(businessId: number | string) {
   return requestJson<any>("/api/business/follow-toggle", {
     method: "POST",
@@ -358,6 +491,15 @@ export async function fetchPublicBusinessProducts(
   limit = 24,
   offset = 0,
 ): Promise<ProductItem[]> {
+  const result = await fetchPublicBusinessProductsPage(businessId, limit, offset);
+  return result.items;
+}
+
+export async function fetchPublicBusinessProductsPage(
+  businessId: number | string,
+  limit = 24,
+  offset = 0,
+): Promise<PaginatedResult<ProductItem>> {
   const params = new URLSearchParams();
   params.set("id", String(businessId));
   params.set("limit", String(limit));
@@ -368,10 +510,15 @@ export async function fetchPublicBusinessProducts(
     { cacheTtlMs: 18000 },
   );
   if (!response.ok || !data?.ok) {
-    return [];
+    return createPaginatedResult([], {}, limit, offset);
   }
 
-  return Array.isArray(data.products) ? data.products : [];
+  return createPaginatedResult(
+    Array.isArray(data.products) ? data.products : [],
+    data,
+    limit,
+    offset,
+  );
 }
 
 export async function fetchWishlist(): Promise<ProductItem[]> {
@@ -452,10 +599,10 @@ export async function fetchProductReviews(
   };
 }
 
-export async function removeFromCart(productId: number | string) {
+export async function removeFromCart(cartLineId: number | string) {
   return requestJson("/api/cart/remove", {
     method: "POST",
-    body: JSON.stringify({ productId }),
+    body: JSON.stringify({ cartLineId }),
   });
 }
 

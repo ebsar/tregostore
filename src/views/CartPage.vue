@@ -6,7 +6,9 @@ import SavedProductCard from "../components/SavedProductCard.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   clearSavedForLaterItems,
+  formatEstimatedDeliveryLabel,
   formatPrice,
+  getDeliveryMethodOption,
   persistCheckoutSelectedCartIds,
   readSavedForLaterItems,
   rememberSavedForLaterItem,
@@ -23,6 +25,9 @@ const items = ref([]);
 const savedLaterItems = ref([]);
 const selectedIds = ref([]);
 const selectionInitialized = ref(false);
+const promoCode = ref("");
+const appliedPromoCode = ref("");
+const appliedDiscountRate = ref(0);
 const ui = reactive({
   message: "",
   type: "",
@@ -54,6 +59,26 @@ const totalPrice = computed(() =>
     (total, item) => total + (Math.max(0, Number(item.quantity) || 0) * (Number(item.price) || 0)),
     0,
   ),
+);
+const deliveryOption = computed(() => getDeliveryMethodOption("standard"));
+const deliveryCost = computed(() => (selectedItems.value.length > 0 ? Number(deliveryOption.value.shippingAmount || 0) : 0));
+const taxAmount = computed(() => 0);
+const discountAmount = computed(() =>
+  Number((Math.max(0, totalPrice.value) * Math.max(0, appliedDiscountRate.value || 0)).toFixed(2)),
+);
+const grandTotal = computed(() =>
+  Math.max(0, totalPrice.value + deliveryCost.value + taxAmount.value - discountAmount.value),
+);
+const cartSubtitle = computed(() => {
+  const count = items.value.length;
+  if (count === 1) {
+    return "1 produkt ne shporte";
+  }
+
+  return `${count} produkte ne shporte`;
+});
+const estimatedDeliveryText = computed(() =>
+  formatEstimatedDeliveryLabel(deliveryOption.value.value, deliveryOption.value.estimatedDeliveryText),
 );
 
 const savedLaterCount = computed(() => savedLaterItems.value.length);
@@ -166,6 +191,24 @@ async function removeItem(productId) {
   }
 
   ui.message = data.message || "Shporta u perditesua.";
+  ui.type = "success";
+  await loadItems();
+}
+
+async function setQuantity({ productId, quantity }) {
+  const nextQuantity = Math.max(1, Number(quantity) || 1);
+  const { response, data } = await requestJson("/api/cart/quantity", {
+    method: "POST",
+    body: JSON.stringify({ productId, quantity: nextQuantity }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.message = resolveApiMessage(data, "Shporta nuk u perditesua.");
+    ui.type = "error";
+    return;
+  }
+
+  ui.message = data.message || "Sasia u perditesua.";
   ui.type = "success";
   await loadItems();
 }
@@ -292,6 +335,31 @@ function clearSavedLater() {
   ui.type = "success";
 }
 
+function applyPromoCode() {
+  const normalizedCode = String(promoCode.value || "").trim().toUpperCase();
+
+  if (!normalizedCode) {
+    appliedPromoCode.value = "";
+    appliedDiscountRate.value = 0;
+    ui.message = "Shkruaj nje kod zbritjeje para se ta aplikosh.";
+    ui.type = "error";
+    return;
+  }
+
+  if (["TREGIO10", "WELCOME10"].includes(normalizedCode)) {
+    appliedPromoCode.value = normalizedCode;
+    appliedDiscountRate.value = 0.1;
+    ui.message = `Kodi ${normalizedCode} u aplikua me sukses.`;
+    ui.type = "success";
+    return;
+  }
+
+  appliedPromoCode.value = "";
+  appliedDiscountRate.value = 0;
+  ui.message = "Kodi i zbritjes nuk u gjet.";
+  ui.type = "error";
+}
+
 function handleCheckout() {
   if (selectedItems.value.length === 0) {
     ui.message = "Zgjidh te pakten nje produkt per te vazhduar me porosi.";
@@ -355,13 +423,10 @@ function syncHeight() {
 </script>
 
 <template>
-  <section class="collection-page" aria-label="Cart products">
-    <header class="collection-page-header">
-      <p class="section-label">Cart</p>
-      <h1>Shporta ime</h1>
-      <p>
-        Ketu shfaqen produktet qe shtohen nga kartat e produkteve. Duhet te jesh i kyçur qe t'i përdorësh.
-      </p>
+  <section class="collection-page cart-page" aria-label="Cart products">
+    <header class="collection-page-header cart-page-header">
+      <h1>Your cart</h1>
+      <p>{{ cartSubtitle }}</p>
     </header>
 
     <div class="form-message" :class="ui.type" role="status" aria-live="polite">
@@ -383,40 +448,21 @@ function syncHeight() {
 
     <div v-else class="cart-layout">
       <div ref="productsPanel" class="cart-products-panel">
-        <div v-if="selectionEnabled" class="saved-products-toolbar">
-          <div class="saved-products-toolbar-left">
-            <label class="saved-products-select-all" for="cart-select-all">
-              <input
-                id="cart-select-all"
-                type="checkbox"
-                :checked="allSelected"
-                :indeterminate.prop="isIndeterminate"
-                @change="toggleAll"
-              >
-              <span>Zgjidh produktet per porosi</span>
-            </label>
-            <span class="saved-products-selected-count">
-              {{ selectedItems.length }} produkte te zgjedhura
-            </span>
-          </div>
-        </div>
-
         <div v-if="unavailableItems.length > 0" class="cart-stock-warning" role="status" aria-live="polite">
           <strong>{{ unavailableItems.length }} produkte ne shporte nuk jane me ne stok.</strong>
           <p>Artikujt e prekur jane zbehur. Hiqi ose ruaji per me vone para se te vazhdosh me porosi.</p>
         </div>
 
-        <section v-if="items.length > 0" id="cart-products-grid" class="saved-products-grid" aria-label="Cart grid">
+        <section v-if="items.length > 0" id="cart-products-grid" class="saved-products-grid cart-products-grid" aria-label="Cart grid">
           <SavedProductCard
             v-for="item in items"
             :key="item.id"
             :product="item"
             mode="cart"
-            :selection-enabled="selectionEnabled"
-            :selected="selectedIds.includes(item.id)"
             @toggle-select="toggleItem"
             @remove="removeItem"
             @save-for-later="saveForLater"
+            @set-quantity="setQuantity"
             @increase-quantity="increaseQuantity"
             @decrease-quantity="decreaseQuantity"
           />
@@ -427,28 +473,45 @@ function syncHeight() {
         </div>
       </div>
 
-      <aside ref="summaryCard" class="card cart-summary-card" aria-label="Cart summary">
-        <div class="profile-card-header">
-          <div>
-            <p class="section-label">Pagesa</p>
-            <h2>Permbledhja e porosise</h2>
-          </div>
-        </div>
+      <aside ref="summaryCard" class="card cart-summary-card cart-summary-card--reference" aria-label="Cart summary">
+        <form class="cart-summary-coupon" @submit.prevent="applyPromoCode">
+          <input
+            v-model="promoCode"
+            class="cart-summary-coupon-input"
+            type="text"
+            placeholder="Type here"
+            autocomplete="off"
+          >
+          <button class="cart-summary-coupon-button" type="submit">Apply</button>
+        </form>
 
-        <div class="cart-summary-grid">
-          <div class="summary-chip">
-            <span>Produktet ne shporte</span>
-            <strong>{{ totalItems }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Shuma totale</span>
+        <div class="cart-summary-lines">
+          <div class="cart-summary-line">
+            <span>{{ totalItems }} items:</span>
             <strong>{{ formatPrice(totalPrice) }}</strong>
           </div>
+          <div class="cart-summary-line">
+            <span>Delivery cost:</span>
+            <strong>{{ formatPrice(deliveryCost) }}</strong>
+          </div>
+          <div class="cart-summary-line">
+            <span>Tax:</span>
+            <strong>{{ formatPrice(taxAmount) }}</strong>
+          </div>
+          <div class="cart-summary-line cart-summary-line--discount">
+            <span>Discount:</span>
+            <strong>{{ discountAmount > 0 ? `-${formatPrice(discountAmount)}` : formatPrice(0) }}</strong>
+          </div>
         </div>
 
-        <p class="cart-summary-note">
-          Pasi te vazhdosh me porosine, hapi i ardhshem eshte vendosja e adreses se dergeses.
-        </p>
+        <div v-if="appliedPromoCode" class="cart-summary-applied">
+          Kodi aktiv: <strong>{{ appliedPromoCode }}</strong>
+        </div>
+
+        <div class="cart-summary-total">
+          <span>Total:</span>
+          <strong>{{ formatPrice(grandTotal) }}</strong>
+        </div>
 
         <button
           class="cart-checkout-button"
@@ -456,8 +519,23 @@ function syncHeight() {
           :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
           @click="handleCheckout"
         >
-          Vazhdo me porosi
+          Checkout
         </button>
+
+        <div class="cart-summary-delivery">
+          <div class="cart-summary-delivery-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7.5h11v8.7a1.3 1.3 0 0 1-1.3 1.3H5.3A1.3 1.3 0 0 1 4 16.2z"></path>
+              <path d="M15 10h3.1l1.9 2.2v4h-1.7"></path>
+              <path d="M8 18.1a1.9 1.9 0 1 1-3.8 0"></path>
+              <path d="M18.1 18.1a1.9 1.9 0 1 1-3.8 0"></path>
+            </svg>
+          </div>
+          <div class="cart-summary-delivery-copy">
+            <strong>Delivered by</strong>
+            <span>{{ estimatedDeliveryText }}</span>
+          </div>
+        </div>
       </aside>
     </div>
 
@@ -491,3 +569,225 @@ function syncHeight() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.cart-page-header {
+  gap: 4px;
+}
+
+.cart-page-header .section-label {
+  display: none;
+}
+
+.cart-page-header h1 {
+  margin: 0;
+  color: #111827;
+}
+
+.cart-page-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.cart-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 312px);
+  gap: 16px;
+  align-items: start;
+}
+
+.cart-products-panel {
+  gap: 0;
+  padding: 8px 0 0;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  height: auto;
+}
+
+.cart-stock-warning {
+  margin: 0 14px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: #fffaf0;
+}
+
+.cart-products-grid {
+  gap: 0;
+}
+
+.cart-products-grid :deep(.saved-product-card--cart) {
+  border-bottom: 1px solid #edf2f7;
+}
+
+.cart-products-grid :deep(.saved-product-card--cart:last-child) {
+  border-bottom: 0;
+}
+
+.cart-summary-card--reference {
+  position: sticky;
+  top: calc(var(--page-nav-clearance) - 20px);
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.cart-summary-coupon {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.cart-summary-coupon-input {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #dbe2ea;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  outline: none;
+}
+
+.cart-summary-coupon-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid #dbe2ea;
+  background: #fff;
+  color: #111827;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cart-summary-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.cart-summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.cart-summary-line strong {
+  color: #111827;
+  font-weight: 700;
+}
+
+.cart-summary-line--discount strong {
+  color: #16a34a;
+}
+
+.cart-summary-applied {
+  color: #2356d8;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.cart-summary-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.cart-summary-total strong {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.cart-checkout-button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 800;
+  background: linear-gradient(180deg, #4f5fff, #3250f2);
+  box-shadow: 0 16px 30px rgba(50, 80, 242, 0.18);
+}
+
+.cart-checkout-button::after {
+  content: "→";
+  margin-left: 8px;
+}
+
+.cart-summary-delivery {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.cart-summary-delivery-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #3250f2;
+}
+
+.cart-summary-delivery-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cart-summary-delivery-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.cart-summary-delivery-copy strong {
+  color: #475569;
+  font-size: 0.76rem;
+}
+
+.cart-summary-delivery-copy span {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 980px) {
+  .cart-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cart-summary-card--reference {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .cart-products-panel {
+    padding-top: 4px;
+  }
+
+  .cart-summary-total strong {
+    font-size: 1.4rem;
+  }
+}
+</style>

@@ -1,0 +1,69 @@
+{
+  "" : {
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/App-primary.dia",
+    "emit-module-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/App-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/App-primary-emit-module.dia",
+    "pch" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/App-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/App-primary.swiftdeps"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/trego-mobile-app/ios/App/App/AppDelegate.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/AppDelegate~partial.swiftmodule"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/trego-mobile-app/ios/App/App/LiquidGlassTabBar.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/LiquidGlassTabBar~partial.swiftmodule"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/trego-mobile-app/ios/App/App/NativeMarketplaceScreens.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/NativeMarketplaceScreens~partial.swiftmodule"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/trego-mobile-app/ios/App/App/SceneDelegate.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/SceneDelegate~partial.swiftmodule"
+  },
+  "/Users/ebsarhoxha/Documents/Playground/trego-mobile-app/ios/App/App/TregoNativeCore.swift" : {
+    "const-values" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.swiftconstvalues",
+    "dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.d",
+    "diagnostics" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.dia",
+    "index-unit-output-path" : "/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.o",
+    "llvm-bc" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.bc",
+    "object" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.o",
+    "swift-dependencies" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore.swiftdeps",
+    "swiftmodule" : "/Users/ebsarhoxha/Documents/Playground/.derived-native-ios/build-check-device/Build/Intermediates.noindex/App.build/Debug-iphoneos/App.build/Objects-normal/arm64/TregoNativeCore~partial.swiftmodule"
+  }
+}

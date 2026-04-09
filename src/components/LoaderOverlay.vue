@@ -3,7 +3,7 @@
     <div class="app-loader-backdrop"></div>
     <div class="app-loader-panel">
       <div class="app-loader-stage">
-        <img class="app-loader-logo" src="/trego-logo.webp" alt="TREGO" width="420" height="159" fetchpriority="high">
+        <img class="app-loader-logo" src="/trego-logo.webp" alt="TREGIO" width="1024" height="1024" fetchpriority="high">
       </div>
 
       <p class="app-loader-copy">

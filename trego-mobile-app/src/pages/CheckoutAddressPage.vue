@@ -115,7 +115,7 @@ async function handleSubmit() {
             <p class="section-copy">{{ savedAddress.city }}, {{ savedAddress.country }} · {{ savedAddress.zipCode }}</p>
             <p class="section-copy">{{ savedAddress.phoneNumber }}</p>
           </div>
-          <IonButton class="cta-button" @click="continueWithSavedAddress">Vazhdo me kete adrese</IonButton>
+          <IonButton class="cta-button" data-testid="checkout-saved-address-button" @click="continueWithSavedAddress">Vazhdo me kete adrese</IonButton>
         </section>
 
         <section class="surface-card surface-card--strong section-card stack-list">
@@ -158,7 +158,7 @@ async function handleSubmit() {
 
           <p v-if="ui.message" class="checkout-message" :class="ui.type">{{ ui.message }}</p>
 
-          <IonButton class="cta-button" :disabled="ui.busy" @click="handleSubmit">
+          <IonButton class="cta-button" data-testid="checkout-address-submit" :disabled="ui.busy" @click="handleSubmit">
             {{ ui.busy ? "Po ruhet..." : "Vazhdo te pagesa" }}
           </IonButton>
         </section>

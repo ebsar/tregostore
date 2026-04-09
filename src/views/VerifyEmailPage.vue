@@ -101,8 +101,8 @@ async function resendCode() {
       <p class="section-label">Verifiko emailin</p>
       <h1>Verifiko emailin</h1>
       <div class="verify-email-brand">
-        <img src="/trego-logo.webp" alt="TREGO logo" class="verify-email-logo" />
-        <span>TREGO</span>
+        <img src="/trego-logo.webp" alt="TREGIO logo" class="verify-email-logo" />
+        <span>TREGIO</span>
       </div>
       <p class="section-text">
         Pasi e krijon llogarine, kodi 6-shifror vjen ne email. Kodi vlen 30 minuta. Nese skadon, kerkoje kodin e ri dhe kodi i vjeter nuk vlen me.

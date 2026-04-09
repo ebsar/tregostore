@@ -53,7 +53,7 @@ async function handleAddToCart(productId: number) {
             <IonButton class="cta-button" @click="router.push('/login?redirect=/tabs/wishlist')">
               Login
             </IonButton>
-            <IonButton class="ghost-button" @click="router.push('/signup')">
+            <IonButton class="ghost-button" @click="router.push('/signup?redirect=/tabs/wishlist')">
               Sign up
             </IonButton>
           </div>

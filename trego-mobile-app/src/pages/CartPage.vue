@@ -27,8 +27,8 @@ onMounted(async () => {
   }
 });
 
-async function handleRemove(productId: number) {
-  await removeFromCart(productId);
+async function handleRemove(cartLineId: number) {
+  await removeFromCart(cartLineId);
   items.value = await fetchCart();
   await refreshCounts();
 }
@@ -53,7 +53,7 @@ function handleCheckout() {
             <h1>Shporta juaj ne format mobile.</h1>
           </div>
 
-          <button class="cart-page-wishlist" type="button" @click="router.push('/tabs/wishlist')">
+          <button class="cart-page-wishlist" data-testid="cart-wishlist-link" type="button" @click="router.push('/tabs/wishlist')">
             <IonIcon :icon="heartOutline" />
             <span>Wishlist</span>
           </button>
@@ -70,10 +70,10 @@ function handleCheckout() {
           class="guest-tab-empty"
         >
           <div class="guest-tab-actions">
-            <IonButton class="cta-button" @click="router.push('/login?redirect=/tabs/cart')">
+            <IonButton class="cta-button" data-testid="cart-login-button" @click="router.push('/login?redirect=/tabs/cart')">
               Login
             </IonButton>
-            <IonButton class="ghost-button" @click="router.push('/signup')">
+            <IonButton class="ghost-button" data-testid="cart-signup-button" @click="router.push('/signup?redirect=/tabs/cart')">
               Sign up
             </IonButton>
           </div>
@@ -85,13 +85,13 @@ function handleCheckout() {
               <img :src="getProductImage(item)" :alt="item.title">
 
               <div class="cart-line-copy">
-                <p>{{ item.businessName || "TREGO" }}</p>
+                <p>{{ item.businessName || "TREGIO" }}</p>
                 <h3>{{ item.title }}</h3>
                 <strong>{{ formatPrice(item.price) }}</strong>
                 <span>Sasia: {{ item.quantity || 1 }}</span>
               </div>
 
-              <button class="cart-line-remove" type="button" @click="handleRemove(item.productId || item.id)">
+              <button class="cart-line-remove" type="button" @click="handleRemove(item.id)">
                 <IonIcon :icon="trashOutline" />
               </button>
             </article>
@@ -103,10 +103,10 @@ function handleCheckout() {
               <h2>{{ formatPrice(subtotal) }}</h2>
             </div>
 
-            <IonButton class="cta-button cart-summary-button" @click="handleCheckout">
-              Checkout
-              <IonIcon slot="end" :icon="arrowForwardOutline" />
-            </IonButton>
+          <IonButton class="cta-button cart-summary-button" data-testid="cart-checkout-button" @click="handleCheckout">
+            Checkout
+            <IonIcon slot="end" :icon="arrowForwardOutline" />
+          </IonButton>
           </section>
         </template>
 

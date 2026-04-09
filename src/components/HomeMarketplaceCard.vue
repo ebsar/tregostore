@@ -117,12 +117,15 @@ function handleAddToCart() {
     <div class="marketplace-card-body">
       <div class="marketplace-card-meta">
         <span>{{ categoryLabel }}</span>
-        <span v-if="showBusiness && businessName">{{ businessName }}</span>
       </div>
 
       <h3 class="marketplace-card-title">
         <RouterLink :to="detailUrl">{{ product.title }}</RouterLink>
       </h3>
+
+      <p v-if="showBusiness && businessName" class="marketplace-card-business-name">
+        {{ businessName }}
+      </p>
 
       <div class="marketplace-card-pricing">
         <strong>{{ formatPrice(currentPrice) }}</strong>
@@ -161,26 +164,24 @@ function handleAddToCart() {
 <style scoped>
 .marketplace-card {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   height: 100%;
-  padding: 14px;
-  border-radius: 28px;
+  padding: 12px;
+  border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)),
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(255, 106, 43, 0.08), transparent 34%);
-  backdrop-filter: blur(var(--glass-blur-medium));
-  -webkit-backdrop-filter: blur(var(--glass-blur-medium));
+    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.08), transparent 34%);
   border: 1px solid rgba(255, 255, 255, 0.56);
   box-shadow:
-    0 22px 42px rgba(31, 41, 55, 0.1),
+    0 12px 24px rgba(31, 41, 55, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .marketplace-card.is-compact {
-  gap: 10px;
-  padding: 12px;
-  border-radius: 24px;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 20px;
 }
 
 .marketplace-card-media {
@@ -188,9 +189,9 @@ function handleAddToCart() {
   display: block;
   aspect-ratio: 1 / 1;
   overflow: hidden;
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 243, 240, 0.94));
-  box-shadow: 0 16px 28px rgba(31, 41, 55, 0.1);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.94));
+  box-shadow: 0 12px 22px rgba(31, 41, 55, 0.09);
 }
 
 .marketplace-card.is-compact .marketplace-card-media {
@@ -219,9 +220,7 @@ function handleAddToCart() {
   color: var(--text);
   background: var(--glass-strong-bg);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-soft);
-  backdrop-filter: blur(var(--glass-blur-soft));
-  -webkit-backdrop-filter: blur(var(--glass-blur-soft));
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08);
 }
 
 .tone-alert .marketplace-card-badge {
@@ -238,7 +237,7 @@ function handleAddToCart() {
 
 .marketplace-card-body {
   display: grid;
-  gap: 9px;
+  gap: 7px;
 }
 
 .marketplace-card-meta {
@@ -266,6 +265,14 @@ function handleAddToCart() {
 .marketplace-card-title a {
   color: var(--text);
   text-decoration: none;
+}
+
+.marketplace-card-business-name {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
 .marketplace-card-pricing {
@@ -351,16 +358,14 @@ function handleAddToCart() {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.12));
   border: 1px solid rgba(255, 255, 255, 0.56);
-  backdrop-filter: blur(var(--glass-blur-soft));
-  -webkit-backdrop-filter: blur(var(--glass-blur-soft));
 }
 
 .marketplace-card-button {
   border: 1px solid transparent;
   color: #fff;
   cursor: pointer;
-  background: var(--accent);
-  box-shadow: 0 14px 28px rgba(255, 106, 43, 0.22);
+  background: linear-gradient(180deg, var(--accent-cta), var(--accent-cta-strong));
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
 }
 
 .marketplace-card-button:disabled {

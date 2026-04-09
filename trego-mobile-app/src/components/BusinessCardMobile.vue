@@ -5,6 +5,7 @@ import { computed } from "vue";
 import type { BusinessItem, ProductItem } from "../types/models";
 import { API_BASE_URL } from "../lib/config";
 import { formatPrice, getProductImage } from "../lib/format";
+import SmartImageMobile from "./SmartImageMobile.vue";
 
 const props = withDefaults(defineProps<{
   business: BusinessItem;
@@ -49,7 +50,7 @@ const isVerified = computed(() =>
     <div class="business-card-mobile-head">
       <button class="business-card-mobile-profile" type="button" @click="emit('open')">
         <div class="business-card-mobile-avatar">
-          <img v-if="logoUrl" :src="logoUrl" :alt="business.businessName">
+          <SmartImageMobile v-if="logoUrl" :src="logoUrl" :alt="business.businessName" />
           <IonIcon v-else :icon="storefrontOutline" />
           <span v-if="isVerified" class="business-card-mobile-verified">
             <IonIcon :icon="checkmarkCircle" />
@@ -65,6 +66,7 @@ const isVerified = computed(() =>
       <div class="business-card-mobile-actions">
         <button
           class="business-card-mobile-follow"
+          data-testid="business-follow-button"
           :class="{ 'is-active': business.isFollowed }"
           type="button"
           :disabled="followBusy"
@@ -73,7 +75,7 @@ const isVerified = computed(() =>
           {{ business.isFollowed ? "Following" : "Follow" }}
         </button>
 
-        <button class="business-card-mobile-message" type="button" @click="emit('message')">
+        <button class="business-card-mobile-message" data-testid="business-message-button" type="button" @click="emit('message')">
           <IonIcon :icon="chatbubbleEllipsesOutline" />
         </button>
       </div>
@@ -87,14 +89,11 @@ const isVerified = computed(() =>
         type="button"
         @click="emit('open-product', product.id)"
       >
-        <img :src="getProductImage(product)" :alt="product.title">
+        <SmartImageMobile :src="getProductImage(product)" :alt="product.title" fit="contain" />
         <span>{{ formatPrice(product.price) }}</span>
       </button>
     </div>
 
-    <button class="business-card-mobile-open" type="button" @click="emit('open')">
-      Shiko dyqanin
-    </button>
   </article>
 </template>
 
@@ -207,7 +206,6 @@ const isVerified = computed(() =>
 
 .business-card-mobile-follow,
 .business-card-mobile-message,
-.business-card-mobile-open,
 .business-card-mobile-product {
   border: 0;
   font: inherit;
@@ -283,20 +281,5 @@ const isVerified = computed(() =>
   color: var(--trego-accent);
   font-size: 0.76rem;
   font-weight: 800;
-}
-
-.business-card-mobile-open {
-  display: inline-flex;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  align-items: center;
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(255, 126, 64, 0.96), rgba(255, 106, 43, 0.88));
-  color: #fffdf9;
-  font-size: 0.84rem;
-  font-weight: 800;
-  box-shadow: 0 16px 28px rgba(255, 106, 43, 0.18);
 }
 </style>

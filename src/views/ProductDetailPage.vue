@@ -2,7 +2,14 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
-import { fetchProtectedCollection, requestJson, resolveApiMessage, trackProductShare } from "../lib/api";
+import RecommendationSections from "../components/RecommendationSections.vue";
+import {
+  fetchProductRecommendations,
+  fetchProtectedCollection,
+  requestJson,
+  resolveApiMessage,
+  trackProductShare,
+} from "../lib/api";
 import { readRecentlyViewedProducts, rememberRecentlyViewedProduct } from "../lib/recently-viewed";
 import { trackAddToCart, trackProductView } from "../lib/tracking";
 import {
@@ -31,6 +38,7 @@ const selectedColor = ref("");
 const selectedSize = ref("");
 const selectedQuantity = ref(1);
 const productReviews = ref([]);
+const productRecommendationSections = ref([]);
 const recentlyViewedProducts = ref([]);
 const canSubmitReview = ref(false);
 const reviewBusy = ref(false);
@@ -277,6 +285,12 @@ const publicEngagementItems = computed(() => ([
   { label: "Cart", value: formatCount(currentProduct.value?.cartCount || 0) },
   { label: "Share", value: formatCount(currentProduct.value?.shareCount || 0) },
 ]));
+const comparedProductIds = computed(() =>
+  compareState.items
+    .map((item) => Number(item.id || item.productId || 0))
+    .filter((id) => Number.isFinite(id) && id > 0),
+);
+let productRecommendationsRequestId = 0;
 
 watch(
   () => route.fullPath,
@@ -371,9 +385,20 @@ async function loadProduct() {
   initializeVariantSelection();
   productReviews.value = [];
   canSubmitReview.value = false;
+  void loadProductRecommendations(productId);
   void loadProductReviews(productId);
   ui.message = "";
   ui.type = "";
+}
+
+async function loadProductRecommendations(productId) {
+  const requestId = ++productRecommendationsRequestId;
+  const payload = await fetchProductRecommendations(productId, 4);
+  if (requestId !== productRecommendationsRequestId) {
+    return;
+  }
+
+  productRecommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
 }
 
 async function loadProductReviews(productId) {
@@ -485,6 +510,90 @@ async function handleWishlist() {
 
 async function handleCart() {
   await addCurrentProductToCart();
+}
+
+function findRecommendationProduct(productId) {
+  const productPools = [
+    ...productRecommendationSections.value.flatMap((section) => section.products || []),
+    ...relatedViewedProducts.value,
+  ];
+  return productPools.find((item) => Number(item?.id || 0) === Number(productId)) || null;
+}
+
+async function handleRecommendationWishlist(productId) {
+  const targetProduct = findRecommendationProduct(productId);
+  if (!targetProduct) {
+    return;
+  }
+
+  if (!appState.user) {
+    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
+    ui.type = "error";
+    return;
+  }
+
+  const hadItem = wishlistIds.value.includes(productId);
+  wishlistIds.value = hadItem
+    ? wishlistIds.value.filter((id) => id !== productId)
+    : [...wishlistIds.value, productId];
+
+  const { response, data } = await requestJson("/api/wishlist/toggle", {
+    method: "POST",
+    body: JSON.stringify({ productId }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    wishlistIds.value = hadItem
+      ? [...wishlistIds.value, productId]
+      : wishlistIds.value.filter((id) => id !== productId);
+    ui.message = resolveApiMessage(data, "Wishlist nuk u perditesua.");
+    ui.type = "error";
+    return;
+  }
+
+  wishlistIds.value = Array.isArray(data.items) ? data.items.map((item) => item.id) : [];
+  ui.message = data.message || "Wishlist u perditesua.";
+  ui.type = "success";
+}
+
+async function handleRecommendationCart(productId) {
+  const targetProduct = findRecommendationProduct(productId);
+  if (!targetProduct) {
+    return;
+  }
+
+  if (!appState.user) {
+    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
+    ui.type = "error";
+    return;
+  }
+
+  if (targetProduct.requiresVariantSelection) {
+    await router.push(getProductDetailUrl(productId, route.fullPath));
+    return;
+  }
+
+  if (!cartIds.value.includes(productId)) {
+    cartIds.value = [...cartIds.value, productId];
+  }
+
+  const { response, data } = await requestJson("/api/cart/add", {
+    method: "POST",
+    body: JSON.stringify({ productId, quantity: 1 }),
+  });
+
+  if (!response.ok || !data?.ok) {
+    cartIds.value = cartIds.value.filter((id) => id !== productId);
+    ui.message = resolveApiMessage(data, "Shporta nuk u perditesua.");
+    ui.type = "error";
+    return;
+  }
+
+  const items = Array.isArray(data.items) ? data.items : [];
+  cartIds.value = items.map((item) => item.productId || item.id);
+  setCartItems(items);
+  ui.message = data.message || "Produkti u shtua ne shporte.";
+  ui.type = "success";
 }
 
 async function handleBuyNow() {
@@ -1098,6 +1207,18 @@ function nextImage() {
           />
         </section>
       </section>
+
+      <RecommendationSections
+        v-if="productRecommendationSections.length > 0"
+        :sections="productRecommendationSections"
+        :wishlist-ids="wishlistIds"
+        :cart-ids="cartIds"
+        :busy-wishlist-ids="[]"
+        :busy-cart-ids="[]"
+        :compared-product-ids="comparedProductIds"
+        @wishlist="handleRecommendationWishlist"
+        @cart="handleRecommendationCart"
+      />
     </section>
 
     <div v-else class="pets-empty-state">

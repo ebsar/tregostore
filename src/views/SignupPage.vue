@@ -1,11 +1,12 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { isGoogleWebAuthEnabled, renderGoogleAuthButton } from "../lib/google-auth";
 import { getVerifyEmailUrl } from "../lib/shop";
-import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
+import { applyAuthenticatedSession, markRouteReady } from "../stores/app-state";
 
+const route = useRoute();
 const router = useRouter();
 const form = reactive({
   fullName: "",
@@ -59,9 +60,10 @@ async function handleGoogleCredential(googleResponse) {
 
     ui.message = data.message || "Llogaria u krijua me sukses me Google.";
     ui.type = "success";
-    await ensureSessionLoaded({ force: true });
+    await applyAuthenticatedSession(data.user || null);
     window.setTimeout(() => {
-      router.push(data.redirectTo || "/");
+      const redirectPath = String(route.query.redirect || "").trim();
+      router.push(redirectPath || data.redirectTo || "/");
     }, 700);
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
