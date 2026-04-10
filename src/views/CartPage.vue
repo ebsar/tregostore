@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useRouter } from "vue-router";
 import SavedProductCard from "../components/SavedProductCard.vue";
@@ -19,8 +19,6 @@ import {
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
-const productsPanel = ref(null);
-const summaryCard = ref(null);
 const items = ref([]);
 const savedLaterItems = ref([]);
 const selectedIds = ref([]);
@@ -33,9 +31,6 @@ const ui = reactive({
   type: "",
   guest: false,
 });
-
-let resizeObserver = null;
-let resizeFrame = 0;
 
 const selectionEnabled = computed(() => items.value.length > 2);
 const selectedItems = computed(() => {
@@ -103,20 +98,9 @@ onMounted(async () => {
 
     await loadItems();
     loadSavedLaterItems();
-    setupHeightSync();
   } finally {
     markRouteReady();
   }
-});
-
-onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-  }
-  if (resizeFrame) {
-    window.cancelAnimationFrame(resizeFrame);
-  }
-  window.removeEventListener("resize", scheduleHeightSync);
 });
 
 async function loadItems() {
@@ -134,8 +118,6 @@ async function loadItems() {
   syncSelectionState();
   ui.message = "";
   ui.type = "";
-  await nextTick();
-  scheduleHeightSync();
 }
 
 function loadSavedLaterItems() {
@@ -380,54 +362,42 @@ function handleCheckout() {
   router.push("/adresa-e-porosise");
 }
 
-function setupHeightSync() {
-  scheduleHeightSync();
-  window.addEventListener("resize", scheduleHeightSync);
-
-  if (!("ResizeObserver" in window) || !summaryCard.value) {
-    return;
-  }
-
-  resizeObserver = new window.ResizeObserver(() => {
-    scheduleHeightSync();
-  });
-  resizeObserver.observe(summaryCard.value);
+function updateCartView() {
+  ui.message = "Shporta u perditesua.";
+  ui.type = "success";
+  void loadItems();
 }
 
-function scheduleHeightSync() {
-  if (resizeFrame) {
-    window.cancelAnimationFrame(resizeFrame);
-  }
-
-  resizeFrame = window.requestAnimationFrame(() => {
-    resizeFrame = 0;
-    syncHeight();
-  });
+function lineSubtotal(item) {
+  return (Math.max(1, Number(item?.quantity) || 1) * (Number(item?.price) || 0));
 }
 
-function syncHeight() {
-  if (!productsPanel.value) {
-    return;
+function productUnitPrice(item) {
+  return formatPrice(item?.price || 0);
+}
+
+function productComparePrice(item) {
+  const compareAt = Number(item?.compareAtPrice || item?.oldPrice || item?.originalPrice || 0);
+  const current = Number(item?.price || 0);
+  if (!Number.isFinite(compareAt) || compareAt <= current) {
+    return "";
   }
 
-  if (window.innerWidth <= 780 || !summaryCard.value) {
-    productsPanel.value.style.removeProperty("--cart-panel-height");
-    return;
-  }
-
-  const summaryHeight = Math.ceil(summaryCard.value.getBoundingClientRect().height);
-  if (summaryHeight > 0) {
-    productsPanel.value.style.setProperty("--cart-panel-height", `${summaryHeight}px`);
-  }
+  return formatPrice(compareAt);
 }
 </script>
 
 <template>
-  <section class="collection-page cart-page" aria-label="Cart products">
-    <header class="collection-page-header cart-page-header">
-      <h1>Your cart</h1>
-      <p>{{ cartSubtitle }}</p>
-    </header>
+  <section class="collection-page cart-page cart-page--reference" aria-label="Cart products">
+    <div class="cart-breadcrumb-strip">
+      <div class="cart-breadcrumb-inner">
+        <nav class="cart-breadcrumbs" aria-label="Breadcrumb">
+          <RouterLink to="/">Home</RouterLink>
+          <span>›</span>
+          <strong>Shopping Cart</strong>
+        </nav>
+      </div>
+    </div>
 
     <div class="form-message" :class="ui.type" role="status" aria-live="polite">
       {{ ui.message }}
@@ -446,96 +416,172 @@ function syncHeight() {
       </div>
     </div>
 
-    <div v-else class="cart-layout">
-      <div ref="productsPanel" class="cart-products-panel">
+    <div v-else class="cart-layout cart-layout--reference">
+      <div class="cart-products-panel cart-products-panel--reference">
         <div v-if="unavailableItems.length > 0" class="cart-stock-warning" role="status" aria-live="polite">
           <strong>{{ unavailableItems.length }} produkte ne shporte nuk jane me ne stok.</strong>
           <p>Artikujt e prekur jane zbehur. Hiqi ose ruaji per me vone para se te vazhdosh me porosi.</p>
         </div>
 
-        <section v-if="items.length > 0" id="cart-products-grid" class="saved-products-grid cart-products-grid" aria-label="Cart grid">
-          <SavedProductCard
-            v-for="item in items"
-            :key="item.id"
-            :product="item"
-            mode="cart"
-            @toggle-select="toggleItem"
-            @remove="removeItem"
-            @save-for-later="saveForLater"
-            @set-quantity="setQuantity"
-            @increase-quantity="increaseQuantity"
-            @decrease-quantity="decreaseQuantity"
-          />
-        </section>
+        <section class="cart-card-shell">
+          <div class="cart-card-head">
+            <h1>Shopping Cart</h1>
+          </div>
 
-        <div v-else class="collection-empty-state">
-          Shporta jote eshte bosh. Shto produkte nga faqet e dyqanit dhe pastaj vazhdo me porosine.
-        </div>
+          <div v-if="items.length > 0" class="cart-table-wrap">
+            <table class="cart-table">
+              <thead>
+                <tr>
+                  <th>PRODUCTS</th>
+                  <th>PRICE</th>
+                  <th>QUANTITY</th>
+                  <th>SUB-TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="item in items"
+                  :key="item.id"
+                  :class="{ 'is-unavailable': !hasProductAvailableStock(item) }"
+                >
+                  <td>
+                    <div class="cart-table-product">
+                      <button
+                        class="cart-table-remove"
+                        type="button"
+                        aria-label="Hiqe nga cart"
+                        @click="removeItem(item.id)"
+                      >
+                        ×
+                      </button>
+
+                      <div class="cart-table-image-wrap">
+                        <img
+                          class="cart-table-image"
+                          :src="item.imagePath"
+                          :alt="item.title"
+                          width="640"
+                          height="640"
+                          loading="lazy"
+                          decoding="async"
+                        >
+                      </div>
+
+                      <div class="cart-table-copy">
+                        <strong>{{ item.title }}</strong>
+                        <p v-if="item.businessName">{{ item.businessName }}</p>
+                        <p v-if="!hasProductAvailableStock(item)" class="cart-table-stock-warning">
+                          {{ getProductStockMessage(item) }}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="cart-table-price">
+                      <span v-if="productComparePrice(item)" class="cart-table-price-old">
+                        {{ productComparePrice(item) }}
+                      </span>
+                      <strong>{{ productUnitPrice(item) }}</strong>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="cart-table-qty">
+                      <button
+                        type="button"
+                        :disabled="Number(item.quantity) <= 1 || !hasProductAvailableStock(item)"
+                        @click="decreaseQuantity(item.id)"
+                      >
+                        −
+                      </button>
+                      <span>{{ Math.max(1, Number(item.quantity) || 1) }}</span>
+                      <button
+                        type="button"
+                        :disabled="!hasProductAvailableStock(item)"
+                        @click="increaseQuantity(item.id)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </td>
+                  <td class="cart-table-subtotal">
+                    {{ formatPrice(lineSubtotal(item)) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div v-else class="collection-empty-state cart-empty-state">
+            Shporta jote eshte bosh. Shto produkte nga faqet e dyqanit dhe pastaj vazhdo me porosine.
+          </div>
+
+          <div v-if="items.length > 0" class="cart-card-footer">
+            <RouterLink class="cart-page-secondary-action" to="/kerko">
+              ← RETURN TO SHOP
+            </RouterLink>
+            <button class="cart-page-secondary-action" type="button" @click="updateCartView">
+              UPDATE CART
+            </button>
+          </div>
+        </section>
       </div>
 
-      <aside ref="summaryCard" class="card cart-summary-card cart-summary-card--reference" aria-label="Cart summary">
-        <form class="cart-summary-coupon" @submit.prevent="applyPromoCode">
-          <input
-            v-model="promoCode"
-            class="cart-summary-coupon-input"
-            type="text"
-            placeholder="Type here"
-            autocomplete="off"
+      <aside class="cart-sidebar-stack" aria-label="Cart summary">
+        <section class="cart-summary-card cart-summary-card--reference">
+          <div class="cart-summary-title">Cart Totals</div>
+
+          <div class="cart-summary-lines">
+            <div class="cart-summary-line">
+              <span>Sub-total</span>
+              <strong>{{ formatPrice(totalPrice) }}</strong>
+            </div>
+            <div class="cart-summary-line">
+              <span>Shipping</span>
+              <strong>{{ deliveryCost > 0 ? formatPrice(deliveryCost) : "Free" }}</strong>
+            </div>
+            <div class="cart-summary-line cart-summary-line--discount">
+              <span>Discount</span>
+              <strong>{{ discountAmount > 0 ? formatPrice(discountAmount) : formatPrice(0) }}</strong>
+            </div>
+            <div class="cart-summary-line">
+              <span>Tax</span>
+              <strong>{{ formatPrice(taxAmount) }}</strong>
+            </div>
+          </div>
+
+          <div class="cart-summary-total">
+            <span>Total</span>
+            <strong>{{ formatPrice(grandTotal) }}</strong>
+          </div>
+
+          <button
+            class="cart-checkout-button"
+            type="button"
+            :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
+            @click="handleCheckout"
           >
-          <button class="cart-summary-coupon-button" type="submit">Apply</button>
-        </form>
+            PROCEED TO CHECKOUT
+          </button>
+        </section>
 
-        <div class="cart-summary-lines">
-          <div class="cart-summary-line">
-            <span>{{ totalItems }} items:</span>
-            <strong>{{ formatPrice(totalPrice) }}</strong>
-          </div>
-          <div class="cart-summary-line">
-            <span>Delivery cost:</span>
-            <strong>{{ formatPrice(deliveryCost) }}</strong>
-          </div>
-          <div class="cart-summary-line">
-            <span>Tax:</span>
-            <strong>{{ formatPrice(taxAmount) }}</strong>
-          </div>
-          <div class="cart-summary-line cart-summary-line--discount">
-            <span>Discount:</span>
-            <strong>{{ discountAmount > 0 ? `-${formatPrice(discountAmount)}` : formatPrice(0) }}</strong>
-          </div>
-        </div>
+        <section class="cart-summary-card cart-summary-card--coupon">
+          <div class="cart-summary-title">Coupon Code</div>
 
-        <div v-if="appliedPromoCode" class="cart-summary-applied">
-          Kodi aktiv: <strong>{{ appliedPromoCode }}</strong>
-        </div>
+          <form class="cart-summary-coupon" @submit.prevent="applyPromoCode">
+            <input
+              v-model="promoCode"
+              class="cart-summary-coupon-input"
+              type="text"
+              placeholder="Email address"
+              autocomplete="off"
+            >
+            <button class="cart-summary-coupon-button" type="submit">APPLY COUPON</button>
+          </form>
 
-        <div class="cart-summary-total">
-          <span>Total:</span>
-          <strong>{{ formatPrice(grandTotal) }}</strong>
-        </div>
-
-        <button
-          class="cart-checkout-button"
-          type="button"
-          :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
-          @click="handleCheckout"
-        >
-          Checkout
-        </button>
-
-        <div class="cart-summary-delivery">
-          <div class="cart-summary-delivery-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7.5h11v8.7a1.3 1.3 0 0 1-1.3 1.3H5.3A1.3 1.3 0 0 1 4 16.2z"></path>
-              <path d="M15 10h3.1l1.9 2.2v4h-1.7"></path>
-              <path d="M8 18.1a1.9 1.9 0 1 1-3.8 0"></path>
-              <path d="M18.1 18.1a1.9 1.9 0 1 1-3.8 0"></path>
-            </svg>
+          <div v-if="appliedPromoCode" class="cart-summary-applied">
+            Kodi aktiv: <strong>{{ appliedPromoCode }}</strong>
           </div>
-          <div class="cart-summary-delivery-copy">
-            <strong>Delivered by</strong>
-            <span>{{ estimatedDeliveryText }}</span>
-          </div>
-        </div>
+        </section>
       </aside>
     </div>
 
@@ -571,81 +617,294 @@ function syncHeight() {
 </template>
 
 <style scoped>
-.cart-page-header {
-  gap: 4px;
+.cart-page--reference {
+  width: min(1300px, calc(100vw - 48px));
+  margin: 0 auto;
+  padding: 0 0 72px;
 }
 
-.cart-page-header .section-label {
-  display: none;
+.cart-breadcrumb-strip {
+  margin-inline: calc(50% - 50vw);
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f5f6f8;
 }
 
-.cart-page-header h1 {
-  margin: 0;
-  color: #111827;
+.cart-breadcrumb-inner {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 28px 24px;
 }
 
-.cart-page-header p {
-  margin: 0;
+.cart-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   color: #64748b;
-  font-size: 0.92rem;
+  font-size: 1rem;
+}
+
+.cart-breadcrumbs a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cart-breadcrumbs strong {
+  color: #2496f3;
 }
 
 .cart-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 312px);
-  gap: 16px;
+  display: grid;
+}
+
+.cart-layout--reference {
+  grid-template-columns: minmax(0, 1fr) 382px;
+  gap: 24px;
   align-items: start;
+  padding-top: 36px;
 }
 
 .cart-products-panel {
-  gap: 0;
-  padding: 8px 0 0;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-  height: auto;
+  display: grid;
+  gap: 16px;
+}
+
+.cart-products-panel--reference {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .cart-stock-warning {
-  margin: 0 14px 10px;
-  border-radius: 10px;
+  margin: 0;
+  border-radius: 14px;
   border: 1px solid rgba(251, 191, 36, 0.34);
   background: #fffaf0;
 }
 
-.cart-products-grid {
-  gap: 0;
+.cart-card-shell {
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.05);
 }
 
-.cart-products-grid :deep(.saved-product-card--cart) {
-  border-bottom: 1px solid #edf2f7;
+.cart-card-head {
+  padding: 22px 24px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.cart-products-grid :deep(.saved-product-card--cart:last-child) {
-  border-bottom: 0;
+.cart-card-head h1 {
+  margin: 0;
+  color: #202833;
+  font-size: 1.18rem;
+  letter-spacing: -0.02em;
+}
+
+.cart-table-wrap {
+  overflow-x: auto;
+}
+
+.cart-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.cart-table thead th {
+  padding: 12px 24px;
+  background: #f1f4f7;
+  color: #4b5563;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.cart-table tbody td {
+  padding: 22px 24px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  vertical-align: middle;
+}
+
+.cart-table tbody tr.is-unavailable {
+  opacity: 0.72;
+}
+
+.cart-table-product {
+  display: grid;
+  grid-template-columns: 28px 74px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.cart-table-remove {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cart-table-image-wrap {
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.cart-table-image {
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+}
+
+.cart-table-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.cart-table-copy strong {
+  color: #202833;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.cart-table-copy p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.cart-table-stock-warning {
+  color: #b91c1c;
+}
+
+.cart-table-price {
+  display: grid;
+  gap: 4px;
+}
+
+.cart-table-price-old {
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+.cart-table-price strong,
+.cart-table-subtotal {
+  color: #202833;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.cart-table-qty {
+  display: inline-grid;
+  grid-template-columns: 1fr auto 1fr;
+  width: 142px;
+  min-height: 48px;
+  align-items: center;
+  border: 1px solid #d8e0e8;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.cart-table-qty button,
+.cart-table-qty span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.cart-table-qty button {
+  border: 0;
+  background: transparent;
+  color: #475569;
+  font-size: 1.7rem;
+  cursor: pointer;
+}
+
+.cart-table-qty button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cart-table-qty span {
+  color: #111827;
+  font-weight: 700;
+}
+
+.cart-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+}
+
+.cart-page-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 2px solid #39a0ea;
+  border-radius: 2px;
+  background: #fff;
+  color: #2496f3;
+  text-decoration: none;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cart-empty-state {
+  margin: 0;
+  padding: 40px 24px;
+}
+
+.cart-sidebar-stack {
+  display: grid;
+  gap: 22px;
 }
 
 .cart-summary-card--reference {
   position: sticky;
   top: calc(var(--page-nav-clearance) - 20px);
-  gap: 14px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: rgba(248, 250, 252, 0.96);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.05);
+}
+
+.cart-summary-card--coupon {
+  position: static;
 }
 
 .cart-summary-coupon {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 16px;
 }
 
 .cart-summary-coupon-input {
-  min-height: 38px;
+  min-height: 46px;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: 2px;
   border: 1px solid #dbe2ea;
   background: #fff;
   color: #0f172a;
@@ -654,19 +913,26 @@ function syncHeight() {
 }
 
 .cart-summary-coupon-button {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #111827;
-  font-weight: 700;
+  width: fit-content;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 2px;
+  border: 0;
+  background: #2f96df;
+  color: #fff;
+  font-weight: 800;
   cursor: pointer;
+}
+
+.cart-summary-title {
+  color: #202833;
+  font-size: 1.1rem;
+  font-weight: 800;
 }
 
 .cart-summary-lines {
   display: grid;
-  gap: 8px;
+  gap: 12px;
 }
 
 .cart-summary-line {
@@ -674,17 +940,17 @@ function syncHeight() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #64748b;
-  font-size: 0.9rem;
+  color: #4b5563;
+  font-size: 0.98rem;
 }
 
 .cart-summary-line strong {
-  color: #111827;
+  color: #202833;
   font-weight: 700;
 }
 
 .cart-summary-line--discount strong {
-  color: #16a34a;
+  color: #202833;
 }
 
 .cart-summary-applied {
@@ -698,26 +964,25 @@ function syncHeight() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 10px;
+  padding-top: 14px;
   border-top: 1px solid #e2e8f0;
-  color: #111827;
+  color: #202833;
   font-size: 1rem;
   font-weight: 800;
 }
 
 .cart-summary-total strong {
-  font-size: 1.75rem;
+  font-size: 1.2rem;
   line-height: 1;
 }
 
 .cart-checkout-button {
-  min-height: 48px;
+  min-height: 54px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 2px;
   color: #fff;
   font-weight: 800;
-  background: linear-gradient(180deg, #4f5fff, #3250f2);
-  box-shadow: 0 16px 30px rgba(50, 80, 242, 0.18);
+  background: #ff862f;
 }
 
 .cart-checkout-button::after {
@@ -725,54 +990,8 @@ function syncHeight() {
   margin-left: 8px;
 }
 
-.cart-summary-delivery {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-}
-
-.cart-summary-delivery-icon {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: #eef2ff;
-  color: #3250f2;
-}
-
-.cart-summary-delivery-icon svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.cart-summary-delivery-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.cart-summary-delivery-copy strong {
-  color: #475569;
-  font-size: 0.76rem;
-}
-
-.cart-summary-delivery-copy span {
-  color: #64748b;
-  font-size: 0.8rem;
-}
-
 @media (max-width: 980px) {
-  .cart-layout {
+  .cart-layout--reference {
     grid-template-columns: 1fr;
   }
 
@@ -781,13 +1000,41 @@ function syncHeight() {
   }
 }
 
-@media (max-width: 640px) {
-  .cart-products-panel {
-    padding-top: 4px;
+@media (max-width: 720px) {
+  .cart-page--reference {
+    width: min(100vw - 24px, 1300px);
   }
 
-  .cart-summary-total strong {
-    font-size: 1.4rem;
+  .cart-breadcrumb-inner {
+    padding-inline: 16px;
+  }
+
+  .cart-page--reference {
+    padding-bottom: 48px;
+  }
+
+  .cart-layout--reference {
+    padding-top: 24px;
+  }
+
+  .cart-card-head,
+  .cart-card-footer,
+  .cart-summary-card--reference {
+    padding-inline: 16px;
+  }
+
+  .cart-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cart-page-secondary-action {
+    width: 100%;
+  }
+
+  .cart-table thead th,
+  .cart-table tbody td {
+    padding-inline: 16px;
   }
 }
 </style>

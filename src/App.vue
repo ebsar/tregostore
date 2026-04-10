@@ -2,10 +2,10 @@
 import { computeRoute, injectSpeedInsights } from "@vercel/speed-insights";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import CommerceHeader from "./components/CommerceHeader.vue";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
 import ProductCompareTray from "./components/ProductCompareTray.vue";
-import SiteNav from "./components/SiteNav.vue";
 import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
@@ -359,12 +359,12 @@ function updateSpeedInsightsRoute() {
   <VoiceAssistantWidget />
   <ProductCompareTray />
 
+  <CommerceHeader />
+
   <div class="background-orb orb-left"></div>
   <div class="background-orb orb-right"></div>
 
   <div class="app-shell" :class="shellClass">
-    <SiteNav />
-
     <main class="app-main" :class="mainClass">
       <RouterView />
     </main>
@@ -375,32 +375,34 @@ function updateSpeedInsightsRoute() {
           <img class="site-footer-logo" src="/trego-logo.webp?v=20260410" alt="TREGIO" width="1024" height="1024">
         </div>
 
-        <nav class="site-footer-links" aria-label="Marketplace links">
-          <p class="site-footer-heading">Marketplace</p>
-          <RouterLink to="/">Home</RouterLink>
-          <RouterLink to="/kerko">Products</RouterLink>
-          <RouterLink to="/bizneset-e-regjistruara">Businesses</RouterLink>
-        </nav>
+        <details class="site-footer-dropdown" open>
+          <summary class="site-footer-heading">Marketplace</summary>
+          <nav class="site-footer-links" aria-label="Marketplace links">
+            <RouterLink to="/">Home</RouterLink>
+            <RouterLink to="/kerko">Products</RouterLink>
+            <RouterLink to="/bizneset-e-regjistruara">Businesses</RouterLink>
+          </nav>
+        </details>
 
-        <nav class="site-footer-links" aria-label="Services links">
-          <p class="site-footer-heading">Services</p>
-          <RouterLink to="/cart">Cart</RouterLink>
-          <RouterLink to="/porosite">Orders</RouterLink>
-          <RouterLink to="/mesazhet">Support</RouterLink>
-        </nav>
+        <details class="site-footer-dropdown" open>
+          <summary class="site-footer-heading">Services</summary>
+          <nav class="site-footer-links" aria-label="Services links">
+            <RouterLink to="/cart">Cart</RouterLink>
+            <RouterLink to="/porosite">Orders</RouterLink>
+            <RouterLink to="/mesazhet">Support</RouterLink>
+          </nav>
+        </details>
 
-        <nav class="site-footer-links" aria-label="Account links">
+        <nav class="site-footer-links site-footer-links--sparse" aria-label="Account links">
           <p class="site-footer-heading">Account</p>
           <RouterLink to="/login">Login</RouterLink>
           <RouterLink to="/signup">Sign Up</RouterLink>
-          <RouterLink to="/llogaria">My Account</RouterLink>
         </nav>
 
-        <nav class="site-footer-links" aria-label="About links">
-          <p class="site-footer-heading">About</p>
+        <nav class="site-footer-links site-footer-links--sparse" aria-label="More links">
+          <p class="site-footer-heading">More</p>
           <RouterLink to="/njoftimet">Updates</RouterLink>
           <RouterLink to="/wishlist">Wishlist</RouterLink>
-          <RouterLink to="/refund-returne">Returns</RouterLink>
         </nav>
       </div>
 

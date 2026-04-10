@@ -17,6 +17,7 @@ const MessagesPage = () => import("../views/MessagesPage.vue");
 const PersonalDataPage = () => import("../views/PersonalDataPage.vue");
 const AddressesPage = () => import("../views/AddressesPage.vue");
 const OrdersPage = () => import("../views/OrdersPage.vue");
+const TrackOrderPage = () => import("../views/TrackOrderPage.vue");
 const BusinessOrdersPage = () => import("../views/BusinessOrdersPage.vue");
 const RefundReturnsPage = () => import("../views/RefundReturnsPage.vue");
 const NotificationsPage = () => import("../views/NotificationsPage.vue");
@@ -195,6 +196,17 @@ const routes = [
     meta: {
       pageKey: "orders",
       title: "TREGIO | Porosite",
+      shellClass: "page-shell",
+      mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/track-order",
+    component: TrackOrderPage,
+    meta: {
+      pageKey: "track-order",
+      title: "TREGIO | Track Order",
       shellClass: "page-shell",
       mainClass: "page-main page-main-account",
       routeLoader: true,

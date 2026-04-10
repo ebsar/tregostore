@@ -765,7 +765,7 @@ async function handleLogout() {
   unreadMessagesCount.value = 0;
   unreadNotificationsCount.value = 0;
   await ensureSessionLoaded({ force: true });
-  router.push(data?.redirectTo || "/login");
+  router.push("/");
 }
 
 async function submitNavSearch() {

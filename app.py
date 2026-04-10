@@ -146,6 +146,7 @@ SPA_FRONTEND_ROUTES = {
     "/te-dhenat-personale",
     "/adresat",
     "/porosite",
+    "/track-order",
     "/porosite-e-biznesit",
     "/refund-returne",
     "/admin-porosite",
@@ -177,6 +178,7 @@ LEGACY_PAGE_ROUTES = {
     "/te-dhenat-personale": "/legacy/personal-data.html",
     "/adresat": "/legacy/addresses.html",
     "/porosite": "/legacy/orders.html",
+    "/track-order": "/legacy/orders.html",
     "/porosite-e-biznesit": "/legacy/business-orders.html",
     "/ndrysho-fjalekalimin": "/legacy/change-password.html",
     "/produkti": "/legacy/product-detail.html",
@@ -13059,6 +13061,39 @@ def fetch_order_items_for_order_id(
     ).fetchall()
 
 
+def fetch_public_trackable_order(
+    connection: DatabaseConnection,
+    *,
+    order_id: int,
+    billing_email: str,
+) -> dict[str, object] | None:
+    normalized_email = str(billing_email or "").strip().lower()
+    if not normalized_email:
+        return None
+
+    order_row = connection.execute(
+        """
+        SELECT
+        """
+        + ORDER_SELECT_COLUMNS
+        + """
+        FROM orders
+        WHERE id = ?
+          AND LOWER(customer_email) = ?
+        LIMIT 1
+        """,
+        (order_id, normalized_email),
+    ).fetchone()
+    if not order_row:
+        return None
+
+    order_items = fetch_order_items_for_order_id(connection, order_id)
+    return serialize_order(
+        order_row,
+        [serialize_order_item(item) for item in order_items],
+    )
+
+
 def user_can_access_order_invoice(
     connection: DatabaseConnection,
     *,
@@ -14957,6 +14992,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/orders/create":
             self.handle_create_order()
+            return
+        if path == "/api/orders/track":
+            self.handle_track_order_lookup()
             return
         if path == "/api/orders/status":
             self.handle_update_order_status()
@@ -18860,6 +18898,48 @@ class AppHandler(SimpleHTTPRequestHandler):
         order_ids = [int(order["id"]) for order in orders]
         payload = build_orders_payload(orders, fetch_order_items_for_orders(order_ids))
         self.send_json(200, {"ok": True, "orders": payload})
+
+    def handle_track_order_lookup(self) -> None:
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors, order_id = parse_order_id(payload)
+        billing_email = str(payload.get("billingEmail") or payload.get("email") or "").strip().lower()
+        if not billing_email or not EMAIL_RE.match(billing_email):
+            errors.append("Billing email is not valid.")
+
+        if errors or order_id is None:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        with get_db_connection() as connection:
+            order_payload = fetch_public_trackable_order(
+                connection,
+                order_id=order_id,
+                billing_email=billing_email,
+            )
+
+        if not order_payload:
+            self.send_json(
+                404,
+                {
+                    "ok": False,
+                    "message": "We could not find an order that matches that Order ID and Billing Email.",
+                },
+            )
+            return
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Order found successfully.",
+                "order": order_payload,
+            },
+        )
 
     def handle_order_invoice(self, query_params: dict[str, list[str]]) -> None:
         user = self.get_current_user()

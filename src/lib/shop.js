@@ -18,6 +18,7 @@ export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_DELIVERY_METHOD_KEY = "trego_checkout_delivery_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
+export const TRACK_ORDER_LOOKUP_KEY = "trego_track_order_lookup";
 export const SAVED_FOR_LATER_ITEMS_KEY = "trego_saved_for_later_items";
 export const APP_LOADER_MIN_DURATION_MS = 160;
 const MAX_SAVED_FOR_LATER_ITEMS = 24;
@@ -364,6 +365,71 @@ export function consumeOrderConfirmationMessage() {
   } catch (error) {
     console.error(error);
     return "";
+  }
+}
+
+export function persistTrackedOrderLookup(payload) {
+  try {
+    const orderId = Math.max(0, Math.trunc(Number(payload?.orderId || payload?.order?.id || 0) || 0));
+    const billingEmail = String(payload?.billingEmail || "").trim().toLowerCase();
+    const order = payload?.order && typeof payload.order === "object" ? payload.order : null;
+
+    if (!orderId || !billingEmail || !order) {
+      return null;
+    }
+
+    const snapshot = {
+      orderId,
+      billingEmail,
+      order,
+      lookedUpAt: new Date().toISOString(),
+    };
+
+    window.sessionStorage.setItem(TRACK_ORDER_LOOKUP_KEY, JSON.stringify(snapshot));
+    return snapshot;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export function readTrackedOrderLookup() {
+  try {
+    const rawValue = window.sessionStorage.getItem(TRACK_ORDER_LOOKUP_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    if (!parsedValue || typeof parsedValue !== "object") {
+      return null;
+    }
+
+    const orderId = Math.max(0, Math.trunc(Number(parsedValue.orderId || parsedValue.order?.id || 0) || 0));
+    const billingEmail = String(parsedValue.billingEmail || "").trim().toLowerCase();
+    const order = parsedValue.order && typeof parsedValue.order === "object" ? parsedValue.order : null;
+
+    if (!orderId || !billingEmail || !order) {
+      return null;
+    }
+
+    return {
+      orderId,
+      billingEmail,
+      order,
+      lookedUpAt: String(parsedValue.lookedUpAt || "").trim(),
+    };
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export function clearTrackedOrderLookup() {
+  try {
+    window.sessionStorage.removeItem(TRACK_ORDER_LOOKUP_KEY);
+  } catch (error) {
+    console.error(error);
   }
 }
 

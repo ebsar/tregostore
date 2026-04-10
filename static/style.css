@@ -12723,6 +12723,52 @@ button {
   padding: 4px 0 0;
 }
 
+.site-footer-links--sparse {
+  gap: 6px;
+}
+
+.site-footer-dropdown {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.site-footer-dropdown[open] {
+  align-content: start;
+}
+
+.site-footer-dropdown summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.site-footer-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.site-footer-dropdown .site-footer-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.site-footer-dropdown .site-footer-heading::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.72);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.72);
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  opacity: 0.82;
+}
+
+.site-footer-dropdown[open] .site-footer-heading::after {
+  transform: rotate(225deg) translateY(-1px);
+}
+
 .site-footer-links a {
   color: rgba(255, 255, 255, 0.82);
   width: fit-content;
