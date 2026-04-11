@@ -10,7 +10,7 @@ onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
     if (user) {
-      await router.replace("/llogaria");
+      await router.replace("/");
       return;
     }
   } finally {
@@ -42,6 +42,8 @@ onMounted(async () => {
 <style scoped>
 .auth-page {
   width: 100%;
+  background:
+    radial-gradient(circle at top center, rgba(255, 255, 255, 0.95) 0%, rgba(247, 249, 252, 0.92) 34%, rgba(255, 255, 255, 0.98) 100%);
 }
 
 .auth-page-breadcrumb-strip {
@@ -78,7 +80,8 @@ onMounted(async () => {
 .auth-page-shell {
   display: flex;
   justify-content: center;
-  padding: clamp(52px, 9vw, 96px) 20px 96px;
+  min-height: calc(100vh - 160px);
+  padding: clamp(40px, 7vw, 80px) 20px 96px;
 }
 
 @media (max-width: 720px) {

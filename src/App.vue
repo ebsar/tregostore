@@ -169,7 +169,7 @@ function handleGlobalToastEvent(event) {
   if (globalToastTimeoutId) {
     window.clearTimeout(globalToastTimeoutId);
   }
-  const dismissDelay = actions.length > 0 ? 6500 : type === "error" ? 5000 : 2800;
+  const dismissDelay = type === "error" ? 5000 : actions.length > 0 ? 6500 : 2800;
   globalToastTimeoutId = window.setTimeout(() => {
     dismissGlobalToast();
   }, dismissDelay);

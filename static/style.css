@@ -2409,7 +2409,7 @@ body[data-page="wishlist"] .wishlist-link .nav-icon {
   display: grid;
   place-items: center;
   min-height: calc(var(--app-vh) - 152px);
-  padding: calc(var(--page-nav-clearance) - 36px) 0 18px;
+  padding: 0 0 18px;
 }
 
 .page-main-home {
@@ -5776,7 +5776,7 @@ body[data-page="cart"] .page-shell::before {
 .page-main-account {
   width: 100%;
   min-height: var(--app-vh);
-  padding: calc(var(--page-nav-clearance) + 12px) 0 48px;
+  padding: 0;
   display: block;
 }
 
@@ -8378,7 +8378,7 @@ body[data-page="cart"] .saved-product-copy h3 {
   width: min(1240px, calc(100% - 40px));
   margin: 0 auto;
   display: grid;
-  gap: 24px;
+  gap: 0;
 }
 
 .orders-page,
@@ -14041,7 +14041,7 @@ code {
   }
 
   .page-main-account {
-    padding: 174px 0 34px;
+    padding: 0;
   }
 
   .pets-page {

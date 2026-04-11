@@ -3426,6 +3426,10 @@ def utc_now() -> datetime:
     return datetime.utcnow().replace(microsecond=0)
 
 
+def now_text() -> str:
+    return datetime_to_storage_text(utc_now())
+
+
 def datetime_to_storage_text(value: datetime) -> str:
     normalized_value = value
     if normalized_value.tzinfo is not None:

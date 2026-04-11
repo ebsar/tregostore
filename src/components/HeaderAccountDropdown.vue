@@ -185,7 +185,7 @@ async function renderGoogleButtonForMode() {
       handleGoogleCredential,
       {
         text: mode.value === "signup" ? "signup_with" : "continue_with",
-        width: props.standalone ? 396 : 360,
+        width: 365,
       },
     );
   } catch (error) {
@@ -494,7 +494,14 @@ async function openRoute(target) {
     @click.stop
   >
     <template v-if="!isAuthenticated">
-      <div class="header-auth-card" :class="{ 'header-auth-card--signup': isSignupMode }">
+      <div
+        class="header-auth-card"
+        :class="{
+          'header-auth-card--signup': isSignupMode,
+          'header-auth-card--expanded': props.expanded || props.standalone || props.showClose,
+          'header-auth-card--tabbed': showTabbedAuth,
+        }"
+      >
         <button
           v-if="props.showClose"
           type="button"
@@ -572,7 +579,11 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <button class="header-auth-primary" type="submit" :disabled="ui.loading">
+            <button
+              class="header-auth-primary header-auth-primary--login"
+              type="submit"
+              :disabled="ui.loading"
+            >
               <span>{{ ui.loading ? "LOADING..." : "LOGIN" }}</span>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M5 12h14M13 5l6 7-6 7" />
@@ -678,7 +689,10 @@ async function openRoute(target) {
               @click="showSocialAuthMessage('Google')"
             >
               <span class="header-auth-social-icon header-auth-social-icon--google">G</span>
-              <span>{{ mode === "signup" ? "Sign Up With Google" : "Login With Google" }}</span>
+              <span class="header-auth-social-label">
+                {{ mode === "signup" ? "Sign Up With Google" : "Login With Google" }}
+              </span>
+              <span class="header-auth-social-spacer" aria-hidden="true"></span>
             </button>
             <button
               type="button"
@@ -686,7 +700,10 @@ async function openRoute(target) {
               @click="showSocialAuthMessage('Apple')"
             >
               <span class="header-auth-social-icon header-auth-social-icon--apple"></span>
-              <span>{{ mode === "signup" ? "Sign Up With Apple" : "Login With Apple" }}</span>
+              <span class="header-auth-social-label">
+                {{ mode === "signup" ? "Sign Up With Apple" : "Login With Apple" }}
+              </span>
+              <span class="header-auth-social-spacer" aria-hidden="true"></span>
             </button>
           </div>
         </template>
@@ -866,31 +883,44 @@ async function openRoute(target) {
 
 <style scoped>
 .header-auth-dropdown {
-  width: min(430px, calc(100vw - 32px));
+  width: min(432px, calc(100vw - 24px));
 }
 
 .header-auth-dropdown--expanded {
-  width: min(520px, calc(100vw - 32px));
+  width: min(432px, calc(100vw - 24px));
 }
 
 .header-auth-dropdown--standalone {
-  width: min(540px, calc(100vw - 32px));
+  width: min(432px, calc(100vw - 24px));
 }
 
 .header-auth-card {
   position: relative;
   display: grid;
-  gap: 20px;
+  gap: 14px;
   background: #fff;
   border: 1px solid rgba(15, 23, 42, 0.09);
-  border-radius: 10px;
-  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
-  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  max-height: min(86svh, 760px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.header-auth-card--expanded {
+  gap: 14px;
+  border-radius: 6px;
+  box-shadow: 0 22px 44px rgba(15, 23, 42, 0.12);
+}
+
+.header-auth-card--tabbed.header-auth-card--expanded {
+  min-height: auto;
 }
 
 .header-auth-card--signup {
-  max-height: min(84vh, 860px);
-  overflow-y: auto;
+  max-height: min(86svh, 820px);
 }
 
 .header-auth-close {
@@ -914,15 +944,19 @@ async function openRoute(target) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   border-bottom: 1px solid rgba(15, 23, 42, 0.09);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
 }
 
 .header-auth-tab {
-  min-height: 62px;
+  min-height: 48px;
   border: 0;
   border-bottom: 3px solid transparent;
   background: #fff;
   color: #7b8794;
-  font-size: 1.15rem;
+  font-size: 0.94rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -940,15 +974,25 @@ async function openRoute(target) {
 .header-auth-menu,
 .header-auth-eyebrow,
 .header-auth-card h3 {
-  margin-left: 30px;
-  margin-right: 30px;
+  margin-left: 28px;
+  margin-right: 28px;
 }
 
 .header-auth-form,
 .header-auth-socials,
 .header-auth-menu {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+}
+
+.header-auth-socials,
+.header-auth-menu {
+  margin-bottom: 26px;
+}
+
+.header-auth-card--tabbed .header-auth-socials {
+  gap: 8px;
+  align-content: start;
 }
 
 .header-auth-card h3 {
@@ -964,7 +1008,7 @@ async function openRoute(target) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-top: 28px;
+  padding-top: 22px;
 }
 
 .header-auth-inline-top h3 {
@@ -986,7 +1030,7 @@ async function openRoute(target) {
 }
 
 .header-auth-copy {
-  margin-top: -8px;
+  margin-top: -4px;
   margin-bottom: 0;
   color: #64748b;
   line-height: 1.6;
@@ -995,14 +1039,14 @@ async function openRoute(target) {
 .header-auth-field,
 .header-auth-field-group {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .header-auth-field span,
 .header-auth-field-group > span,
 .header-auth-field-row span {
   color: #374151;
-  font-size: 0.98rem;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
@@ -1018,20 +1062,40 @@ async function openRoute(target) {
   border: 0;
   background: transparent;
   color: #2f9cf3;
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
 }
 
 .header-auth-field input,
 .header-auth-field select {
-  min-height: 44px;
+  min-height: 36px;
   width: 100%;
-  padding: 0 14px;
+  padding: 0 12px;
   border: 1px solid rgba(203, 213, 225, 0.9);
   background: #fff;
   color: #111827;
-  font-size: 1rem;
+  font-size: 0.9rem;
+  border-radius: 2px;
+}
+
+.header-auth-card--tabbed .header-auth-field,
+.header-auth-card--tabbed .header-auth-field-group {
+  gap: 6px;
+}
+
+.header-auth-card--tabbed .header-auth-field span,
+.header-auth-card--tabbed .header-auth-field-group > span,
+.header-auth-card--tabbed .header-auth-field-row span {
+  font-size: 0.9rem;
+}
+
+.header-auth-card--tabbed .header-auth-field input,
+.header-auth-card--tabbed .header-auth-field select {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.88rem;
+  border-radius: 2px;
 }
 
 .header-auth-field input:focus,
@@ -1049,13 +1113,17 @@ async function openRoute(target) {
   padding-right: 50px;
 }
 
+.header-auth-card--tabbed .header-auth-field--password input {
+  padding-right: 36px;
+}
+
 .header-auth-password-toggle {
   position: absolute;
   top: 50%;
   right: 12px;
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -1066,8 +1134,8 @@ async function openRoute(target) {
 }
 
 .header-auth-password-toggle svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -1078,18 +1146,73 @@ async function openRoute(target) {
 .header-auth-two-cols {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
+}
+
+.header-auth-card--tabbed .header-auth-two-cols {
+  gap: 8px;
 }
 
 .header-auth-primary,
 .header-auth-social-button,
 .header-auth-ghost,
 .header-auth-menu-link {
-  min-height: 48px;
+  min-height: 36px;
   width: 100%;
-  font-size: 0.98rem;
+  font-size: 0.84rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+.header-auth-card--tabbed .header-auth-primary,
+.header-auth-card--tabbed .header-auth-social-button {
+  min-height: 36px;
+  font-size: 0.84rem;
+}
+
+.header-auth-card--tabbed .header-auth-social-button,
+.header-auth-card--tabbed .header-auth-google-slot {
+  width: 100%;
+  min-height: 36px;
+  justify-self: center;
+}
+
+.header-auth-card--tabbed .header-auth-google-slot {
+  display: flex;
+  align-items: center;
+}
+
+.header-auth-card--tabbed .header-auth-social-button {
+  box-sizing: border-box;
+  height: 36px;
+  gap: 10px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+  justify-content: flex-start;
+  border-radius: 2px;
+}
+
+.header-auth-card--tabbed .header-auth-google-slot :deep(.nsm7Bb-HzV7m-LgbsSe-MJoBVe) {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  box-sizing: border-box !important;
+  border-radius: 2px !important;
+}
+
+.header-auth-card--tabbed .header-auth-google-slot :deep(div[role="button"]) {
+  width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 2px !important;
+}
+
+.header-auth-card--tabbed .header-auth-social-icon {
+  width: 18px;
+  font-size: 1rem;
 }
 
 .header-auth-primary {
@@ -1100,11 +1223,20 @@ async function openRoute(target) {
   border: 0;
   background: #ff7f32;
   color: #fff;
+  border-radius: 2px;
+}
+
+.header-auth-primary--login {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  justify-self: center;
+  border-radius: 2px;
 }
 
 .header-auth-primary svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.9;
@@ -1119,12 +1251,12 @@ async function openRoute(target) {
 }
 
 .header-auth-primary--danger {
-  margin: 0 30px 30px;
+  margin: 0 26px 24px;
 }
 
 .header-auth-divider {
   position: relative;
-  margin: 0 30px;
+  margin: 0 28px;
   color: #7b8794;
   text-align: center;
 }
@@ -1147,31 +1279,33 @@ async function openRoute(target) {
 .header-auth-google-slot {
   display: flex;
   justify-content: center;
-  min-height: 48px;
+  min-height: 36px;
 }
 
 .header-auth-google-slot :deep(div[role="button"]) {
   width: 100% !important;
-  border-radius: 0 !important;
+  border-radius: 2px !important;
 }
 
 .header-auth-social-button {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid rgba(203, 213, 225, 0.9);
   background: #fff;
   color: #475569;
+  text-align: center;
 }
 
 .header-auth-social-icon {
   display: inline-flex;
-  width: 24px;
+  width: 18px;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 800;
+  line-height: 1;
 }
 
 .header-auth-social-icon--google {
@@ -1180,6 +1314,23 @@ async function openRoute(target) {
 
 .header-auth-social-icon--apple {
   color: #111827;
+}
+
+.header-auth-social-label {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.header-auth-social-spacer {
+  display: block;
+  width: 18px;
+  height: 18px;
+  visibility: hidden;
 }
 
 .header-auth-inline-actions {
@@ -1235,7 +1386,7 @@ async function openRoute(target) {
   .header-auth-dropdown,
   .header-auth-dropdown--expanded,
   .header-auth-dropdown--standalone {
-    width: min(100vw - 24px, 520px);
+    width: min(100vw - 16px, 432px);
   }
 
   .header-auth-form,
@@ -1247,23 +1398,94 @@ async function openRoute(target) {
   .header-auth-eyebrow,
   .header-auth-card h3,
   .header-auth-divider {
-    margin-left: 18px;
-    margin-right: 18px;
+    margin-left: 16px;
+    margin-right: 16px;
   }
 
   .header-auth-primary--danger {
-    margin-left: 18px;
-    margin-right: 18px;
-    margin-bottom: 18px;
+    margin-left: 16px;
+    margin-right: 16px;
+    margin-bottom: 16px;
   }
 
   .header-auth-two-cols {
     grid-template-columns: 1fr;
   }
 
+  .header-auth-card,
+  .header-auth-card--expanded {
+    gap: 12px;
+    max-height: min(90svh, 760px);
+    border-radius: 6px;
+  }
+
+  .header-auth-card--tabbed.header-auth-card--expanded {
+    min-height: auto;
+  }
+
   .header-auth-tab {
-    min-height: 56px;
-    font-size: 1.02rem;
+    min-height: 46px;
+    font-size: 0.9rem;
+  }
+
+  .header-auth-field-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-auth-close {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .header-auth-social-button {
+    padding: 0 12px;
+  }
+
+  .header-auth-card--tabbed .header-auth-primary,
+  .header-auth-card--tabbed .header-auth-social-button {
+    min-height: 36px;
+    font-size: 0.82rem;
+  }
+
+  .header-auth-card--tabbed .header-auth-field input,
+  .header-auth-card--tabbed .header-auth-field select {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.86rem;
+  }
+
+  .header-auth-card--tabbed .header-auth-social-button,
+  .header-auth-card--tabbed .header-auth-google-slot {
+    width: 100%;
+    min-height: 36px;
+  }
+
+  .header-auth-card--tabbed .header-auth-social-button {
+    height: 36px;
+  }
+
+  .header-auth-card--tabbed .header-auth-socials {
+    gap: 4px;
+  }
+
+  .header-auth-card--tabbed .header-auth-google-slot :deep(.nsm7Bb-HzV7m-LgbsSe-MJoBVe) {
+    width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  .header-auth-card--tabbed .header-auth-google-slot :deep(div[role="button"]) {
+    width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  .header-auth-primary--login {
+    width: 100%;
   }
 }
 </style>

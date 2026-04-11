@@ -5,6 +5,13 @@ import { requestJson, resolveApiMessage } from "../lib/api";
 import { formatPrice, getProductDetailUrl, getProductStockMessage, hasProductAvailableStock } from "../lib/shop";
 import { appState, setCartItems } from "../stores/app-state";
 
+const props = defineProps({
+  modalOnly: {
+    type: Boolean,
+    default: false,
+  },
+});
+
 const emit = defineEmits(["close", "request-login"]);
 
 const router = useRouter();
@@ -128,7 +135,12 @@ async function openWishlistPage() {
             <p class="header-wishlist-eyebrow">Saved products</p>
             <h3>{{ totalItems }} item{{ totalItems === 1 ? "" : "s" }}</h3>
           </div>
-          <button type="button" class="header-wishlist-link" @click="openWishlistPage">
+          <button
+            v-if="!props.modalOnly"
+            type="button"
+            class="header-wishlist-link"
+            @click="openWishlistPage"
+          >
             Open wishlist
           </button>
         </div>
@@ -179,7 +191,7 @@ async function openWishlistPage() {
           </article>
         </div>
 
-        <div v-if="items.length > 0" class="header-wishlist-actions">
+        <div v-if="items.length > 0 && !props.modalOnly" class="header-wishlist-actions">
           <button type="button" class="header-wishlist-secondary" @click="openWishlistPage">
             OPEN WISHLIST
           </button>

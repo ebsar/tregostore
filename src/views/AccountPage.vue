@@ -618,7 +618,7 @@ function goToNextDashboardProductPage() {
 .account-dashboard-page {
   width: min(1300px, calc(100vw - 48px));
   margin: 0 auto;
-  padding: 40px 0 80px;
+  padding: 0;
 }
 
 .account-dashboard-layout {
@@ -1120,7 +1120,7 @@ function goToNextDashboardProductPage() {
 @media (max-width: 720px) {
   .account-dashboard-page {
     width: min(100vw - 24px, 1300px);
-    padding-top: 24px;
+    padding-top: 0;
   }
 
   .account-dashboard-nav-link,

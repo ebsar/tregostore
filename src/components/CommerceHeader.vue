@@ -195,8 +195,7 @@ async function toggleAccountDropdown() {
   mobileMenuOpen.value = false;
 
   if (appState.user) {
-    accountDropdownOpen.value = false;
-    await router.push("/llogaria");
+    accountDropdownOpen.value = !accountDropdownOpen.value;
     return;
   }
 
@@ -290,7 +289,7 @@ async function openAccountFromMobileMenu() {
   mobileMenuOpen.value = false;
 
   if (appState.user) {
-    await router.push("/llogaria");
+    accountDropdownOpen.value = true;
     return;
   }
 
@@ -415,11 +414,11 @@ function renderIcon(icon) {
     case "instagram":
       return "M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6.1 3 3 0 0 1 0 6.1zm5.9-7.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zM12 3.8c2.7 0 3 .1 4 .1 1 0 1.7.2 2.3.5.7.2 1.2.6 1.7 1.1.5.5.9 1 1.1 1.7.3.6.4 1.3.5 2.3.1 1 .1 1.3.1 4s-.1 3-.1 4c0 1-.2 1.7-.5 2.3-.2.7-.6 1.2-1.1 1.7-.5.5-1 .9-1.7 1.1-.6.3-1.3.4-2.3.5-1 .1-1.3.1-4 .1s-3-.1-4-.1c-1 0-1.7-.2-2.3-.5a4.7 4.7 0 0 1-1.7-1.1 4.7 4.7 0 0 1-1.1-1.7c-.3-.6-.4-1.3-.5-2.3-.1-1-.1-1.3-.1-4s.1-3 .1-4c0-1 .2-1.7.5-2.3.2-.7.6-1.2 1.1-1.7.5-.5 1-.9 1.7-1.1.6-.3 1.3-.4 2.3-.5 1-.1 1.3-.1 4-.1z";
     case "cart":
-      return "M3 5h2.1l1.4 8.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L19 7H7.4M9 19a1.5 1.5 0 1 0 0 .1zm7 0a1.5 1.5 0 1 0 0 .1z";
+      return "M3 4.5h2.2l1.45 9.1a1 1 0 0 0 .99.84h9.88a1 1 0 0 0 .97-.74l1.45-5.95H6.35M9.25 19.25a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5Zm7 0a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5Z";
     case "heart":
-      return "m12 20.4-1.2-1C5.4 14.6 2 11.5 2 7.8A4.8 4.8 0 0 1 6.8 3 5.3 5.3 0 0 1 12 5.9 5.3 5.3 0 0 1 17.2 3 4.8 4.8 0 0 1 22 7.8c0 3.7-3.4 6.8-8.8 11.6z";
+      return "M12 20.5s-7.5-4.35-9.2-8.2C1.45 9.2 3.15 5.5 6.95 5.5c2.06 0 3.33 1.05 4.07 2.17C11.76 6.55 13.03 5.5 15.1 5.5c3.78 0 5.5 3.68 4.15 6.8C17.55 16.15 12 20.5 12 20.5Z";
     case "user":
-      return "M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4zm0 2.2c-3.6 0-6.5 2.4-7.3 5.8h14.6c-.8-3.4-3.7-5.8-7.3-5.8z";
+      return "M12 12.2a4.45 4.45 0 1 0 0-8.9 4.45 4.45 0 0 0 0 8.9Zm-7.05 7.5c.76-2.9 3.62-4.95 7.05-4.95s6.29 2.05 7.05 4.95";
     default:
       return "";
   }
@@ -516,21 +515,21 @@ function renderIcon(icon) {
             @click.stop="openCartOverlay"
           >
             <span v-if="actionItems[0]?.badge" class="commerce-home-header-badge">{{ actionItems[0].badge }}</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="commerce-home-header-action-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path :d="renderIcon('cart')" />
             </svg>
           </button>
 
-          <RouterLink
+          <button
             class="commerce-home-header-action"
-            to="/wishlist"
+            type="button"
             aria-label="Wishlist"
-            @click.prevent="openWishlistOverlay"
+            @click.stop="openWishlistOverlay"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="commerce-home-header-action-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path :d="renderIcon('heart')" />
             </svg>
-          </RouterLink>
+          </button>
 
           <div class="commerce-home-header-account">
             <button
@@ -541,7 +540,7 @@ function renderIcon(icon) {
               :aria-label="appState.user ? 'Open account menu' : 'Open login menu'"
               @click.stop="toggleAccountDropdown"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+              <svg class="commerce-home-header-action-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path :d="renderIcon('user')" />
               </svg>
             </button>
@@ -715,6 +714,7 @@ function renderIcon(icon) {
     >
       <div class="commerce-home-login-overlay-panel commerce-home-login-overlay-panel--cart" @click.stop>
         <HeaderWishlistOverlay
+          modal-only
           @close="closeWishlistOverlay"
           @request-login="handleWishlistLoginRequest"
         />
@@ -850,14 +850,14 @@ function renderIcon(icon) {
   align-items: center;
   gap: 18px;
   padding: 12px 28px;
-  background: #0d0d0f;
+  background: #2a3447;
   color: rgba(255, 255, 255, 0.94);
 }
 
 .commerce-home-info-bar {
   grid-template-columns: minmax(0, 1fr) auto;
   font-size: 0.88rem;
-  background: #0d0d0f;
+  background: #2a3447;
 }
 
 .commerce-home-info-bar p {
@@ -896,7 +896,7 @@ function renderIcon(icon) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   padding-top: 22px;
   padding-bottom: 22px;
-  background: #0d0d0f;
+  background: #2a3447;
 }
 
 .commerce-home-brand {
@@ -908,8 +908,8 @@ function renderIcon(icon) {
 }
 
 .commerce-home-brand img {
-  width: 58px;
-  height: 58px;
+  width: 70px;
+  height: 70px;
   object-fit: contain;
 }
 
@@ -967,8 +967,7 @@ function renderIcon(icon) {
 }
 
 .commerce-home-search-visual svg,
-.commerce-home-search-submit svg,
-.commerce-home-header-action svg {
+.commerce-home-search-submit svg {
   width: 20px;
   height: 20px;
   fill: currentColor;
@@ -1031,14 +1030,39 @@ function renderIcon(icon) {
   height: 46px;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 999px;
   color: #fff;
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.14);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  cursor: pointer;
+  transition: color 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+
+.commerce-home-header-action:hover {
+  color: #ffd36b;
+  transform: translateY(-1px);
+}
+
+.commerce-home-header-action:focus-visible {
+  outline: 2px solid rgba(255, 211, 107, 0.75);
+  outline-offset: 4px;
 }
 
 .commerce-home-header-action[aria-expanded="true"] {
-  background: rgba(255, 255, 255, 0.24);
+  color: #ffd36b;
+}
+
+.commerce-home-header-action-icon {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
 }
 
 .commerce-home-header-badge {
@@ -1072,7 +1096,9 @@ function renderIcon(icon) {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: clamp(120px, 14vh, 180px) 20px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(88px, 10vh, 148px) 16px max(18px, env(safe-area-inset-bottom));
   background: rgba(15, 23, 42, 0.34);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -1080,7 +1106,11 @@ function renderIcon(icon) {
 
 .commerce-home-login-overlay-panel {
   position: relative;
-  width: min(560px, calc(100vw - 32px));
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: min(432px, calc(100vw - 24px));
+  max-width: 100%;
 }
 
 .commerce-home-login-overlay-panel--cart {
@@ -1174,7 +1204,7 @@ function renderIcon(icon) {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     padding: 12px 16px;
-    background: #0d0d0f;
+    background: #2a3447;
   }
 
   .commerce-home-brand-wordmark {
@@ -1182,8 +1212,8 @@ function renderIcon(icon) {
   }
 
   .commerce-home-brand img {
-    width: 44px;
-    height: 44px;
+    width: 53px;
+    height: 53px;
   }
 
   .commerce-home-mobile-toggle {
@@ -1298,7 +1328,11 @@ function renderIcon(icon) {
 }
 
   .commerce-home-login-overlay {
-    padding-top: 92px;
+    padding: calc(66px + env(safe-area-inset-top)) 8px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .commerce-home-login-overlay-panel {
+    width: min(100%, 700px);
   }
 }
 </style>
