@@ -844,8 +844,13 @@ ORDER_ITEM_SELECT_COLUMNS = """
     created_at
 """
 
-def load_local_env_file() -> None:
-    env_path = BASE_DIR / ".env"
+def _load_single_env_file(
+    env_path: Path,
+    *,
+    protected_keys: set[str],
+    loaded_keys: set[str],
+    allow_override_loaded_keys: bool,
+) -> None:
     if not env_path.exists():
         return
 
@@ -861,7 +866,10 @@ def load_local_env_file() -> None:
 
         key, value = line.split("=", 1)
         env_name = key.strip()
-        if not env_name or env_name in os.environ:
+        if not env_name or env_name in protected_keys:
+            continue
+
+        if env_name in loaded_keys and not allow_override_loaded_keys:
             continue
 
         normalized_value = value.strip()
@@ -873,9 +881,30 @@ def load_local_env_file() -> None:
             normalized_value = normalized_value[1:-1]
 
         os.environ[env_name] = normalized_value
+        loaded_keys.add(env_name)
 
 
-load_local_env_file()
+def load_local_env_files() -> None:
+    protected_keys = set(os.environ.keys())
+    loaded_keys: set[str] = set()
+
+    # Keep process/platform environment variables authoritative, but allow
+    # .env.local to override values loaded from .env for local development.
+    _load_single_env_file(
+        BASE_DIR / ".env",
+        protected_keys=protected_keys,
+        loaded_keys=loaded_keys,
+        allow_override_loaded_keys=False,
+    )
+    _load_single_env_file(
+        BASE_DIR / ".env.local",
+        protected_keys=protected_keys,
+        loaded_keys=loaded_keys,
+        allow_override_loaded_keys=True,
+    )
+
+
+load_local_env_files()
 
 
 def read_bool_env(name: str, default_value: bool) -> bool:
