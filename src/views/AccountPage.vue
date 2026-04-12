@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { fetchHomeRecommendations, requestJson, resolveApiMessage } from "../lib/api";
+import { getAccountDashboardMenuItems } from "../lib/account-navigation";
 import { formatDateLabel, formatPrice, getBusinessInitials, getProductDetailUrl, normalizeAddress } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser, markRouteReady } from "../stores/app-state";
 
@@ -19,46 +20,7 @@ const isClientUser = computed(() =>
   Boolean(appState.user) && !["admin", "business"].includes(String(appState.user?.role || "").trim().toLowerCase()),
 );
 
-const dashboardMenuItems = computed(() => {
-  const role = String(appState.user?.role || "").trim().toLowerCase();
-
-  if (role === "admin") {
-    return [
-      { href: "/llogaria", label: "Dashboard", icon: "dashboard", active: true },
-      { href: "/admin-porosite", label: "Order History", icon: "orders" },
-      { href: "/admin-products", label: "Products", icon: "bag" },
-      { href: "/bizneset-e-regjistruara", label: "Businesses", icon: "pin" },
-      { href: "/wishlist", label: "Wishlist", icon: "heart" },
-      { href: "/krahaso", label: "Compare", icon: "compare" },
-      { href: "/te-dhenat-personale", label: "Setting", icon: "settings" },
-    ];
-  }
-
-  if (role === "business") {
-    return [
-      { href: "/llogaria", label: "Dashboard", icon: "dashboard", active: true },
-      { href: "/porosite-e-biznesit", label: "Order History", icon: "orders" },
-      { href: "/biznesi-juaj", label: "Business Page", icon: "pin" },
-      { href: "/cart", label: "Shopping Cart", icon: "bag" },
-      { href: "/wishlist", label: "Wishlist", icon: "heart" },
-      { href: "/krahaso", label: "Compare", icon: "compare" },
-      { href: "/adresat", label: "Address", icon: "card" },
-      { href: "/te-dhenat-personale", label: "Setting", icon: "settings" },
-    ];
-  }
-
-  return [
-    { href: "/llogaria", label: "Dashboard", icon: "dashboard", active: true },
-    { href: "/porosite", label: "Order History", icon: "orders" },
-    { href: "/track-order", label: "Track Order", icon: "pin" },
-    { href: "/cart", label: "Shopping Cart", icon: "bag" },
-    { href: "/wishlist", label: "Wishlist", icon: "heart" },
-    { href: "/krahaso", label: "Compare", icon: "compare" },
-    { href: "/adresat", label: "Address", icon: "card" },
-    { href: "/kerko", label: "Browsing History", icon: "history" },
-    { href: "/te-dhenat-personale", label: "Setting", icon: "settings" },
-  ];
-});
+const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, "dashboard"));
 
 const greetingName = computed(() => {
   const fullName = String(appState.user?.fullName || appState.user?.businessName || "User").trim();

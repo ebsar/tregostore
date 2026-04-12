@@ -56,7 +56,12 @@ const emit = defineEmits(["wishlist", "cart", "compare"]);
       </p>
     </header>
 
-    <section class="pet-products-grid recommendation-section-grid">
+    <section
+      class="pet-products-grid recommendation-section-grid"
+      :class="{
+        'recommendation-section-grid--five': ['recommended-for-you', 'new-arrivals'].includes(section.key),
+      }"
+    >
       <ProductCard
         v-for="product in section.products"
         :key="`${section.key}-${product.id}`"
@@ -101,6 +106,22 @@ const emit = defineEmits(["wishlist", "cart", "compare"]);
   align-items: stretch;
 }
 
+.recommendation-section-grid--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .recommendation-section-grid--five {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .recommendation-section-grid--five {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
   .recommendation-section {
     gap: 16px;
@@ -109,6 +130,10 @@ const emit = defineEmits(["wishlist", "cart", "compare"]);
 
   .recommendation-section-copy {
     font-size: 0.9rem;
+  }
+
+  .recommendation-section-grid--five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

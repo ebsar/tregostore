@@ -27,6 +27,14 @@ export interface ProductItem {
   articleNumber?: string;
   title: string;
   description?: string;
+  brand?: string;
+  gtin?: string;
+  mpn?: string;
+  material?: string;
+  weightValue?: number;
+  weightUnit?: string;
+  metaTitle?: string;
+  metaDescription?: string;
   imagePath?: string;
   imageGallery?: string[];
   price?: number;
@@ -45,6 +53,11 @@ export interface ProductItem {
   size?: string;
   color?: string;
   businessName?: string;
+  supportEmail?: string;
+  websiteUrl?: string;
+  supportHours?: string;
+  returnPolicySummary?: string;
+  shippingSettings?: BusinessShippingSettings;
   variantInventory?: ProductVariant[];
   variantMode?: string;
   requiresVariantSelection?: boolean;
@@ -125,8 +138,13 @@ export interface BusinessItem {
   ownerName?: string;
   ownerEmail?: string;
   phoneNumber?: string;
+  supportEmail?: string;
+  websiteUrl?: string;
+  supportHours?: string;
+  returnPolicySummary?: string;
   addressLine?: string;
   businessNumber?: string;
+  shippingSettings?: BusinessShippingSettings;
   verificationStatus?: string;
   profileEditAccessStatus?: string;
   ordersCount?: number;
@@ -138,6 +156,28 @@ export interface BusinessItem {
   profileUrl?: string;
   updatedAt?: string;
   createdAt?: string;
+}
+
+export interface BusinessCityRate {
+  city?: string;
+  surcharge?: number;
+}
+
+export interface BusinessShippingSettings {
+  standardEnabled?: boolean;
+  standardFee?: number;
+  standardEta?: string;
+  expressEnabled?: boolean;
+  expressFee?: number;
+  expressEta?: string;
+  pickupEnabled?: boolean;
+  pickupEta?: string;
+  pickupAddress?: string;
+  pickupHours?: string;
+  pickupMapUrl?: string;
+  cityRates?: BusinessCityRate[];
+  halfOffThreshold?: number;
+  freeShippingThreshold?: number;
 }
 
 export interface CartItem extends ProductItem {

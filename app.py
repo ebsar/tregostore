@@ -28,6 +28,8 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 import zipfile
 
+import catalog_import as catalog_import_lib
+
 try:
     from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -300,6 +302,7 @@ PRODUCT_AMOUNT_UNITS = {
     for option in PRODUCT_AMOUNT_UNIT_DEFINITIONS
     if str(option.get("value") or "").strip()
 }
+PRODUCT_WEIGHT_UNITS = {"g", "kg", "lb", "oz"}
 SEARCH_INTENT_MARKERS = {
     "dua",
     "doja",
@@ -529,7 +532,8 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-04-07-launch-ads-1"
+APP_SCHEMA_VERSION = "2026-04-12-catalog-import-pipeline-1"
+PUBLIC_CACHE_REVISION_META_KEY = "public_cache_revision"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
 }
@@ -543,7 +547,10 @@ PUBLIC_STATS_CACHE_HEADERS = {
 
 def build_runtime_public_cache_key(prefix: str, payload: object) -> str:
     serialized_payload = json.dumps(
-        payload,
+        {
+            "revision": get_public_cache_revision_token(),
+            "payload": payload,
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -599,6 +606,10 @@ BUSINESS_PROFILE_SELECT_COLUMNS = """
     business_description,
     business_number,
     business_logo_path,
+    support_email,
+    website_url,
+    support_hours,
+    return_policy_summary,
     verification_status,
     verification_requested_at,
     verification_verified_at,
@@ -643,7 +654,16 @@ PRODUCT_SELECT_COLUMNS = """
     products.id AS id,
     products.article_number AS article_number,
     products.title AS title,
+    products.normalized_title AS normalized_title,
     products.description AS description,
+    products.brand AS brand,
+    products.gtin AS gtin,
+    products.mpn AS mpn,
+    products.material AS material,
+    products.weight_value AS weight_value,
+    products.weight_unit AS weight_unit,
+    products.meta_title AS meta_title,
+    products.meta_description AS meta_description,
     products.price AS price,
     products.compare_at_price AS compare_at_price,
     products.sale_ends_at AS sale_ends_at,
@@ -662,6 +682,10 @@ PRODUCT_SELECT_COLUMNS = """
     products.stock_quantity AS stock_quantity,
     products.is_public AS is_public,
     products.show_stock_public AS show_stock_public,
+    products.group_key AS group_key,
+    products.source_id AS source_id,
+    products.source_product_key AS source_product_key,
+    products.import_metadata AS import_metadata,
     products.created_by_user_id AS created_by_user_id,
     products.created_at AS created_at,
     COALESCE(order_totals.buyers_count, 0) AS buyers_count,
@@ -673,7 +697,12 @@ PRODUCT_SELECT_COLUMNS = """
     COALESCE(review_totals.review_count, 0) AS review_count,
     COALESCE(product_business_profile.business_name, '') AS business_name,
     COALESCE(product_business_profile.id, 0) AS business_profile_id,
-    COALESCE(product_business_profile.verification_status, '') AS business_verification_status
+    COALESCE(product_business_profile.verification_status, '') AS business_verification_status,
+    COALESCE(product_business_profile.support_email, '') AS business_support_email,
+    COALESCE(product_business_profile.website_url, '') AS business_website_url,
+    COALESCE(product_business_profile.support_hours, '') AS business_support_hours,
+    COALESCE(product_business_profile.return_policy_summary, '') AS business_return_policy_summary,
+    COALESCE(product_business_profile.shipping_settings, '') AS business_shipping_settings
 """
 PRODUCT_SELECT_RELATION_JOINS = """
     LEFT JOIN (
@@ -1595,6 +1624,26 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE business_profiles ADD COLUMN business_logo_path TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "business_profiles", "support_email"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN support_email TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "website_url"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN website_url TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "support_hours"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN support_hours TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "business_profiles", "return_policy_summary"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN return_policy_summary TEXT NOT NULL DEFAULT ''"
+        )
+
     if not column_exists(connection, "business_profiles", "verification_status"):
         connection.execute(
             "ALTER TABLE business_profiles ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unverified'"
@@ -1646,6 +1695,10 @@ def migrate_database(connection: DatabaseConnection) -> None:
         SET
             business_number = COALESCE(NULLIF(TRIM(business_number), ''), ''),
             business_logo_path = COALESCE(NULLIF(TRIM(business_logo_path), ''), ''),
+            support_email = COALESCE(NULLIF(TRIM(support_email), ''), ''),
+            website_url = COALESCE(NULLIF(TRIM(website_url), ''), ''),
+            support_hours = COALESCE(NULLIF(TRIM(support_hours), ''), ''),
+            return_policy_summary = COALESCE(NULLIF(TRIM(return_policy_summary), ''), ''),
             verification_status = CASE
                 WHEN LOWER(TRIM(COALESCE(verification_status, ''))) IN ('pending', 'verified', 'rejected')
                     THEN LOWER(TRIM(COALESCE(verification_status, '')))
@@ -1954,6 +2007,46 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE products ADD COLUMN product_type TEXT NOT NULL DEFAULT 'other'"
         )
 
+    if not column_exists(connection, "products", "brand"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN brand TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "gtin"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN gtin TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "mpn"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN mpn TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "material"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN material TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "weight_value"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN weight_value REAL NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "products", "weight_unit"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN weight_unit TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "meta_title"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN meta_title TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "meta_description"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN meta_description TEXT NOT NULL DEFAULT ''"
+        )
+
     if not column_exists(connection, "products", "article_number"):
         connection.execute(
             "ALTER TABLE products ADD COLUMN article_number TEXT NOT NULL DEFAULT ''"
@@ -2009,6 +2102,31 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE products ADD COLUMN show_stock_public INTEGER NOT NULL DEFAULT 0"
         )
 
+    if not column_exists(connection, "products", "normalized_title"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN normalized_title TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "group_key"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN group_key TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "source_id"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN source_id INTEGER NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "products", "source_product_key"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN source_product_key TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "products", "import_metadata"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN import_metadata TEXT NOT NULL DEFAULT '{}'"
+        )
+
     if not column_exists(connection, "products", "image_gallery"):
         connection.execute(
             "ALTER TABLE products ADD COLUMN image_gallery TEXT NOT NULL DEFAULT '[]'"
@@ -2033,6 +2151,21 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         UPDATE products
         SET
+            brand = COALESCE(NULLIF(TRIM(brand), ''), ''),
+            gtin = COALESCE(NULLIF(TRIM(gtin), ''), ''),
+            mpn = COALESCE(NULLIF(TRIM(mpn), ''), ''),
+            material = COALESCE(NULLIF(TRIM(material), ''), ''),
+            weight_value = CASE
+                WHEN COALESCE(weight_value, 0) < 0 THEN 0
+                ELSE COALESCE(weight_value, 0)
+            END,
+            weight_unit = CASE
+                WHEN LOWER(TRIM(COALESCE(weight_unit, ''))) IN ('g', 'kg', 'lb', 'oz')
+                    THEN LOWER(TRIM(COALESCE(weight_unit, '')))
+                ELSE ''
+            END,
+            meta_title = COALESCE(NULLIF(TRIM(meta_title), ''), ''),
+            meta_description = COALESCE(NULLIF(TRIM(meta_description), ''), ''),
             article_number = COALESCE(NULLIF(TRIM(article_number), ''), ''),
             product_type = COALESCE(NULLIF(TRIM(product_type), ''), 'other'),
             size = COALESCE(size, ''),
@@ -2048,6 +2181,11 @@ def migrate_database(connection: DatabaseConnection) -> None:
                 WHEN COALESCE(show_stock_public, 0) = 1 THEN 1
                 ELSE 0
             END,
+            normalized_title = COALESCE(NULLIF(TRIM(normalized_title), ''), LOWER(TRIM(COALESCE(title, '')))),
+            group_key = COALESCE(group_key, ''),
+            source_id = COALESCE(source_id, 0),
+            source_product_key = COALESCE(source_product_key, ''),
+            import_metadata = COALESCE(import_metadata, '{}'),
             ai_image_search_text = COALESCE(ai_image_search_text, ''),
             ai_image_color_terms = COALESCE(ai_image_color_terms, '')
         """
@@ -2058,7 +2196,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
         SELECT
             id,
             title,
+            normalized_title,
             description,
+            brand,
+            gtin,
+            mpn,
+            material,
+            weight_value,
+            weight_unit,
+            meta_title,
+            meta_description,
             image_path,
             image_gallery,
             category,
@@ -2068,6 +2215,10 @@ def migrate_database(connection: DatabaseConnection) -> None:
             sale_ends_at,
             variant_inventory,
             stock_quantity,
+            group_key,
+            source_id,
+            source_product_key,
+            import_metadata,
             ai_image_search_text,
             ai_image_color_terms,
             package_amount_value,
@@ -2265,6 +2416,223 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_products_public_created_at
         ON products(is_public, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_import_source_group
+        ON products(created_by_user_id, source_id, group_key)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_import_source_product_key
+        ON products(created_by_user_id, source_id, source_product_key)
+        """
+    )
+
+    if not table_exists(connection, "catalog_import_profiles"):
+        connection.execute(
+            """
+            CREATE TABLE catalog_import_profiles (
+                id BIGSERIAL PRIMARY KEY,
+                business_user_id BIGINT NOT NULL,
+                profile_name TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'csv',
+                field_mapping TEXT NOT NULL DEFAULT '{}',
+                category_mapping_rules TEXT NOT NULL DEFAULT '{}',
+                attribute_mapping_rules TEXT NOT NULL DEFAULT '{}',
+                normalization_rules TEXT NOT NULL DEFAULT '{}',
+                ai_preferences TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE catalog_import_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_user_id INTEGER NOT NULL,
+                profile_name TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'csv',
+                field_mapping TEXT NOT NULL DEFAULT '{}',
+                category_mapping_rules TEXT NOT NULL DEFAULT '{}',
+                attribute_mapping_rules TEXT NOT NULL DEFAULT '{}',
+                normalization_rules TEXT NOT NULL DEFAULT '{}',
+                ai_preferences TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    if not table_exists(connection, "catalog_import_sources"):
+        connection.execute(
+            """
+            CREATE TABLE catalog_import_sources (
+                id BIGSERIAL PRIMARY KEY,
+                business_user_id BIGINT NOT NULL,
+                profile_id BIGINT,
+                source_name TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'api-json',
+                source_config TEXT NOT NULL DEFAULT '{}',
+                sync_enabled INTEGER NOT NULL DEFAULT 0,
+                sync_interval_minutes INTEGER NOT NULL DEFAULT 0,
+                last_synced_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE catalog_import_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_user_id INTEGER NOT NULL,
+                profile_id INTEGER,
+                source_name TEXT NOT NULL DEFAULT '',
+                source_type TEXT NOT NULL DEFAULT 'api-json',
+                source_config TEXT NOT NULL DEFAULT '{}',
+                sync_enabled INTEGER NOT NULL DEFAULT 0,
+                sync_interval_minutes INTEGER NOT NULL DEFAULT 0,
+                last_synced_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    if not table_exists(connection, "catalog_import_jobs"):
+        connection.execute(
+            """
+            CREATE TABLE catalog_import_jobs (
+                id BIGSERIAL PRIMARY KEY,
+                business_user_id BIGINT NOT NULL,
+                source_id BIGINT,
+                profile_id BIGINT,
+                source_type TEXT NOT NULL DEFAULT 'csv',
+                adapter_kind TEXT NOT NULL DEFAULT 'csv',
+                original_filename TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'preview_ready',
+                source_digest TEXT NOT NULL DEFAULT '',
+                headers_json TEXT NOT NULL DEFAULT '[]',
+                field_mapping_json TEXT NOT NULL DEFAULT '{}',
+                category_mapping_rules_json TEXT NOT NULL DEFAULT '{}',
+                ai_suggestions_json TEXT NOT NULL DEFAULT '{}',
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                preview_payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                committed_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (source_id) REFERENCES catalog_import_sources(id) ON DELETE SET NULL,
+                FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE catalog_import_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_user_id INTEGER NOT NULL,
+                source_id INTEGER,
+                profile_id INTEGER,
+                source_type TEXT NOT NULL DEFAULT 'csv',
+                adapter_kind TEXT NOT NULL DEFAULT 'csv',
+                original_filename TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'preview_ready',
+                source_digest TEXT NOT NULL DEFAULT '',
+                headers_json TEXT NOT NULL DEFAULT '[]',
+                field_mapping_json TEXT NOT NULL DEFAULT '{}',
+                category_mapping_rules_json TEXT NOT NULL DEFAULT '{}',
+                ai_suggestions_json TEXT NOT NULL DEFAULT '{}',
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                preview_payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                committed_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (source_id) REFERENCES catalog_import_sources(id) ON DELETE SET NULL,
+                FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+            )
+            """
+        )
+
+    if not table_exists(connection, "catalog_import_job_records"):
+        connection.execute(
+            """
+            CREATE TABLE catalog_import_job_records (
+                id BIGSERIAL PRIMARY KEY,
+                job_id BIGINT NOT NULL,
+                source_row_id TEXT NOT NULL DEFAULT '',
+                row_index INTEGER NOT NULL DEFAULT 0,
+                raw_data_json TEXT NOT NULL DEFAULT '{}',
+                mapped_data_json TEXT NOT NULL DEFAULT '{}',
+                normalized_data_json TEXT NOT NULL DEFAULT '{}',
+                parent_data_json TEXT NOT NULL DEFAULT '{}',
+                variant_data_json TEXT NOT NULL DEFAULT '{}',
+                warnings_json TEXT NOT NULL DEFAULT '[]',
+                errors_json TEXT NOT NULL DEFAULT '[]',
+                group_key TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (job_id) REFERENCES catalog_import_jobs(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE catalog_import_job_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                source_row_id TEXT NOT NULL DEFAULT '',
+                row_index INTEGER NOT NULL DEFAULT 0,
+                raw_data_json TEXT NOT NULL DEFAULT '{}',
+                mapped_data_json TEXT NOT NULL DEFAULT '{}',
+                normalized_data_json TEXT NOT NULL DEFAULT '{}',
+                parent_data_json TEXT NOT NULL DEFAULT '{}',
+                variant_data_json TEXT NOT NULL DEFAULT '{}',
+                warnings_json TEXT NOT NULL DEFAULT '[]',
+                errors_json TEXT NOT NULL DEFAULT '[]',
+                group_key TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES catalog_import_jobs(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_catalog_import_profiles_business_updated
+        ON catalog_import_profiles(business_user_id, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_catalog_import_sources_business_updated
+        ON catalog_import_sources(business_user_id, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_catalog_import_jobs_business_updated
+        ON catalog_import_jobs(business_user_id, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_catalog_import_job_records_job_row
+        ON catalog_import_job_records(job_id, row_index ASC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_catalog_import_job_records_job_group
+        ON catalog_import_job_records(job_id, group_key)
         """
     )
 
@@ -3348,6 +3716,25 @@ def get_runtime_meta_value(connection: DatabaseConnection, key: str) -> str:
     return str(row["value"] or "").strip()
 
 
+def get_public_cache_revision_token(connection: DatabaseConnection | None = None) -> str:
+    if connection is not None:
+        return get_runtime_meta_value(connection, PUBLIC_CACHE_REVISION_META_KEY) or "0"
+
+    with get_db_connection() as next_connection:
+        return get_runtime_meta_value(next_connection, PUBLIC_CACHE_REVISION_META_KEY) or "0"
+
+
+def bump_public_cache_revision(connection: DatabaseConnection | None = None) -> str:
+    next_revision = str(time.time_ns())
+    if connection is not None:
+        set_runtime_meta_value(connection, PUBLIC_CACHE_REVISION_META_KEY, next_revision)
+        return next_revision
+
+    with get_db_connection() as next_connection:
+        set_runtime_meta_value(next_connection, PUBLIC_CACHE_REVISION_META_KEY, next_revision)
+    return next_revision
+
+
 def ensure_runtime_meta_table(connection: DatabaseConnection) -> None:
     if table_exists(connection, "app_runtime_meta"):
         return
@@ -3737,6 +4124,14 @@ def validate_business_profile_payload(
     city = str(data.get("city", "")).strip()
     address_line = str(data.get("addressLine", "")).strip()
     business_logo_path = normalize_image_path(data.get("businessLogoPath", ""))
+    support_email = normalize_optional_email(data.get("supportEmail", ""))
+    website_url = normalize_optional_url(data.get("websiteUrl", ""))
+    support_hours = re.sub(r"\s+", " ", str(data.get("supportHours", "") or "").strip())[:120]
+    return_policy_summary = re.sub(
+        r"\s+",
+        " ",
+        str(data.get("returnPolicySummary", "") or "").strip(),
+    )[:400]
     normalized_phone = re.sub(r"\s+", " ", phone_number)
     phone_digits = re.sub(r"\D", "", phone_number)
     normalized_business_number = re.sub(r"\s+", " ", business_number)
@@ -3759,6 +4154,12 @@ def validate_business_profile_payload(
     if len(address_line) < 5:
         errors.append("Adresa e biznesit duhet te kete te pakten 5 shkronja.")
 
+    if support_email and not EMAIL_RE.match(support_email):
+        errors.append("Emaili i suportit duhet te jete valid.")
+
+    if str(data.get("websiteUrl", "") or "").strip() and not website_url:
+        errors.append("Website i biznesit duhet te jete URL valide.")
+
     return errors, {
         "business_name": business_name,
         "business_description": business_description,
@@ -3767,6 +4168,10 @@ def validate_business_profile_payload(
         "phone_number": normalized_phone,
         "city": city,
         "address_line": address_line,
+        "support_email": support_email,
+        "website_url": website_url,
+        "support_hours": support_hours,
+        "return_policy_summary": return_policy_summary,
     }
 
 
@@ -3799,6 +4204,10 @@ def validate_admin_business_account_payload(
         "phone_number": business_payload["phone_number"],
         "city": business_payload["city"],
         "address_line": business_payload["address_line"],
+        "support_email": business_payload["support_email"],
+        "website_url": business_payload["website_url"],
+        "support_hours": business_payload["support_hours"],
+        "return_policy_summary": business_payload["return_policy_summary"],
     }
 
 
@@ -3820,6 +4229,39 @@ def normalize_image_path(value: object) -> str:
         return ""
 
     return "/" + "/".join(segments)
+
+
+def normalize_optional_email(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def normalize_optional_url(value: object) -> str:
+    raw_url = str(value or "").strip()
+    if not raw_url:
+        return ""
+
+    candidate = raw_url
+    if not re.match(r"^[a-z][a-z0-9+.-]*://", candidate, re.IGNORECASE):
+        candidate = f"https://{candidate}"
+
+    parsed_url = urlparse(candidate)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        return ""
+
+    normalized_path = parsed_url.path or ""
+    if normalized_path == "/":
+        normalized_path = ""
+
+    return urlunparse(
+        (
+            parsed_url.scheme.lower(),
+            parsed_url.netloc.lower(),
+            normalized_path,
+            "",
+            parsed_url.query,
+            "",
+        )
+    )
 
 
 def normalize_image_gallery_value(
@@ -3915,6 +4357,13 @@ def section_supports_package_amount(section: str | None) -> bool:
     return str(section or "").strip().lower() == "cosmetics"
 
 
+def slugify_for_compare(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    normalized = "".join(character for character in normalized if not unicodedata.combining(character))
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    return normalized.strip("-")
+
+
 def format_product_color_label(color: str | None) -> str:
     normalized_color = str(color or "").strip().lower()
     return PRODUCT_COLOR_LABELS.get(normalized_color, normalized_color)
@@ -3924,6 +4373,7 @@ def build_product_variant_key(
     *,
     size: str = "",
     color: str = "",
+    attributes: dict[str, object] | None = None,
 ) -> str:
     parts: list[str] = []
     normalized_color = str(color or "").strip().lower()
@@ -3932,6 +4382,38 @@ def build_product_variant_key(
         parts.append(f"color:{normalized_color}")
     if normalized_size:
         parts.append(f"size:{normalized_size}")
+    if isinstance(attributes, dict):
+        preferred_order = [
+            "storage",
+            "condition",
+            "material",
+            "fit",
+            "carrier",
+            "simType",
+            "connectivity",
+            "model",
+            "volume",
+            "skinType",
+            "scent",
+            "finish",
+            "dimensions",
+            "assemblyRequired",
+            "era",
+        ]
+        for attribute_key in preferred_order:
+            attribute_value = str(attributes.get(attribute_key, "") or "").strip()
+            if attribute_key in {"color", "size"} or not attribute_value:
+                continue
+            parts.append(
+                f"{attribute_key}:{slugify_for_compare(attribute_value)}"
+            )
+        for attribute_key in sorted(attributes.keys()):
+            attribute_value = str(attributes.get(attribute_key, "") or "").strip()
+            if attribute_key in {"color", "size", *preferred_order} or not attribute_value:
+                continue
+            parts.append(
+                f"{slugify_for_compare(attribute_key)}:{slugify_for_compare(attribute_value)}"
+            )
 
     return "|".join(parts) or "default"
 
@@ -3993,6 +4475,7 @@ def build_product_variant_label(
     *,
     size: str = "",
     color: str = "",
+    attributes: dict[str, object] | None = None,
 ) -> str:
     parts: list[str] = []
     normalized_color = str(color or "").strip().lower()
@@ -4001,6 +4484,34 @@ def build_product_variant_label(
         parts.append(format_product_color_label(normalized_color))
     if normalized_size:
         parts.append(normalized_size)
+    if isinstance(attributes, dict):
+        preferred_order = [
+            "storage",
+            "condition",
+            "material",
+            "fit",
+            "carrier",
+            "simType",
+            "connectivity",
+            "model",
+            "volume",
+            "skinType",
+            "scent",
+            "finish",
+            "dimensions",
+            "assemblyRequired",
+            "era",
+        ]
+        for attribute_key in preferred_order:
+            attribute_value = str(attributes.get(attribute_key, "") or "").strip()
+            if attribute_key in {"color", "size"} or not attribute_value:
+                continue
+            parts.append(attribute_value)
+        for attribute_key in sorted(attributes.keys()):
+            attribute_value = str(attributes.get(attribute_key, "") or "").strip()
+            if attribute_key in {"color", "size", *preferred_order} or not attribute_value:
+                continue
+            parts.append(attribute_value)
 
     return " / ".join(parts) or "Standard"
 
@@ -4012,6 +4523,7 @@ def normalize_variant_inventory_value(
     fallback_size: str = "",
     fallback_color: str = "",
     fallback_stock_quantity: int = 0,
+    fallback_attributes: dict[str, object] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
     errors: list[str] = []
     if isinstance(raw_value, list):
@@ -4030,6 +4542,24 @@ def normalize_variant_inventory_value(
     allows_color = section_supports_color_inventory(derive_section_from_category(category) or "")
     normalized_entries: list[dict[str, object]] = []
     seen_keys: set[str] = set()
+    attribute_field_candidates = [
+        "storage",
+        "condition",
+        "material",
+        "fit",
+        "carrier",
+        "simType",
+        "connectivity",
+        "model",
+        "volume",
+        "skinType",
+        "scent",
+        "finish",
+        "dimensions",
+        "assemblyRequired",
+        "era",
+        "memory",
+    ]
 
     for index, candidate in enumerate(candidates, start=1):
         if not isinstance(candidate, dict):
@@ -4040,7 +4570,22 @@ def normalize_variant_inventory_value(
         color = str(candidate.get("color", "")).strip().lower()
         raw_quantity = str(candidate.get("quantity", "")).strip()
         raw_price = str(candidate.get("price", "")).strip()
+        raw_compare_at_price = str(candidate.get("compareAtPrice", "")).strip()
         image_path = str(candidate.get("imagePath", "")).strip()
+        sku = str(candidate.get("sku", "")).strip()
+        barcode = str(candidate.get("barcode", "")).strip()
+        source_variant_key = str(candidate.get("sourceVariantKey", "")).strip()
+        color_label = str(candidate.get("colorLabel", "")).strip()
+        raw_attributes = candidate.get("attributes") if isinstance(candidate.get("attributes"), dict) else {}
+        normalized_attributes: dict[str, object] = {}
+        for attribute_key in attribute_field_candidates:
+            raw_attribute_value = (
+                raw_attributes.get(attribute_key, "")
+                if isinstance(raw_attributes, dict)
+                else candidate.get(attribute_key, "")
+            )
+            if str(raw_attribute_value or "").strip():
+                normalized_attributes[attribute_key] = str(raw_attribute_value).strip()
 
         if requires_size and size and size not in CLOTHING_SIZES:
             errors.append(f"Madhesia `{size}` nuk eshte valide te varianti #{index}.")
@@ -4049,8 +4594,11 @@ def normalize_variant_inventory_value(
             size = ""
 
         if color and color not in PRODUCT_COLORS:
-            errors.append(f"Ngjyra `{color}` nuk eshte valide te varianti #{index}.")
-            continue
+            if color_label:
+                normalized_attributes["color"] = color_label
+            else:
+                normalized_attributes["color"] = color
+            color = ""
         if not allows_color:
             color = ""
 
@@ -4076,9 +4624,26 @@ def normalize_variant_inventory_value(
         else:
             price = 0.0
 
-        variant_key = build_product_variant_key(size=size, color=color)
+        if raw_compare_at_price:
+            try:
+                compare_at_price = round(float(raw_compare_at_price), 2)
+            except ValueError:
+                errors.append(f"Cmimi i vjeter i variantit #{index} duhet te jete numer valid.")
+                continue
+            if compare_at_price <= price:
+                compare_at_price = 0.0
+        else:
+            compare_at_price = 0.0
+
+        variant_key = build_product_variant_key(
+            size=size,
+            color=color,
+            attributes=normalized_attributes,
+        )
         if variant_key in seen_keys:
-            errors.append(f"Varianti `{build_product_variant_label(size=size, color=color)}` eshte perseritur.")
+            errors.append(
+                f"Varianti `{build_product_variant_label(size=size, color=color, attributes=normalized_attributes)}` eshte perseritur."
+            )
             continue
 
         seen_keys.add(variant_key)
@@ -4088,9 +4653,19 @@ def normalize_variant_inventory_value(
                 "size": size,
                 "color": color,
                 "quantity": quantity,
-                "label": build_product_variant_label(size=size, color=color),
+                "label": build_product_variant_label(
+                    size=size,
+                    color=color,
+                    attributes=normalized_attributes,
+                ),
                 "price": price,
+                "compareAtPrice": compare_at_price,
                 "imagePath": image_path,
+                "sku": sku,
+                "barcode": barcode,
+                "sourceVariantKey": source_variant_key,
+                "attributes": normalized_attributes,
+                "colorLabel": color_label or str(normalized_attributes.get("color", "") or ""),
             }
         )
 
@@ -4107,6 +4682,15 @@ def normalize_variant_inventory_value(
         normalized_fallback_size = ""
     if not allows_color:
         normalized_fallback_color = ""
+    normalized_fallback_attributes = (
+        {
+            str(attribute_key): value
+            for attribute_key, value in dict(fallback_attributes or {}).items()
+            if str(attribute_key or "").strip() and str(value or "").strip()
+        }
+        if isinstance(fallback_attributes, dict)
+        else {}
+    )
 
     fallback_quantity = max(0, int(fallback_stock_quantity or 0))
     if fallback_quantity <= 0:
@@ -4117,6 +4701,7 @@ def normalize_variant_inventory_value(
             "key": build_product_variant_key(
                 size=normalized_fallback_size,
                 color=normalized_fallback_color,
+                attributes=normalized_fallback_attributes,
             ),
             "size": normalized_fallback_size,
             "color": normalized_fallback_color,
@@ -4124,9 +4709,16 @@ def normalize_variant_inventory_value(
             "label": build_product_variant_label(
                 size=normalized_fallback_size,
                 color=normalized_fallback_color,
+                attributes=normalized_fallback_attributes,
             ),
             "price": 0.0,
+            "compareAtPrice": 0.0,
             "imagePath": "",
+            "sku": "",
+            "barcode": "",
+            "sourceVariantKey": "",
+            "attributes": normalized_fallback_attributes,
+            "colorLabel": str(normalized_fallback_attributes.get("color", "") or ""),
         }
     ]
 
@@ -4163,11 +4755,43 @@ def parse_package_amount_payload(
     return errors, amount_value, amount_unit
 
 
+def parse_optional_product_weight_payload(
+    data: dict[str, object],
+) -> tuple[list[str], float, str]:
+    errors: list[str] = []
+    raw_value = str(data.get("weightValue", "")).replace(",", ".").strip()
+    raw_unit = str(data.get("weightUnit", "")).strip().lower()
+
+    if not raw_value and not raw_unit:
+        return errors, 0.0, ""
+
+    if raw_unit not in PRODUCT_WEIGHT_UNITS:
+        errors.append("Njesia e peshes duhet te jete g, kg, lb ose oz.")
+        return errors, 0.0, raw_unit
+
+    try:
+        weight_value = round(float(raw_value), 3)
+    except ValueError:
+        errors.append("Pesha e produktit duhet te jete numer valid.")
+        return errors, 0.0, raw_unit
+
+    if weight_value <= 0:
+        errors.append("Pesha e produktit duhet te jete me e madhe se zero.")
+
+    return errors, weight_value, raw_unit
+
+
 def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[str, object]]:
     errors: list[str] = []
     article_number = str(data.get("articleNumber", "")).strip()
     title = str(data.get("title", "")).strip()
     description = str(data.get("description", "")).strip()
+    brand = re.sub(r"\s+", " ", str(data.get("brand", "") or "").strip())[:80]
+    gtin = re.sub(r"\D", "", str(data.get("gtin", "") or "").strip())[:14]
+    mpn = re.sub(r"\s+", " ", str(data.get("mpn", "") or "").strip())[:70]
+    material = re.sub(r"\s+", " ", str(data.get("material", "") or "").strip())[:120]
+    meta_title = re.sub(r"\s+", " ", str(data.get("metaTitle", "") or "").strip())[:120]
+    meta_description = re.sub(r"\s+", " ", str(data.get("metaDescription", "") or "").strip())[:320]
     page_section = str(data.get("pageSection", "")).strip().lower()
     audience = str(data.get("audience", "")).strip().lower()
     category = str(data.get("category", "")).strip().lower()
@@ -4262,6 +4886,11 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
         page_section=page_section,
     )
     errors.extend(package_amount_errors)
+    weight_errors, weight_value, weight_unit = parse_optional_product_weight_payload(data)
+    errors.extend(weight_errors)
+
+    if gtin and len(gtin) not in {8, 12, 13, 14}:
+        errors.append("GTIN duhet te kete 8, 12, 13 ose 14 shifra.")
 
     variant_errors, variant_inventory = normalize_variant_inventory_value(
         data.get("variantInventory"),
@@ -4309,6 +4938,14 @@ def validate_product_payload(data: dict[str, object]) -> tuple[list[str], dict[s
         "articleNumber": article_number,
         "title": title,
         "description": description,
+        "brand": brand,
+        "gtin": gtin,
+        "mpn": mpn,
+        "material": material,
+        "weightValue": weight_value,
+        "weightUnit": weight_unit,
+        "metaTitle": meta_title,
+        "metaDescription": meta_description,
         "pageSection": page_section,
         "audience": audience,
         "category": category,
@@ -7209,12 +7846,23 @@ def deserialize_product_variant_inventory(
 def derive_product_variant_mode(variant_inventory: list[dict[str, object]]) -> str:
     has_size = any(str(entry.get("size", "")).strip() for entry in variant_inventory)
     has_color = any(str(entry.get("color", "")).strip() for entry in variant_inventory)
+    has_attributes = any(
+        isinstance(entry.get("attributes"), dict)
+        and any(
+            str(value or "").strip()
+            for key, value in dict(entry.get("attributes") or {}).items()
+            if str(key or "").strip() not in {"size", "color"}
+        )
+        for entry in variant_inventory
+    )
     if has_size and has_color:
         return "color-size"
     if has_size:
         return "size"
     if has_color:
         return "color"
+    if has_attributes:
+        return "attributes"
     return "simple"
 
 
@@ -7263,6 +7911,26 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "businessDescription": row["business_description"],
         "businessNumber": row["business_number"],
         "logoPath": normalize_image_path(row["business_logo_path"]),
+        "supportEmail": (
+            str(row["support_email"] or "").strip().lower()
+            if "support_email" in row.keys()
+            else ""
+        ),
+        "websiteUrl": (
+            str(row["website_url"] or "").strip()
+            if "website_url" in row.keys()
+            else ""
+        ),
+        "supportHours": (
+            str(row["support_hours"] or "").strip()
+            if "support_hours" in row.keys()
+            else ""
+        ),
+        "returnPolicySummary": (
+            str(row["return_policy_summary"] or "").strip()
+            if "return_policy_summary" in row.keys()
+            else ""
+        ),
         "verificationStatus": (
             str(row["verification_status"] or "").strip().lower()
             if "verification_status" in row.keys()
@@ -7329,7 +7997,7 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
 
 
 def serialize_public_business_profile(row: sqlite3.Row) -> dict[str, object]:
-    return {
+    payload = {
         "id": row["id"],
         "businessName": row["business_name"],
         "businessDescription": row["business_description"],
@@ -7352,6 +8020,17 @@ def serialize_public_business_profile(row: sqlite3.Row) -> dict[str, object]:
         else 0,
         "profileUrl": f"/profili-biznesit?id={row['id']}",
     }
+    if "support_email" in row.keys():
+        payload["supportEmail"] = str(row["support_email"] or "").strip().lower()
+    if "website_url" in row.keys():
+        payload["websiteUrl"] = str(row["website_url"] or "").strip()
+    if "support_hours" in row.keys():
+        payload["supportHours"] = str(row["support_hours"] or "").strip()
+    if "return_policy_summary" in row.keys():
+        payload["returnPolicySummary"] = str(row["return_policy_summary"] or "").strip()
+    if "shipping_settings" in row.keys():
+        payload["shippingSettings"] = normalize_business_shipping_settings(row["shipping_settings"])
+    return payload
 
 
 def serialize_public_business_detail(
@@ -7364,7 +8043,6 @@ def serialize_public_business_detail(
         {
             "userId": row["user_id"],
             "businessNumber": row["business_number"],
-            "ownerEmail": row["owner_email"],
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "isFollowed": is_followed,
@@ -7381,6 +8059,26 @@ def serialize_admin_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "businessName": row["business_name"],
         "businessDescription": row["business_description"],
         "logoPath": normalize_image_path(row["business_logo_path"]),
+        "supportEmail": (
+            str(row["support_email"] or "").strip().lower()
+            if "support_email" in row.keys()
+            else ""
+        ),
+        "websiteUrl": (
+            str(row["website_url"] or "").strip()
+            if "website_url" in row.keys()
+            else ""
+        ),
+        "supportHours": (
+            str(row["support_hours"] or "").strip()
+            if "support_hours" in row.keys()
+            else ""
+        ),
+        "returnPolicySummary": (
+            str(row["return_policy_summary"] or "").strip()
+            if "return_policy_summary" in row.keys()
+            else ""
+        ),
         "verificationStatus": (
             str(row["verification_status"] or "").strip().lower()
             if "verification_status" in row.keys()
@@ -7576,10 +8274,31 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         if "package_amount_unit" in row.keys()
         else ""
     )
+    weight_value = 0.0
+    if "weight_value" in row.keys():
+        try:
+            weight_value = round(float(row["weight_value"] or 0), 3)
+        except (TypeError, ValueError):
+            weight_value = 0.0
+    weight_unit = (
+        str(row["weight_unit"] or "").strip().lower()
+        if "weight_unit" in row.keys()
+        else ""
+    )
     requires_variant_selection = len(variant_inventory) > 1 and any(
-        str(entry.get("size", "")).strip() or str(entry.get("color", "")).strip()
+        str(entry.get("size", "")).strip()
+        or str(entry.get("color", "")).strip()
+        or isinstance(entry.get("attributes"), dict) and any(
+            str(value or "").strip()
+            for key, value in dict(entry.get("attributes") or {}).items()
+            if str(key or "").strip() not in {"size", "color"}
+        )
         for entry in variant_inventory
     )
+    try:
+        import_metadata = json.loads(str(row["import_metadata"] or "{}")) if "import_metadata" in row.keys() else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        import_metadata = {}
 
     return {
         "id": row["id"],
@@ -7588,8 +8307,45 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
             if "article_number" in row.keys()
             else ""
         ),
+        "normalizedTitle": (
+            str(row["normalized_title"] or "").strip()
+            if "normalized_title" in row.keys()
+            else ""
+        ),
         "title": row["title"],
         "description": row["description"],
+        "brand": (
+            str(row["brand"] or "").strip()
+            if "brand" in row.keys()
+            else ""
+        ),
+        "gtin": (
+            str(row["gtin"] or "").strip()
+            if "gtin" in row.keys()
+            else ""
+        ),
+        "mpn": (
+            str(row["mpn"] or "").strip()
+            if "mpn" in row.keys()
+            else ""
+        ),
+        "material": (
+            str(row["material"] or "").strip()
+            if "material" in row.keys()
+            else ""
+        ),
+        "weightValue": weight_value,
+        "weightUnit": weight_unit,
+        "metaTitle": (
+            str(row["meta_title"] or "").strip()
+            if "meta_title" in row.keys()
+            else ""
+        ),
+        "metaDescription": (
+            str(row["meta_description"] or "").strip()
+            if "meta_description" in row.keys()
+            else ""
+        ),
         "price": row["price"],
         "compareAtPrice": round(float(row["compare_at_price"] or 0), 2)
         if "compare_at_price" in row.keys()
@@ -7615,6 +8371,20 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         "stockQuantity": row["stock_quantity"],
         "isPublic": bool(row["is_public"]),
         "showStockPublic": bool(row["show_stock_public"]),
+        "groupKey": (
+            str(row["group_key"] or "").strip()
+            if "group_key" in row.keys()
+            else ""
+        ),
+        "sourceId": int(row["source_id"] or 0)
+        if "source_id" in row.keys()
+        else 0,
+        "sourceProductKey": (
+            str(row["source_product_key"] or "").strip()
+            if "source_product_key" in row.keys()
+            else ""
+        ),
+        "importMetadata": import_metadata if isinstance(import_metadata, dict) else {},
         "createdByUserId": row["created_by_user_id"],
         "businessProfileId": int(row["business_profile_id"] or 0)
         if "business_profile_id" in row.keys()
@@ -7626,6 +8396,29 @@ def serialize_product(row: sqlite3.Row) -> dict[str, object]:
         ),
         "createdAt": row["created_at"],
         "businessName": business_name,
+        "supportEmail": (
+            str(row["business_support_email"] or "").strip().lower()
+            if "business_support_email" in row.keys()
+            else ""
+        ),
+        "websiteUrl": (
+            str(row["business_website_url"] or "").strip()
+            if "business_website_url" in row.keys()
+            else ""
+        ),
+        "supportHours": (
+            str(row["business_support_hours"] or "").strip()
+            if "business_support_hours" in row.keys()
+            else ""
+        ),
+        "returnPolicySummary": (
+            str(row["business_return_policy_summary"] or "").strip()
+            if "business_return_policy_summary" in row.keys()
+            else ""
+        ),
+        "shippingSettings": normalize_business_shipping_settings(
+            row["business_shipping_settings"] if "business_shipping_settings" in row.keys() else None
+        ),
         "buyersCount": buyers_count,
         "viewsCount": max(0, int(row["views_count"] or 0))
         if "views_count" in row.keys()
@@ -10503,6 +11296,10 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.verification_requested_at,
                 bp.verification_verified_at,
@@ -10576,6 +11373,10 @@ def fetch_business_profiles_for_admin() -> list[sqlite3.Row]:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.verification_requested_at,
                 bp.verification_verified_at,
@@ -10640,6 +11441,10 @@ def fetch_business_profile_for_admin_by_id(business_id: int) -> sqlite3.Row | No
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.verification_requested_at,
                 bp.verification_verified_at,
@@ -10706,10 +11511,15 @@ def fetch_public_business_profiles() -> list[sqlite3.Row]:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
+                bp.shipping_settings,
                 bp.created_at,
                 bp.updated_at,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
@@ -10770,10 +11580,15 @@ def search_public_business_profiles(
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
+                bp.shipping_settings,
                 bp.created_at,
                 bp.updated_at,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
@@ -10843,19 +11658,22 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
                 bp.business_description,
                 bp.business_number,
                 bp.business_logo_path,
+                bp.support_email,
+                bp.website_url,
+                bp.support_hours,
+                bp.return_policy_summary,
                 bp.verification_status,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
+                bp.shipping_settings,
                 bp.created_at,
                 bp.updated_at,
-                u.email AS owner_email,
                 COALESCE(follower_totals.total_followers, 0) AS followers_count,
                 COALESCE(product_totals.total_products, 0) AS products_count,
                 COALESCE(review_totals.average_rating, 0) AS seller_rating,
                 COALESCE(review_totals.review_count, 0) AS seller_review_count
             FROM business_profiles bp
-            INNER JOIN users u ON u.id = bp.user_id
             LEFT JOIN (
                 SELECT
                     business_id,
@@ -10887,6 +11705,126 @@ def fetch_public_business_profile_by_id(business_id: int) -> sqlite3.Row | None:
             """,
             (business_id,),
         ).fetchone()
+
+
+def build_public_url_from_origin(origin: str, path: str) -> str:
+    normalized_origin = str(origin or "").strip().rstrip("/")
+    normalized_path = str(path or "/").strip() or "/"
+    if normalized_path.startswith("http://") or normalized_path.startswith("https://"):
+        return normalized_path
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    return f"{normalized_origin}{normalized_path}"
+
+
+def normalize_sitemap_lastmod(value: object) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+
+    normalized_value = raw_value.replace(" ", "T")
+    try:
+        parsed_value = datetime.fromisoformat(normalized_value.replace("Z", "+00:00"))
+        return parsed_value.date().isoformat()
+    except ValueError:
+        return raw_value[:10]
+
+
+def fetch_public_sitemap_product_rows() -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                COALESCE(NULLIF(TRIM(created_at), ''), '') AS lastmod
+            FROM products
+            WHERE is_public = 1
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+
+def fetch_public_sitemap_business_rows() -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                COALESCE(NULLIF(TRIM(updated_at), ''), created_at, '') AS lastmod
+            FROM business_profiles
+            WHERE TRIM(business_name) <> ''
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+
+def build_sitemap_xml(origin: str) -> bytes:
+    urlset = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+
+    sitemap_entries = [
+        {
+            "loc": build_public_url_from_origin(origin, "/"),
+            "changefreq": "daily",
+            "priority": "1.0",
+            "lastmod": "",
+        }
+    ]
+
+    for row in fetch_public_sitemap_product_rows():
+        sitemap_entries.append(
+            {
+                "loc": build_public_url_from_origin(origin, f"/produkti?id={int(row['id'])}"),
+                "changefreq": "daily",
+                "priority": "0.8",
+                "lastmod": normalize_sitemap_lastmod(row["lastmod"]),
+            }
+        )
+
+    for row in fetch_public_sitemap_business_rows():
+        sitemap_entries.append(
+            {
+                "loc": build_public_url_from_origin(origin, f"/profili-biznesit?id={int(row['id'])}"),
+                "changefreq": "weekly",
+                "priority": "0.7",
+                "lastmod": normalize_sitemap_lastmod(row["lastmod"]),
+            }
+        )
+
+    for entry in sitemap_entries:
+        url_node = ET.SubElement(urlset, "url")
+        ET.SubElement(url_node, "loc").text = entry["loc"]
+        if entry["lastmod"]:
+            ET.SubElement(url_node, "lastmod").text = entry["lastmod"]
+        ET.SubElement(url_node, "changefreq").text = entry["changefreq"]
+        ET.SubElement(url_node, "priority").text = entry["priority"]
+
+    return ET.tostring(urlset, encoding="utf-8", xml_declaration=True)
+
+
+def build_robots_txt(origin: str) -> bytes:
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /login",
+        "Disallow: /signup",
+        "Disallow: /verifiko-email",
+        "Disallow: /forgot-password",
+        "Disallow: /ndrysho-fjalekalimin",
+        "Disallow: /cart",
+        "Disallow: /wishlist",
+        "Disallow: /llogaria",
+        "Disallow: /te-dhenat-personale",
+        "Disallow: /adresat",
+        "Disallow: /adresa-e-porosise",
+        "Disallow: /menyra-e-pageses",
+        "Disallow: /porosite",
+        "Disallow: /track-order",
+        "Disallow: /mesazhet",
+        "Disallow: /njoftimet",
+        f"Sitemap: {build_public_url_from_origin(origin, '/sitemap.xml')}",
+        "",
+    ]
+    return "\n".join(lines).encode("utf-8")
 
 
 def count_public_products_for_business(business_id: int) -> int:
@@ -10976,9 +11914,13 @@ def fetch_products(
     size: str | None = None,
     color: str | None = None,
     business_name_search: str | None = None,
+    business_names: list[str] | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    sort: str = "newest",
     limit: int | None = None,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
@@ -10990,10 +11932,14 @@ def fetch_products(
             size=size,
             color=color,
             business_name_search=business_name_search,
+            business_names=business_names,
             include_hidden=include_hidden,
             created_by_user_id=created_by_user_id,
             search_text=search_text,
+            min_price=min_price,
+            max_price=max_price,
         )
+        order_clause = build_product_order_clause(sort)
 
         limit_offset_clause = ""
         if limit is not None:
@@ -11013,7 +11959,10 @@ def fetch_products(
             """
             + where_clause
             + """
-            ORDER BY products.id DESC
+            ORDER BY
+            """
+            + order_clause
+            + """
             """
             + limit_offset_clause
             + """
@@ -11030,9 +11979,13 @@ def fetch_products_page(
     size: str | None = None,
     color: str | None = None,
     business_name_search: str | None = None,
+    business_names: list[str] | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    sort: str = "newest",
     limit: int = 10,
     offset: int = 0,
 ) -> tuple[list[sqlite3.Row], bool]:
@@ -11044,14 +11997,86 @@ def fetch_products_page(
         size=size,
         color=color,
         business_name_search=business_name_search,
+        business_names=business_names,
         include_hidden=include_hidden,
         created_by_user_id=created_by_user_id,
         search_text=search_text,
+        min_price=min_price,
+        max_price=max_price,
+        sort=sort,
         limit=safe_limit + 1,
         offset=offset,
     )
     has_more = len(rows) > safe_limit
     return rows[:safe_limit], has_more
+
+
+def normalize_catalog_brand_filters(raw_values: list[str] | None) -> list[str]:
+    normalized_values: list[str] = []
+    seen_values: set[str] = set()
+    for raw_value in raw_values or []:
+        for part in str(raw_value or "").split(","):
+            normalized_part = re.sub(r"\s+", " ", part).strip().lower()
+            if not normalized_part or normalized_part in seen_values:
+                continue
+            seen_values.add(normalized_part)
+            normalized_values.append(normalized_part)
+    return normalized_values
+
+
+def parse_catalog_price_bounds(
+    min_price_raw: object,
+    max_price_raw: object,
+) -> tuple[list[str], float | None, float | None]:
+    errors: list[str] = []
+    min_price: float | None = None
+    max_price: float | None = None
+
+    if str(min_price_raw or "").strip():
+        try:
+            min_price = round(float(str(min_price_raw).strip()), 2)
+        except ValueError:
+            errors.append("Cmimi minimal nuk eshte valid.")
+
+    if str(max_price_raw or "").strip():
+        try:
+            max_price = round(float(str(max_price_raw).strip()), 2)
+        except ValueError:
+            errors.append("Cmimi maksimal nuk eshte valid.")
+
+    if min_price is not None and min_price < 0:
+        errors.append("Cmimi minimal nuk mund te jete negativ.")
+    if max_price is not None and max_price < 0:
+        errors.append("Cmimi maksimal nuk mund te jete negativ.")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        errors.append("Cmimi minimal duhet te jete me i vogel ose i barabarte me cmimin maksimal.")
+
+    return errors, min_price, max_price
+
+
+def normalize_catalog_sort_value(raw_sort: object) -> str:
+    normalized_sort = str(raw_sort or "").strip().lower()
+    if normalized_sort in {"popular", "newest", "price-asc", "price-desc", "rating"}:
+        return normalized_sort
+    return "popular"
+
+
+def build_product_order_clause(sort: str) -> str:
+    normalized_sort = normalize_catalog_sort_value(sort)
+    if normalized_sort == "price-asc":
+        return "CAST(products.price AS REAL) ASC, products.id DESC"
+    if normalized_sort == "price-desc":
+        return "CAST(products.price AS REAL) DESC, products.id DESC"
+    if normalized_sort == "rating":
+        return "COALESCE(average_rating, 0) DESC, COALESCE(review_count, 0) DESC, products.id DESC"
+    if normalized_sort == "newest":
+        return "products.created_at DESC, products.id DESC"
+    return (
+        "COALESCE(buyers_count, 0) DESC, "
+        "COALESCE(review_count, 0) DESC, "
+        "COALESCE(average_rating, 0) DESC, "
+        "products.id DESC"
+    )
 
 
 def build_product_query_filters(
@@ -11062,9 +12087,12 @@ def build_product_query_filters(
     size: str | None = None,
     color: str | None = None,
     business_name_search: str | None = None,
+    business_names: list[str] | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
 ) -> tuple[str, list[object]]:
     conditions: list[str] = []
     parameters: list[object] = []
@@ -11106,16 +12134,51 @@ def build_product_query_filters(
         )
         parameters.append(f"%{business_name_search.lower()}%")
 
+    normalized_business_names = normalize_catalog_brand_filters(business_names)
+    if normalized_business_names:
+        placeholders = ", ".join("?" for _ in normalized_business_names)
+        conditions.append(
+            "EXISTS ("
+            "SELECT 1 FROM business_profiles bp "
+            "WHERE bp.user_id = products.created_by_user_id "
+            f"AND LOWER(TRIM(COALESCE(bp.business_name, ''))) IN ({placeholders})"
+            ")"
+        )
+        parameters.extend(normalized_business_names)
+
     if search_text:
+        digits_only_search = re.sub(r"\D", "", search_text)
         conditions.append(
             "("
             "LOWER(title) LIKE ? "
             "OR LOWER(description) LIKE ? "
-            "OR LOWER(ai_image_search_text) LIKE ?"
+            "OR LOWER(ai_image_search_text) LIKE ? "
+            "OR LOWER(COALESCE(brand, '')) LIKE ? "
+            "OR LOWER(COALESCE(material, '')) LIKE ? "
+            "OR LOWER(COALESCE(mpn, '')) LIKE ? "
+            "OR COALESCE(gtin, '') LIKE ?"
             ")"
         )
         search_pattern = f"%{search_text.lower()}%"
-        parameters.extend([search_pattern, search_pattern, search_pattern])
+        parameters.extend(
+            [
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                f"%{digits_only_search}%",
+            ]
+        )
+
+    if min_price is not None:
+        conditions.append("CAST(price AS REAL) >= ?")
+        parameters.append(float(min_price))
+
+    if max_price is not None:
+        conditions.append("CAST(price AS REAL) <= ?")
+        parameters.append(float(max_price))
 
     if not include_hidden:
         conditions.append("is_public = 1")
@@ -11128,6 +12191,47 @@ def build_product_query_filters(
     return where_clause, parameters
 
 
+def count_products(
+    category: str | None = None,
+    *,
+    category_group: str | None = None,
+    product_type: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    business_name_search: str | None = None,
+    business_names: list[str] | None = None,
+    include_hidden: bool = False,
+    created_by_user_id: int | None = None,
+    search_text: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+) -> int:
+    with get_db_connection() as connection:
+        where_clause, parameters = build_product_query_filters(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name_search,
+            business_names=business_names,
+            include_hidden=include_hidden,
+            created_by_user_id=created_by_user_id,
+            search_text=search_text,
+            min_price=min_price,
+            max_price=max_price,
+        )
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM products
+            """
+            + where_clause,
+            parameters,
+        ).fetchone()
+    return max(0, int(row["total"] or 0)) if row else 0
+
+
 def build_product_catalog_facets(
     category: str | None = None,
     *,
@@ -11136,9 +12240,12 @@ def build_product_catalog_facets(
     size: str | None = None,
     color: str | None = None,
     business_name_search: str | None = None,
+    business_names: list[str] | None = None,
     include_hidden: bool = False,
     created_by_user_id: int | None = None,
     search_text: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
 ) -> dict[str, list[dict[str, object]]]:
     cache_key = build_runtime_public_cache_key(
         "catalog:facets",
@@ -11149,9 +12256,12 @@ def build_product_catalog_facets(
             "size": size or "",
             "color": color or "",
             "businessName": business_name_search or "",
+            "businessNames": normalize_catalog_brand_filters(business_names),
             "includeHidden": bool(include_hidden),
             "createdByUserId": int(created_by_user_id or 0),
             "searchText": search_text or "",
+            "minPrice": min_price if min_price is not None else "",
+            "maxPrice": max_price if max_price is not None else "",
         },
     )
     cached_facets = read_runtime_public_cache(cache_key)
@@ -11166,9 +12276,12 @@ def build_product_catalog_facets(
             size=size,
             color=color,
             business_name_search=business_name_search,
+            business_names=business_names,
             include_hidden=include_hidden,
             created_by_user_id=created_by_user_id,
             search_text=search_text,
+            min_price=min_price,
+            max_price=max_price,
         )
         rows = connection.execute(
             """
@@ -11179,7 +12292,13 @@ def build_product_catalog_facets(
                 color,
                 stock_quantity,
                 variant_inventory,
-                ai_image_color_terms
+                ai_image_color_terms,
+                (
+                    SELECT COALESCE(bp.business_name, '')
+                    FROM business_profiles bp
+                    WHERE bp.user_id = products.created_by_user_id
+                    LIMIT 1
+                ) AS business_name
             FROM products
             """
             + where_clause
@@ -11192,6 +12311,7 @@ def build_product_catalog_facets(
     page_sections: dict[str, dict[str, object]] = {}
     categories: dict[str, dict[str, object]] = {}
     product_types: dict[tuple[str, str], dict[str, object]] = {}
+    brands: dict[str, dict[str, object]] = {}
     sizes: set[str] = set()
     colors: set[str] = set()
 
@@ -11235,6 +12355,18 @@ def build_product_catalog_facets(
                 "category": row_category,
                 "pageSection": row_section,
             }
+
+        row_business_name = re.sub(r"\s+", " ", str(row["business_name"] or "").strip())
+        if row_business_name:
+            normalized_business_name = row_business_name.lower()
+            if normalized_business_name in brands:
+                brands[normalized_business_name]["count"] = int(brands[normalized_business_name]["count"]) + 1
+            else:
+                brands[normalized_business_name] = {
+                    "value": normalized_business_name,
+                    "label": row_business_name,
+                    "count": 1,
+                }
 
         variant_inventory = deserialize_product_variant_inventory(
             row["variant_inventory"],
@@ -11296,6 +12428,10 @@ def build_product_catalog_facets(
         ],
         key=lambda item: (color_order.get(str(item["value"]), 999), str(item["label"])),
     )
+    sorted_brands = sorted(
+        brands.values(),
+        key=lambda item: (-int(item["count"]), str(item["label"]).lower()),
+    )
 
     facets_payload = {
         "pageSections": sorted_page_sections,
@@ -11303,6 +12439,7 @@ def build_product_catalog_facets(
         "productTypes": sorted_product_types,
         "sizes": sorted_sizes,
         "colors": sorted_colors,
+        "brands": sorted_brands,
     }
     write_runtime_public_cache(
         cache_key,
@@ -11397,43 +12534,6 @@ def build_catalog_autocomplete_matches(
             )
 
     return matches[: max(1, min(8, int(limit or 6)))]
-
-
-def count_products(
-    category: str | None = None,
-    *,
-    category_group: str | None = None,
-    product_type: str | None = None,
-    size: str | None = None,
-    color: str | None = None,
-    business_name_search: str | None = None,
-    include_hidden: bool = False,
-    created_by_user_id: int | None = None,
-    search_text: str | None = None,
-) -> int:
-    with get_db_connection() as connection:
-        where_clause, parameters = build_product_query_filters(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-            business_name_search=business_name_search,
-            include_hidden=include_hidden,
-            created_by_user_id=created_by_user_id,
-            search_text=search_text,
-        )
-
-        row = connection.execute(
-            """
-            SELECT COUNT(*) AS total_count
-            FROM products
-            """
-            + where_clause,
-            parameters,
-        ).fetchone()
-
-    return int(row["total_count"] or 0)
 
 
 def update_product_image_fingerprint(
@@ -11538,6 +12638,856 @@ def fetch_product_by_id(product_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def safe_json_loads_object(raw_value: object) -> dict[str, object]:
+    if isinstance(raw_value, dict):
+        return dict(raw_value)
+    try:
+        parsed_value = json.loads(str(raw_value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed_value if isinstance(parsed_value, dict) else {}
+
+
+def safe_json_loads_list(raw_value: object) -> list[object]:
+    if isinstance(raw_value, list):
+        return list(raw_value)
+    try:
+        parsed_value = json.loads(str(raw_value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed_value if isinstance(parsed_value, list) else []
+
+
+def fetch_catalog_import_profile_for_business(
+    business_user_id: int,
+    profile_id: int,
+) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_profiles
+            WHERE id = ? AND business_user_id = ?
+            LIMIT 1
+            """,
+            (profile_id, business_user_id),
+        ).fetchone()
+
+
+def fetch_catalog_import_profiles_for_business(business_user_id: int) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_profiles
+            WHERE business_user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (business_user_id,),
+        ).fetchall()
+
+
+def fetch_catalog_import_source_for_business(
+    business_user_id: int,
+    source_id: int,
+) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_sources
+            WHERE id = ? AND business_user_id = ?
+            LIMIT 1
+            """,
+            (source_id, business_user_id),
+        ).fetchone()
+
+
+def fetch_catalog_import_sources_for_business(business_user_id: int) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_sources
+            WHERE business_user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (business_user_id,),
+        ).fetchall()
+
+
+def fetch_catalog_import_job_for_business(
+    business_user_id: int,
+    job_id: int,
+) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_jobs
+            WHERE id = ? AND business_user_id = ?
+            LIMIT 1
+            """,
+            (job_id, business_user_id),
+        ).fetchone()
+
+
+def fetch_catalog_import_jobs_for_business(business_user_id: int, *, limit: int = 10) -> list[sqlite3.Row]:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM catalog_import_jobs
+            WHERE business_user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (business_user_id, max(1, int(limit))),
+        ).fetchall()
+
+
+def fetch_catalog_import_job_records(
+    connection: DatabaseConnection,
+    job_id: int,
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM catalog_import_job_records
+        WHERE job_id = ?
+        ORDER BY row_index ASC, id ASC
+        """,
+        (job_id,),
+    ).fetchall()
+
+
+def serialize_catalog_import_profile(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "profileName": str(row["profile_name"] or "").strip(),
+        "sourceType": str(row["source_type"] or "").strip().lower(),
+        "fieldMapping": safe_json_loads_object(row["field_mapping"]),
+        "categoryMappingRules": safe_json_loads_object(row["category_mapping_rules"]),
+        "attributeMappingRules": safe_json_loads_object(row["attribute_mapping_rules"]),
+        "normalizationRules": safe_json_loads_object(row["normalization_rules"]),
+        "aiPreferences": safe_json_loads_object(row["ai_preferences"]),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+    }
+
+
+def serialize_catalog_import_source(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "profileId": int(row["profile_id"] or 0),
+        "sourceName": str(row["source_name"] or "").strip(),
+        "sourceType": str(row["source_type"] or "").strip().lower(),
+        "sourceConfig": safe_json_loads_object(row["source_config"]),
+        "syncEnabled": bool(row["sync_enabled"]),
+        "syncIntervalMinutes": max(0, int(row["sync_interval_minutes"] or 0)),
+        "lastSyncedAt": str(row["last_synced_at"] or "").strip(),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+    }
+
+
+def serialize_catalog_import_job(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "sourceId": int(row["source_id"] or 0),
+        "profileId": int(row["profile_id"] or 0),
+        "sourceType": str(row["source_type"] or "").strip().lower(),
+        "adapterKind": str(row["adapter_kind"] or "").strip().lower(),
+        "originalFilename": str(row["original_filename"] or "").strip(),
+        "status": str(row["status"] or "").strip().lower(),
+        "summary": safe_json_loads_object(row["summary_json"]),
+        "createdAt": str(row["created_at"] or "").strip(),
+        "updatedAt": str(row["updated_at"] or "").strip(),
+        "committedAt": str(row["committed_at"] or "").strip(),
+    }
+
+
+def build_catalog_import_heuristic_ai_suggestions(
+    *,
+    headers: list[str],
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    detected_mappings = catalog_import_lib.suggest_field_mappings(headers, rows)
+    title_header = detected_mappings.get("title", "")
+    description_header = detected_mappings.get("description", "")
+    brand_header = detected_mappings.get("brand", "")
+    category_header = detected_mappings.get("category", "")
+    row_suggestions: list[dict[str, object]] = []
+
+    for row in rows[:12]:
+        source_row_id = str(row.get("__sourceRowId", "") or "").strip()
+        title = str(row.get(title_header, "") if title_header else "").strip()
+        description = str(row.get(description_header, "") if description_header else "").strip()
+        category = str(row.get(category_header, "") if category_header else "").strip()
+        brand = str(row.get(brand_header, "") if brand_header else "").strip()
+        suggested_category, confidence, warnings = catalog_import_lib.infer_category_from_text(
+            category,
+            title,
+            description,
+        )
+        attribute_keys = catalog_import_lib.choose_attribute_set(suggested_category)
+        normalized_attributes = catalog_import_lib.extract_attributes_from_title(title, attribute_keys)
+        normalized_title = catalog_import_lib.normalize_title_for_grouping(title, normalized_attributes) or title
+        group_key, group_confidence, _ = catalog_import_lib.build_group_key(
+            {
+                "groupId": row.get(detected_mappings.get("groupId", ""), ""),
+                "parentSku": row.get(detected_mappings.get("parentSku", ""), ""),
+                "styleCode": row.get(detected_mappings.get("styleCode", ""), ""),
+                "modelCode": row.get(detected_mappings.get("modelCode", ""), ""),
+                "sourceProductKey": row.get(detected_mappings.get("sourceProductKey", ""), ""),
+            },
+            normalized_title,
+            brand,
+            suggested_category,
+        )
+        row_suggestions.append(
+            {
+                "sourceRowId": source_row_id or str(len(row_suggestions) + 1),
+                "suggestedCategory": suggested_category,
+                "normalizedAttributes": normalized_attributes,
+                "groupSuggestion": {
+                    "groupKey": group_key,
+                    "confidence": round(group_confidence, 2),
+                },
+                "confidence": round(confidence, 2),
+                "warnings": warnings,
+            }
+        )
+
+    return {
+        "detectedFieldMappings": {
+            key: value
+            for key, value in detected_mappings.items()
+            if str(value or "").strip()
+        },
+        "rowSuggestions": row_suggestions,
+    }
+
+
+def request_openai_catalog_import_suggestions(
+    *,
+    source_type: str,
+    headers: list[str],
+    rows: list[dict[str, object]],
+) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    sample_rows = []
+    for row in rows[:10]:
+        sample_rows.append(
+            {
+                key: value
+                for key, value in row.items()
+                if str(key or "").strip() != "__sourceRowId"
+            }
+        )
+
+    payload = {
+        "model": OPENAI_CHAT_MODEL,
+        "instructions": (
+            "You are assisting a marketplace catalog importer. "
+            "Return machine-safe structured JSON only. "
+            "Suggest field mappings, category mappings, normalized attributes and grouping hints. "
+            "Do not invent product facts that are unsupported by the source rows. "
+            "Use conservative confidence when ambiguous."
+        ),
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps(
+                            {
+                                "sourceType": source_type,
+                                "headers": headers,
+                                "rows": sample_rows,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                ],
+            }
+        ],
+        "max_output_tokens": 900,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "catalog_import_suggestions",
+                "strict": True,
+                "schema": catalog_import_lib.AI_SUGGESTION_SCHEMA,
+            }
+        },
+    }
+    request = Request(
+        OPENAI_RESPONSES_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=OPENAI_CHAT_TIMEOUT_SECONDS) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"OpenAI catalog import suggestion failed: {error}")
+        return None
+
+    response_text = extract_openai_output_text(response_payload)
+    if not response_text:
+        return None
+
+    try:
+        parsed = json.loads(response_text)
+    except json.JSONDecodeError as error:
+        print(f"OpenAI catalog import suggestion parse failed: {error}")
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def generate_catalog_import_ai_suggestions(
+    *,
+    source_type: str,
+    headers: list[str],
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    heuristic_suggestions = build_catalog_import_heuristic_ai_suggestions(
+        headers=headers,
+        rows=rows,
+    )
+    openai_suggestions = request_openai_catalog_import_suggestions(
+        source_type=source_type,
+        headers=headers,
+        rows=rows,
+    )
+    if not openai_suggestions:
+        return heuristic_suggestions
+
+    merged_row_suggestions: dict[str, dict[str, object]] = {
+        str(item.get("sourceRowId", "")).strip(): dict(item)
+        for item in list(heuristic_suggestions.get("rowSuggestions") or [])
+        if str(item.get("sourceRowId", "")).strip()
+    }
+    for item in list(openai_suggestions.get("rowSuggestions") or []):
+        source_row_id = str(item.get("sourceRowId", "")).strip()
+        if not source_row_id:
+            continue
+        merged_row_suggestions[source_row_id] = {
+            **merged_row_suggestions.get(source_row_id, {}),
+            **dict(item),
+        }
+
+    detected_field_mappings = {
+        **dict(heuristic_suggestions.get("detectedFieldMappings") or {}),
+        **dict(openai_suggestions.get("detectedFieldMappings") or {}),
+    }
+
+    return {
+        "detectedFieldMappings": detected_field_mappings,
+        "rowSuggestions": list(merged_row_suggestions.values()),
+    }
+
+
+def upsert_catalog_import_profile(
+    connection: DatabaseConnection,
+    *,
+    business_user_id: int,
+    profile_name: str,
+    source_type: str,
+    field_mapping: dict[str, object],
+    category_mapping_rules: dict[str, object],
+    attribute_mapping_rules: dict[str, object] | None = None,
+    normalization_rules: dict[str, object] | None = None,
+    ai_preferences: dict[str, object] | None = None,
+    profile_id: int = 0,
+) -> int:
+    now_text = datetime_to_storage_text(utc_now())
+    normalized_profile_name = re.sub(r"\s+", " ", str(profile_name or "").strip())[:80]
+    if profile_id > 0:
+        connection.execute(
+            """
+            UPDATE catalog_import_profiles
+            SET
+                profile_name = ?,
+                source_type = ?,
+                field_mapping = ?,
+                category_mapping_rules = ?,
+                attribute_mapping_rules = ?,
+                normalization_rules = ?,
+                ai_preferences = ?,
+                updated_at = ?
+            WHERE id = ? AND business_user_id = ?
+            """,
+            (
+                normalized_profile_name,
+                str(source_type or "").strip().lower() or "csv",
+                json.dumps(field_mapping or {}, ensure_ascii=False),
+                json.dumps(category_mapping_rules or {}, ensure_ascii=False),
+                json.dumps(attribute_mapping_rules or {}, ensure_ascii=False),
+                json.dumps(normalization_rules or {}, ensure_ascii=False),
+                json.dumps(ai_preferences or {}, ensure_ascii=False),
+                now_text,
+                profile_id,
+                business_user_id,
+            ),
+        )
+        return profile_id
+
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO catalog_import_profiles (
+            business_user_id,
+            profile_name,
+            source_type,
+            field_mapping,
+            category_mapping_rules,
+            attribute_mapping_rules,
+            normalization_rules,
+            ai_preferences,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            business_user_id,
+            normalized_profile_name,
+            str(source_type or "").strip().lower() or "csv",
+            json.dumps(field_mapping or {}, ensure_ascii=False),
+            json.dumps(category_mapping_rules or {}, ensure_ascii=False),
+            json.dumps(attribute_mapping_rules or {}, ensure_ascii=False),
+            json.dumps(normalization_rules or {}, ensure_ascii=False),
+            json.dumps(ai_preferences or {}, ensure_ascii=False),
+            now_text,
+            now_text,
+        ),
+    )
+
+
+def upsert_catalog_import_source(
+    connection: DatabaseConnection,
+    *,
+    business_user_id: int,
+    source_name: str,
+    source_type: str,
+    source_config: dict[str, object],
+    profile_id: int = 0,
+    sync_enabled: bool = False,
+    sync_interval_minutes: int = 0,
+    source_id: int = 0,
+) -> int:
+    now_text = datetime_to_storage_text(utc_now())
+    normalized_source_name = re.sub(r"\s+", " ", str(source_name or "").strip())[:120]
+    if source_id > 0:
+        connection.execute(
+            """
+            UPDATE catalog_import_sources
+            SET
+                profile_id = ?,
+                source_name = ?,
+                source_type = ?,
+                source_config = ?,
+                sync_enabled = ?,
+                sync_interval_minutes = ?,
+                updated_at = ?
+            WHERE id = ? AND business_user_id = ?
+            """,
+            (
+                max(0, int(profile_id or 0)) or None,
+                normalized_source_name,
+                str(source_type or "").strip().lower() or "api-json",
+                json.dumps(source_config or {}, ensure_ascii=False),
+                1 if sync_enabled else 0,
+                max(0, int(sync_interval_minutes or 0)),
+                now_text,
+                source_id,
+                business_user_id,
+            ),
+        )
+        return source_id
+
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO catalog_import_sources (
+            business_user_id,
+            profile_id,
+            source_name,
+            source_type,
+            source_config,
+            sync_enabled,
+            sync_interval_minutes,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            business_user_id,
+            max(0, int(profile_id or 0)) or None,
+            normalized_source_name,
+            str(source_type or "").strip().lower() or "api-json",
+            json.dumps(source_config or {}, ensure_ascii=False),
+            1 if sync_enabled else 0,
+            max(0, int(sync_interval_minutes or 0)),
+            now_text,
+            now_text,
+        ),
+    )
+
+
+def persist_catalog_import_job_preview(
+    connection: DatabaseConnection,
+    *,
+    business_user_id: int,
+    source_id: int,
+    profile_id: int,
+    source_type: str,
+    adapter_kind: str,
+    original_filename: str,
+    source_digest: str,
+    headers: list[str],
+    preview_payload: dict[str, object],
+    ai_suggestions: dict[str, object],
+    field_mapping: dict[str, object],
+    category_mapping_rules: dict[str, object],
+    existing_job_id: int = 0,
+) -> int:
+    now_text = datetime_to_storage_text(utc_now())
+    summary_payload = dict(preview_payload.get("summary") or {})
+    if existing_job_id > 0:
+        connection.execute(
+            """
+            UPDATE catalog_import_jobs
+            SET
+                source_id = ?,
+                profile_id = ?,
+                source_type = ?,
+                adapter_kind = ?,
+                original_filename = ?,
+                status = 'preview_ready',
+                source_digest = ?,
+                headers_json = ?,
+                field_mapping_json = ?,
+                category_mapping_rules_json = ?,
+                ai_suggestions_json = ?,
+                summary_json = ?,
+                preview_payload_json = ?,
+                updated_at = ?,
+                committed_at = ''
+            WHERE id = ? AND business_user_id = ?
+            """,
+            (
+                max(0, int(source_id or 0)) or None,
+                max(0, int(profile_id or 0)) or None,
+                str(source_type or "").strip().lower(),
+                str(adapter_kind or "").strip().lower(),
+                str(original_filename or "").strip(),
+                str(source_digest or "").strip(),
+                json.dumps(headers or [], ensure_ascii=False),
+                json.dumps(field_mapping or {}, ensure_ascii=False),
+                json.dumps(category_mapping_rules or {}, ensure_ascii=False),
+                json.dumps(ai_suggestions or {}, ensure_ascii=False),
+                json.dumps(summary_payload, ensure_ascii=False),
+                json.dumps(preview_payload or {}, ensure_ascii=False),
+                now_text,
+                existing_job_id,
+                business_user_id,
+            ),
+        )
+        job_id = existing_job_id
+        connection.execute(
+            "DELETE FROM catalog_import_job_records WHERE job_id = ?",
+            (job_id,),
+        )
+    else:
+        job_id = execute_insert_and_get_id(
+            connection,
+            """
+            INSERT INTO catalog_import_jobs (
+                business_user_id,
+                source_id,
+                profile_id,
+                source_type,
+                adapter_kind,
+                original_filename,
+                status,
+                source_digest,
+                headers_json,
+                field_mapping_json,
+                category_mapping_rules_json,
+                ai_suggestions_json,
+                summary_json,
+                preview_payload_json,
+                created_at,
+                updated_at,
+                committed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'preview_ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+            """,
+            (
+                business_user_id,
+                max(0, int(source_id or 0)) or None,
+                max(0, int(profile_id or 0)) or None,
+                str(source_type or "").strip().lower(),
+                str(adapter_kind or "").strip().lower(),
+                str(original_filename or "").strip(),
+                str(source_digest or "").strip(),
+                json.dumps(headers or [], ensure_ascii=False),
+                json.dumps(field_mapping or {}, ensure_ascii=False),
+                json.dumps(category_mapping_rules or {}, ensure_ascii=False),
+                json.dumps(ai_suggestions or {}, ensure_ascii=False),
+                json.dumps(summary_payload, ensure_ascii=False),
+                json.dumps(preview_payload or {}, ensure_ascii=False),
+                now_text,
+                now_text,
+            ),
+        )
+
+    for record in list(preview_payload.get("records") or []):
+        connection.execute(
+            """
+            INSERT INTO catalog_import_job_records (
+                job_id,
+                source_row_id,
+                row_index,
+                raw_data_json,
+                mapped_data_json,
+                normalized_data_json,
+                parent_data_json,
+                variant_data_json,
+                warnings_json,
+                errors_json,
+                group_key,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                str(record.get("sourceRowId", "") or "").strip(),
+                max(0, int(record.get("normalizedData", {}).get("rowIndex", 0) or 0)),
+                json.dumps(record.get("rawData") or {}, ensure_ascii=False),
+                json.dumps(record.get("mappedData") or {}, ensure_ascii=False),
+                json.dumps(record.get("normalizedData") or {}, ensure_ascii=False),
+                json.dumps(record.get("parentData") or {}, ensure_ascii=False),
+                json.dumps(record.get("variantData") or {}, ensure_ascii=False),
+                json.dumps(record.get("warnings") or [], ensure_ascii=False),
+                json.dumps(record.get("errors") or [], ensure_ascii=False),
+                str(record.get("parentData", {}).get("groupKey", "") or "").strip(),
+                now_text,
+                now_text,
+            ),
+        )
+
+    return job_id
+
+
+def rebuild_catalog_import_preview_from_job(
+    connection: DatabaseConnection,
+    *,
+    job_row: sqlite3.Row,
+    field_mapping: dict[str, object] | None = None,
+    category_mapping_rules: dict[str, object] | None = None,
+    ai_suggestions: dict[str, object] | None = None,
+) -> dict[str, object]:
+    job_records = fetch_catalog_import_job_records(connection, int(job_row["id"]))
+    rows = []
+    for record in job_records:
+        raw_data = safe_json_loads_object(record["raw_data_json"])
+        raw_data["__sourceRowId"] = str(record["source_row_id"] or "").strip()
+        rows.append(raw_data)
+
+    headers = safe_json_loads_list(job_row["headers_json"])
+    normalized_headers = [str(header or "").strip() for header in headers if str(header or "").strip()]
+    preview_payload = catalog_import_lib.update_preview_mapping(
+        rows,
+        normalized_headers,
+        source_type=str(job_row["source_type"] or "").strip().lower(),
+        field_mapping=field_mapping or safe_json_loads_object(job_row["field_mapping_json"]),
+        category_mapping_rules=category_mapping_rules or safe_json_loads_object(job_row["category_mapping_rules_json"]),
+        ai_suggestions=ai_suggestions or safe_json_loads_object(job_row["ai_suggestions_json"]),
+    )
+    return preview_payload
+
+
+def find_existing_imported_product_id(
+    connection: DatabaseConnection,
+    *,
+    owner_user_id: int,
+    source_id: int,
+    source_product_key: str,
+    group_key: str,
+) -> int | None:
+    normalized_source_product_key = str(source_product_key or "").strip()
+    normalized_group_key = str(group_key or "").strip()
+    row = None
+    if normalized_source_product_key:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM products
+            WHERE created_by_user_id = ?
+              AND source_id = ?
+              AND source_product_key = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (owner_user_id, max(0, int(source_id or 0)), normalized_source_product_key),
+        ).fetchone()
+    if row is None and normalized_group_key:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM products
+            WHERE created_by_user_id = ?
+              AND source_id = ?
+              AND group_key = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (owner_user_id, max(0, int(source_id or 0)), normalized_group_key),
+        ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def update_imported_product_for_owner(
+    connection: DatabaseConnection,
+    *,
+    product_id: int,
+    normalized_product: dict[str, object],
+    owner_user_id: int,
+) -> None:
+    image_fingerprint = compute_product_image_fingerprint(
+        normalized_product["imageGallery"],
+        fallback_image_path=normalized_product["imagePath"],
+    )
+    image_search_metadata = generate_product_image_search_metadata(
+        title=normalized_product["title"],
+        description=normalized_product["description"],
+        category=normalized_product["category"],
+        product_type=normalized_product["productType"],
+        color=normalized_product["color"],
+        image_gallery=normalized_product["imageGallery"],
+        fallback_image_path=normalized_product["imagePath"],
+        image_fingerprint=image_fingerprint,
+    )
+    connection.execute(
+        """
+        UPDATE products
+        SET
+            article_number = ?,
+            title = ?,
+            normalized_title = ?,
+            description = ?,
+            brand = ?,
+            gtin = ?,
+            mpn = ?,
+            material = ?,
+            weight_value = ?,
+            weight_unit = ?,
+            meta_title = ?,
+            meta_description = ?,
+            price = ?,
+            compare_at_price = ?,
+            sale_ends_at = ?,
+            image_path = ?,
+            image_gallery = ?,
+            image_fingerprint = ?,
+            ai_image_search_text = ?,
+            ai_image_color_terms = ?,
+            category = ?,
+            product_type = ?,
+            size = ?,
+            color = ?,
+            variant_inventory = ?,
+            package_amount_value = ?,
+            package_amount_unit = ?,
+            stock_quantity = ?,
+            group_key = ?,
+            source_id = ?,
+            source_product_key = ?,
+            import_metadata = ?,
+            created_by_user_id = ?
+        WHERE id = ?
+        """,
+        (
+            normalized_product["articleNumber"],
+            normalized_product["title"],
+            str(normalized_product.get("normalizedTitle", "") or "").strip().lower(),
+            normalized_product["description"],
+            normalized_product["brand"],
+            normalized_product["gtin"],
+            normalized_product["mpn"],
+            normalized_product["material"],
+            normalized_product["weightValue"],
+            normalized_product["weightUnit"],
+            normalized_product["metaTitle"],
+            normalized_product["metaDescription"],
+            normalized_product["price"],
+            normalized_product["compareAtPrice"],
+            normalized_product["saleEndsAt"],
+            normalized_product["imagePath"],
+            json.dumps(normalized_product["imageGallery"], ensure_ascii=False),
+            image_fingerprint,
+            image_search_metadata["searchText"],
+            image_search_metadata["colorTerms"],
+            normalized_product["category"],
+            normalized_product["productType"],
+            normalized_product["size"],
+            normalized_product["color"],
+            json.dumps(normalized_product["variantInventory"], ensure_ascii=False),
+            normalized_product["packageAmountValue"],
+            normalized_product["packageAmountUnit"],
+            normalized_product["stockQuantity"],
+            str(normalized_product.get("groupKey", "") or "").strip(),
+            max(0, int(normalized_product.get("sourceId", 0) or 0)),
+            str(normalized_product.get("sourceProductKey", "") or "").strip(),
+            json.dumps(normalized_product.get("importMetadata") or {}, ensure_ascii=False),
+            owner_user_id,
+            product_id,
+        ),
+    )
+
+
+def upsert_imported_product_for_owner(
+    connection: DatabaseConnection,
+    *,
+    normalized_product: dict[str, object],
+    owner_user_id: int,
+) -> int:
+    existing_product_id = find_existing_imported_product_id(
+        connection,
+        owner_user_id=owner_user_id,
+        source_id=max(0, int(normalized_product.get("sourceId", 0) or 0)),
+        source_product_key=str(normalized_product.get("sourceProductKey", "") or "").strip(),
+        group_key=str(normalized_product.get("groupKey", "") or "").strip(),
+    )
+    if existing_product_id is not None:
+        update_imported_product_for_owner(
+            connection,
+            product_id=existing_product_id,
+            normalized_product=normalized_product,
+            owner_user_id=owner_user_id,
+        )
+        return existing_product_id
+    return insert_product_for_owner(
+        connection,
+        normalized_product=normalized_product,
+        owner_user_id=owner_user_id,
+    )
+
+
 def insert_product_for_owner(
     connection: DatabaseConnection,
     *,
@@ -11565,7 +13515,16 @@ def insert_product_for_owner(
         INSERT INTO products (
             article_number,
             title,
+            normalized_title,
             description,
+            brand,
+            gtin,
+            mpn,
+            material,
+            weight_value,
+            weight_unit,
+            meta_title,
+            meta_description,
             price,
             compare_at_price,
             sale_ends_at,
@@ -11582,14 +13541,27 @@ def insert_product_for_owner(
             package_amount_value,
             package_amount_unit,
             stock_quantity,
+            group_key,
+            source_id,
+            source_product_key,
+            import_metadata,
             created_by_user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             normalized_product["articleNumber"],
             normalized_product["title"],
+            str(normalized_product.get("normalizedTitle", "") or "").strip().lower(),
             normalized_product["description"],
+            normalized_product["brand"],
+            normalized_product["gtin"],
+            normalized_product["mpn"],
+            normalized_product["material"],
+            normalized_product["weightValue"],
+            normalized_product["weightUnit"],
+            normalized_product["metaTitle"],
+            normalized_product["metaDescription"],
             normalized_product["price"],
             normalized_product["compareAtPrice"],
             normalized_product["saleEndsAt"],
@@ -11606,6 +13578,10 @@ def insert_product_for_owner(
             normalized_product["packageAmountValue"],
             normalized_product["packageAmountUnit"],
             normalized_product["stockQuantity"],
+            str(normalized_product.get("groupKey", "") or "").strip(),
+            max(0, int(normalized_product.get("sourceId", 0) or 0)),
+            str(normalized_product.get("sourceProductKey", "") or "").strip(),
+            json.dumps(normalized_product.get("importMetadata") or {}, ensure_ascii=False),
             owner_user_id,
         ),
     )
@@ -12186,6 +14162,8 @@ def create_order_from_checkout_items(
             [user["id"], *cart_line_ids],
         )
 
+    bump_public_cache_revision(connection)
+
     saved_order = connection.execute(
         """
         SELECT
@@ -12584,7 +14562,7 @@ def resolve_requested_product_variant(
     elif len(variant_inventory) == 1:
         selected_variant = variant_inventory[0]
     else:
-        return ["Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne shporte."], None
+        return ["Zgjidh variantin e produktit para se ta shtosh ne shporte."], None
 
     if max(0, int(selected_variant.get("quantity") or 0)) <= 0:
         return [f"Varianti `{selected_variant['label']}` nuk ka stok."], None
@@ -14627,6 +16605,11 @@ def parse_session_token(cookie_header: str | None) -> str | None:
     return session_morsel.value if session_morsel else None
 
 
+def parse_session_token_from_header(raw_value: str | None) -> str | None:
+    token = str(raw_value or "").strip()
+    return token or None
+
+
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
@@ -14637,6 +16620,22 @@ class AppHandler(SimpleHTTPRequestHandler):
         path = parsed_url.path
         query_params = parse_qs(parsed_url.query)
         maybe_dispatch_due_sale_notifications()
+
+        if path == "/robots.txt":
+            self.send_bytes(
+                200,
+                build_robots_txt(self.get_public_app_origin()),
+                content_type="text/plain; charset=utf-8",
+            )
+            return
+
+        if path == "/sitemap.xml":
+            self.send_bytes(
+                200,
+                build_sitemap_xml(self.get_public_app_origin()),
+                content_type="application/xml; charset=utf-8",
+            )
+            return
 
         if path.startswith("/uploads/"):
             self.handle_uploaded_file(path)
@@ -14677,6 +16676,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/business/products/import-template":
             self.handle_business_products_import_template()
+            return
+        if path == "/api/business/catalog-import/config":
+            self.handle_business_catalog_import_config()
             return
         if path == "/api/business/public":
             self.handle_public_business_detail(query_params)
@@ -14948,6 +16950,21 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/business/products/import":
             self.handle_business_products_import()
+            return
+        if path == "/api/business/catalog-import/preview":
+            self.handle_business_catalog_import_preview()
+            return
+        if path == "/api/business/catalog-import/commit":
+            self.handle_business_catalog_import_commit()
+            return
+        if path == "/api/business/catalog-import/profile":
+            self.handle_business_catalog_import_profile_save()
+            return
+        if path == "/api/business/catalog-import/source":
+            self.handle_business_catalog_import_source_save()
+            return
+        if path == "/api/business/catalog-import/sync":
+            self.handle_business_catalog_import_sync()
             return
         if path == "/api/chat/open":
             self.handle_chat_open()
@@ -15222,6 +17239,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "message": "U kyqe me sukses.",
                 "redirectTo": "/",
+                "sessionToken": session_token,
                 "user": serialize_session_user(user),
             },
             headers={"Set-Cookie": build_session_cookie(session_token)},
@@ -15366,6 +17384,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "message": success_message,
                 "redirectTo": "/",
                 "isNewUser": is_new_user,
+                "sessionToken": session_token,
                 "user": serialize_session_user(user),
             },
             headers={"Set-Cookie": build_session_cookie(session_token)},
@@ -15572,6 +17591,14 @@ class AppHandler(SimpleHTTPRequestHandler):
         category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
         filter_errors, product_type, size, color = parse_catalog_filters_query(query_params)
+        price_errors, min_price, max_price = parse_catalog_price_bounds(
+            query_params.get("minPrice", [""])[0],
+            query_params.get("maxPrice", [""])[0],
+        )
+        brand_names = normalize_catalog_brand_filters(
+            [*query_params.get("brand", []), *query_params.get("brands", [])]
+        )
+        sort = normalize_catalog_sort_value(query_params.get("sort", ["popular"])[0])
         category = category or scoped_category
         category_group = category_group or scoped_category_group
 
@@ -15589,8 +17616,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if pagination_errors or filter_errors or scope_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
+        if pagination_errors or filter_errors or scope_errors or price_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors + price_errors})
             return
 
         cache_key = build_runtime_public_cache_key(
@@ -15603,6 +17630,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "productType": product_type or "",
                 "size": size or "",
                 "color": color or "",
+                "brands": brand_names,
+                "minPrice": min_price if min_price is not None else "",
+                "maxPrice": max_price if max_price is not None else "",
+                "sort": sort,
                 "limit": limit,
                 "offset": offset,
                 "includeFacets": bool(include_facets),
@@ -15619,8 +17650,22 @@ class AppHandler(SimpleHTTPRequestHandler):
             product_type=product_type,
             size=size,
             color=color,
+            business_names=brand_names,
+            min_price=min_price,
+            max_price=max_price,
+            sort=sort,
             limit=limit,
             offset=offset,
+        )
+        total = count_products(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_names=brand_names,
+            min_price=min_price,
+            max_price=max_price,
         )
         products = [
             serialize_product(row)
@@ -15634,6 +17679,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                 product_type=product_type,
                 size=size,
                 color=color,
+                business_names=brand_names,
+                min_price=min_price,
+                max_price=max_price,
             )
         payload = {
             "ok": True,
@@ -15647,10 +17695,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "productType": product_type or "",
                 "size": size or "",
                 "color": color or "",
+                "sort": sort,
             },
             "limit": limit,
             "offset": offset,
-            "total": None,
+            "total": total,
             "hasMore": has_more,
         }
         write_runtime_public_cache(
@@ -15767,9 +17816,17 @@ class AppHandler(SimpleHTTPRequestHandler):
         explicit_category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
         filter_errors, explicit_product_type, explicit_size, explicit_color = parse_catalog_filters_query(query_params)
+        price_errors, min_price, max_price = parse_catalog_price_bounds(
+            query_params.get("minPrice", [""])[0],
+            query_params.get("maxPrice", [""])[0],
+        )
+        brand_names = normalize_catalog_brand_filters(
+            [*query_params.get("brand", []), *query_params.get("brands", [])]
+        )
+        sort = normalize_catalog_sort_value(query_params.get("sort", ["popular"])[0])
 
-        if pagination_errors or filter_errors or scope_errors:
-            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors})
+        if pagination_errors or filter_errors or scope_errors or price_errors:
+            self.send_json(400, {"ok": False, "errors": pagination_errors + filter_errors + scope_errors + price_errors})
             return
 
         if explicit_category and explicit_category not in PRODUCT_CATEGORIES:
@@ -15807,14 +17864,18 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "size": size or "",
                 "color": color or "",
                 "businessName": business_name or "",
+                "brands": brand_names,
                 "searchText": search_text,
+                "minPrice": min_price if min_price is not None else "",
+                "maxPrice": max_price if max_price is not None else "",
+                "sort": sort,
                 "limit": limit,
                 "offset": offset,
                 "includeFacets": bool(include_facets),
             },
         )
 
-        if not raw_search_text and not any([category, category_group, product_type, size, color, business_name]):
+        if not raw_search_text and not any([category, category_group, product_type, size, color, business_name, brand_names, min_price is not None, max_price is not None]):
             self.send_json(
                 200,
                 {
@@ -15828,6 +17889,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "productTypes": [],
                         "sizes": [],
                         "colors": [],
+                        "brands": [],
                     },
                     "activeFilters": {
                         "pageSection": scoped_page_section or "",
@@ -15837,6 +17899,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "productType": "",
                         "size": "",
                         "color": "",
+                        "sort": sort,
                     },
                     "limit": limit,
                     "offset": offset,
@@ -15858,9 +17921,25 @@ class AppHandler(SimpleHTTPRequestHandler):
             size=size,
             color=color,
             business_name_search=business_name,
+            business_names=brand_names,
             search_text=search_text,
+            min_price=min_price,
+            max_price=max_price,
+            sort=sort,
             limit=limit,
             offset=offset,
+        )
+        total = count_products(
+            category,
+            category_group=category_group,
+            product_type=product_type,
+            size=size,
+            color=color,
+            business_name_search=business_name,
+            business_names=brand_names,
+            search_text=search_text,
+            min_price=min_price,
+            max_price=max_price,
         )
         products = [
             serialize_product(row)
@@ -15876,6 +17955,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                 color=color,
                 business_name_search=business_name,
                 search_text=search_text,
+                business_names=brand_names,
+                min_price=min_price,
+                max_price=max_price,
             )
         payload = {
             "ok": True,
@@ -15899,10 +17981,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "productType": product_type or "",
                 "size": size or "",
                 "color": color or "",
+                "sort": sort,
             },
             "limit": limit,
             "offset": offset,
-            "total": None,
+            "total": total,
             "hasMore": has_more,
         }
         write_runtime_public_cache(
@@ -16678,6 +18761,639 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def handle_business_catalog_import_config(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te menaxhosh importet."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset kane akses ne catalog import."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        profiles = [
+            serialize_catalog_import_profile(row)
+            for row in fetch_catalog_import_profiles_for_business(int(user["id"]))
+        ]
+        sources = [
+            serialize_catalog_import_source(row)
+            for row in fetch_catalog_import_sources_for_business(int(user["id"]))
+        ]
+        recent_jobs = [
+            serialize_catalog_import_job(row)
+            for row in fetch_catalog_import_jobs_for_business(int(user["id"]), limit=12)
+        ]
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "profiles": profiles,
+                "sources": sources,
+                "recentJobs": recent_jobs,
+                "canonicalFields": catalog_import_lib.STRUCTURED_IMPORT_FIELDS,
+                "categoryAttributeSets": catalog_import_lib.CATEGORY_ATTRIBUTE_SETS,
+            },
+        )
+
+    def handle_business_catalog_import_profile_save(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te ruash profilin e importit."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te ruajne profile importi."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        profile_name = re.sub(r"\s+", " ", str(payload.get("profileName", "") or "").strip())[:80]
+        if len(profile_name) < 2:
+            self.send_json(400, {"ok": False, "message": "Emri i profilit duhet te kete te pakten 2 shkronja."})
+            return
+
+        field_mapping = safe_json_loads_object(payload.get("fieldMapping", {}))
+        category_mapping_rules = safe_json_loads_object(payload.get("categoryMappingRules", {}))
+        profile_id = max(0, int(payload.get("profileId", 0) or 0))
+        source_type = str(payload.get("sourceType", "") or "").strip().lower() or "csv"
+
+        with get_db_connection() as connection:
+            saved_profile_id = upsert_catalog_import_profile(
+                connection,
+                business_user_id=int(user["id"]),
+                profile_name=profile_name,
+                source_type=source_type,
+                field_mapping=field_mapping,
+                category_mapping_rules=category_mapping_rules,
+                attribute_mapping_rules=safe_json_loads_object(payload.get("attributeMappingRules", {})),
+                normalization_rules=safe_json_loads_object(payload.get("normalizationRules", {})),
+                ai_preferences=safe_json_loads_object(payload.get("aiPreferences", {})),
+                profile_id=profile_id,
+            )
+        profile_row = fetch_catalog_import_profile_for_business(int(user["id"]), saved_profile_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Profili i importit u ruajt me sukses.",
+                "profile": serialize_catalog_import_profile(profile_row) if profile_row else None,
+            },
+        )
+
+    def handle_business_catalog_import_source_save(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te ruash source connector."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te ruajne source connectors."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        source_name = re.sub(r"\s+", " ", str(payload.get("sourceName", "") or "").strip())[:120]
+        source_type = str(payload.get("sourceType", "") or "").strip().lower() or "api-json"
+        if len(source_name) < 2:
+            self.send_json(400, {"ok": False, "message": "Vendos nje emer per source connector."})
+            return
+
+        if source_type not in {"api-json", "json"}:
+            self.send_json(400, {"ok": False, "message": "Per source connectors supportohet JSON / API feed."})
+            return
+
+        profile_id = max(0, int(payload.get("profileId", 0) or 0))
+        source_id = max(0, int(payload.get("sourceId", 0) or 0))
+        sync_interval_minutes = max(0, int(payload.get("syncIntervalMinutes", 0) or 0))
+        source_config = safe_json_loads_object(payload.get("sourceConfig", {}))
+
+        with get_db_connection() as connection:
+            saved_source_id = upsert_catalog_import_source(
+                connection,
+                business_user_id=int(user["id"]),
+                source_name=source_name,
+                source_type=source_type,
+                source_config=source_config,
+                profile_id=profile_id,
+                sync_enabled=bool(payload.get("syncEnabled")),
+                sync_interval_minutes=sync_interval_minutes,
+                source_id=source_id,
+            )
+        source_row = fetch_catalog_import_source_for_business(int(user["id"]), saved_source_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Source connector u ruajt me sukses.",
+                "source": serialize_catalog_import_source(source_row) if source_row else None,
+            },
+        )
+
+    def handle_business_catalog_import_preview(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te krijosh preview importi."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te krijojne catalog import preview."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        business_user_id = int(user["id"])
+        is_multipart_request = "multipart/form-data" in str(self.headers.get("Content-Type", "")).lower()
+        original_filename = ""
+        source_digest = ""
+        source_id = 0
+        profile_id = 0
+        profile_name = ""
+        save_profile = False
+        field_mapping_override: dict[str, object] = {}
+        category_mapping_rules: dict[str, object] = {}
+        parsed_source: dict[str, object] | None = None
+        job_id = 0
+
+        if is_multipart_request:
+            try:
+                message = self.read_multipart_message()
+            except ValueError as error:
+                self.send_json(400, {"ok": False, "message": str(error)})
+                return
+
+            multipart_fields: dict[str, str] = {}
+            import_part = None
+            for part in message.iter_parts():
+                if part.get_content_disposition() != "form-data":
+                    continue
+                part_name = str(part.get_param("name", header="content-disposition") or "").strip()
+                if not part_name:
+                    continue
+                if part_name == "file" and part.get_filename():
+                    import_part = part
+                    continue
+                multipart_fields[part_name] = str(part.get_payload(decode=True) or b"", "utf-8", errors="ignore")
+
+            if import_part is None:
+                self.send_json(400, {"ok": False, "message": "Ngarko nje CSV ose XLSX per preview."})
+                return
+
+            original_filename = str(import_part.get_filename() or "").strip()
+            requested_source_type = str(multipart_fields.get("sourceType", "") or "").strip().lower()
+            if requested_source_type not in {"csv", "xlsx"}:
+                requested_source_type = "xlsx" if original_filename.lower().endswith(".xlsx") else "csv"
+            file_bytes = import_part.get_payload(decode=True) or b""
+            source_digest = hashlib.sha256(file_bytes).hexdigest()
+            source_id = max(0, int(multipart_fields.get("sourceId", "0") or 0))
+            profile_id = max(0, int(multipart_fields.get("profileId", "0") or 0))
+            profile_name = re.sub(r"\s+", " ", str(multipart_fields.get("profileName", "") or "").strip())[:80]
+            save_profile = str(multipart_fields.get("saveProfile", "") or "").strip().lower() in {"1", "true", "yes", "po"}
+            field_mapping_override = safe_json_loads_object(multipart_fields.get("fieldMapping", "{}"))
+            category_mapping_rules = safe_json_loads_object(multipart_fields.get("categoryMappingRules", "{}"))
+            parsed_source = catalog_import_lib.parse_catalog_source(requested_source_type, file_bytes)
+        else:
+            try:
+                payload = self.read_json()
+            except ValueError as error:
+                self.send_json(400, {"ok": False, "message": str(error)})
+                return
+
+            job_id = max(0, int(payload.get("jobId", 0) or 0))
+            source_id = max(0, int(payload.get("sourceId", 0) or 0))
+            profile_id = max(0, int(payload.get("profileId", 0) or 0))
+            profile_name = re.sub(r"\s+", " ", str(payload.get("profileName", "") or "").strip())[:80]
+            save_profile = bool(payload.get("saveProfile"))
+            field_mapping_override = safe_json_loads_object(payload.get("fieldMapping", {}))
+            category_mapping_rules = safe_json_loads_object(payload.get("categoryMappingRules", {}))
+
+            if job_id > 0:
+                with get_db_connection() as connection:
+                    job_row = connection.execute(
+                        """
+                        SELECT *
+                        FROM catalog_import_jobs
+                        WHERE id = ? AND business_user_id = ?
+                        LIMIT 1
+                        """,
+                        (job_id, business_user_id),
+                    ).fetchone()
+                    if not job_row:
+                        self.send_json(404, {"ok": False, "message": "Preview job nuk u gjet."})
+                        return
+
+                    if not profile_id:
+                        profile_id = max(0, int(job_row["profile_id"] or 0))
+                    if not source_id:
+                        source_id = max(0, int(job_row["source_id"] or 0))
+                    ai_suggestions = safe_json_loads_object(job_row["ai_suggestions_json"])
+                    base_field_mapping = safe_json_loads_object(job_row["field_mapping_json"])
+                    base_category_rules = safe_json_loads_object(job_row["category_mapping_rules_json"])
+                    preview_payload = rebuild_catalog_import_preview_from_job(
+                        connection,
+                        job_row=job_row,
+                        field_mapping={**base_field_mapping, **field_mapping_override},
+                        category_mapping_rules={**base_category_rules, **category_mapping_rules},
+                        ai_suggestions=ai_suggestions,
+                    )
+                    job_id = persist_catalog_import_job_preview(
+                        connection,
+                        business_user_id=business_user_id,
+                        source_id=source_id,
+                        profile_id=profile_id,
+                        source_type=str(job_row["source_type"] or "").strip().lower(),
+                        adapter_kind=str(job_row["adapter_kind"] or "").strip().lower(),
+                        original_filename=str(job_row["original_filename"] or "").strip(),
+                        source_digest=str(job_row["source_digest"] or "").strip(),
+                        headers=list(preview_payload.get("headers") or []),
+                        preview_payload=preview_payload,
+                        ai_suggestions=ai_suggestions,
+                        field_mapping=safe_json_loads_object(preview_payload.get("fieldMapping", {})),
+                        category_mapping_rules={**base_category_rules, **category_mapping_rules},
+                        existing_job_id=int(job_row["id"]),
+                    )
+                saved_job_row = fetch_catalog_import_job_for_business(business_user_id, job_id)
+                self.send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "message": "Preview u rifreskua me mapping-un e ri.",
+                        "job": serialize_catalog_import_job(saved_job_row) if saved_job_row else {"id": job_id},
+                        "preview": preview_payload,
+                    },
+                )
+                return
+
+            requested_source_type = str(payload.get("sourceType", "") or "").strip().lower()
+            if requested_source_type == "json":
+                source_payload = payload.get("records") if payload.get("records") is not None else payload.get("payload", {})
+                source_digest = hashlib.sha256(
+                    json.dumps(source_payload or {}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                parsed_source = catalog_import_lib.parse_catalog_source(
+                    "json",
+                    source_payload,
+                    record_path=str(payload.get("recordPath", "") or "").strip(),
+                )
+            elif requested_source_type == "api-json":
+                source_config = safe_json_loads_object(payload.get("sourceConfig", {}))
+                if source_id > 0 and not source_config:
+                    source_row = fetch_catalog_import_source_for_business(business_user_id, source_id)
+                    if source_row:
+                        source_config = safe_json_loads_object(source_row["source_config"])
+                        if not profile_id:
+                            profile_id = max(0, int(source_row["profile_id"] or 0))
+                if str(payload.get("recordPath", "") or "").strip():
+                    source_config["recordPath"] = str(payload.get("recordPath", "") or "").strip()
+                source_digest = hashlib.sha256(
+                    json.dumps(source_config or {}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                parsed_source = catalog_import_lib.parse_catalog_source("api-json", source_config)
+            else:
+                self.send_json(400, {"ok": False, "message": "Zgjidh source type valid per preview."})
+                return
+
+        if parsed_source is None:
+            self.send_json(400, {"ok": False, "message": "Preview source nuk u pergatit."})
+            return
+        if parsed_source.get("errors"):
+            self.send_json(400, {"ok": False, "errors": list(parsed_source.get("errors") or [])})
+            return
+
+        headers = [str(header or "").strip() for header in list(parsed_source.get("headers") or []) if str(header or "").strip()]
+        rows = list(parsed_source.get("rows") or [])
+        if not headers or not rows:
+            self.send_json(400, {"ok": False, "message": "Burimi nuk permban rreshta te perdorshem per import."})
+            return
+
+        profile_payload = None
+        if profile_id > 0:
+            profile_row = fetch_catalog_import_profile_for_business(business_user_id, profile_id)
+            profile_payload = serialize_catalog_import_profile(profile_row) if profile_row else None
+        field_mapping_seed = dict(profile_payload.get("fieldMapping") or {}) if isinstance(profile_payload, dict) else {}
+        category_mapping_seed = dict(profile_payload.get("categoryMappingRules") or {}) if isinstance(profile_payload, dict) else {}
+
+        ai_suggestions = generate_catalog_import_ai_suggestions(
+            source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+            headers=headers,
+            rows=rows,
+        )
+        preview_payload = catalog_import_lib.build_import_preview(
+            source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+            headers=headers,
+            rows=rows,
+            field_mapping={**field_mapping_seed, **field_mapping_override},
+            category_mapping_rules={**category_mapping_seed, **category_mapping_rules},
+            ai_suggestions=ai_suggestions,
+        )
+
+        with get_db_connection() as connection:
+            if save_profile and profile_name:
+                profile_id = upsert_catalog_import_profile(
+                    connection,
+                    business_user_id=business_user_id,
+                    profile_name=profile_name,
+                    source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+                    field_mapping=safe_json_loads_object(preview_payload.get("fieldMapping", {})),
+                    category_mapping_rules={**category_mapping_seed, **category_mapping_rules},
+                )
+            job_id = persist_catalog_import_job_preview(
+                connection,
+                business_user_id=business_user_id,
+                source_id=source_id,
+                profile_id=profile_id,
+                source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+                adapter_kind=str(parsed_source.get("sourceType") or "").strip().lower(),
+                original_filename=original_filename,
+                source_digest=source_digest,
+                headers=headers,
+                preview_payload=preview_payload,
+                ai_suggestions=ai_suggestions,
+                field_mapping=safe_json_loads_object(preview_payload.get("fieldMapping", {})),
+                category_mapping_rules={**category_mapping_seed, **category_mapping_rules},
+                existing_job_id=job_id,
+            )
+
+        saved_job_row = fetch_catalog_import_job_for_business(business_user_id, job_id)
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Preview i importit u pergatit me sukses.",
+                "job": serialize_catalog_import_job(saved_job_row) if saved_job_row else {"id": job_id},
+                "preview": preview_payload,
+            },
+        )
+
+    def handle_business_catalog_import_commit(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te perfundosh importin."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te perfundojne importin."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        job_id = max(0, int(payload.get("jobId", 0) or 0))
+        if job_id <= 0:
+            self.send_json(400, {"ok": False, "message": "Preview job nuk eshte valid."})
+            return
+
+        skipped_row_ids = {
+            str(value or "").strip()
+            for value in list(payload.get("skipRowIds") or [])
+            if str(value or "").strip()
+        }
+        approved_group_keys = {
+            str(value or "").strip()
+            for value in list(payload.get("approvedGroupKeys") or [])
+            if str(value or "").strip()
+        }
+
+        created_products: list[dict[str, object]] = []
+        imported_parent_count = 0
+        with get_db_connection() as connection:
+            job_row = connection.execute(
+                """
+                SELECT *
+                FROM catalog_import_jobs
+                WHERE id = ? AND business_user_id = ?
+                LIMIT 1
+                """,
+                (job_id, int(user["id"])),
+            ).fetchone()
+            if not job_row:
+                self.send_json(404, {"ok": False, "message": "Preview job nuk u gjet."})
+                return
+
+            job_records = fetch_catalog_import_job_records(connection, job_id)
+            selected_records: list[dict[str, object]] = []
+            for record_row in job_records:
+                source_row_id = str(record_row["source_row_id"] or "").strip()
+                if source_row_id and source_row_id in skipped_row_ids:
+                    continue
+                errors = safe_json_loads_list(record_row["errors_json"])
+                if errors:
+                    continue
+                record_payload = {
+                    "sourceRowId": source_row_id,
+                    "rawData": safe_json_loads_object(record_row["raw_data_json"]),
+                    "mappedData": safe_json_loads_object(record_row["mapped_data_json"]),
+                    "normalizedData": safe_json_loads_object(record_row["normalized_data_json"]),
+                    "parentData": safe_json_loads_object(record_row["parent_data_json"]),
+                    "variantData": safe_json_loads_object(record_row["variant_data_json"]),
+                    "warnings": safe_json_loads_list(record_row["warnings_json"]),
+                    "errors": errors,
+                }
+                selected_records.append(record_payload)
+
+            groups = catalog_import_lib.summarize_groups(selected_records)
+            if approved_group_keys:
+                groups = [group for group in groups if str(group.get("groupKey", "") or "").strip() in approved_group_keys]
+            if not groups:
+                self.send_json(400, {"ok": False, "message": "Nuk ka grupe valide per import pas filtrimit."})
+                return
+
+            storefront_payloads = catalog_import_lib.build_storefront_payloads(groups)
+            for normalized_product in storefront_payloads:
+                normalized_product["sourceId"] = int(job_row["source_id"] or 0)
+                normalized_product["sourceProductKey"] = (
+                    str(normalized_product.get("sourceProductKey", "") or "").strip()
+                    or str(normalized_product.get("groupKey", "") or "").strip()
+                )
+                normalized_product["importMetadata"] = {
+                    **dict(normalized_product.get("importMetadata") or {}),
+                    "jobId": job_id,
+                    "profileId": int(job_row["profile_id"] or 0),
+                    "sourceType": str(job_row["source_type"] or "").strip().lower(),
+                    "adapterKind": str(job_row["adapter_kind"] or "").strip().lower(),
+                    "originalFilename": str(job_row["original_filename"] or "").strip(),
+                }
+                product_id = upsert_imported_product_for_owner(
+                    connection,
+                    normalized_product=normalized_product,
+                    owner_user_id=int(user["id"]),
+                )
+                imported_parent_count += 1
+                product_row = connection.execute(
+                    """
+                    SELECT
+                    """
+                    + PRODUCT_SELECT_COLUMNS
+                    + """
+                    FROM products
+                    """
+                    + PRODUCT_SELECT_RELATION_JOINS
+                    + """
+                    WHERE products.id = ?
+                    """,
+                    (product_id,),
+                ).fetchone()
+                if product_row:
+                    created_products.append(serialize_product(product_row))
+
+            now_text = datetime_to_storage_text(utc_now())
+            connection.execute(
+                """
+                UPDATE catalog_import_jobs
+                SET
+                    status = 'committed',
+                    committed_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now_text, now_text, job_id),
+            )
+            if int(job_row["source_id"] or 0) > 0:
+                connection.execute(
+                    """
+                    UPDATE catalog_import_sources
+                    SET
+                        last_synced_at = ?,
+                        updated_at = ?
+                    WHERE id = ? AND business_user_id = ?
+                    """,
+                    (now_text, now_text, int(job_row["source_id"] or 0), int(user["id"])),
+                )
+
+        self.send_json(
+            201,
+            {
+                "ok": True,
+                "message": f"U importuan ose perditesuan {imported_parent_count} produkte prind me variantet e tyre.",
+                "count": imported_parent_count,
+                "products": created_products,
+            },
+        )
+
+    def handle_business_catalog_import_sync(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para se te sinkronizosh source."})
+            return
+
+        if user["role"] != "business":
+            self.send_json(403, {"ok": False, "message": "Vetem bizneset mund te sinkronizojne source feeds."})
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        source_id = max(0, int(payload.get("sourceId", 0) or 0))
+        if source_id <= 0:
+            self.send_json(400, {"ok": False, "message": "Source connector nuk eshte valid."})
+            return
+
+        source_row = fetch_catalog_import_source_for_business(int(user["id"]), source_id)
+        if not source_row:
+            self.send_json(404, {"ok": False, "message": "Source connector nuk u gjet."})
+            return
+
+        source_payload = serialize_catalog_import_source(source_row)
+        source_config = dict(source_payload.get("sourceConfig") or {})
+        parsed_source = catalog_import_lib.parse_catalog_source(
+            str(source_payload.get("sourceType") or "").strip().lower(),
+            source_config,
+        )
+        if parsed_source.get("errors"):
+            self.send_json(400, {"ok": False, "errors": list(parsed_source.get("errors") or [])})
+            return
+
+        headers = [str(header or "").strip() for header in list(parsed_source.get("headers") or []) if str(header or "").strip()]
+        rows = list(parsed_source.get("rows") or [])
+        ai_suggestions = generate_catalog_import_ai_suggestions(
+            source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+            headers=headers,
+            rows=rows,
+        )
+        profile_payload = None
+        if int(source_payload.get("profileId") or 0) > 0:
+            profile_row = fetch_catalog_import_profile_for_business(int(user["id"]), int(source_payload["profileId"]))
+            profile_payload = serialize_catalog_import_profile(profile_row) if profile_row else None
+        preview_payload = catalog_import_lib.build_import_preview(
+            source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+            headers=headers,
+            rows=rows,
+            field_mapping=dict(profile_payload.get("fieldMapping") or {}) if isinstance(profile_payload, dict) else {},
+            category_mapping_rules=dict(profile_payload.get("categoryMappingRules") or {}) if isinstance(profile_payload, dict) else {},
+            ai_suggestions=ai_suggestions,
+        )
+
+        source_digest = hashlib.sha256(
+            json.dumps(source_config or {}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+        with get_db_connection() as connection:
+            sync_job_id = persist_catalog_import_job_preview(
+                connection,
+                business_user_id=int(user["id"]),
+                source_id=source_id,
+                profile_id=int(source_payload.get("profileId") or 0),
+                source_type=str(parsed_source.get("sourceType") or "").strip().lower(),
+                adapter_kind=str(parsed_source.get("sourceType") or "").strip().lower(),
+                original_filename=str(source_payload.get("sourceName") or "").strip(),
+                source_digest=source_digest,
+                headers=headers,
+                preview_payload=preview_payload,
+                ai_suggestions=ai_suggestions,
+                field_mapping=safe_json_loads_object(preview_payload.get("fieldMapping", {})),
+                category_mapping_rules=dict(profile_payload.get("categoryMappingRules") or {}) if isinstance(profile_payload, dict) else {},
+            )
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Source sync preview u krijua me sukses.",
+                "job": serialize_catalog_import_job(fetch_catalog_import_job_for_business(int(user["id"]), sync_job_id)) if sync_job_id else None,
+                "preview": preview_payload,
+            },
+        )
+
     def handle_business_follow_toggle(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -17369,7 +20085,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             with get_db_connection() as connection:
                 existing_profile = connection.execute(
                     """
-                    SELECT id, verification_status, profile_edit_access_status
+                    SELECT
+                        id,
+                        verification_status,
+                        profile_edit_access_status,
+                        support_email,
+                        website_url,
+                        support_hours,
+                        return_policy_summary
                     FROM business_profiles
                     WHERE user_id = ?
                     """,
@@ -17393,6 +20116,27 @@ class AppHandler(SimpleHTTPRequestHandler):
                         )
                         return
 
+                    next_support_email = (
+                        normalized["support_email"]
+                        if "supportEmail" in payload
+                        else str(existing_profile["support_email"] or "").strip().lower()
+                    )
+                    next_website_url = (
+                        normalized["website_url"]
+                        if "websiteUrl" in payload
+                        else str(existing_profile["website_url"] or "").strip()
+                    )
+                    next_support_hours = (
+                        normalized["support_hours"]
+                        if "supportHours" in payload
+                        else str(existing_profile["support_hours"] or "").strip()
+                    )
+                    next_return_policy_summary = (
+                        normalized["return_policy_summary"]
+                        if "returnPolicySummary" in payload
+                        else str(existing_profile["return_policy_summary"] or "").strip()
+                    )
+
                     connection.execute(
                         """
                         UPDATE business_profiles
@@ -17401,6 +20145,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                             business_description = ?,
                             business_number = ?,
                             business_logo_path = ?,
+                            support_email = ?,
+                            website_url = ?,
+                            support_hours = ?,
+                            return_policy_summary = ?,
                             phone_number = ?,
                             city = ?,
                             address_line = ?,
@@ -17428,6 +20176,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                             normalized["business_description"],
                             normalized["business_number"],
                             normalized["business_logo_path"],
+                            next_support_email,
+                            next_website_url,
+                            next_support_hours,
+                            next_return_policy_summary,
                             normalized["phone_number"],
                             normalized["city"],
                             normalized["address_line"],
@@ -17443,12 +20195,16 @@ class AppHandler(SimpleHTTPRequestHandler):
                             business_description,
                             business_number,
                             business_logo_path,
+                            support_email,
+                            website_url,
+                            support_hours,
+                            return_policy_summary,
                             shipping_settings,
                             phone_number,
                             city,
                             address_line
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             user["id"],
@@ -17456,6 +20212,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                             normalized["business_description"],
                             normalized["business_number"],
                             normalized["business_logo_path"],
+                            normalized["support_email"],
+                            normalized["website_url"],
+                            normalized["support_hours"],
+                            normalized["return_policy_summary"],
                             serialize_business_shipping_settings_storage(DEFAULT_BUSINESS_SHIPPING_SETTINGS),
                             normalized["phone_number"],
                             normalized["city"],
@@ -17474,6 +20234,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """,
                     (user["id"],),
                 ).fetchone()
+                bump_public_cache_revision(connection)
         except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
@@ -17656,18 +20417,26 @@ class AppHandler(SimpleHTTPRequestHandler):
                         business_name,
                         business_description,
                         business_number,
+                        support_email,
+                        website_url,
+                        support_hours,
+                        return_policy_summary,
                         shipping_settings,
                         phone_number,
                         city,
                         address_line
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
                         cleaned_payload["business_name"],
                         cleaned_payload["business_description"],
                         cleaned_payload["business_number"],
+                        cleaned_payload["support_email"],
+                        cleaned_payload["website_url"],
+                        cleaned_payload["support_hours"],
+                        cleaned_payload["return_policy_summary"],
                         serialize_business_shipping_settings_storage(DEFAULT_BUSINESS_SHIPPING_SETTINGS),
                         cleaned_payload["phone_number"],
                         cleaned_payload["city"],
@@ -17697,6 +20466,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """,
                     (user_id,),
                 ).fetchone()
+                bump_public_cache_revision(connection)
         except DB_INTEGRITY_ERRORS:
             self.send_json(
                 409,
@@ -17771,6 +20541,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (business_logo_path, business_id),
             )
+            bump_public_cache_revision(connection)
 
         updated_business = fetch_business_profile_for_admin_by_id(business_id)
         self.send_json(
@@ -17816,6 +20587,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             existing_business = connection.execute(
                 """
                 SELECT id, business_logo_path
+                    , support_email, website_url, support_hours, return_policy_summary
                 FROM business_profiles
                 WHERE id = ?
                 LIMIT 1
@@ -17852,6 +20624,26 @@ class AppHandler(SimpleHTTPRequestHandler):
                 cleaned_payload["business_logo_path"]
                 or normalize_image_path(existing_business["business_logo_path"])
             )
+            next_support_email = (
+                cleaned_payload["support_email"]
+                if "supportEmail" in payload
+                else str(existing_business["support_email"] or "").strip().lower()
+            )
+            next_website_url = (
+                cleaned_payload["website_url"]
+                if "websiteUrl" in payload
+                else str(existing_business["website_url"] or "").strip()
+            )
+            next_support_hours = (
+                cleaned_payload["support_hours"]
+                if "supportHours" in payload
+                else str(existing_business["support_hours"] or "").strip()
+            )
+            next_return_policy_summary = (
+                cleaned_payload["return_policy_summary"]
+                if "returnPolicySummary" in payload
+                else str(existing_business["return_policy_summary"] or "").strip()
+            )
 
             connection.execute(
                 """
@@ -17861,6 +20653,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                     business_description = ?,
                     business_number = ?,
                     business_logo_path = ?,
+                    support_email = ?,
+                    website_url = ?,
+                    support_hours = ?,
+                    return_policy_summary = ?,
                     phone_number = ?,
                     city = ?,
                     address_line = ?,
@@ -17872,12 +20668,17 @@ class AppHandler(SimpleHTTPRequestHandler):
                     cleaned_payload["business_description"],
                     cleaned_payload["business_number"],
                     next_logo_path,
+                    next_support_email,
+                    next_website_url,
+                    next_support_hours,
+                    next_return_policy_summary,
                     cleaned_payload["phone_number"],
                     cleaned_payload["city"],
                     cleaned_payload["address_line"],
                     business_id,
                 ),
             )
+            bump_public_cache_revision(connection)
 
         updated_business = fetch_business_profile_for_admin_by_id(business_id)
         self.send_json(
@@ -18286,6 +21087,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 connection,
                 product_row=product_row,
             )
+            bump_public_cache_revision(connection)
 
         push_warnings = send_push_notifications(sale_push_messages)
         for warning in push_warnings:
@@ -18352,6 +21154,31 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
+        next_brand = normalized["brand"] if "brand" in payload else str(product["brand"] or "").strip()
+        next_gtin = normalized["gtin"] if "gtin" in payload else str(product["gtin"] or "").strip()
+        next_mpn = normalized["mpn"] if "mpn" in payload else str(product["mpn"] or "").strip()
+        next_material = (
+            normalized["material"] if "material" in payload else str(product["material"] or "").strip()
+        )
+        if "weightValue" in payload:
+            next_weight_value = normalized["weightValue"]
+        else:
+            try:
+                next_weight_value = float(product["weight_value"] or 0)
+            except (TypeError, ValueError):
+                next_weight_value = 0.0
+        next_weight_unit = (
+            normalized["weightUnit"] if "weightUnit" in payload else str(product["weight_unit"] or "").strip().lower()
+        )
+        next_meta_title = (
+            normalized["metaTitle"] if "metaTitle" in payload else str(product["meta_title"] or "").strip()
+        )
+        next_meta_description = (
+            normalized["metaDescription"]
+            if "metaDescription" in payload
+            else str(product["meta_description"] or "").strip()
+        )
+
         image_fingerprint = compute_product_image_fingerprint(
             normalized["imageGallery"],
             fallback_image_path=normalized["imagePath"],
@@ -18384,6 +21211,14 @@ class AppHandler(SimpleHTTPRequestHandler):
                     article_number = ?,
                     title = ?,
                     description = ?,
+                    brand = ?,
+                    gtin = ?,
+                    mpn = ?,
+                    material = ?,
+                    weight_value = ?,
+                    weight_unit = ?,
+                    meta_title = ?,
+                    meta_description = ?,
                     price = ?,
                     compare_at_price = ?,
                     sale_ends_at = ?,
@@ -18406,6 +21241,14 @@ class AppHandler(SimpleHTTPRequestHandler):
                     normalized["articleNumber"],
                     normalized["title"],
                     normalized["description"],
+                    next_brand,
+                    next_gtin,
+                    next_mpn,
+                    next_material,
+                    next_weight_value,
+                    next_weight_unit,
+                    next_meta_title,
+                    next_meta_description,
                     normalized["price"],
                     normalized["compareAtPrice"],
                     normalized["saleEndsAt"],
@@ -18445,6 +21288,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 product_row=product_row,
                 previous_product_row=product,
             )
+            bump_public_cache_revision(connection)
 
         push_warnings = send_push_notifications(sale_push_messages)
         for warning in push_warnings:
@@ -19441,6 +22285,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     """,
                     (launch_ad_id,),
                 )
+                bump_public_cache_revision(connection)
 
             launch_ads = [serialize_launch_ad(row) for row in fetch_admin_launch_ads()]
             self.send_json(200, {"ok": True, "message": "Launch ad u fshi me sukses.", "launchAds": launch_ads})
@@ -19558,6 +22403,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     ),
                 )
                 success_message = "Launch ad u ruajt me sukses."
+            bump_public_cache_revision(connection)
 
         launch_ads = [serialize_launch_ad(row) for row in fetch_admin_launch_ads()]
         self.send_json(200, {"ok": True, "message": success_message, "launchAds": launch_ads})
@@ -19828,6 +22674,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     href=f"/produkti?id={product_id}",
                     metadata={"productId": product_id},
                 )
+            bump_public_cache_revision(connection)
 
         self.send_json(201, {"ok": True, "message": "Review u ruajt me sukses."})
 
@@ -20912,6 +23759,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         with get_db_connection() as connection:
             connection.execute("DELETE FROM products WHERE id = ?", (product_id,))
+            bump_public_cache_revision(connection)
 
         self.send_json(
             200,
@@ -20973,6 +23821,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (1 if is_public else 0, product_id),
             )
+            bump_public_cache_revision(connection)
 
         updated_product = fetch_product_by_id(product_id)
         self.send_json(
@@ -21053,6 +23902,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 """,
                 (1 if show_stock_public else 0, product_id),
             )
+            bump_public_cache_revision(connection)
 
         updated_product = fetch_product_by_id(product_id)
         self.send_json(
@@ -21164,6 +24014,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     product_id,
                 ),
             )
+            bump_public_cache_revision(connection)
 
         updated_product = fetch_product_by_id(product_id)
         self.send_json(
@@ -21287,6 +24138,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     product_id,
                 ),
             )
+            bump_public_cache_revision(connection)
 
         updated_product = fetch_product_by_id(product_id)
         self.send_json(
@@ -22207,7 +25059,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
     def get_session_token(self) -> str | None:
-        return parse_session_token(self.headers.get("Cookie"))
+        cookie_session_token = parse_session_token(self.headers.get("Cookie"))
+        if cookie_session_token:
+            return cookie_session_token
+
+        return parse_session_token_from_header(self.headers.get("X-Tregio-Session"))
 
     def get_current_user(self):
         session_token = self.get_session_token()

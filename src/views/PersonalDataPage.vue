@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage, uploadProfilePhoto } from "../lib/api";
+import { getAccountDashboardMenuItems } from "../lib/account-navigation";
 import { createEmptyAddress, getBusinessInitials, getProfileValuesFromUser, normalizeAddress } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser, markRouteReady, refreshSession } from "../stores/app-state";
 
@@ -37,46 +38,7 @@ const deletePassword = ref("");
 const previewImage = computed(() => previewUrl.value || formState.profileImagePath || "");
 const placeholderInitials = computed(() => getBusinessInitials(formState.fullName || formState.displayName || "User"));
 
-const dashboardMenuItems = computed(() => {
-  const role = String(appState.user?.role || "").trim().toLowerCase();
-
-  if (role === "admin") {
-    return [
-      { href: "/llogaria", label: "Dashboard", icon: "dashboard" },
-      { href: "/admin-porosite", label: "Order History", icon: "orders" },
-      { href: "/admin-products", label: "Products", icon: "bag" },
-      { href: "/bizneset-e-regjistruara", label: "Businesses", icon: "pin" },
-      { href: "/wishlist", label: "Wishlist", icon: "heart" },
-      { href: "/krahaso", label: "Compare", icon: "compare" },
-      { href: "/te-dhenat-personale", label: "Setting", icon: "settings", active: true },
-    ];
-  }
-
-  if (role === "business") {
-    return [
-      { href: "/llogaria", label: "Dashboard", icon: "dashboard" },
-      { href: "/porosite-e-biznesit", label: "Order History", icon: "orders" },
-      { href: "/biznesi-juaj", label: "Business Page", icon: "pin" },
-      { href: "/cart", label: "Shopping Cart", icon: "bag" },
-      { href: "/wishlist", label: "Wishlist", icon: "heart" },
-      { href: "/krahaso", label: "Compare", icon: "compare" },
-      { href: "/adresat", label: "Address", icon: "card" },
-      { href: "/te-dhenat-personale", label: "Setting", icon: "settings", active: true },
-    ];
-  }
-
-  return [
-    { href: "/llogaria", label: "Dashboard", icon: "dashboard" },
-    { href: "/porosite", label: "Order History", icon: "orders" },
-    { href: "/track-order", label: "Track Order", icon: "pin" },
-    { href: "/cart", label: "Shopping Cart", icon: "bag" },
-    { href: "/wishlist", label: "Wishlist", icon: "heart" },
-    { href: "/krahaso", label: "Compare", icon: "compare" },
-    { href: "/adresat", label: "Address", icon: "card" },
-    { href: "/kerko", label: "Browsing History", icon: "history" },
-    { href: "/te-dhenat-personale", label: "Setting", icon: "settings", active: true },
-  ];
-});
+const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, "settings"));
 
 onMounted(async () => {
   try {

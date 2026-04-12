@@ -8,6 +8,7 @@ import LoginGreetingToast from "./components/LoginGreetingToast.vue";
 import ProductCompareTray from "./components/ProductCompareTray.vue";
 import VoiceAssistantWidget from "./components/VoiceAssistantWidget.vue";
 import { useScreenSafeArea } from "./composables/useScreenSafeArea";
+import { applyDocumentSeo } from "./lib/seo";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
 const route = useRoute();
@@ -25,6 +26,37 @@ const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILI
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
 const safeArea = useScreenSafeArea();
 let sessionWarmupTimeoutId = 0;
+const NOINDEX_PAGE_KEYS = new Set([
+  "search",
+  "login",
+  "signup",
+  "verify-email",
+  "forgot-password",
+  "change-password",
+  "wishlist",
+  "cart",
+  "account",
+  "personal-data",
+  "addresses",
+  "orders",
+  "track-order",
+  "refund-returns",
+  "notifications",
+  "business-orders",
+  "admin-orders",
+  "checkout-address",
+  "payment-options",
+  "admin-products",
+  "business-dashboard",
+  "registered-businesses",
+  "product-compare",
+]);
+const DEFAULT_ROUTE_DESCRIPTIONS = {
+  home: "TREGIO eshte marketplace per biznese lokale me produkte publike, checkout te sigurt dhe porosi te gjurmueshme.",
+  "product-detail": "Shiko detajet e produktit, cmimin, stokun, vleresimet dhe porosit me checkout te sigurt ne TREGIO.",
+  "business-profile": "Shfleto profilin publik te biznesit, produktet aktive dhe informacionin kryesor te shitjes ne TREGIO.",
+  search: "Kerko produkte dhe filtro katalogun sipas kategorise, markes dhe cmimit ne TREGIO.",
+};
 
 const shellClass = computed(() => route.meta.shellClass || "page-shell");
 const mainClass = computed(() => route.meta.mainClass || "page-main");
@@ -46,9 +78,17 @@ watch(
 );
 
 watch(
-  () => route.meta.title,
-  (title) => {
-    document.title = String(title || "TREGIO");
+  [() => route.fullPath, () => route.meta.title, () => route.meta.pageKey],
+  ([fullPath, title, pageKey]) => {
+    const normalizedPageKey = String(pageKey || "").trim();
+    const canonicalPath = normalizedPageKey === "search" ? "/kerko" : String(fullPath || route.path || "/");
+    applyDocumentSeo({
+      title: String(title || "TREGIO"),
+      description: DEFAULT_ROUTE_DESCRIPTIONS[normalizedPageKey] || "TREGIO marketplace per produkte, biznese lokale dhe porosi te menaxhuara ne nje vend.",
+      canonicalPath,
+      image: "/trego-logo.webp?v=20260410",
+      robots: NOINDEX_PAGE_KEYS.has(normalizedPageKey) ? "noindex,nofollow" : "index,follow",
+    });
   },
   { immediate: true },
 );

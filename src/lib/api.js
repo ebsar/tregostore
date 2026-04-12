@@ -1,10 +1,19 @@
 const GET_REQUEST_CACHE = new Map();
 const INFLIGHT_GET_REQUESTS = new Map();
 const VISITOR_TOKEN_STORAGE_KEY = "trego-visitor-token";
+const DEBUG_SESSION_TOKEN_STORAGE_KEY = "tregio-debug-session-token";
+const AUTH_INVALIDATION_EVENT_NAME = "tregio:auth-invalidated";
 const MIN_REQUEST_TIMEOUT_MS = 1200;
 const DEFAULT_GET_TIMEOUT_MS = 6000;
 const DEFAULT_MUTATION_TIMEOUT_MS = 8000;
 const DEFAULT_RETRY_TIMEOUT_MS = 3200;
+const AUTH_INVALIDATION_EXCLUDED_PATHS = new Set([
+  "/api/login",
+  "/api/signup",
+  "/api/logout",
+  "/api/me",
+  "/api/auth/google",
+]);
 
 function generateVisitorToken() {
   return `visitor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
@@ -51,6 +60,100 @@ function invalidateRequestCache() {
   INFLIGHT_GET_REQUESTS.clear();
 }
 
+function getRequestPathname(url) {
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) {
+    return "";
+  }
+
+  try {
+    const baseOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    return new URL(rawUrl, baseOrigin).pathname;
+  } catch (error) {
+    return rawUrl.split("?")[0] || rawUrl;
+  }
+}
+
+function maybeDispatchAuthInvalidation(url, method, response) {
+  const status = Number(response?.status || 0);
+  if (![401, 403].includes(status)) {
+    return;
+  }
+
+  const normalizedMethod = String(method || "GET").trim().toUpperCase();
+  const pathname = getRequestPathname(url);
+  if (!pathname.startsWith("/api/") || AUTH_INVALIDATION_EXCLUDED_PATHS.has(pathname)) {
+    return;
+  }
+
+  clearDebugSessionToken();
+  invalidateRequestCache();
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(AUTH_INVALIDATION_EVENT_NAME, {
+    detail: {
+      method: normalizedMethod,
+      pathname,
+      status,
+    },
+  }));
+}
+
+function canUseDebugSessionFallback() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const hostname = String(window.location.hostname || "").trim().toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function readDebugSessionToken() {
+  if (!canUseDebugSessionFallback()) {
+    return "";
+  }
+
+  try {
+    return String(window.sessionStorage.getItem(DEBUG_SESSION_TOKEN_STORAGE_KEY) || "").trim();
+  } catch (error) {
+    console.error(error);
+    return "";
+  }
+}
+
+export function persistDebugSessionToken(token) {
+  if (!canUseDebugSessionFallback()) {
+    return;
+  }
+
+  try {
+    const normalizedToken = String(token || "").trim();
+    if (!normalizedToken) {
+      window.sessionStorage.removeItem(DEBUG_SESSION_TOKEN_STORAGE_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(DEBUG_SESSION_TOKEN_STORAGE_KEY, normalizedToken);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+export function clearDebugSessionToken() {
+  if (!canUseDebugSessionFallback()) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(DEBUG_SESSION_TOKEN_STORAGE_KEY);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 export async function requestJson(url, options = {}, runtime = {}) {
   const config = { ...options };
   config.headers = { ...(options.headers || {}) };
@@ -85,6 +188,11 @@ export async function requestJson(url, options = {}, runtime = {}) {
   const visitorToken = getVisitorToken();
   if (visitorToken && !config.headers["X-Trego-Visitor"]) {
     config.headers["X-Trego-Visitor"] = visitorToken;
+  }
+
+  const debugSessionToken = readDebugSessionToken();
+  if (debugSessionToken && !config.headers["X-Tregio-Session"]) {
+    config.headers["X-Tregio-Session"] = debugSessionToken;
   }
 
   if (canUseCache) {
@@ -186,6 +294,12 @@ export async function requestJson(url, options = {}, runtime = {}) {
       });
     }
 
+    if (result.response.ok && String(result.data?.sessionToken || "").trim()) {
+      persistDebugSessionToken(result.data.sessionToken);
+    }
+
+    maybeDispatchAuthInvalidation(url, method, result.response);
+
     if (method !== "GET" && result.response.ok) {
       invalidateRequestCache();
     }
@@ -225,6 +339,7 @@ export async function fetchCurrentUserSession() {
     }
 
     if (response.status === 401 || response.status === 403) {
+      clearDebugSessionToken();
       return {
         status: "guest",
         user: null,
@@ -249,6 +364,10 @@ export async function fetchCurrentUserSession() {
 export async function fetchCurrentUserOptional() {
   const session = await fetchCurrentUserSession();
   return session.status === "authenticated" ? session.user : null;
+}
+
+export function getAuthInvalidationEventName() {
+  return AUTH_INVALIDATION_EVENT_NAME;
 }
 
 function normalizeRecommendationSections(data, fallbackLimit = 8) {

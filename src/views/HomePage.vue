@@ -23,6 +23,7 @@ import {
   hasProductAvailableStock,
   PRIMARY_NAVIGATION,
 } from "../lib/shop";
+import { applyDocumentSeo, buildAbsoluteUrl } from "../lib/seo";
 import {
   compareState,
   ensureCompareItemsLoaded,
@@ -187,6 +188,76 @@ const homeNewsletterBenefits = [
   "Njoftime kur dalin artikuj te rinj",
   "Drop-et dhe zbritjet me te mira te javes",
 ];
+
+function updateHomeSeo() {
+  const featuredProducts = homeCatalogProducts.value.slice(0, 8);
+  const featuredBusinesses = businesses.value.slice(0, 6);
+  const description = totalProductsCount.value > 0
+    ? `Marketplace me ${totalProductsCount.value} produkte publike dhe ${featuredBusinesses.length} biznese aktive ne TREGIO.`
+    : "Marketplace per biznese lokale me produkte publike, porosi te sigurta dhe gjurmim te porosive ne TREGIO.";
+
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: "TREGIO",
+      url: buildAbsoluteUrl("/"),
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${buildAbsoluteUrl("/kerko")}?q={search_term_string}`,
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "TREGIO",
+      url: buildAbsoluteUrl("/"),
+      logo: buildAbsoluteUrl("/trego-logo.webp?v=20260410"),
+    },
+  ];
+
+  if (featuredProducts.length > 0) {
+    jsonLd.push({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "Featured marketplace products",
+      itemListElement: featuredProducts.map((product, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: buildAbsoluteUrl(getProductDetailUrl(product.id)),
+        name: String(product.title || "").trim() || `Product ${product.id}`,
+      })),
+    });
+  }
+
+  if (featuredBusinesses.length > 0) {
+    jsonLd.push({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "Featured marketplace businesses",
+      itemListElement: featuredBusinesses.map((business, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        url: buildAbsoluteUrl(getBusinessProfileUrl(business.id)),
+        name: String(business.businessName || "").trim() || `Business ${business.id}`,
+      })),
+    });
+  }
+
+  applyDocumentSeo({
+    title: "TREGIO | Home",
+    description,
+    canonicalPath: "/",
+    image: featuredProducts[0]?.imagePath || "/trego-logo.webp?v=20260410",
+    jsonLd,
+  });
+}
+
+watch([totalProductsCount, businesses, homeCatalogProducts], () => {
+  updateHomeSeo();
+}, { immediate: true });
+
 const HOME_CATEGORY_ICON_MAP = {
   clothing: {
     tone: "fashion",
@@ -2148,7 +2219,11 @@ async function handleCart(productId) {
         {{ ui.message }}
       </div>
 
-      <section v-if="filteredProducts.length > 0" class="pet-products-grid" aria-label="Te gjitha produktet">
+      <section
+        v-if="filteredProducts.length > 0"
+        class="pet-products-grid home-all-products-grid"
+        aria-label="Te gjitha produktet"
+      >
         <ProductCard
           v-for="product in filteredProducts"
           :key="product.id"
@@ -3033,6 +3108,22 @@ async function handleCart(productId) {
 
 .commerce-home-visual-input {
   display: none;
+}
+
+.home-all-products-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .home-all-products-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .home-all-products-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1180px) {

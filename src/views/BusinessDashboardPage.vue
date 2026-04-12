@@ -20,6 +20,7 @@ import {
   PRODUCT_PAGE_SECTION_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
   PRODUCT_TYPE_OPTIONS_BY_CATEGORY,
+  PRODUCT_WEIGHT_UNIT_OPTIONS,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
 import {
@@ -130,6 +131,10 @@ const profileForm = reactive({
   businessDescription: "",
   businessNumber: "",
   phoneNumber: "",
+  supportEmail: "",
+  websiteUrl: "",
+  supportHours: "",
+  returnPolicySummary: "",
   city: "",
   addressLine: "",
   businessLogoPath: "",
@@ -741,6 +746,10 @@ function hydrateProfileForm(profile) {
   profileForm.businessDescription = String(profile?.businessDescription || "");
   profileForm.businessNumber = String(profile?.businessNumber || "");
   profileForm.phoneNumber = String(profile?.phoneNumber || "");
+  profileForm.supportEmail = String(profile?.supportEmail || "");
+  profileForm.websiteUrl = String(profile?.websiteUrl || "");
+  profileForm.supportHours = String(profile?.supportHours || "");
+  profileForm.returnPolicySummary = String(profile?.returnPolicySummary || "");
   profileForm.city = String(profile?.city || "");
   profileForm.addressLine = String(profile?.addressLine || "");
   profileForm.businessLogoPath = String(profile?.logoPath || "");
@@ -798,6 +807,10 @@ async function saveBusinessProfile() {
     businessNumber: profileForm.businessNumber.trim(),
     businessLogoPath: logoPath,
     phoneNumber: profileForm.phoneNumber.trim(),
+    supportEmail: profileForm.supportEmail.trim(),
+    websiteUrl: profileForm.websiteUrl.trim(),
+    supportHours: profileForm.supportHours.trim(),
+    returnPolicySummary: profileForm.returnPolicySummary.trim(),
     city: profileForm.city.trim(),
     addressLine: profileForm.addressLine.trim(),
   };
@@ -1282,6 +1295,14 @@ async function submitProduct() {
     compareAtPrice: productForm.compareAtPrice,
     saleEndsAt: productForm.saleEndsAt,
     description: productForm.description.trim(),
+    brand: productForm.brand.trim(),
+    gtin: productForm.gtin.trim(),
+    mpn: productForm.mpn.trim(),
+    material: productForm.material.trim(),
+    weightValue: productForm.weightValue,
+    weightUnit: productForm.weightUnit,
+    metaTitle: productForm.metaTitle.trim(),
+    metaDescription: productForm.metaDescription.trim(),
     pageSection: productForm.pageSection,
     audience: productForm.audience,
     category: productForm.category,
@@ -1963,10 +1984,35 @@ async function applyBulkStockUpdate() {
 
           <div class="field-row">
             <label class="field">
+              <span>Email per support</span>
+              <input v-model="profileForm.supportEmail" type="email" placeholder="p.sh. support@biznesi.com">
+            </label>
+
+            <label class="field">
+              <span>Website</span>
+              <input v-model="profileForm.websiteUrl" type="url" placeholder="p.sh. https://biznesi.com">
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>Orari i support-it</span>
+              <input v-model="profileForm.supportHours" type="text" placeholder="p.sh. Hene - Shtune, 09:00 - 18:00">
+            </label>
+            <label class="field">
               <span>Qyteti</span>
               <input v-model="profileForm.city" type="text" placeholder="p.sh. Prishtine" required>
             </label>
           </div>
+
+          <label class="field">
+            <span>Politika e kthimit</span>
+            <textarea
+              v-model="profileForm.returnPolicySummary"
+              rows="3"
+              placeholder="p.sh. Kthimi pranohet brenda 14 diteve per produktet e pademtuara."
+            ></textarea>
+          </label>
 
           <label class="field">
             <span>Adresa e biznesit</span>
@@ -2091,16 +2137,70 @@ async function applyBulkStockUpdate() {
                   >
                 </label>
 
-                <label class="field">
-                  <span>Titulli</span>
-                  <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
-                </label>
-              </div>
+              <label class="field">
+                <span>Titulli</span>
+                <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
+              </label>
+            </div>
+
+            <div class="field-row field-row-3">
+              <label class="field">
+                <span>Brand</span>
+                <input v-model="productForm.brand" type="text" placeholder="p.sh. Nike">
+              </label>
+              <label class="field">
+                <span>GTIN / Barcode</span>
+                <input v-model="productForm.gtin" type="text" inputmode="numeric" placeholder="p.sh. 0123456789012">
+              </label>
+              <label class="field">
+                <span>MPN</span>
+                <input v-model="productForm.mpn" type="text" placeholder="p.sh. NK-2026-RED">
+              </label>
+            </div>
+
+            <div class="field-row field-row-3">
+              <label class="field">
+                <span>Materiali</span>
+                <input v-model="productForm.material" type="text" placeholder="p.sh. Lekure natyrale">
+              </label>
+              <label class="field">
+                <span>Pesha</span>
+                <input v-model="productForm.weightValue" type="number" min="0" step="0.01" placeholder="p.sh. 0.45">
+              </label>
+              <label class="field">
+                <span>Njesia e peshes</span>
+                <select v-model="productForm.weightUnit">
+                  <option
+                    v-for="option in PRODUCT_WEIGHT_UNIT_OPTIONS"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+            </div>
 
               <label class="field">
                 <span>Pershkrimi</span>
                 <textarea v-model="productForm.description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
               </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>SEO title</span>
+                  <input v-model="productForm.metaTitle" type="text" maxlength="160" placeholder="Titull me i shkurter per Google">
+                </label>
+                <label class="field">
+                  <span>SEO description</span>
+                  <textarea
+                    v-model="productForm.metaDescription"
+                    rows="3"
+                    maxlength="320"
+                    placeholder="Pershkrim i shkurter per rezultatet e kerkimit"
+                  ></textarea>
+                </label>
+              </div>
 
               <div class="auth-form-actions">
                 <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Vazhdo te cmimi</button>
@@ -2251,6 +2351,17 @@ async function applyBulkStockUpdate() {
                     <strong>{{ productPriceValue > 0 ? formatPrice(productPriceValue) : "Vendos cmimin" }}</strong>
                     <span v-if="productCompareAtPriceValue > productPriceValue">{{ formatPrice(productCompareAtPriceValue) }}</span>
                     <mark v-if="productDiscountPercent > 0">-{{ productDiscountPercent }}%</mark>
+                  </div>
+                  <div class="product-detail-tags product-detail-tags-admin">
+                    <span v-if="productForm.brand" class="product-detail-tag">Brand: {{ productForm.brand }}</span>
+                    <span v-if="productForm.material" class="product-detail-tag">Material: {{ productForm.material }}</span>
+                    <span
+                      v-if="productForm.weightValue"
+                      class="product-detail-tag"
+                    >
+                      Pesha: {{ productForm.weightValue }} {{ productForm.weightUnit }}
+                    </span>
+                    <span v-if="productForm.gtin" class="product-detail-tag">GTIN: {{ productForm.gtin }}</span>
                   </div>
                   <div class="product-builder-inline-summary">
                     <span class="summary-chip">

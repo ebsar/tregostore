@@ -17,12 +17,14 @@ import {
   formatPrice,
   formatProductColorLabel,
   formatProductTypeLabel,
+  getBusinessProfileUrl,
   getCategoryUrl,
   getProductDetailUrl,
   getProductImageGallery,
   getProductStockMessage,
   hasProductAvailableStock,
 } from "../lib/shop";
+import { applyDocumentSeo, buildAbsoluteUrl, buildBreadcrumbJsonLd } from "../lib/seo";
 import { compareState, ensureCompareItemsLoaded, toggleComparedProduct } from "../stores/product-compare";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
@@ -34,6 +36,7 @@ const wishlistIds = ref([]);
 const cartIds = ref([]);
 const selectedColor = ref("");
 const selectedSize = ref("");
+const selectedVariantAttributes = reactive({});
 const selectedQuantity = ref(1);
 const productReviews = ref([]);
 const productRecommendationSections = ref([]);
@@ -60,6 +63,13 @@ const canSeeProductEngagement = computed(() =>
 const isProductAvailable = computed(() => hasProductAvailableStock(currentProduct.value || {}));
 const outOfStockMessage = computed(() => getProductStockMessage(currentProduct.value || {}));
 const businessName = computed(() => String(currentProduct.value?.businessName || "").trim());
+const sellerSupportEmail = computed(() => String(currentProduct.value?.supportEmail || "").trim());
+const sellerWebsiteUrl = computed(() => String(currentProduct.value?.websiteUrl || "").trim());
+const sellerSupportHours = computed(() => String(currentProduct.value?.supportHours || "").trim());
+const sellerReturnPolicySummary = computed(() => String(currentProduct.value?.returnPolicySummary || "").trim());
+const productMetaTitle = computed(() => String(currentProduct.value?.metaTitle || "").trim());
+const productMetaDescription = computed(() => String(currentProduct.value?.metaDescription || "").trim());
+const sellerShippingSettings = computed(() => normalizeShippingSettings(currentProduct.value?.shippingSettings));
 
 const variantInventory = computed(() => {
   if (!Array.isArray(currentProduct.value?.variantInventory)) {
@@ -69,29 +79,93 @@ const variantInventory = computed(() => {
   return currentProduct.value.variantInventory;
 });
 
+function getVariantAttributeValue(entry, attributeKey) {
+  if (attributeKey === "color") {
+    return String(entry?.colorLabel || entry?.attributes?.color || entry?.color || "").trim();
+  }
+  if (attributeKey === "size") {
+    return String(entry?.size || entry?.attributes?.size || "").trim().toUpperCase();
+  }
+  return String(entry?.attributes?.[attributeKey] || "").trim();
+}
+
+function variantEntryMatchesSelections(entry, ignoreKey = "") {
+  const colorMatches = ignoreKey === "color"
+    || !selectedColor.value
+    || String(entry?.color || "").trim().toLowerCase() === selectedColor.value;
+  const sizeMatches = ignoreKey === "size"
+    || !selectedSize.value
+    || String(entry?.size || "").trim().toUpperCase() === selectedSize.value;
+  const attributeMatches = Object.entries(selectedVariantAttributes).every(([key, value]) => {
+    if (!value || key === ignoreKey) {
+      return true;
+    }
+    return getVariantAttributeValue(entry, key) === String(value || "").trim();
+  });
+  return colorMatches && sizeMatches && attributeMatches;
+}
+
 const colorOptions = computed(() =>
-  [...new Set(variantInventory.value.map((entry) => String(entry.color || "").trim().toLowerCase()).filter(Boolean))]
+  [...new Set(
+    variantInventory.value
+      .filter((entry) => variantEntryMatchesSelections(entry, "color"))
+      .map((entry) => String(entry.color || "").trim().toLowerCase())
+      .filter(Boolean),
+  )]
     .map((value) => ({
       value,
       label: formatProductColorLabel(value),
-      inStock: variantInventory.value.some((entry) => entry.color === value && Number(entry.quantity || 0) > 0),
+      inStock: variantInventory.value.some((entry) =>
+        String(entry.color || "").trim().toLowerCase() === value
+        && variantEntryMatchesSelections(entry, "color")
+        && Number(entry.quantity || 0) > 0),
     })),
 );
 
 const sizeOptions = computed(() => {
-  const activeEntries = variantInventory.value.filter((entry) => {
-    if (!selectedColor.value) {
-      return true;
-    }
-
-    return String(entry.color || "").trim().toLowerCase() === selectedColor.value;
-  });
+  const activeEntries = variantInventory.value.filter((entry) => variantEntryMatchesSelections(entry, "size"));
 
   return [...new Set(activeEntries.map((entry) => String(entry.size || "").trim().toUpperCase()).filter(Boolean))]
     .map((value) => ({
       value,
       inStock: activeEntries.some((entry) => entry.size === value && Number(entry.quantity || 0) > 0),
     }));
+});
+
+const variantAttributeGroups = computed(() => {
+  const keys = [];
+  const seenKeys = new Set();
+  variantInventory.value.forEach((entry) => {
+    const attributes = entry?.attributes && typeof entry.attributes === "object" ? entry.attributes : {};
+    Object.keys(attributes).forEach((attributeKey) => {
+      if (!attributeKey || attributeKey === "color" || attributeKey === "size" || seenKeys.has(attributeKey)) {
+        return;
+      }
+      seenKeys.add(attributeKey);
+      keys.push(attributeKey);
+    });
+  });
+
+  return keys.map((attributeKey) => {
+    const options = [...new Set(
+      variantInventory.value
+        .filter((entry) => variantEntryMatchesSelections(entry, attributeKey))
+        .map((entry) => getVariantAttributeValue(entry, attributeKey))
+        .filter(Boolean),
+    )].map((value) => ({
+      value,
+      inStock: variantInventory.value.some((entry) =>
+        getVariantAttributeValue(entry, attributeKey) === value
+        && variantEntryMatchesSelections(entry, attributeKey)
+        && Number(entry.quantity || 0) > 0),
+    }));
+
+    return {
+      key: attributeKey,
+      label: humanizeSlug(attributeKey),
+      options,
+    };
+  }).filter((group) => group.options.length > 0);
 });
 
 const selectedVariant = computed(() => {
@@ -103,20 +177,7 @@ const selectedVariant = computed(() => {
     return variantInventory.value[0];
   }
 
-  return variantInventory.value.find((entry) => {
-    const colorMatches = !selectedColor.value || String(entry.color || "").trim().toLowerCase() === selectedColor.value;
-    const sizeMatches = !selectedSize.value || String(entry.size || "").trim().toUpperCase() === selectedSize.value;
-    if (selectedColor.value && selectedSize.value) {
-      return colorMatches && sizeMatches;
-    }
-    if (selectedColor.value && !sizeOptions.value.length) {
-      return colorMatches;
-    }
-    if (!selectedColor.value && selectedSize.value) {
-      return sizeMatches;
-    }
-    return false;
-  }) || null;
+  return variantInventory.value.find((entry) => variantEntryMatchesSelections(entry)) || null;
 });
 
 const details = computed(() => {
@@ -127,9 +188,14 @@ const details = computed(() => {
   return [
     formatCategoryLabel(currentProduct.value.category),
     formatProductTypeLabel(currentProduct.value.productType),
+    currentProduct.value.brand ? `Brand: ${currentProduct.value.brand}` : "",
     currentProduct.value.size ? `Madhesia: ${currentProduct.value.size}` : "",
     currentProduct.value.color
       ? `Ngjyra: ${formatProductColorLabel(currentProduct.value.color)}`
+      : "",
+    currentProduct.value.material ? `Materiali: ${currentProduct.value.material}` : "",
+    currentProduct.value.weightValue && currentProduct.value.weightUnit
+      ? `Pesha: ${currentProduct.value.weightValue} ${currentProduct.value.weightUnit}`
       : "",
     currentProduct.value.packageAmountValue && currentProduct.value.packageAmountUnit
       ? `Permbajtja: ${currentProduct.value.packageAmountValue}${currentProduct.value.packageAmountUnit}`
@@ -248,12 +314,18 @@ const specificationItems = computed(() => {
 const trustHighlights = computed(() => ([
   {
     title: "Seller-backed support",
-    description: `Managed directly through ${businessName.value || "the verified seller"} and the Tregio order flow.`,
+    description: sellerSupportEmail.value
+      ? `Support handled by ${businessName.value || "the verified seller"} at ${sellerSupportEmail.value}.`
+      : `Managed directly through ${businessName.value || "the verified seller"} and the Tregio order flow.`,
   },
   {
     title: isProductAvailable.value ? "Fast local delivery" : "Restock confirmation",
     description: isProductAvailable.value
-      ? "Orders can be confirmed quickly when stock is available."
+      ? buildShippingSummaryLine(
+        "Standard",
+        sellerShippingSettings.value?.standardFee,
+        sellerShippingSettings.value?.standardEta,
+      )
       : "Availability is re-checked before payment is finalized.",
   },
   {
@@ -262,7 +334,7 @@ const trustHighlights = computed(() => ([
   },
   {
     title: "Clear return path",
-    description: "Issues can be followed through order history and support.",
+    description: sellerReturnPolicySummary.value || "Issues can be followed through order history and support.",
   },
   {
     title: "Live catalog signals",
@@ -318,6 +390,15 @@ const packageAmountLabel = computed(() => {
 
   return "Standard unit";
 });
+const productWeightLabel = computed(() => {
+  const rawValue = Number(currentProduct.value?.weightValue || 0);
+  const unit = String(currentProduct.value?.weightUnit || "").trim();
+  if (!Number.isFinite(rawValue) || rawValue <= 0 || !unit) {
+    return "";
+  }
+
+  return `${rawValue} ${unit}`;
+});
 const optionTypeLabel = computed(() => formatProductTypeLabel(currentProduct.value?.productType || "") || "Standard");
 const publishedDateLabel = computed(() => {
   const rawDate = String(currentProduct.value?.createdAt || "").trim();
@@ -335,6 +416,7 @@ const productHighlightBullets = computed(() => {
 
   const items = [
     businessName.value ? `Posted by ${businessName.value} with live marketplace visibility.` : "",
+    sellerSupportHours.value ? `Support hours: ${sellerSupportHours.value}.` : "",
     currentProduct.value?.showStockPublic && selectedVariantStock.value > 0
       ? `${selectedVariantStock.value} units are currently ready to order.`
       : "Availability is rechecked before checkout is finalized.",
@@ -348,33 +430,78 @@ const productHighlightBullets = computed(() => {
     packageAmountLabel.value !== "Standard unit"
       ? `Ships as ${packageAmountLabel.value.toLowerCase()} from the seller.`
       : "",
+    productWeightLabel.value ? `Listed shipping weight: ${productWeightLabel.value}.` : "",
   ].filter(Boolean);
 
   return [...new Set(items)].slice(0, 5);
 });
 const shippingInformation = computed(() => {
   const sellerName = businessName.value || "the seller";
-  const verifiedStatus = String(currentProduct.value?.businessVerificationStatus || "").trim().toLowerCase();
-  const isVerifiedSeller = verifiedStatus === "verified";
+  const shippingSettings = sellerShippingSettings.value;
+  const items = [];
 
-  return [
-    {
-      label: "Courier",
-      value: isVerifiedSeller ? "2 - 4 days, tracked shipment" : "3 - 5 days, confirmation after seller approval",
-    },
-    {
-      label: "Local shipping",
-      value: `Handled by ${sellerName} through the Tregio order workflow.`,
-    },
-    {
-      label: "Returns",
-      value: "Managed from order history after delivery confirmation.",
-    },
-    {
-      label: "Payment",
-      value: "Protected checkout with order status tracking and support follow-up.",
-    },
-  ];
+  if (shippingSettings?.standardEnabled) {
+    items.push({
+      label: "Standard shipping",
+      value: buildShippingSummaryLine("Standard", shippingSettings.standardFee, shippingSettings.standardEta),
+    });
+  }
+
+  if (shippingSettings?.expressEnabled) {
+    items.push({
+      label: "Express shipping",
+      value: buildShippingSummaryLine("Express", shippingSettings.expressFee, shippingSettings.expressEta),
+    });
+  }
+
+  if (shippingSettings?.pickupEnabled) {
+    items.push({
+      label: "Pickup",
+      value: [
+        shippingSettings.pickupEta || "Ready for pickup after seller confirmation",
+        shippingSettings.pickupAddress || currentProduct.value?.addressLine || "",
+        shippingSettings.pickupHours || sellerSupportHours.value,
+      ].filter(Boolean).join(" • "),
+    });
+  }
+
+  items.push({
+    label: "Returns",
+    value: sellerReturnPolicySummary.value || "Managed from order history after delivery confirmation.",
+  });
+
+  items.push({
+    label: "Payment",
+    value: "Protected checkout with order status tracking and support follow-up.",
+  });
+
+  if (shippingSettings?.freeShippingThreshold > 0) {
+    items.push({
+      label: "Free shipping",
+      value: `Free delivery starts from ${formatPrice(shippingSettings.freeShippingThreshold)}.`,
+    });
+  }
+
+  return items.length > 0
+    ? items.slice(0, 5)
+    : [
+        {
+          label: "Courier",
+          value: "3 - 5 days, confirmation after seller approval",
+        },
+        {
+          label: "Local shipping",
+          value: `Handled by ${sellerName} through the Tregio order workflow.`,
+        },
+        {
+          label: "Returns",
+          value: "Managed from order history after delivery confirmation.",
+        },
+        {
+          label: "Payment",
+          value: "Protected checkout with order status tracking and support follow-up.",
+        },
+      ];
 });
 const isTechProduct = computed(() => matchesTechProduct(currentProduct.value));
 const additionalOverviewItems = computed(() => {
@@ -386,9 +513,13 @@ const additionalOverviewItems = computed(() => {
     return filterKeyValueItems([
       { label: "Model Name", value: currentProduct.value.title },
       { label: "Brand", value: productBrand.value },
+      { label: "GTIN", value: currentProduct.value.gtin },
+      { label: "MPN", value: currentProduct.value.mpn },
       { label: "Specific Uses", value: inferProductUseCases(currentProduct.value) },
       { label: "Screen Size", value: currentProduct.value.size || joinOptionLabels(sizeOptions.value, "value") || inferDisplaySizeFromTitle(currentProduct.value.title) },
       { label: "Display", value: inferDisplayLabel(currentProduct.value) },
+      { label: "Material", value: currentProduct.value.material },
+      { label: "Weight", value: productWeightLabel.value },
       { label: "Key-board", value: inferKeyboardLabel(currentProduct.value) },
       { label: "Human Interface Input", value: inferInterfaceInputLabel(currentProduct.value) },
       { label: "CPU Manufacturer", value: inferCpuManufacturer(currentProduct.value, productBrand.value) },
@@ -401,6 +532,10 @@ const additionalOverviewItems = computed(() => {
     { label: "Specific Uses", value: inferProductUseCases(currentProduct.value) },
     { label: "Category", value: formatCategoryLabel(currentProduct.value.category) || "Marketplace" },
     { label: "Product Type", value: optionTypeLabel.value },
+    { label: "GTIN", value: currentProduct.value.gtin },
+    { label: "MPN", value: currentProduct.value.mpn },
+    { label: "Material", value: currentProduct.value.material },
+    { label: "Weight", value: productWeightLabel.value },
     { label: "Selected Size", value: currentProduct.value.size || joinOptionLabels(sizeOptions.value, "value") || "Standard" },
     { label: "Primary Color", value: currentProduct.value.color ? formatProductColorLabel(currentProduct.value.color) : joinOptionLabels(colorOptions.value, "label") },
     { label: "Seller", value: businessName.value || "Verified seller" },
@@ -414,13 +549,26 @@ const additionalDetailSections = computed(() => {
   const sections = [
     {
       title: isTechProduct.value ? "Product Warranty:" : "Seller Warranty:",
-      text: buildWarrantyCopy(currentProduct.value, businessName.value),
+      text: sellerReturnPolicySummary.value || buildWarrantyCopy(currentProduct.value, businessName.value),
       lines: [],
     },
     {
-      title: isTechProduct.value ? "Operating System:" : "Product Care:",
-      text: isTechProduct.value ? inferOperatingSystemLabel(currentProduct.value) : inferProductCareLabel(currentProduct.value),
-      lines: [],
+      title: "Support & Contact:",
+      text: "",
+      lines: [
+        sellerSupportEmail.value ? `Email: ${sellerSupportEmail.value}` : "",
+        sellerSupportHours.value ? `Hours: ${sellerSupportHours.value}` : "",
+        sellerWebsiteUrl.value ? `Website: ${sellerWebsiteUrl.value}` : "",
+      ].filter(Boolean),
+    },
+    {
+      title: isTechProduct.value ? "Operating System & Fit:" : "Shipping Notes:",
+      text: isTechProduct.value ? inferOperatingSystemLabel(currentProduct.value) : "",
+      lines: isTechProduct.value
+        ? []
+        : shippingInformation.value
+          .filter((item) => item.label !== "Payment")
+          .map((item) => `${item.label}: ${item.value}`),
     },
     {
       title: "Dimensions:",
@@ -444,12 +592,15 @@ const additionalHighlights = computed(() => {
 
   const items = [
     inferPrimaryHighlight(currentProduct.value),
+    currentProduct.value.gtin ? `Barcode / GTIN: ${currentProduct.value.gtin}` : "",
+    currentProduct.value.mpn ? `MPN: ${currentProduct.value.mpn}` : "",
     reviewCount.value > 0 && averageRating.value > 0
       ? `${averageRating.value.toFixed(1)} star average from ${formatCount(reviewCount.value)} reviews`
       : "Fresh listing ready for first customer feedback",
     buyersCount.value > 0
       ? `${formatCount(buyersCount.value)} customers already purchased this item`
       : "Prepared for local marketplace orders",
+    productWeightLabel.value ? `Ships with listed weight ${productWeightLabel.value}` : "",
     currentProduct.value?.showStockPublic && selectedVariantStock.value > 0
       ? `${selectedVariantStock.value} units currently visible in stock`
       : "Availability is confirmed before checkout completes",
@@ -479,9 +630,12 @@ const specificationColumns = computed(() => {
         { label: "Model Number", value: inferModelNumber(currentProduct.value, productSku.value) },
         { label: "Part Number", value: productSku.value },
         { label: "Series", value: inferSeriesLabel(currentProduct.value, productBrand.value) },
+        { label: "GTIN", value: currentProduct.value.gtin },
+        { label: "MPN", value: currentProduct.value.mpn },
         { label: "Color", value: colorLabel || "Standard" },
         { label: "Type", value: inferDeviceTypeLabel(currentProduct.value, optionTypeLabel.value) },
         { label: "Suitable For", value: inferProductUseCases(currentProduct.value) },
+        { label: "Material", value: currentProduct.value.material },
         { label: "Battery Backup", value: inferBatteryBackup(currentProduct.value) },
         { label: "Power Supply", value: inferPowerSupply(currentProduct.value) },
         { label: "MS Office Provided", value: inferOfficeIncluded(currentProduct.value) },
@@ -529,6 +683,7 @@ const specificationColumns = computed(() => {
         { label: "Expandable Memory", value: inferExpandableMemory(currentProduct.value, ramLabel) },
         { label: "Graphic Processor", value: inferGraphicsLabel(currentProduct.value, processorLabel) },
         { label: "Number of Cores", value: coresLabel },
+        { label: "Weight", value: productWeightLabel.value },
       ]),
     );
 
@@ -565,8 +720,12 @@ const specificationColumns = computed(() => {
         { label: "Product", value: currentProduct.value.title },
         { label: "Seller", value: businessName.value || "Verified seller" },
         { label: "Brand", value: productBrand.value },
+        { label: "GTIN", value: currentProduct.value.gtin },
+        { label: "MPN", value: currentProduct.value.mpn },
         { label: "Category", value: formatCategoryLabel(currentProduct.value.category) || "Marketplace" },
         { label: "Type", value: optionTypeLabel.value },
+        { label: "Material", value: currentProduct.value.material },
+        { label: "Weight", value: productWeightLabel.value },
         { label: "Published", value: publishedDateLabel.value },
       ]),
     );
@@ -585,8 +744,9 @@ const specificationColumns = computed(() => {
       createSpecificationGroup("Fulfillment", [
         { label: "Availability", value: productAvailabilityLabel.value },
         { label: "Delivery", value: shippingInformation.value[0]?.value || "" },
-        { label: "Returns", value: shippingInformation.value[2]?.value || "" },
-        { label: "Payment", value: shippingInformation.value[3]?.value || "" },
+        { label: "Returns", value: shippingInformation.value.find((item) => item.label === "Returns")?.value || "" },
+        { label: "Payment", value: shippingInformation.value.find((item) => item.label === "Payment")?.value || "" },
+        { label: "Pickup", value: shippingInformation.value.find((item) => item.label === "Pickup")?.value || "" },
       ]),
     );
 
@@ -604,7 +764,9 @@ const specificationColumns = computed(() => {
     rightColumn.push(
       createSpecificationGroup("Seller Support", [
         { label: "Seller Status", value: humanizeSlug(currentProduct.value.businessVerificationStatus || "active") },
-        { label: "Support Path", value: "Managed through dashboard, orders and support" },
+        { label: "Support Email", value: sellerSupportEmail.value },
+        { label: "Website", value: sellerWebsiteUrl.value },
+        { label: "Support Hours", value: sellerSupportHours.value },
         { label: "Stock Visibility", value: currentProduct.value.showStockPublic ? "Visible on product page" : "Visible after confirmation" },
         { label: "Warranty", value: inferWarrantySummary(currentProduct.value) },
         { label: "Published", value: publishedDateLabel.value },
@@ -699,6 +861,99 @@ const publicEngagementItems = computed(() => ([
 ]));
 let productRecommendationsRequestId = 0;
 
+function updateProductSeo() {
+  if (!currentProduct.value) {
+    applyDocumentSeo({
+      title: "TREGIO | Produkti",
+      description: "Shiko produktet publike, cmimet, stokun dhe checkout-in e sigurt ne TREGIO.",
+      canonicalPath: "/produkti",
+      image: "/trego-logo.webp?v=20260410",
+      jsonLd: [],
+    });
+    return;
+  }
+
+  const detailPath = getProductDetailUrl(currentProduct.value.id);
+  const sellerUrl = currentProduct.value.businessProfileId
+    ? buildAbsoluteUrl(getBusinessProfileUrl(currentProduct.value.businessProfileId))
+    : "";
+  const shippingJsonLd = buildOfferShippingDetailsJsonLd(sellerShippingSettings.value);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd([
+    { name: "Home", item: "/" },
+    { name: formatCategoryLabel(currentProduct.value.category || "Marketplace"), item: getCategoryUrl(currentProduct.value.category) || "/kerko" },
+    { name: currentProduct.value.title || "Produkt", item: detailPath },
+  ]);
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: String(currentProduct.value.title || "").trim(),
+    description: productMetaDescription.value || shortDescription.value,
+    sku: productSku.value,
+    image: imageGallery.value.map((imagePath) => buildAbsoluteUrl(imagePath)).filter(Boolean),
+    brand: {
+      "@type": "Brand",
+      name: productBrand.value,
+    },
+    ...(currentProduct.value.gtin ? { gtin: String(currentProduct.value.gtin).trim() } : {}),
+    ...(currentProduct.value.mpn ? { mpn: String(currentProduct.value.mpn).trim() } : {}),
+    ...(currentProduct.value.material ? { material: String(currentProduct.value.material).trim() } : {}),
+    ...(productWeightLabel.value
+      ? {
+          weight: {
+            "@type": "QuantitativeValue",
+            value: Number(currentProduct.value.weightValue || 0),
+            unitText: String(currentProduct.value.weightUnit || "").trim(),
+          },
+        }
+      : {}),
+    category: formatCategoryLabel(currentProduct.value.category || "Marketplace"),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "EUR",
+      price: Number(currentPrice.value || 0).toFixed(2),
+      availability: isProductAvailable.value ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      itemCondition: "https://schema.org/NewCondition",
+      url: buildAbsoluteUrl(detailPath),
+      seller: {
+        "@type": "Organization",
+        name: businessName.value || "TREGIO seller",
+        ...(sellerUrl ? { url: sellerUrl } : {}),
+      },
+      ...(shippingJsonLd.length > 0 ? { shippingDetails: shippingJsonLd } : {}),
+      ...(sellerReturnPolicySummary.value
+        ? {
+            hasMerchantReturnPolicy: {
+              "@type": "MerchantReturnPolicy",
+              description: sellerReturnPolicySummary.value,
+            },
+          }
+        : {}),
+    },
+    ...(reviewCount.value > 0 && averageRating.value > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: Number(averageRating.value || 0).toFixed(1),
+            reviewCount: Math.max(1, Number(reviewCount.value || 0)),
+          },
+        }
+      : {}),
+  };
+
+  applyDocumentSeo({
+    title: `${productMetaTitle.value || currentProduct.value.title} | TREGIO`,
+    description: [
+      productMetaDescription.value || shortDescription.value,
+      businessName.value ? `Shitet nga ${businessName.value}.` : "",
+      isProductAvailable.value ? "Ne stok dhe gati per porosi." : "Aktualisht pa stok.",
+    ].filter(Boolean).join(" "),
+    canonicalPath: detailPath,
+    image: currentImagePath.value || currentProduct.value.imagePath || "/trego-logo.webp?v=20260410",
+    type: "product",
+    jsonLd: [productJsonLd, breadcrumbJsonLd].filter(Boolean),
+  });
+}
+
 watch(
   () => route.fullPath,
   async () => {
@@ -725,6 +980,14 @@ watch(
     activeDetailTab.value = "description";
     showReviewComposer.value = false;
   },
+);
+
+watch(
+  [currentProduct, currentImagePath, averageRating, reviewCount, currentPrice, isProductAvailable],
+  () => {
+    updateProductSeo();
+  },
+  { immediate: true },
 );
 
 watch(
@@ -835,6 +1098,9 @@ async function loadProductReviews(productId) {
 function initializeVariantSelection() {
   selectedColor.value = "";
   selectedSize.value = "";
+  Object.keys(selectedVariantAttributes).forEach((key) => {
+    delete selectedVariantAttributes[key];
+  });
 
   if (!variantInventory.value.length) {
     return;
@@ -843,6 +1109,11 @@ function initializeVariantSelection() {
   if (variantInventory.value.length === 1) {
     selectedColor.value = String(variantInventory.value[0].color || "").trim().toLowerCase();
     selectedSize.value = String(variantInventory.value[0].size || "").trim().toUpperCase();
+    Object.entries(variantInventory.value[0].attributes || {}).forEach(([key, value]) => {
+      if (key !== "color" && key !== "size" && String(value || "").trim()) {
+        selectedVariantAttributes[key] = String(value || "").trim();
+      }
+    });
     return;
   }
 
@@ -853,6 +1124,40 @@ function initializeVariantSelection() {
   if (sizeOptions.value.length === 1) {
     selectedSize.value = sizeOptions.value[0].value;
   }
+
+  variantAttributeGroups.value.forEach((group) => {
+    if (group.options.length === 1) {
+      selectedVariantAttributes[group.key] = group.options[0].value;
+    }
+  });
+}
+
+function clearInvalidVariantSelections(preferredKey = "") {
+  if (
+    preferredKey !== "color"
+    && selectedColor.value
+    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
+  ) {
+    selectedColor.value = "";
+  }
+  if (
+    preferredKey !== "size"
+    selectedColor.value
+    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
+  ) {
+    selectedSize.value
+    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
+  ) {
+    selectedSize.value = "";
+  }
+  Object.entries(selectedVariantAttributes).forEach(([key, value]) => {
+    if (!value || key === preferredKey) {
+      return;
+    }
+    if (!variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))) {
+      delete selectedVariantAttributes[key];
+    }
+  });
 }
 
 function handleCompareProduct() {
@@ -865,21 +1170,17 @@ function handleCompareProduct() {
 
 function chooseColor(colorValue) {
   selectedColor.value = colorValue;
-
-  if (
-    selectedSize.value
-    && !variantInventory.value.some(
-      (entry) =>
-        String(entry.color || "").trim().toLowerCase() === colorValue
-        && String(entry.size || "").trim().toUpperCase() === selectedSize.value,
-    )
-  ) {
-    selectedSize.value = "";
-  }
+  clearInvalidVariantSelections("color");
 }
 
 function chooseSize(sizeValue) {
   selectedSize.value = sizeValue;
+  clearInvalidVariantSelections("size");
+}
+
+function chooseVariantAttribute(attributeKey, attributeValue) {
+  selectedVariantAttributes[attributeKey] = attributeValue;
+  clearInvalidVariantSelections(attributeKey);
 }
 
 async function handleWishlist() {
@@ -1062,7 +1363,7 @@ async function addCurrentProductToCart(options = {}) {
 
   const productId = currentProduct.value.id;
   if (currentProduct.value.requiresVariantSelection && !selectedVariant.value) {
-    ui.message = "Zgjidh ngjyren dhe madhesine para se ta shtosh produktin ne cart.";
+    ui.message = "Zgjidh variantin e produktit para se ta shtosh ne cart.";
     ui.type = "error";
     return false;
   }
@@ -1307,6 +1608,109 @@ function humanizeSlug(value) {
     .split(/\s+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function normalizeShippingSettings(rawValue) {
+  if (!rawValue || typeof rawValue !== "object") {
+    return null;
+  }
+
+  const toNumber = (value) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+  };
+
+  return {
+    standardEnabled: Boolean(rawValue.standardEnabled),
+    standardFee: toNumber(rawValue.standardFee),
+    standardEta: String(rawValue.standardEta || "").trim(),
+    expressEnabled: Boolean(rawValue.expressEnabled),
+    expressFee: toNumber(rawValue.expressFee),
+    expressEta: String(rawValue.expressEta || "").trim(),
+    pickupEnabled: Boolean(rawValue.pickupEnabled),
+    pickupEta: String(rawValue.pickupEta || "").trim(),
+    pickupAddress: String(rawValue.pickupAddress || "").trim(),
+    pickupHours: String(rawValue.pickupHours || "").trim(),
+    freeShippingThreshold: toNumber(rawValue.freeShippingThreshold),
+    halfOffThreshold: toNumber(rawValue.halfOffThreshold),
+    cityRates: Array.isArray(rawValue.cityRates)
+      ? rawValue.cityRates
+        .map((entry) => ({
+          city: String(entry?.city || "").trim(),
+          surcharge: toNumber(entry?.surcharge),
+        }))
+        .filter((entry) => entry.city)
+      : [],
+  };
+}
+
+function buildShippingSummaryLine(label, fee, eta) {
+  const parts = [label];
+  const numericFee = Number(fee);
+  if (Number.isFinite(numericFee) && numericFee >= 0) {
+    parts.push(numericFee === 0 ? "free shipping" : `${formatPrice(numericFee)} shipping`);
+  }
+  if (String(eta || "").trim()) {
+    parts.push(String(eta || "").trim());
+  }
+  return parts.join(" • ");
+}
+
+function extractTransitDays(rawValue, fallbackMin = 2, fallbackMax = 4) {
+  const matches = String(rawValue || "").match(/\d+/g)?.map((value) => Number(value)).filter(Number.isFinite) || [];
+  if (matches.length >= 2) {
+    return {
+      minValue: Math.min(matches[0], matches[1]),
+      maxValue: Math.max(matches[0], matches[1]),
+    };
+  }
+  if (matches.length === 1) {
+    return {
+      minValue: matches[0],
+      maxValue: matches[0],
+    };
+  }
+
+  return {
+    minValue: fallbackMin,
+    maxValue: fallbackMax,
+  };
+}
+
+function buildOfferShippingDetailsJsonLd(settings) {
+  if (!settings) {
+    return [];
+  }
+
+  const details = [];
+  const pushShippingDetail = (enabled, fee, eta, fallbackMin, fallbackMax) => {
+    if (!enabled) {
+      return;
+    }
+
+    const transitWindow = extractTransitDays(eta, fallbackMin, fallbackMax);
+    details.push({
+      "@type": "OfferShippingDetails",
+      shippingRate: {
+        "@type": "MonetaryAmount",
+        value: Number.isFinite(Number(fee)) ? Number(fee) : 0,
+        currency: "EUR",
+      },
+      deliveryTime: {
+        "@type": "ShippingDeliveryTime",
+        transitTime: {
+          "@type": "QuantitativeValue",
+          minValue: transitWindow.minValue,
+          maxValue: transitWindow.maxValue,
+          unitCode: "DAY",
+        },
+      },
+    });
+  };
+
+  pushShippingDetail(settings.standardEnabled, settings.standardFee, settings.standardEta, 2, 4);
+  pushShippingDetail(settings.expressEnabled, settings.expressFee, settings.expressEta, 1, 2);
+  return details;
 }
 
 function buildReviewBreakdown(reviews, average, totalCount) {

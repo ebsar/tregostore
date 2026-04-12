@@ -21,8 +21,10 @@ import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../
 const route = useRoute();
 const router = useRouter();
 const SEARCH_INPUT_DEBOUNCE_MS = 320;
-const SEARCH_FETCH_LIMIT = 48;
 const SEARCH_GRID_PAGE_SIZE = 8;
+const SEARCH_SERVER_PAGE_SIZE = SEARCH_GRID_PAGE_SIZE;
+const SEARCH_VISUAL_FETCH_LIMIT = 48;
+const SEARCH_PRICE_SLIDER_DEFAULT_MAX = 10000;
 const SMART_SEARCH_MARKERS = new Set(["dua", "doja", "kerkoj", "kerko", "trego", "shfaq", "gjej"]);
 const GROUPED_PAGE_SECTIONS = new Set(["clothing", "cosmetics"]);
 const SEARCH_PROMPT_SUGGESTIONS = [
@@ -96,9 +98,6 @@ const shouldShowProductTypeFilter = computed(() => {
   return availableCategoryOptions.value.length === 0 || Boolean(filters.category);
 });
 const shouldRequestFacets = computed(() => true);
-const hasActiveCatalogFilters = computed(() =>
-  Boolean(filters.pageSection || filters.category || filters.productType || filters.size || filters.color),
-);
 const comparedProductIds = computed(() =>
   compareState.items
     .map((item) => Number(item.id || item.productId || 0))
@@ -129,6 +128,16 @@ const sidebarCategoryOptions = computed(() => {
 });
 const activeSidebarCategoryValue = computed(() => filters.category || filters.pageSection || "");
 const popularBrandOptions = computed(() => {
+  if (Array.isArray(availableFilters.value.brands) && availableFilters.value.brands.length > 0) {
+    return availableFilters.value.brands
+      .slice(0, 8)
+      .map((brand) => ({
+        label: String(brand.label || brand.value || "").trim(),
+        count: Number(brand.count || 0),
+      }))
+      .filter((brand) => brand.label);
+  }
+
   const counts = new Map();
 
   products.value.forEach((product) => {
@@ -145,13 +154,19 @@ const popularBrandOptions = computed(() => {
     .slice(0, 6)
     .map(([label, count]) => ({ label, count }));
 });
-const activeClientFilters = computed(() =>
-  Boolean(selectedPriceRange.value || minPriceInput.value || maxPriceInput.value || selectedBrands.value.length > 0),
-);
 const totalGridPageCount = computed(() =>
-  Math.max(1, Math.ceil(filteredProducts.value.length / SEARCH_GRID_PAGE_SIZE)),
+  Math.max(
+    1,
+    Math.ceil(
+      (visualSearchActive.value ? filteredProducts.value.length : totalProductsCount.value) / SEARCH_GRID_PAGE_SIZE,
+    ),
+  ),
 );
 const paginatedProducts = computed(() => {
+  if (!visualSearchActive.value) {
+    return products.value;
+  }
+
   const start = (currentGridPage.value - 1) * SEARCH_GRID_PAGE_SIZE;
   return filteredProducts.value.slice(start, start + SEARCH_GRID_PAGE_SIZE);
 });
@@ -210,7 +225,9 @@ const activeFilterChips = computed(() => {
   return nextChips;
 });
 const formattedResultsCount = computed(() =>
-  new Intl.NumberFormat("en-US").format(filteredProducts.value.length),
+  new Intl.NumberFormat("en-US").format(
+    visualSearchActive.value ? filteredProducts.value.length : totalProductsCount.value,
+  ),
 );
 const breadcrumbTail = computed(() => {
   if (filters.category) {
@@ -227,18 +244,36 @@ const breadcrumbTail = computed(() => {
 
   return "Shop Grid";
 });
-const priceTrackStyle = computed(() => {
+const priceSliderBounds = computed(() => {
   const pricePoints = products.value
     .map((product) => Number(product?.price || 0))
     .filter((value) => Number.isFinite(value) && value > 0);
-  const ceiling = pricePoints.length > 0 ? Math.max(...pricePoints, 1000) : 1000;
+  const highestPrice = pricePoints.length > 0 ? Math.max(...pricePoints) : SEARCH_PRICE_SLIDER_DEFAULT_MAX;
+  const normalizedMax = Math.max(
+    SEARCH_PRICE_SLIDER_DEFAULT_MAX,
+    Math.ceil(highestPrice / 10) * 10,
+  );
+
+  return {
+    min: 0,
+    max: normalizedMax,
+  };
+});
+const priceSliderValues = computed(() => {
+  const { min, max } = priceSliderBounds.value;
   const { minPrice, maxPrice } = resolveActivePriceBounds();
-  const fallbackMin = ceiling * 0.26;
-  const fallbackMax = ceiling * 0.74;
-  const activeMin = Number.isFinite(minPrice) ? Math.max(0, minPrice) : fallbackMin;
-  const activeMax = Number.isFinite(maxPrice) ? Math.max(activeMin, maxPrice) : fallbackMax;
-  const start = Math.max(0, Math.min(92, (activeMin / ceiling) * 100));
-  const end = Math.max(start + 4, Math.min(100, (activeMax / ceiling) * 100));
+
+  return {
+    minValue: Number.isFinite(minPrice) ? minPrice : min,
+    maxValue: Number.isFinite(maxPrice) ? maxPrice : max,
+  };
+});
+const priceTrackStyle = computed(() => {
+  const { min, max } = priceSliderBounds.value;
+  const { minValue, maxValue } = priceSliderValues.value;
+  const span = Math.max(1, max - min);
+  const start = Math.max(0, Math.min(100, ((minValue - min) / span) * 100));
+  const end = Math.max(start, Math.min(100, ((maxValue - min) / span) * 100));
 
   return {
     "--track-start": `${start}%`,
@@ -248,6 +283,9 @@ const priceTrackStyle = computed(() => {
 
 const filteredProducts = computed(() => {
   const nextProducts = [...products.value];
+  if (!visualSearchActive.value) {
+    return nextProducts;
+  }
 
   if (selectedBrands.value.length > 0) {
     const activeBrandSet = new Set(selectedBrands.value);
@@ -313,13 +351,14 @@ const searchIntro = computed(() => {
 
 const resultsLabel = computed(() => {
   if (visualSearchActive.value) {
+    const visibleVisualProducts = filteredProducts.value.length;
     if (!products.value.length) {
       return "Nuk u gjet asnje produkt i ngjashem sipas fotos.";
     }
 
-    return totalProductsCount.value > products.value.length
-      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte te ngjashme sipas fotos.`
-      : `Po shfaqen ${products.value.length} produkte te ngjashme sipas fotos.`;
+    return totalProductsCount.value > visibleVisualProducts
+      ? `Po shfaqen ${visibleVisualProducts} nga ${totalProductsCount.value} produkte te ngjashme sipas fotos.`
+      : `Po shfaqen ${visibleVisualProducts} produkte te ngjashme sipas fotos.`;
   }
 
   if (!products.value.length) {
@@ -378,16 +417,9 @@ const resultsLabel = computed(() => {
   }
 
   const scopeLabel = scopeParts.length ? ` per ${scopeParts.join(" • ")}` : "";
-
-  if (!hasActiveCatalogFilters.value && !filters.sort) {
-    return totalProductsCount.value > products.value.length
-      ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte${scopeLabel}.`
-      : `Po shfaqen ${products.value.length} produkte${scopeLabel}.`;
-  }
-
-  return totalProductsCount.value > 0
-    ? `Po shfaqen ${filteredProducts.value.length} nga ${products.value.length} produkte te ngarkuara (${totalProductsCount.value} gjithsej)${scopeLabel}.`
-    : `Po shfaqen ${filteredProducts.value.length} produkte${scopeLabel}.`;
+  return totalProductsCount.value > products.value.length
+    ? `Po shfaqen ${products.value.length} nga ${totalProductsCount.value} produkte${scopeLabel}.`
+    : `Po shfaqen ${products.value.length} produkte${scopeLabel}.`;
 });
 function getProductAverageRating(product) {
   const rawValue = Number(product?.averageRating ?? product?.ratingAverage ?? 0);
@@ -444,30 +476,58 @@ function normalizePriceInputValue(value) {
   return parsedValue;
 }
 
-function resolveActivePriceBounds() {
-  if (selectedPriceRange.value) {
-    switch (selectedPriceRange.value) {
-      case "under-20":
-        return { minPrice: 0, maxPrice: 20 };
-      case "25-100":
-        return { minPrice: 25, maxPrice: 100 };
-      case "100-300":
-        return { minPrice: 100, maxPrice: 300 };
-      case "300-500":
-        return { minPrice: 300, maxPrice: 500 };
-      case "500-1000":
-        return { minPrice: 500, maxPrice: 1000 };
-      case "1000-10000":
-        return { minPrice: 1000, maxPrice: 10000 };
-      default:
-        return { minPrice: null, maxPrice: null };
-    }
+function formatPriceInputDisplay(value) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+function getPriceRangeBounds(value) {
+  switch (value) {
+    case "under-20":
+      return { minPrice: 0, maxPrice: 20 };
+    case "25-100":
+      return { minPrice: 25, maxPrice: 100 };
+    case "100-300":
+      return { minPrice: 100, maxPrice: 300 };
+    case "300-500":
+      return { minPrice: 300, maxPrice: 500 };
+    case "500-1000":
+      return { minPrice: 500, maxPrice: 1000 };
+    case "1000-10000":
+      return { minPrice: 1000, maxPrice: 10000 };
+    default:
+      return { minPrice: null, maxPrice: null };
+  }
+}
+
+function normalizeResolvedPriceBounds(minPrice, maxPrice) {
+  const { min, max } = priceSliderBounds.value;
+  let normalizedMin = Number.isFinite(minPrice) ? Math.max(min, Math.min(max, minPrice)) : null;
+  let normalizedMax = Number.isFinite(maxPrice) ? Math.max(min, Math.min(max, maxPrice)) : null;
+
+  if (Number.isFinite(normalizedMin) && Number.isFinite(normalizedMax) && normalizedMin > normalizedMax) {
+    [normalizedMin, normalizedMax] = [normalizedMax, normalizedMin];
   }
 
   return {
-    minPrice: normalizePriceInputValue(minPriceInput.value),
-    maxPrice: normalizePriceInputValue(maxPriceInput.value),
+    minPrice: normalizedMin,
+    maxPrice: normalizedMax,
   };
+}
+
+function resolveActivePriceBounds() {
+  if (selectedPriceRange.value) {
+    const presetBounds = getPriceRangeBounds(selectedPriceRange.value);
+    return normalizeResolvedPriceBounds(presetBounds.minPrice, presetBounds.maxPrice);
+  }
+
+  return normalizeResolvedPriceBounds(
+    normalizePriceInputValue(minPriceInput.value),
+    normalizePriceInputValue(maxPriceInput.value),
+  );
 }
 
 function getPriceRangeLabel(value) {
@@ -520,7 +580,17 @@ function handleSidebarCategorySelect(option) {
 
 function applyPriceInputs() {
   selectedPriceRange.value = "";
+  const { min, max } = priceSliderBounds.value;
+  const { minPrice, maxPrice } = normalizeResolvedPriceBounds(
+    normalizePriceInputValue(minPriceInput.value),
+    normalizePriceInputValue(maxPriceInput.value),
+  );
+  minPriceInput.value = Number.isFinite(minPrice) && minPrice > min ? formatPriceInputDisplay(minPrice) : "";
+  maxPriceInput.value = Number.isFinite(maxPrice) && maxPrice < max ? formatPriceInputDisplay(maxPrice) : "";
   currentGridPage.value = 1;
+  if (!visualSearchActive.value) {
+    void loadProducts();
+  }
 }
 
 function setPriceRange(value) {
@@ -528,6 +598,30 @@ function setPriceRange(value) {
   minPriceInput.value = "";
   maxPriceInput.value = "";
   currentGridPage.value = 1;
+  if (!visualSearchActive.value) {
+    void loadProducts();
+  }
+}
+
+function handlePriceSliderInput(which, event) {
+  const { min, max } = priceSliderBounds.value;
+  const rawValue = Number(event?.target?.value ?? min);
+  if (!Number.isFinite(rawValue)) {
+    return;
+  }
+
+  let nextMin = priceSliderValues.value.minValue;
+  let nextMax = priceSliderValues.value.maxValue;
+
+  if (which === "min") {
+    nextMin = Math.min(Math.max(min, rawValue), nextMax);
+  } else {
+    nextMax = Math.max(Math.min(max, rawValue), nextMin);
+  }
+
+  selectedPriceRange.value = "";
+  minPriceInput.value = nextMin > min ? formatPriceInputDisplay(nextMin) : "";
+  maxPriceInput.value = nextMax < max ? formatPriceInputDisplay(nextMax) : "";
 }
 
 function toggleBrandFilter(brandLabel) {
@@ -542,14 +636,21 @@ function toggleBrandFilter(brandLabel) {
   }
 
   currentGridPage.value = 1;
+  if (!visualSearchActive.value) {
+    void loadProducts();
+  }
 }
 
-function clearClientFilters() {
+function clearClientFilters(options = {}) {
+  const { reload = true } = options;
   selectedPriceRange.value = "";
   selectedBrands.value = [];
   minPriceInput.value = "";
   maxPriceInput.value = "";
   currentGridPage.value = 1;
+  if (reload && !visualSearchActive.value) {
+    void loadProducts();
+  }
 }
 
 function removeFilterChip(chip) {
@@ -570,12 +671,18 @@ function removeFilterChip(chip) {
     minPriceInput.value = "";
     maxPriceInput.value = "";
     currentGridPage.value = 1;
+    if (!visualSearchActive.value) {
+      void loadProducts();
+    }
     return;
   }
 
   if (chip.type === "brand" && chip.value) {
     selectedBrands.value = selectedBrands.value.filter((entry) => entry !== chip.value);
     currentGridPage.value = 1;
+    if (!visualSearchActive.value) {
+      void loadProducts();
+    }
   }
 }
 
@@ -584,7 +691,15 @@ function goToGridPage(page) {
     return;
   }
 
-  currentGridPage.value = Math.min(Math.max(1, page), totalGridPageCount.value);
+  const nextPage = Math.min(Math.max(1, page), totalGridPageCount.value);
+  if (nextPage === currentGridPage.value) {
+    return;
+  }
+
+  currentGridPage.value = nextPage;
+  if (!visualSearchActive.value) {
+    void loadProducts();
+  }
 }
 
 function goToPreviousGridPage() {
@@ -658,11 +773,10 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => filteredProducts.value.length,
-  () => {
-    const maxPage = Math.max(1, Math.ceil(filteredProducts.value.length / SEARCH_GRID_PAGE_SIZE));
-    if (currentGridPage.value > maxPage) {
-      currentGridPage.value = maxPage;
+  () => totalGridPageCount.value,
+  (nextPageCount) => {
+    if (currentGridPage.value > nextPageCount) {
+      currentGridPage.value = nextPageCount;
     }
   },
 );
@@ -671,6 +785,9 @@ watch(
   () => filters.sort,
   () => {
     currentGridPage.value = 1;
+    if (!visualSearchActive.value) {
+      void loadProducts();
+    }
   },
 );
 
@@ -740,6 +857,7 @@ function createEmptyProductFacets() {
     productTypes: [],
     sizes: [],
     colors: [],
+    brands: [],
   };
 }
 
@@ -750,6 +868,7 @@ function normalizeProductFacets(rawFacets) {
     productTypes: Array.isArray(rawFacets?.productTypes) ? rawFacets.productTypes : [],
     sizes: Array.isArray(rawFacets?.sizes) ? rawFacets.sizes : [],
     colors: Array.isArray(rawFacets?.colors) ? rawFacets.colors : [],
+    brands: Array.isArray(rawFacets?.brands) ? rawFacets.brands : [],
   };
 }
 
@@ -786,6 +905,7 @@ function applyServerActiveFilters(activeFilters = {}) {
   filters.productType = String(activeFilters.productType || "").trim().toLowerCase();
   filters.size = String(activeFilters.size || "").trim().toUpperCase();
   filters.color = String(activeFilters.color || "").trim().toLowerCase();
+  filters.sort = String(activeFilters.sort || filters.sort || "popular").trim().toLowerCase() || "popular";
 }
 
 function buildSearchRouteQuery(nextQueryValue = draftQuery.value) {
@@ -863,8 +983,8 @@ async function loadProducts(options = {}) {
   const requestId = ++catalogRequestId;
   const includeFacets = forceFacets || shouldRequestFacets.value;
   const params = new URLSearchParams();
-  params.set("limit", String(SEARCH_FETCH_LIMIT));
-  params.set("offset", "0");
+  params.set("limit", String(SEARCH_SERVER_PAGE_SIZE));
+  params.set("offset", String(Math.max(0, (currentGridPage.value - 1) * SEARCH_SERVER_PAGE_SIZE)));
   if (includeFacets) {
     params.set("includeFacets", "1");
   }
@@ -893,6 +1013,25 @@ async function loadProducts(options = {}) {
     params.set("color", filters.color);
   }
 
+  if (filters.sort) {
+    params.set("sort", filters.sort);
+  }
+
+  selectedBrands.value.forEach((brand) => {
+    const normalizedBrand = String(brand || "").trim();
+    if (normalizedBrand) {
+      params.append("brand", normalizedBrand);
+    }
+  });
+
+  const { minPrice, maxPrice } = resolveActivePriceBounds();
+  if (Number.isFinite(minPrice)) {
+    params.set("minPrice", String(minPrice));
+  }
+  if (Number.isFinite(maxPrice)) {
+    params.set("maxPrice", String(maxPrice));
+  }
+
   const requestUrl = activeQuery.value
     ? `/api/products/search?${params.toString()}`
     : `/api/products?${params.toString()}`;
@@ -900,7 +1039,7 @@ async function loadProducts(options = {}) {
   const { response, data } = await requestJson(
     requestUrl,
     {},
-    { cacheTtlMs: append ? 0 : 10000 },
+    { cacheTtlMs: 10000 },
   );
   if (requestId !== catalogRequestId) {
     return;
@@ -913,8 +1052,16 @@ async function loadProducts(options = {}) {
 
   const nextProducts = Array.isArray(data.products) ? data.products : [];
   const visibleProducts = nextProducts.filter((product) => hasProductAvailableStock(product));
+  const nextTotal = Number(data.total || visibleProducts.length || 0);
+  const nextPageCount = Math.max(1, Math.ceil(nextTotal / SEARCH_GRID_PAGE_SIZE));
+  if (!visualSearchActive.value && currentGridPage.value > nextPageCount) {
+    currentGridPage.value = nextPageCount;
+    void loadProducts(options);
+    return;
+  }
+
   products.value = visibleProducts;
-  totalProductsCount.value = Number(data.total || products.value.length || 0);
+  totalProductsCount.value = nextTotal;
   if (data.facets) {
     availableFilters.value = normalizeProductFacets(data.facets);
   }
@@ -1023,7 +1170,7 @@ async function runVisualSearch(options = {}) {
     productType: filters.productType,
     size: filters.size,
     color: filters.color,
-    limit: SEARCH_FETCH_LIMIT,
+    limit: SEARCH_VISUAL_FETCH_LIMIT,
     offset: 0,
     includeFacets,
   });
@@ -1128,7 +1275,7 @@ function resetFilters() {
   filters.size = "";
   filters.color = "";
   filters.sort = "popular";
-  clearClientFilters();
+  clearClientFilters({ reload: false });
   currentGridPage.value = 1;
 
   if (visualSearchActive.value && visualSearchFile.value) {
@@ -1272,11 +1419,33 @@ function handleCompare(product) {
 
         <section class="search-filter-block">
           <h2 class="search-filter-block-title">PRICE RANGE</h2>
-          <div class="search-price-track" :style="priceTrackStyle" aria-hidden="true">
-            <span class="search-price-track-base"></span>
-            <span class="search-price-track-fill"></span>
-            <span class="search-price-track-thumb search-price-track-thumb--start"></span>
-            <span class="search-price-track-thumb search-price-track-thumb--end"></span>
+          <div class="search-price-track" :style="priceTrackStyle">
+            <span class="search-price-track-base" aria-hidden="true"></span>
+            <span class="search-price-track-fill" aria-hidden="true"></span>
+            <span class="search-price-track-thumb search-price-track-thumb--start" aria-hidden="true"></span>
+            <span class="search-price-track-thumb search-price-track-thumb--end" aria-hidden="true"></span>
+            <input
+              class="search-price-range search-price-range--start"
+              type="range"
+              :min="priceSliderBounds.min"
+              :max="priceSliderValues.maxValue"
+              :value="priceSliderValues.minValue"
+              step="1"
+              aria-label="Minimum price"
+              @input="handlePriceSliderInput('min', $event)"
+              @change="applyPriceInputs"
+            >
+            <input
+              class="search-price-range search-price-range--end"
+              type="range"
+              :min="priceSliderValues.minValue"
+              :max="priceSliderBounds.max"
+              :value="priceSliderValues.maxValue"
+              step="1"
+              aria-label="Maximum price"
+              @input="handlePriceSliderInput('max', $event)"
+              @change="applyPriceInputs"
+            >
           </div>
 
           <div class="search-price-inputs">
@@ -1735,6 +1904,49 @@ function handleCompare(product) {
   left: var(--track-end);
 }
 
+.search-price-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-price-range::-webkit-slider-runnable-track {
+  height: 22px;
+  background: transparent;
+}
+
+.search-price-range::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-price-range::-moz-range-track {
+  height: 22px;
+  background: transparent;
+}
+
+.search-price-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .search-price-inputs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1995,7 +2207,7 @@ function handleCompare(product) {
 
 .search-reference-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -2152,7 +2364,7 @@ function handleCompare(product) {
   }
 
   .search-reference-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

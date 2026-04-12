@@ -20,6 +20,10 @@ const ui = reactive({
   message: "",
   type: "",
 });
+const trackForm = reactive({
+  orderId: "",
+  billingEmail: "",
+});
 
 const progressStages = [
   { key: "placed", label: "Order Placed", icon: "receipt" },
@@ -79,6 +83,36 @@ const arrivalLine = computed(() => {
   return `Order expected arrival ${formatShortDate(resolveExpectedArrival(order.value))}`;
 });
 
+const trackingDetails = computed(() => {
+  if (!order.value) {
+    return [];
+  }
+
+  const entries = [];
+  const trackingCode = String(order.value.trackingCode || "").trim();
+  const trackingUrl = String(order.value.trackingUrl || "").trim();
+
+  if (trackingCode) {
+    entries.push({
+      key: "code",
+      label: "Tracking code",
+      value: trackingCode,
+      href: "",
+    });
+  }
+
+  if (trackingUrl) {
+    entries.push({
+      key: "url",
+      label: "Tracking link",
+      value: "Open shipment link",
+      href: trackingUrl,
+    });
+  }
+
+  return entries;
+});
+
 const activityEntries = computed(() => buildOrderActivity(order.value));
 
 onMounted(async () => {
@@ -89,12 +123,11 @@ onMounted(async () => {
     const snapshot = readTrackedOrderLookup();
     trackedSnapshot.value = snapshot;
     order.value = snapshot?.order || null;
+    trackForm.orderId = snapshot?.orderId ? String(snapshot.orderId) : "";
+    trackForm.billingEmail = String(snapshot?.billingEmail || "").trim();
 
     if (snapshot?.orderId && snapshot?.billingEmail && (!order.value || (requestedOrderId && requestedOrderId !== snapshot.orderId))) {
       await loadTrackedOrder(snapshot.orderId, snapshot.billingEmail);
-    } else if (!order.value) {
-      ui.message = "Track an order first to see the live status details here.";
-      ui.type = "error";
     }
   } finally {
     markRouteReady();
@@ -159,16 +192,16 @@ async function loadTrackedOrder(orderId, billingEmail) {
   }
 }
 
-function openTrackOrderModal() {
-  window.dispatchEvent(new CustomEvent("tregio:open-track-order"));
+async function submitTrackOrderForm() {
+  await loadTrackedOrder(trackForm.orderId.trim(), trackForm.billingEmail.trim());
 }
 
 function clearTrackedOrderDetails() {
   clearTrackedOrderLookup();
   trackedSnapshot.value = null;
   order.value = null;
-  ui.message = "Track another order to load a new status timeline.";
-  ui.type = "success";
+  ui.message = "";
+  ui.type = "";
 }
 
 function resolveExpectedArrival(orderPayload) {
@@ -376,8 +409,10 @@ function renderActivityIcon(icon) {
           <span>Pages</span>
           <span>›</span>
           <RouterLink to="/track-order">Track Order</RouterLink>
-          <span>›</span>
-          <strong>Details</strong>
+          <template v-if="order">
+            <span>›</span>
+            <strong>Details</strong>
+          </template>
         </nav>
       </div>
     </div>
@@ -386,18 +421,52 @@ function renderActivityIcon(icon) {
       {{ ui.message }}
     </div>
 
-    <section v-if="!order" class="track-order-empty-card">
-      <div>
-        <p class="track-order-empty-badge">Track Order</p>
-        <h1>Search an order to see the live delivery timeline.</h1>
-        <p>Use the popup to enter your Order ID and Billing Email. After that, your order status will appear here.</p>
-      </div>
+    <section v-if="!order" class="track-order-form-shell">
+      <div class="track-order-form-card">
+        <div class="track-order-form-copy">
+          <h1>Track Order</h1>
+          <p>
+            To track your order please enter your order ID in the input field below and press the
+            “Track Order” button. this was given to you on your receipt and in the confirmation
+            email you should have received.
+          </p>
+        </div>
 
-      <div class="track-order-empty-actions">
-        <button class="track-order-primary-button" type="button" @click="openTrackOrderModal">
-          Track Order
-          <span aria-hidden="true">→</span>
-        </button>
+        <form class="track-order-inline-form" @submit.prevent="submitTrackOrderForm">
+          <div class="track-order-inline-grid">
+            <label class="track-order-inline-field">
+              <span>Order ID</span>
+              <input
+                v-model="trackForm.orderId"
+                type="text"
+                placeholder="ID..."
+                autocomplete="off"
+                required
+              >
+            </label>
+
+            <label class="track-order-inline-field">
+              <span>Billing Email</span>
+              <input
+                v-model="trackForm.billingEmail"
+                type="email"
+                placeholder="Email address"
+                autocomplete="email"
+                required
+              >
+            </label>
+          </div>
+
+          <p class="track-order-inline-note">
+            <span aria-hidden="true">ⓘ</span>
+            Order ID that we sended to your in your email address.
+          </p>
+
+          <button class="track-order-primary-button" type="submit" :disabled="ui.loading">
+            {{ ui.loading ? "TRACKING..." : "TRACK ORDER" }}
+            <span aria-hidden="true">→</span>
+          </button>
+        </form>
       </div>
     </section>
 
@@ -412,6 +481,21 @@ function renderActivityIcon(icon) {
         </div>
 
         <p class="track-order-arrival-line">{{ arrivalLine }}</p>
+
+        <div v-if="trackingDetails.length > 0" class="track-order-meta-grid">
+          <div v-for="entry in trackingDetails" :key="entry.key" class="track-order-meta-chip">
+            <span>{{ entry.label }}</span>
+            <a
+              v-if="entry.href"
+              :href="entry.href"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ entry.value }}
+            </a>
+            <strong v-else>{{ entry.value }}</strong>
+          </div>
+        </div>
 
         <div class="track-order-progress">
           <div class="track-order-progress-line"></div>
@@ -440,11 +524,8 @@ function renderActivityIcon(icon) {
           <div class="track-order-activity-head">
             <h2>Order Activity</h2>
             <div class="track-order-activity-actions">
-              <button class="track-order-link-button" type="button" @click="openTrackOrderModal">
-                Track another order
-              </button>
               <button class="track-order-link-button" type="button" @click="clearTrackedOrderDetails">
-                Clear result
+                Track another order
               </button>
             </div>
           </div>
@@ -511,7 +592,7 @@ function renderActivityIcon(icon) {
   color: #2496f3;
 }
 
-.track-order-empty-card,
+.track-order-form-card,
 .track-order-detail-card {
   display: grid;
   gap: 24px;
@@ -523,42 +604,86 @@ function renderActivityIcon(icon) {
   box-shadow: 0 22px 54px rgba(15, 23, 42, 0.05);
 }
 
-.track-order-empty-card {
-  max-width: 880px;
-  align-items: center;
+.track-order-form-shell {
+  display: grid;
+  place-items: start center;
+  padding-top: 24px;
 }
 
-.track-order-empty-badge {
-  width: fit-content;
-  margin: 0 0 14px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 134, 47, 0.12);
-  color: #ff862f;
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.track-order-form-card {
+  width: min(980px, 100%);
+  gap: 26px;
+  padding: 34px 38px 36px;
+  box-shadow: none;
 }
 
-.track-order-empty-card h1 {
-  margin: 0 0 10px;
-  color: #202833;
-  font-size: clamp(2rem, 3vw, 2.8rem);
-  line-height: 1.02;
-  letter-spacing: -0.04em;
+.track-order-form-copy {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
 }
 
-.track-order-empty-card p {
-  max-width: 660px;
+.track-order-form-copy h1 {
   margin: 0;
-  color: #64748b;
-  line-height: 1.7;
+  color: #1f2937;
+  font-size: clamp(2rem, 2.8vw, 3rem);
+  line-height: 1.04;
+  letter-spacing: -0.05em;
 }
 
-.track-order-empty-actions {
-  display: flex;
-  gap: 12px;
+.track-order-form-copy p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.track-order-inline-form {
+  display: grid;
+  gap: 18px;
+}
+
+.track-order-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.track-order-inline-field {
+  display: grid;
+  gap: 10px;
+}
+
+.track-order-inline-field span {
+  color: #202833;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.track-order-inline-field input {
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1px solid #dbe2ea;
+  border-radius: 2px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  outline: none;
+}
+
+.track-order-inline-field input:focus {
+  border-color: rgba(255, 134, 47, 0.72);
+  box-shadow: 0 0 0 4px rgba(255, 134, 47, 0.1);
+}
+
+.track-order-inline-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .track-order-primary-button,
@@ -572,12 +697,14 @@ function renderActivityIcon(icon) {
 }
 
 .track-order-primary-button {
-  min-height: 54px;
-  padding: 0 24px;
-  border-radius: 12px;
-  background: #ff862f;
+  width: fit-content;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 2px;
+  background: #fa8232;
   color: #fff;
   font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .track-order-detail-shell {
@@ -627,6 +754,42 @@ function renderActivityIcon(icon) {
   color: #4b5563;
   font-size: 1rem;
   font-weight: 600;
+}
+
+.track-order-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.track-order-meta-chip {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.track-order-meta-chip span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.track-order-meta-chip strong,
+.track-order-meta-chip a {
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.track-order-meta-chip a {
+  color: #f97316;
 }
 
 .track-order-progress {
@@ -815,10 +978,18 @@ function renderActivityIcon(icon) {
     padding-inline: 16px;
   }
 
-  .track-order-empty-card,
+  .track-order-form-card,
   .track-order-detail-card {
     margin-top: 28px;
     padding: 18px 16px;
+  }
+
+  .track-order-form-shell {
+    padding-top: 0;
+  }
+
+  .track-order-inline-grid {
+    grid-template-columns: 1fr;
   }
 
   .track-order-detail-shell {

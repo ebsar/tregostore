@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     business_description TEXT NOT NULL DEFAULT '',
     business_number TEXT NOT NULL DEFAULT '',
     business_logo_path TEXT NOT NULL DEFAULT '',
+    support_email TEXT NOT NULL DEFAULT '',
+    website_url TEXT NOT NULL DEFAULT '',
+    support_hours TEXT NOT NULL DEFAULT '',
+    return_policy_summary TEXT NOT NULL DEFAULT '',
     verification_status TEXT NOT NULL DEFAULT 'unverified',
     verification_requested_at TEXT NOT NULL DEFAULT '',
     verification_verified_at TEXT NOT NULL DEFAULT '',
@@ -176,8 +180,19 @@ CREATE TABLE IF NOT EXISTS products (
     id BIGSERIAL PRIMARY KEY,
     article_number TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
+    normalized_title TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL,
+    brand TEXT NOT NULL DEFAULT '',
+    gtin TEXT NOT NULL DEFAULT '',
+    mpn TEXT NOT NULL DEFAULT '',
+    material TEXT NOT NULL DEFAULT '',
+    weight_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+    weight_unit TEXT NOT NULL DEFAULT '',
+    meta_title TEXT NOT NULL DEFAULT '',
+    meta_description TEXT NOT NULL DEFAULT '',
     price DOUBLE PRECISION NOT NULL,
+    compare_at_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+    sale_ends_at TEXT NOT NULL DEFAULT '',
     image_path TEXT NOT NULL,
     image_gallery TEXT NOT NULL DEFAULT '[]',
     image_fingerprint TEXT NOT NULL DEFAULT '',
@@ -193,6 +208,10 @@ CREATE TABLE IF NOT EXISTS products (
     stock_quantity INTEGER NOT NULL DEFAULT 0,
     is_public INTEGER NOT NULL DEFAULT 1,
     show_stock_public INTEGER NOT NULL DEFAULT 0,
+    group_key TEXT NOT NULL DEFAULT '',
+    source_id BIGINT NOT NULL DEFAULT 0,
+    source_product_key TEXT NOT NULL DEFAULT '',
+    import_metadata TEXT NOT NULL DEFAULT '{}',
     created_by_user_id BIGINT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
     FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -206,6 +225,95 @@ CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public,
 CREATE INDEX IF NOT EXISTS idx_products_public_created_at ON products(is_public, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title_lower ON products ((LOWER(title)));
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
+CREATE INDEX IF NOT EXISTS idx_products_import_source_group ON products(created_by_user_id, source_id, group_key);
+CREATE INDEX IF NOT EXISTS idx_products_import_source_product_key ON products(created_by_user_id, source_id, source_product_key);
+
+CREATE TABLE IF NOT EXISTS catalog_import_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    business_user_id BIGINT NOT NULL,
+    profile_name TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'csv',
+    field_mapping TEXT NOT NULL DEFAULT '{}',
+    category_mapping_rules TEXT NOT NULL DEFAULT '{}',
+    attribute_mapping_rules TEXT NOT NULL DEFAULT '{}',
+    normalization_rules TEXT NOT NULL DEFAULT '{}',
+    ai_preferences TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_import_profiles_business_updated
+    ON catalog_import_profiles(business_user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS catalog_import_sources (
+    id BIGSERIAL PRIMARY KEY,
+    business_user_id BIGINT NOT NULL,
+    profile_id BIGINT,
+    source_name TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'api-json',
+    source_config TEXT NOT NULL DEFAULT '{}',
+    sync_enabled INTEGER NOT NULL DEFAULT 0,
+    sync_interval_minutes INTEGER NOT NULL DEFAULT 0,
+    last_synced_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_import_sources_business_updated
+    ON catalog_import_sources(business_user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS catalog_import_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    business_user_id BIGINT NOT NULL,
+    source_id BIGINT,
+    profile_id BIGINT,
+    source_type TEXT NOT NULL DEFAULT 'csv',
+    adapter_kind TEXT NOT NULL DEFAULT 'csv',
+    original_filename TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'preview_ready',
+    source_digest TEXT NOT NULL DEFAULT '',
+    headers_json TEXT NOT NULL DEFAULT '[]',
+    field_mapping_json TEXT NOT NULL DEFAULT '{}',
+    category_mapping_rules_json TEXT NOT NULL DEFAULT '{}',
+    ai_suggestions_json TEXT NOT NULL DEFAULT '{}',
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    preview_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    committed_at TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (business_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_id) REFERENCES catalog_import_sources(id) ON DELETE SET NULL,
+    FOREIGN KEY (profile_id) REFERENCES catalog_import_profiles(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_import_jobs_business_updated
+    ON catalog_import_jobs(business_user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS catalog_import_job_records (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    source_row_id TEXT NOT NULL DEFAULT '',
+    row_index INTEGER NOT NULL DEFAULT 0,
+    raw_data_json TEXT NOT NULL DEFAULT '{}',
+    mapped_data_json TEXT NOT NULL DEFAULT '{}',
+    normalized_data_json TEXT NOT NULL DEFAULT '{}',
+    parent_data_json TEXT NOT NULL DEFAULT '{}',
+    variant_data_json TEXT NOT NULL DEFAULT '{}',
+    warnings_json TEXT NOT NULL DEFAULT '[]',
+    errors_json TEXT NOT NULL DEFAULT '[]',
+    group_key TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (job_id) REFERENCES catalog_import_jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_import_job_records_job_row
+    ON catalog_import_job_records(job_id, row_index ASC);
+CREATE INDEX IF NOT EXISTS idx_catalog_import_job_records_job_group
+    ON catalog_import_job_records(job_id, group_key);
 
 CREATE TABLE IF NOT EXISTS wishlist_items (
     user_id BIGINT NOT NULL,

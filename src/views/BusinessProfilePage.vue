@@ -5,6 +5,7 @@ import ProductCard from "../components/ProductCard.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
+import { applyDocumentSeo, buildAbsoluteUrl, buildBreadcrumbJsonLd } from "../lib/seo";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 import {
   formatVerificationStatusLabel,
@@ -126,12 +127,151 @@ const messageActionLabel = computed(() => {
 
   return "Message";
 });
+const businessShippingSettings = computed(() => normalizeBusinessShippingSettings(business.value?.shippingSettings));
+const businessContactSummary = computed(() => ([
+  { label: "Website", value: business.value?.websiteUrl || "" },
+  { label: "Support email", value: business.value?.supportEmail || "" },
+  { label: "Support hours", value: business.value?.supportHours || "" },
+  { label: "Return policy", value: business.value?.returnPolicySummary || "" },
+].filter((item) => String(item.value || "").trim())));
+const businessShippingSummary = computed(() => {
+  const settings = businessShippingSettings.value;
+  if (!settings) {
+    return [];
+  }
+
+  const items = [];
+  if (settings.standardEnabled) {
+    items.push({
+      label: "Standard shipping",
+      value: buildBusinessShippingSummaryLine("Standard", settings.standardFee, settings.standardEta),
+    });
+  }
+  if (settings.expressEnabled) {
+    items.push({
+      label: "Express shipping",
+      value: buildBusinessShippingSummaryLine("Express", settings.expressFee, settings.expressEta),
+    });
+  }
+  if (settings.pickupEnabled) {
+    items.push({
+      label: "Pickup",
+      value: [
+        settings.pickupEta || "Ready for pickup after confirmation",
+        settings.pickupAddress || business.value?.addressLine || "",
+        settings.pickupHours || business.value?.supportHours || "",
+      ].filter(Boolean).join(" • "),
+    });
+  }
+  if (settings.freeShippingThreshold > 0) {
+    items.push({
+      label: "Free shipping",
+      value: `From ${settings.freeShippingThreshold} EUR subtotal.`,
+    });
+  }
+  return items;
+});
 
 const comparedProductIds = computed(() =>
   compareState.items
     .map((item) => Number(item.id || item.productId || 0))
     .filter((id) => Number.isFinite(id) && id > 0),
 );
+
+function updateBusinessSeo() {
+  if (!business.value) {
+    applyDocumentSeo({
+      title: "TREGIO | Profili i biznesit",
+      description: "Shfleto profilet publike te bizneseve dhe produktet e tyre aktive ne TREGIO.",
+      canonicalPath: "/profili-biznesit",
+      image: "/trego-logo.webp?v=20260410",
+      jsonLd: [],
+    });
+    return;
+  }
+
+  const businessPath = getBusinessProfileUrl(business.value.id);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd([
+    { name: "Home", item: "/" },
+    { name: "Bizneset", item: "/kerko" },
+    { name: business.value.businessName || "Profili i biznesit", item: businessPath },
+  ]);
+  const businessJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Store",
+    name: String(business.value.businessName || "").trim(),
+    description: String(business.value.businessDescription || "").trim(),
+    url: buildAbsoluteUrl(business.value.websiteUrl || businessPath),
+    image: buildAbsoluteUrl(business.value.logoPath || "/trego-logo.webp?v=20260410"),
+    telephone: String(business.value.phoneNumber || "").trim(),
+    ...(business.value.supportEmail ? { email: String(business.value.supportEmail).trim() } : {}),
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: String(business.value.addressLine || "").trim(),
+      addressLocality: String(business.value.city || "").trim(),
+    },
+    ...(business.value.supportEmail || business.value.phoneNumber
+      ? {
+          contactPoint: {
+            "@type": "ContactPoint",
+            contactType: "customer support",
+            ...(business.value.phoneNumber ? { telephone: String(business.value.phoneNumber).trim() } : {}),
+            ...(business.value.supportEmail ? { email: String(business.value.supportEmail).trim() } : {}),
+          },
+        }
+      : {}),
+    ...(business.value.returnPolicySummary
+      ? {
+          hasMerchantReturnPolicy: {
+            "@type": "MerchantReturnPolicy",
+            description: String(business.value.returnPolicySummary).trim(),
+          },
+        }
+      : {}),
+    ...(Number(business.value.sellerReviewCount || 0) > 0 && Number(business.value.sellerRating || 0) > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: Number(business.value.sellerRating || 0).toFixed(1),
+            reviewCount: Math.max(1, Number(business.value.sellerReviewCount || 0)),
+          },
+        }
+      : {}),
+  };
+  const itemListJsonLd = products.value.length > 0
+    ? {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        name: `${business.value.businessName || "Business"} public products`,
+        itemListElement: products.value.slice(0, 10).map((product, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: String(product.title || "").trim() || `Product ${product.id}`,
+          url: buildAbsoluteUrl(getProductDetailUrl(product.id)),
+        })),
+      }
+    : null;
+
+  applyDocumentSeo({
+    title: `${business.value.businessName || "Biznes"} | TREGIO`,
+    description: [
+      String(business.value.businessDescription || "").trim(),
+      business.value.city ? `Qyteti: ${business.value.city}.` : "",
+      business.value.supportHours ? `Support: ${business.value.supportHours}.` : "",
+      business.value.returnPolicySummary ? `${business.value.returnPolicySummary}` : "",
+      Number(totalProductsCount.value || business.value.productsCount || 0) > 0
+        ? `${Number(totalProductsCount.value || business.value.productsCount || 0)} produkte publike aktive.`
+        : "Profili publik i biznesit ne TREGIO.",
+    ].filter(Boolean).join(" "),
+    canonicalPath: businessPath,
+    image: business.value.logoPath || "/trego-logo.webp?v=20260410",
+    jsonLd: [businessJsonLd, breadcrumbJsonLd, itemListJsonLd].filter(Boolean),
+  });
+}
+
+watch([business, products, totalProductsCount], () => {
+  updateBusinessSeo();
+}, { immediate: true });
 
 async function bootstrap() {
   try {
@@ -481,6 +621,40 @@ async function handleReportBusiness() {
   ui.message = data.message || "Raportimi u dergua.";
   ui.type = "success";
 }
+
+function normalizeBusinessShippingSettings(rawValue) {
+  if (!rawValue || typeof rawValue !== "object") {
+    return null;
+  }
+
+  const toNumber = (value) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+  };
+
+  return {
+    standardEnabled: Boolean(rawValue.standardEnabled),
+    standardFee: toNumber(rawValue.standardFee),
+    standardEta: String(rawValue.standardEta || "").trim(),
+    expressEnabled: Boolean(rawValue.expressEnabled),
+    expressFee: toNumber(rawValue.expressFee),
+    expressEta: String(rawValue.expressEta || "").trim(),
+    pickupEnabled: Boolean(rawValue.pickupEnabled),
+    pickupEta: String(rawValue.pickupEta || "").trim(),
+    pickupAddress: String(rawValue.pickupAddress || "").trim(),
+    pickupHours: String(rawValue.pickupHours || "").trim(),
+    freeShippingThreshold: toNumber(rawValue.freeShippingThreshold),
+  };
+}
+
+function buildBusinessShippingSummaryLine(label, fee, eta) {
+  const feeValue = Number(fee);
+  return [
+    label,
+    Number.isFinite(feeValue) ? (feeValue === 0 ? "free shipping" : `${feeValue.toFixed(2)} EUR shipping`) : "",
+    String(eta || "").trim(),
+  ].filter(Boolean).join(" • ");
+}
 </script>
 
 <template>
@@ -578,8 +752,27 @@ async function handleReportBusiness() {
           </div>
           <div class="summary-chip">
             <span>Kontakti</span>
-            <strong>{{ business.ownerEmail || "Kontakto me telefon" }}</strong>
+            <strong>{{ business.supportEmail || business.phoneNumber || "Mesazho biznesin ne TREGIO" }}</strong>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="business" class="card business-public-contact-section">
+      <div class="collection-page-header business-public-products-header">
+        <p class="section-label">Kontakti dhe transporti</p>
+        <h2>Informata te biznesit</h2>
+        <p>Website, support, politika e kthimit dhe menyra e dergeses shfaqen qarte per bleresin.</p>
+      </div>
+
+      <div class="business-public-stats">
+        <div v-for="item in businessContactSummary" :key="`contact-${item.label}`" class="summary-chip">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+        <div v-for="item in businessShippingSummary" :key="`shipping-${item.label}`" class="summary-chip">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
         </div>
       </div>
     </section>

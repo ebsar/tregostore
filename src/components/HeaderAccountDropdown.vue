@@ -72,7 +72,7 @@ const googleEnabled = isGoogleWebAuthEnabled();
 
 const isAuthenticated = computed(() => Boolean(appState.user));
 const welcomeName = computed(() =>
-  String(appState.user?.firstName || appState.user?.fullName || appState.user?.businessName || "Tregio").trim(),
+  String(appState.user?.fullName || appState.user?.businessName || appState.user?.firstName || "User").trim(),
 );
 const isSignupMode = computed(() => mode.value === "signup");
 const showTabbedAuth = computed(() => ["login", "signup"].includes(mode.value));
@@ -85,23 +85,17 @@ const accountActions = computed(() => {
   if (appState.user.role === "admin") {
     return [
       { label: "Dashboard", to: "/llogaria" },
-      { label: "Admin Products", to: "/admin-products" },
-      { label: "Admin Orders", to: "/admin-porosite" },
     ];
   }
 
   if (appState.user.role === "business") {
     return [
-      { label: "Dashboard", to: "/llogaria" },
-      { label: "Business Page", to: "/biznesi-juaj" },
-      { label: "Business Orders", to: "/porosite-e-biznesit" },
+      { label: "Dashboard", to: "/biznesi-juaj" },
     ];
   }
 
   return [
     { label: "Dashboard", to: "/llogaria" },
-    { label: "Orders", to: "/porosite" },
-    { label: "Address", to: "/adresat" },
   ];
 });
 
@@ -850,7 +844,7 @@ async function openRoute(target) {
     <template v-else>
       <div class="header-auth-card header-auth-card--menu">
         <p class="header-auth-eyebrow">Account</p>
-        <h3>{{ welcomeName }}</h3>
+        <h3 class="header-auth-menu-title">Hi, {{ welcomeName }}</h3>
         <div class="header-auth-menu">
           <button
             v-for="action in accountActions"
@@ -1364,6 +1358,14 @@ async function openRoute(target) {
 
 .header-auth-card--menu {
   padding-top: 28px;
+}
+
+.header-auth-menu-title {
+  margin-top: 0;
+  margin-bottom: 0;
+  color: #1f2937;
+  font-size: 1.55rem;
+  line-height: 1.15;
 }
 
 .header-auth-eyebrow {

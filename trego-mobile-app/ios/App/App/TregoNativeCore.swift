@@ -78,6 +78,14 @@ struct TregoProduct: Codable, Identifiable, Equatable {
     let articleNumber: String?
     let title: String
     let description: String?
+    let brand: String?
+    let gtin: String?
+    let mpn: String?
+    let material: String?
+    let weightValue: Double?
+    let weightUnit: String?
+    let metaTitle: String?
+    let metaDescription: String?
     let imagePath: String?
     let imageGallery: [String]?
     let price: Double?
@@ -96,6 +104,11 @@ struct TregoProduct: Codable, Identifiable, Equatable {
     let size: String?
     let color: String?
     let businessName: String?
+    let supportEmail: String?
+    let websiteUrl: String?
+    let supportHours: String?
+    let returnPolicySummary: String?
+    let shippingSettings: TregoBusinessShippingSettings?
     let variantInventory: [TregoProductVariant]?
     let variantMode: String?
     let requiresVariantSelection: Bool?
@@ -249,6 +262,10 @@ struct TregoBusinessProfile: Codable, Identifiable, Equatable {
     let businessDescription: String?
     let businessNumber: String?
     let logoPath: String?
+    let supportEmail: String?
+    let websiteUrl: String?
+    let supportHours: String?
+    let returnPolicySummary: String?
     let verificationStatus: String?
     let verificationNotes: String?
     let profileEditAccessStatus: String?
@@ -293,10 +310,15 @@ struct TregoPublicBusinessProfile: Codable, Identifiable, Equatable {
     let businessName: String?
     let businessDescription: String?
     let logoPath: String?
+    let supportEmail: String?
+    let websiteUrl: String?
+    let supportHours: String?
+    let returnPolicySummary: String?
     let verificationStatus: String?
     let city: String?
     let phoneNumber: String?
     let addressLine: String?
+    let shippingSettings: TregoBusinessShippingSettings?
     let followersCount: Int?
     let productsCount: Int?
     let sellerRating: Double?

@@ -1,8 +1,15 @@
 import { reactive } from "vue";
-import { fetchCurrentUserSession, fetchProtectedCollection, requestJson } from "../lib/api";
+import {
+  clearDebugSessionToken,
+  fetchCurrentUserSession,
+  fetchProtectedCollection,
+  getAuthInvalidationEventName,
+  requestJson,
+} from "../lib/api";
 import {
   APP_LOADER_MIN_DURATION_MS,
   calculateCartItemsCount,
+  clearTrackedOrderLookup,
   consumeLoginGreeting,
 } from "../lib/shop";
 
@@ -22,6 +29,33 @@ let sessionLoadPromise = null;
 let cartWarmupPromise = null;
 let sessionLoadRequestId = 0;
 let sessionEnrichmentRequestId = 0;
+const AUTH_INVALIDATION_LISTENER_KEY = "__tregioAuthInvalidationListenerBound__";
+
+function clearActiveSessionState({ clearTracking = false } = {}) {
+  appState.user = null;
+  appState.sessionLoaded = true;
+  setCartCount(0);
+  sessionLoadPromise = null;
+  cartWarmupPromise = null;
+  sessionLoadRequestId += 1;
+  sessionEnrichmentRequestId += 1;
+
+  if (clearTracking) {
+    clearTrackedOrderLookup();
+  }
+}
+
+function handleAuthInvalidation() {
+  clearActiveSessionState({ clearTracking: true });
+}
+
+if (
+  typeof window !== "undefined"
+  && !window[AUTH_INVALIDATION_LISTENER_KEY]
+) {
+  window[AUTH_INVALIDATION_LISTENER_KEY] = true;
+  window.addEventListener(getAuthInvalidationEventName(), handleAuthInvalidation);
+}
 
 export function beginRouteLoading() {
   routeLoaderToken += 1;
@@ -159,7 +193,7 @@ export async function applyAuthenticatedSession(user) {
 }
 
 export async function ensureSessionLoaded(options = {}) {
-  const { force = false, preserveAuthenticatedUser = true } = options;
+  const { force = false, preserveAuthenticatedUser = false } = options;
   if (appState.sessionLoaded && !force) {
     return appState.user;
   }
@@ -204,10 +238,9 @@ export async function refreshSession() {
 
 export async function logoutUser() {
   const { response, data } = await requestJson("/api/logout", { method: "POST" });
-  if (response.ok && data?.ok) {
-    appState.user = null;
-    appState.sessionLoaded = true;
-    setCartCount(0);
+  if ((response.ok && data?.ok) || response.status === 401 || response.status === 403) {
+    clearActiveSessionState({ clearTracking: true });
+    clearDebugSessionToken();
   }
 
   return { response, data };

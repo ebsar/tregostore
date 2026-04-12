@@ -47,6 +47,12 @@ export const CLOTHING_SIZE_OPTIONS = (productCatalog.clothingSizes || []).map((s
   label: size,
 }));
 export const PRODUCT_AMOUNT_UNIT_OPTIONS = productCatalog.amountUnits || [];
+export const PRODUCT_WEIGHT_UNIT_OPTIONS = [
+  { value: "g", label: "g" },
+  { value: "kg", label: "kg" },
+  { value: "lb", label: "lb" },
+  { value: "oz", label: "oz" },
+];
 
 export const PRODUCT_CATEGORY_LABELS = Object.fromEntries(
   PRODUCT_SECTION_OPTIONS.map((option) => [option.value, option.label]),
@@ -161,6 +167,14 @@ export function createEmptyProductFormState() {
     compareAtPrice: "",
     saleEndsAt: "",
     description: "",
+    brand: "",
+    gtin: "",
+    mpn: "",
+    material: "",
+    weightValue: "",
+    weightUnit: "kg",
+    metaTitle: "",
+    metaDescription: "",
     pageSection: defaultSection,
     audience: defaultAudience,
     category: defaultCategory,
@@ -199,6 +213,10 @@ export function syncProductFormCatalogState(form) {
     form.packageAmountUnit = "ml";
   } else if (!PRODUCT_AMOUNT_UNIT_OPTIONS.some((option) => option.value === form.packageAmountUnit)) {
     form.packageAmountUnit = PRODUCT_AMOUNT_UNIT_OPTIONS[0]?.value || "ml";
+  }
+
+  if (!PRODUCT_WEIGHT_UNIT_OPTIONS.some((option) => option.value === form.weightUnit)) {
+    form.weightUnit = PRODUCT_WEIGHT_UNIT_OPTIONS[1]?.value || "kg";
   }
 
   if (!Array.isArray(form.selectedColors)) {
@@ -302,6 +320,14 @@ export function hydrateProductFormFromProduct(form, product) {
     : "";
   form.saleEndsAt = String(product?.saleEndsAt || "");
   form.description = String(product?.description || "");
+  form.brand = String(product?.brand || "");
+  form.gtin = String(product?.gtin || "");
+  form.mpn = String(product?.mpn || "");
+  form.material = String(product?.material || "");
+  form.weightValue = Number(product?.weightValue || 0) > 0 ? String(product?.weightValue ?? "") : "";
+  form.weightUnit = String(product?.weightUnit || "kg");
+  form.metaTitle = String(product?.metaTitle || "");
+  form.metaDescription = String(product?.metaDescription || "");
   form.pageSection = deriveSectionFromCategory(product?.category);
   form.audience = deriveAudienceFromCategory(product?.category);
   form.category = buildCategoryFromSelection(form.pageSection, form.audience);
