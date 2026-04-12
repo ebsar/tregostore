@@ -4,9 +4,9 @@ const VISITOR_TOKEN_STORAGE_KEY = "trego-visitor-token";
 const DEBUG_SESSION_TOKEN_STORAGE_KEY = "tregio-debug-session-token";
 const AUTH_INVALIDATION_EVENT_NAME = "tregio:auth-invalidated";
 const MIN_REQUEST_TIMEOUT_MS = 1200;
-const DEFAULT_GET_TIMEOUT_MS = 6000;
-const DEFAULT_MUTATION_TIMEOUT_MS = 8000;
-const DEFAULT_RETRY_TIMEOUT_MS = 3200;
+const DEFAULT_GET_TIMEOUT_MS = 12000;
+const DEFAULT_MUTATION_TIMEOUT_MS = 15000;
+const DEFAULT_RETRY_TIMEOUT_MS = 12000;
 const AUTH_INVALIDATION_EXCLUDED_PATHS = new Set([
   "/api/login",
   "/api/signup",
@@ -171,7 +171,7 @@ export async function requestJson(url, options = {}, runtime = {}) {
     MIN_REQUEST_TIMEOUT_MS,
     Number(
       runtime.retryTimeoutMs
-      || Math.min(timeoutMs, DEFAULT_RETRY_TIMEOUT_MS),
+      || Math.max(timeoutMs, DEFAULT_RETRY_TIMEOUT_MS),
     ),
   );
   const cacheKey = runtime.cacheKey || `${method}:${url}`;
@@ -328,8 +328,8 @@ export async function fetchCurrentUserSession() {
   try {
     const { response, data } = await requestJson("/api/me", {}, {
       cacheTtlMs: 1500,
-      timeoutMs: 3500,
-      allowRetry: false,
+      timeoutMs: 10000,
+      retryTimeoutMs: 8000,
     });
     if (response.ok && data?.ok && data?.user) {
       return {

@@ -1,9 +1,6 @@
 from urllib.parse import parse_qsl, urlencode, urlparse
 
-from app import AppHandler, initialize_database
-
-
-initialize_database()
+from app import AppHandler
 
 
 class handler(AppHandler):
