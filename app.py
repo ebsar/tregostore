@@ -28,7 +28,10 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 import zipfile
 
-import catalog_import as catalog_import_lib
+try:
+    from api import catalog_import as catalog_import_lib
+except ModuleNotFoundError:
+    import catalog_import as catalog_import_lib
 
 try:
     from PIL import Image, ImageOps, UnidentifiedImageError
