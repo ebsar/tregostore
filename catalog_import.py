@@ -671,11 +671,27 @@ def suggest_field_mappings(headers: list[str], sample_rows: list[dict[str, Any]]
         for header in headers
         if normalize_whitespace(header)
     ]
+    used_headers: set[str] = set()
     for field_name, patterns in FIELD_PATTERNS.items():
+        best_header = ""
+        best_score = -1
         for header in normalized_headers:
-            if any(pattern in header["normalized"] for pattern in patterns):
-                suggestions[field_name] = header["original"]
-                break
+            if header["original"] in used_headers:
+                continue
+            match_score = -1
+            for pattern in patterns:
+                if header["normalized"] == pattern:
+                    match_score = max(match_score, 300 + len(pattern))
+                elif len(pattern) >= 4 and header["normalized"].startswith(pattern):
+                    match_score = max(match_score, 200 + len(pattern))
+                elif len(pattern) >= 5 and pattern in header["normalized"]:
+                    match_score = max(match_score, 100 + len(pattern))
+            if match_score > best_score:
+                best_score = match_score
+                best_header = header["original"]
+        if best_header:
+            suggestions[field_name] = best_header
+            used_headers.add(best_header)
     if sample_rows:
         header_usage = Counter()
         for row in sample_rows[:8]:

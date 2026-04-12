@@ -665,13 +665,126 @@ export async function downloadBusinessProductsImportTemplate() {
   };
 }
 
-export async function importBusinessProductsFile(file) {
-  const formData = new FormData();
-  formData.append("file", file);
+export async function fetchBusinessCatalogImportConfig() {
+  const { response, data } = await requestJson("/api/business/catalog-import/config");
 
-  const { response, data } = await requestJson("/api/business/products/import", {
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      profiles: [],
+      sources: [],
+      recentJobs: [],
+      canonicalFields: [],
+      categoryAttributeSets: {},
+      message: resolveApiMessage(data, "Konfigurimi i importit nuk u lexua."),
+    };
+  }
+
+  return {
+    ok: true,
+    profiles: Array.isArray(data.profiles) ? data.profiles : [],
+    sources: Array.isArray(data.sources) ? data.sources : [],
+    recentJobs: Array.isArray(data.recentJobs) ? data.recentJobs : [],
+    canonicalFields: Array.isArray(data.canonicalFields) ? data.canonicalFields : [],
+    categoryAttributeSets: data.categoryAttributeSets && typeof data.categoryAttributeSets === "object"
+      ? data.categoryAttributeSets
+      : {},
+    message: data.message || "Konfigurimi i importit u lexua me sukses.",
+  };
+}
+
+export async function createBusinessCatalogImportPreview({
+  sourceType,
+  file = null,
+  jobId = 0,
+  sourceId = 0,
+  profileId = 0,
+  profileName = "",
+  saveProfile = false,
+  fieldMapping = {},
+  categoryMappingRules = {},
+  records = null,
+  payload = null,
+  recordPath = "",
+  sourceConfig = {},
+} = {}) {
+  let requestOptions;
+
+  if (file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("sourceType", String(sourceType || "").trim().toLowerCase());
+    if (sourceId) {
+      formData.append("sourceId", String(sourceId));
+    }
+    if (profileId) {
+      formData.append("profileId", String(profileId));
+    }
+    if (profileName) {
+      formData.append("profileName", profileName);
+    }
+    if (saveProfile) {
+      formData.append("saveProfile", "true");
+    }
+    formData.append("fieldMapping", JSON.stringify(fieldMapping || {}));
+    formData.append("categoryMappingRules", JSON.stringify(categoryMappingRules || {}));
+    requestOptions = {
+      method: "POST",
+      body: formData,
+    };
+  } else {
+    requestOptions = {
+      method: "POST",
+      body: JSON.stringify({
+        sourceType,
+        jobId,
+        sourceId,
+        profileId,
+        profileName,
+        saveProfile,
+        fieldMapping,
+        categoryMappingRules,
+        records,
+        payload,
+        recordPath,
+        sourceConfig,
+      }),
+    };
+  }
+
+  const { response, data } = await requestJson("/api/business/catalog-import/preview", requestOptions);
+
+  if (!response.ok || !data?.ok || !data?.preview) {
+    return {
+      ok: false,
+      job: null,
+      preview: null,
+      errors: Array.isArray(data?.errors) ? data.errors : [],
+      message: resolveApiMessage(data, "Preview i importit nuk u krijua."),
+    };
+  }
+
+  return {
+    ok: true,
+    job: data.job || null,
+    preview: data.preview || null,
+    errors: [],
+    message: data.message || "Preview i importit u krijua.",
+  };
+}
+
+export async function commitBusinessCatalogImportPreview({
+  jobId,
+  skipRowIds = [],
+  approvedGroupKeys = [],
+} = {}) {
+  const { response, data } = await requestJson("/api/business/catalog-import/commit", {
     method: "POST",
-    body: formData,
+    body: JSON.stringify({
+      jobId,
+      skipRowIds,
+      approvedGroupKeys,
+    }),
   });
 
   if (!response.ok || !data?.ok) {
@@ -679,7 +792,7 @@ export async function importBusinessProductsFile(file) {
       ok: false,
       count: 0,
       products: [],
-      message: resolveApiMessage(data, "Importi i artikujve nuk u krye."),
+      message: resolveApiMessage(data, "Importi final nuk u krye."),
     };
   }
 
@@ -687,6 +800,73 @@ export async function importBusinessProductsFile(file) {
     ok: true,
     count: Number(data.count || 0),
     products: Array.isArray(data.products) ? data.products : [],
-    message: data.message || "Artikujt u importuan me sukses.",
+    message: data.message || "Importi final u krye me sukses.",
+  };
+}
+
+export async function saveBusinessCatalogImportProfile(payload) {
+  const { response, data } = await requestJson("/api/business/catalog-import/profile", {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      profile: null,
+      message: resolveApiMessage(data, "Profili i importit nuk u ruajt."),
+    };
+  }
+
+  return {
+    ok: true,
+    profile: data.profile || null,
+    message: data.message || "Profili i importit u ruajt.",
+  };
+}
+
+export async function saveBusinessCatalogImportSource(payload) {
+  const { response, data } = await requestJson("/api/business/catalog-import/source", {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+
+  if (!response.ok || !data?.ok) {
+    return {
+      ok: false,
+      source: null,
+      message: resolveApiMessage(data, "Burimi i importit nuk u ruajt."),
+    };
+  }
+
+  return {
+    ok: true,
+    source: data.source || null,
+    message: data.message || "Burimi i importit u ruajt.",
+  };
+}
+
+export async function syncBusinessCatalogImportSource(sourceId) {
+  const { response, data } = await requestJson("/api/business/catalog-import/sync", {
+    method: "POST",
+    body: JSON.stringify({ sourceId }),
+  });
+
+  if (!response.ok || !data?.ok || !data?.preview) {
+    return {
+      ok: false,
+      job: null,
+      preview: null,
+      errors: Array.isArray(data?.errors) ? data.errors : [],
+      message: resolveApiMessage(data, "Sinkronizimi i burimit nuk u pergatit."),
+    };
+  }
+
+  return {
+    ok: true,
+    job: data.job || null,
+    preview: data.preview || null,
+    errors: [],
+    message: data.message || "Sinkronizimi i burimit u pergatit.",
   };
 }

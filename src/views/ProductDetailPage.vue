@@ -1133,31 +1133,35 @@ function initializeVariantSelection() {
 }
 
 function clearInvalidVariantSelections(preferredKey = "") {
-  if (
-    preferredKey !== "color"
-    && selectedColor.value
-    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
-  ) {
-    selectedColor.value = "";
-  }
-  if (
-    preferredKey !== "size"
-    selectedColor.value
-    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
-  ) {
-    selectedSize.value
-    && !variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))
-  ) {
-    selectedSize.value = "";
-  }
-  Object.entries(selectedVariantAttributes).forEach(([key, value]) => {
-    if (!value || key === preferredKey) {
+  const selectionKeys = [
+    ...Object.keys(selectedVariantAttributes).filter((key) => key && key !== preferredKey),
+    "size",
+    "color",
+  ];
+
+  for (const key of selectionKeys) {
+    if (variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))) {
       return;
     }
-    if (!variantInventory.value.some((entry) => variantEntryMatchesSelections(entry))) {
+
+    if (key === "color") {
+      if (preferredKey !== "color" && selectedColor.value) {
+        selectedColor.value = "";
+      }
+      continue;
+    }
+
+    if (key === "size") {
+      if (preferredKey !== "size" && selectedSize.value) {
+        selectedSize.value = "";
+      }
+      continue;
+    }
+
+    if (selectedVariantAttributes[key]) {
       delete selectedVariantAttributes[key];
     }
-  });
+  }
 }
 
 function handleCompareProduct() {
@@ -2743,7 +2747,7 @@ function getReviewAvatarStyle(name) {
             <section class="pdp-option-card">
               <p class="pdp-option-label">Size</p>
               <label v-if="sizeOptions.length > 0" class="pdp-select-shell">
-                <select v-model="selectedSize">
+                <select v-model="selectedSize" @change="clearInvalidVariantSelections('size')">
                   <option value="">Select size</option>
                   <option
                     v-for="option in sizeOptions"
@@ -2765,6 +2769,30 @@ function getReviewAvatarStyle(name) {
               <div class="pdp-static-field">
                 {{ optionTypeLabel }}
               </div>
+            </section>
+
+            <section
+              v-for="group in variantAttributeGroups"
+              :key="group.key"
+              class="pdp-option-card"
+            >
+              <p class="pdp-option-label">{{ group.label }}</p>
+              <label class="pdp-select-shell">
+                <select
+                  :value="selectedVariantAttributes[group.key] || ''"
+                  @change="chooseVariantAttribute(group.key, $event.target.value)"
+                >
+                  <option value="">{{ `Select ${group.label.toLowerCase()}` }}</option>
+                  <option
+                    v-for="option in group.options"
+                    :key="`${group.key}-${option.value}`"
+                    :value="option.value"
+                    :disabled="!option.inStock"
+                  >
+                    {{ option.value }}{{ option.inStock ? "" : " - unavailable" }}
+                  </option>
+                </select>
+              </label>
             </section>
 
             <section class="pdp-option-card">

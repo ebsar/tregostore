@@ -4,11 +4,16 @@ import { useRoute, useRouter } from "vue-router";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
 import ProductVariantConfigurator from "../components/ProductVariantConfigurator.vue";
 import {
+  commitBusinessCatalogImportPreview,
+  createBusinessCatalogImportPreview,
   downloadBusinessProductsImportTemplate,
-  importBusinessProductsFile,
+  fetchBusinessCatalogImportConfig,
   requestProductAIDraft,
   requestJson,
   resolveApiMessage,
+  saveBusinessCatalogImportProfile,
+  saveBusinessCatalogImportSource,
+  syncBusinessCatalogImportSource,
   uploadImages,
 } from "../lib/api";
 import {
@@ -55,20 +60,39 @@ const promotionsSection = ref(null);
 const productsManagementSection = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
+const importSourceType = ref("csv");
+const importJsonPayload = ref("");
+const importJsonRecordPath = ref("");
 const importPreviewRows = ref([]);
 const importPreviewHeaders = ref([]);
 const importDetectedHeaders = ref([]);
 const importIsPreviewLoading = ref(false);
-const importMapping = reactive({
-  productName: "",
-  description: "",
-  price: "",
-  sku: "",
-  stock: "",
-  category: "",
-  imageUrl: "",
-  size: "",
-  color: "",
+const importIsCommitLoading = ref(false);
+const importIsSyncLoading = ref(false);
+const importIsConfigLoading = ref(false);
+const importCurrentJob = ref(null);
+const importPreview = ref(null);
+const importProfiles = ref([]);
+const importSources = ref([]);
+const importRecentJobs = ref([]);
+const importCanonicalFields = ref([]);
+const importCategoryAttributeSets = ref({});
+const importSelectedProfileId = ref(0);
+const importSelectedSourceId = ref(0);
+const importProfileDraftName = ref("");
+const importSaveProfile = ref(false);
+const importSkippedRowIds = ref([]);
+const importApprovedGroupKeys = ref([]);
+const importMapping = reactive({});
+const importApiSource = reactive({
+  sourceName: "",
+  url: "",
+  method: "GET",
+  recordPath: "",
+  headersText: "",
+  bodyText: "",
+  syncEnabled: true,
+  syncIntervalMinutes: "60",
 });
 const showVerifiedProfileEditor = ref(false);
 const selectedProductIds = ref([]);
@@ -164,6 +188,9 @@ const importSummary = reactive({
   validRows: 0,
   invalidRows: 0,
   warnings: [],
+  parentProducts: 0,
+  warningsCount: 0,
+  hardErrorsCount: 0,
 });
 
 const productPreviewItems = computed(() => {
@@ -416,6 +443,20 @@ const profileEditAccessStatus = computed(
   () => String(businessProfile.value?.profileEditAccessStatus || "locked").trim().toLowerCase(),
 );
 const canManageCatalog = computed(() => Boolean(businessProfile.value) && isBusinessVerified.value);
+const importFieldList = computed(() =>
+  importCanonicalFields.value.length
+    ? importCanonicalFields.value
+    : ["title", "description", "price", "stock", "category", "sku", "image", "color", "size"],
+);
+const selectedImportProfile = computed(() =>
+  importProfiles.value.find((profile) => Number(profile.id || 0) === Number(importSelectedProfileId.value || 0)) || null,
+);
+const selectedImportSource = computed(() =>
+  importSources.value.find((source) => Number(source.id || 0) === Number(importSelectedSourceId.value || 0)) || null,
+);
+const importPreviewRecords = computed(() => Array.isArray(importPreview.value?.records) ? importPreview.value.records : []);
+const importPreviewGroups = computed(() => Array.isArray(importPreview.value?.groups) ? importPreview.value.groups : []);
+const importPreviewHasChanges = computed(() => Boolean(importCurrentJob.value?.id) && Boolean(importPreview.value));
 const shouldShowProfileCard = computed(
   () => !businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value,
 );
@@ -621,6 +662,7 @@ onMounted(async () => {
       loadBusinessAnalytics(),
       canManageCatalog.value ? loadProducts() : Promise.resolve(),
       canManageCatalog.value ? loadPromotions() : Promise.resolve(),
+      canManageCatalog.value ? loadCatalogImportConfig() : Promise.resolve(),
     ]);
     await handleRouteView();
   } finally {
@@ -633,6 +675,49 @@ watch(
   async (view) => {
     if (view === "add-product") {
       await handleRouteView();
+    }
+  },
+);
+
+watch(
+  () => importSelectedProfileId.value,
+  (profileId) => {
+    const profile = importProfiles.value.find((item) => Number(item.id || 0) === Number(profileId || 0)) || null;
+    if (!profile) {
+      replaceImportMapping({});
+      return;
+    }
+
+    importProfileDraftName.value = String(profile.profileName || "").trim();
+    if (!importPreview.value) {
+      replaceImportMapping(profile.fieldMapping || {});
+    }
+  },
+);
+
+watch(
+  () => importSelectedSourceId.value,
+  (sourceId) => {
+    const source = importSources.value.find((item) => Number(item.id || 0) === Number(sourceId || 0)) || null;
+    if (!source) {
+      return;
+    }
+
+    importSourceType.value = String(source.sourceType || "api-json").trim().toLowerCase() || "api-json";
+    importApiSource.sourceName = String(source.sourceName || "").trim();
+    importApiSource.url = String(source.sourceConfig?.url || "").trim();
+    importApiSource.method = String(source.sourceConfig?.method || "GET").trim().toUpperCase();
+    importApiSource.recordPath = String(source.sourceConfig?.recordPath || "").trim();
+    importApiSource.headersText = Object.keys(source.sourceConfig?.headers || {}).length
+      ? JSON.stringify(source.sourceConfig.headers, null, 2)
+      : "";
+    importApiSource.bodyText = source.sourceConfig?.body != null
+      ? JSON.stringify(source.sourceConfig.body, null, 2)
+      : "";
+    importApiSource.syncEnabled = Boolean(source.syncEnabled);
+    importApiSource.syncIntervalMinutes = String(source.syncIntervalMinutes || "60");
+    if (Number(source.profileId || 0) > 0) {
+      importSelectedProfileId.value = Number(source.profileId || 0);
     }
   },
 );
@@ -1016,132 +1101,342 @@ function handleFilesChange(event) {
   previewUrls.value = selectedFiles.value.map((file) => URL.createObjectURL(file));
 }
 
-function handleImportFileChange(event) {
-  importFile.value = event.target.files?.[0] || null;
-  ui.importMessage = importFile.value
-    ? `U zgjodh skedari ${importFile.value.name}.`
-    : "";
-  ui.importType = importFile.value ? "success" : "";
-  importPreviewRows.value = [];
-  importPreviewHeaders.value = [];
-  importDetectedHeaders.value = [];
-  importSummary.totalRows = 0;
-  importSummary.validRows = 0;
-  importSummary.invalidRows = 0;
+function formatImportFieldLabel(fieldName) {
+  return String(fieldName || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase())
+    .trim();
+}
+
+function replaceImportMapping(nextMapping = {}) {
+  const normalizedEntries = importFieldList.value.map((fieldName) => [fieldName, String(nextMapping[fieldName] || "")]);
+  Object.keys(importMapping).forEach((key) => {
+    delete importMapping[key];
+  });
+  normalizedEntries.forEach(([fieldName, value]) => {
+    importMapping[fieldName] = value;
+  });
+}
+
+function syncImportSummary(summary = {}) {
+  importSummary.totalRows = Number(summary.totalRows || 0);
+  importSummary.validRows = Number(summary.validRows || 0);
+  importSummary.invalidRows = Number(summary.invalidRows || 0);
+  importSummary.parentProducts = Number(summary.parentProducts || 0);
+  importSummary.warningsCount = Number(summary.warningsCount || 0);
+  importSummary.hardErrorsCount = Number(summary.hardErrorsCount || 0);
   importSummary.warnings = [];
-  if (!importFile.value) {
+}
+
+function syncImportPreviewState(preview, job = null) {
+  importPreview.value = preview || null;
+  importCurrentJob.value = job || importCurrentJob.value || null;
+  importDetectedHeaders.value = Array.isArray(preview?.headers) ? preview.headers : [];
+  importPreviewHeaders.value = importDetectedHeaders.value.slice(0, 8);
+  importPreviewRows.value = importPreviewRecords.value.slice(0, 6);
+  replaceImportMapping(preview?.fieldMapping || {});
+  syncImportSummary(preview?.summary || {});
+  importSkippedRowIds.value = [];
+  importApprovedGroupKeys.value = importPreviewGroups.value
+    .map((group) => String(group.groupKey || "").trim())
+    .filter(Boolean);
+}
+
+function buildImportFieldMappingPayload() {
+  return Object.fromEntries(
+    Object.entries(importMapping)
+      .map(([fieldName, headerName]) => [fieldName, String(headerName || "").trim()])
+      .filter(([, headerName]) => Boolean(headerName)),
+  );
+}
+
+function parseJsonInput(text, fallbackLabel) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    return {};
+  }
+  try {
+    return JSON.parse(normalized);
+  } catch (error) {
+    throw new Error(`${fallbackLabel} nuk eshte JSON valid.`);
+  }
+}
+
+function buildImportSourceConfigPayload() {
+  const headers = parseJsonInput(importApiSource.headersText, "Headers");
+  const body = String(importApiSource.bodyText || "").trim()
+    ? parseJsonInput(importApiSource.bodyText, "Body")
+    : null;
+
+  return {
+    url: String(importApiSource.url || "").trim(),
+    method: String(importApiSource.method || "GET").trim().toUpperCase(),
+    recordPath: String(importApiSource.recordPath || "").trim(),
+    headers,
+    body,
+  };
+}
+
+async function loadCatalogImportConfig() {
+  if (!canManageCatalog.value) {
     return;
   }
-  void prepareImportPreview(importFile.value);
-}
 
-function normalizeHeaderKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
-}
+  importIsConfigLoading.value = true;
+  const result = await fetchBusinessCatalogImportConfig();
+  importIsConfigLoading.value = false;
 
-function autoMapImportColumns(headers = []) {
-  const normalized = headers.map((header) => ({
-    original: header,
-    key: normalizeHeaderKey(header),
-  }));
-  const pick = (...patterns) => {
-    const match = normalized.find((header) => patterns.some((pattern) => header.key.includes(pattern)));
-    return match?.original || "";
-  };
-  importMapping.productName = pick("title", "name", "productname", "emri");
-  importMapping.description = pick("description", "pershkrim", "desc");
-  importMapping.price = pick("price", "cmim");
-  importMapping.sku = pick("articlenumber", "sku", "productcode", "kod");
-  importMapping.stock = pick("stock", "quantity", "sasia");
-  importMapping.category = pick("category", "kategori");
-  importMapping.imageUrl = pick("imagegallery", "imagepath", "imageurl", "foto");
-  importMapping.size = pick("size", "madhesia");
-  importMapping.color = pick("color", "ngjyra");
-}
-
-function parseCsvLine(line = "") {
-  const result = [];
-  let value = "";
-  let quoteOpen = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    if (character === '"') {
-      const escaped = quoteOpen && line[index + 1] === '"';
-      if (escaped) {
-        value += '"';
-        index += 1;
-      } else {
-        quoteOpen = !quoteOpen;
-      }
-      continue;
-    }
-    if (character === "," && !quoteOpen) {
-      result.push(value.trim());
-      value = "";
-      continue;
-    }
-    value += character;
+  if (!result.ok) {
+    ui.importMessage = result.message;
+    ui.importType = "error";
+    return;
   }
-  result.push(value.trim());
-  return result;
+
+  importProfiles.value = result.profiles;
+  importSources.value = result.sources;
+  importRecentJobs.value = result.recentJobs;
+  importCanonicalFields.value = result.canonicalFields;
+  importCategoryAttributeSets.value = result.categoryAttributeSets;
+  replaceImportMapping(selectedImportProfile.value?.fieldMapping || {});
 }
 
-async function prepareImportPreview(file) {
-  const fileName = String(file?.name || "").trim().toLowerCase();
-  const isCsvFile = fileName.endsWith(".csv") || String(file?.type || "").includes("csv");
-  if (!isCsvFile) {
-    importSummary.warnings = ["Preview automatik dhe column mapping jane aktive per CSV. Per XLSX mund ta importosh direkt."];
+function handleImportSourceTypeChange() {
+  clearImportSelection({ preserveSourceType: true, preserveProfiles: true });
+}
+
+function handleImportFileChange(event) {
+  importFile.value = event.target.files?.[0] || null;
+  if (!importFile.value) {
+    ui.importMessage = "";
+    ui.importType = "";
+    return;
+  }
+
+  const nextName = String(importFile.value.name || "").toLowerCase();
+  importSourceType.value = nextName.endsWith(".xlsx") ? "xlsx" : "csv";
+  ui.importMessage = `U zgjodh skedari ${importFile.value.name}.`;
+  ui.importType = "success";
+  void prepareImportPreview();
+}
+
+async function loadImportJobPreview(jobId) {
+  if (!jobId) {
     return;
   }
 
   importIsPreviewLoading.value = true;
-  try {
-    const content = await file.text();
-    const rows = String(content || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (rows.length === 0) {
-      importSummary.warnings = ["Skedari CSV duket bosh."];
-      return;
-    }
+  const result = await createBusinessCatalogImportPreview({
+    jobId,
+    profileId: importSelectedProfileId.value,
+    sourceId: importSelectedSourceId.value,
+    fieldMapping: buildImportFieldMappingPayload(),
+  });
+  importIsPreviewLoading.value = false;
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+  if (!result.ok) {
+    return;
+  }
+  syncImportPreviewState(result.preview, result.job);
+  await loadCatalogImportConfig();
+}
 
-    const headers = parseCsvLine(rows[0]);
-    importDetectedHeaders.value = headers;
-    importPreviewHeaders.value = headers.slice(0, 9);
-    autoMapImportColumns(headers);
-    const dataRows = rows.slice(1).map((line) => parseCsvLine(line));
-    importPreviewRows.value = dataRows.slice(0, 6).map((row) => {
-      const mapped = {};
-      importPreviewHeaders.value.forEach((header, index) => {
-        mapped[header] = String(row[index] || "").trim();
+async function prepareImportPreview() {
+  if (!canManageCatalog.value) {
+    ui.importMessage = "Biznesi duhet te verifikohet nga admini para se te importosh artikuj.";
+    ui.importType = "error";
+    return;
+  }
+
+  let result;
+  importIsPreviewLoading.value = true;
+  try {
+    if (importSourceType.value === "csv" || importSourceType.value === "xlsx") {
+      if (!importFile.value) {
+        ui.importMessage = "Zgjidh nje skedar CSV ose XLSX per preview.";
+        ui.importType = "error";
+        return;
+      }
+
+      result = await createBusinessCatalogImportPreview({
+        sourceType: importSourceType.value,
+        file: importFile.value,
+        profileId: importSelectedProfileId.value,
+        sourceId: importSelectedSourceId.value,
+        profileName: importProfileDraftName.value,
+        saveProfile: importSaveProfile.value,
+        fieldMapping: buildImportFieldMappingPayload(),
       });
-      return mapped;
-    });
-    importSummary.totalRows = dataRows.length;
-    importSummary.validRows = dataRows.filter((row) =>
-      String(row[headers.indexOf(importMapping.productName)] || "").trim()
-      && String(row[headers.indexOf(importMapping.price)] || "").trim(),
-    ).length;
-    importSummary.invalidRows = Math.max(0, importSummary.totalRows - importSummary.validRows);
-    importSummary.warnings = importSummary.invalidRows > 0
-      ? ["Disa rreshta duken pa emer produkti ose pa cmim. Backend-i do i ktheje si gabime ne import."]
-      : [];
+    } else if (importSourceType.value === "json") {
+      if (!String(importJsonPayload.value || "").trim()) {
+        ui.importMessage = "Vendos payload JSON per preview.";
+        ui.importType = "error";
+        return;
+      }
+
+      result = await createBusinessCatalogImportPreview({
+        sourceType: "json",
+        payload: parseJsonInput(importJsonPayload.value, "JSON payload"),
+        recordPath: importJsonRecordPath.value,
+        profileId: importSelectedProfileId.value,
+        profileName: importProfileDraftName.value,
+        saveProfile: importSaveProfile.value,
+        fieldMapping: buildImportFieldMappingPayload(),
+      });
+    } else if (importSourceType.value === "api-json") {
+      const sourceConfig = buildImportSourceConfigPayload();
+      if (!sourceConfig.url) {
+        ui.importMessage = "Vendos URL-ne e API source para preview.";
+        ui.importType = "error";
+        return;
+      }
+
+      result = await createBusinessCatalogImportPreview({
+        sourceType: "api-json",
+        sourceId: importSelectedSourceId.value,
+        profileId: importSelectedProfileId.value,
+        profileName: importProfileDraftName.value,
+        saveProfile: importSaveProfile.value,
+        sourceConfig,
+        fieldMapping: buildImportFieldMappingPayload(),
+      });
+    }
   } catch (error) {
     console.error(error);
-    importSummary.warnings = ["Preview nuk u lexua. Mund ta importosh direkt dhe sistemi do ta validoje."];
-  } finally {
+    ui.importMessage = error instanceof Error ? error.message : "Preview i importit deshtoi.";
+    ui.importType = "error";
     importIsPreviewLoading.value = false;
+    return;
   }
+
+  importIsPreviewLoading.value = false;
+  ui.importMessage = result?.message || "";
+  ui.importType = result?.ok ? "success" : "error";
+
+  if (!result?.ok) {
+    importSummary.warnings = Array.isArray(result?.errors) ? result.errors : [];
+    return;
+  }
+
+  syncImportPreviewState(result.preview, result.job);
+  await loadCatalogImportConfig();
 }
 
 async function downloadImportTemplate() {
   const result = await downloadBusinessProductsImportTemplate();
   ui.importMessage = result.message;
   ui.importType = result.ok ? "success" : "error";
+}
+
+async function saveCurrentImportProfile() {
+  const profileName = String(importProfileDraftName.value || "").trim();
+  if (!profileName) {
+    ui.importMessage = "Vendos emrin e profilit para ruajtjes.";
+    ui.importType = "error";
+    return;
+  }
+
+  const result = await saveBusinessCatalogImportProfile({
+    id: Number(importSelectedProfileId.value || 0) || undefined,
+    profileName,
+    sourceType: importSourceType.value,
+    fieldMapping: buildImportFieldMappingPayload(),
+    categoryMappingRules: {},
+  });
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+  if (!result.ok) {
+    return;
+  }
+
+  importSelectedProfileId.value = Number(result.profile?.id || 0);
+  await loadCatalogImportConfig();
+}
+
+async function saveCurrentImportSource() {
+  if (importSourceType.value !== "api-json") {
+    ui.importMessage = "Saved source connectors jane te aktivizuar per API / JSON feeds.";
+    ui.importType = "error";
+    return;
+  }
+
+  const sourceName = String(importApiSource.sourceName || "").trim();
+  if (!sourceName) {
+    ui.importMessage = "Vendos emrin e source connector.";
+    ui.importType = "error";
+    return;
+  }
+
+  const sourceConfig = buildImportSourceConfigPayload();
+  if (!sourceConfig.url) {
+    ui.importMessage = "Vendos URL-ne e source connector.";
+    ui.importType = "error";
+    return;
+  }
+
+  const result = await saveBusinessCatalogImportSource({
+    id: Number(importSelectedSourceId.value || 0) || undefined,
+    profileId: Number(importSelectedProfileId.value || 0),
+    sourceName,
+    sourceType: "api-json",
+    sourceConfig,
+    syncEnabled: Boolean(importApiSource.syncEnabled),
+    syncIntervalMinutes: Number(importApiSource.syncIntervalMinutes || 0),
+  });
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+  if (!result.ok) {
+    return;
+  }
+
+  importSelectedSourceId.value = Number(result.source?.id || 0);
+  await loadCatalogImportConfig();
+}
+
+async function syncCurrentImportSource(sourceId = importSelectedSourceId.value) {
+  if (!sourceId) {
+    ui.importMessage = "Zgjidh nje source connector per sync.";
+    ui.importType = "error";
+    return;
+  }
+
+  importIsSyncLoading.value = true;
+  const result = await syncBusinessCatalogImportSource(sourceId);
+  importIsSyncLoading.value = false;
+  ui.importMessage = result.message;
+  ui.importType = result.ok ? "success" : "error";
+  if (!result.ok) {
+    importSummary.warnings = Array.isArray(result.errors) ? result.errors : [];
+    return;
+  }
+
+  syncImportPreviewState(result.preview, result.job);
+  await loadCatalogImportConfig();
+}
+
+function toggleImportGroupApproval(groupKey) {
+  const normalizedKey = String(groupKey || "").trim();
+  if (!normalizedKey) {
+    return;
+  }
+  if (importApprovedGroupKeys.value.includes(normalizedKey)) {
+    importApprovedGroupKeys.value = importApprovedGroupKeys.value.filter((value) => value !== normalizedKey);
+    return;
+  }
+  importApprovedGroupKeys.value = [...importApprovedGroupKeys.value, normalizedKey];
+}
+
+function toggleImportRowSkip(sourceRowId) {
+  const normalizedId = String(sourceRowId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+  if (importSkippedRowIds.value.includes(normalizedId)) {
+    importSkippedRowIds.value = importSkippedRowIds.value.filter((value) => value !== normalizedId);
+    return;
+  }
+  importSkippedRowIds.value = [...importSkippedRowIds.value, normalizedId];
 }
 
 async function submitImportProducts() {
@@ -1151,13 +1446,19 @@ async function submitImportProducts() {
     return;
   }
 
-  if (!importFile.value) {
-    ui.importMessage = "Zgjidh nje skedar CSV per import.";
+  if (!importCurrentJob.value?.id || !importPreview.value) {
+    ui.importMessage = "Krijo preview para se ta perfundosh importin.";
     ui.importType = "error";
     return;
   }
 
-  const result = await importBusinessProductsFile(importFile.value);
+  importIsCommitLoading.value = true;
+  const result = await commitBusinessCatalogImportPreview({
+    jobId: importCurrentJob.value.id,
+    skipRowIds: importSkippedRowIds.value,
+    approvedGroupKeys: importApprovedGroupKeys.value,
+  });
+  importIsCommitLoading.value = false;
   ui.importMessage = result.message;
   ui.importType = result.ok ? "success" : "error";
 
@@ -1165,32 +1466,44 @@ async function submitImportProducts() {
     return;
   }
 
-  importSummary.totalRows = Math.max(importSummary.totalRows, Number(result.count || 0));
-  importSummary.validRows = Number(result.count || 0);
-  importSummary.invalidRows = Math.max(0, importSummary.totalRows - importSummary.validRows);
-  importFile.value = null;
-  if (importFileInput.value) {
-    importFileInput.value.value = "";
-  }
-  importPreviewRows.value = [];
-  importPreviewHeaders.value = [];
-  importDetectedHeaders.value = [];
-  await loadProducts();
-  await loadBusinessAnalytics();
+  clearImportSelection({ preserveSourceType: true, preserveProfiles: true });
+  await Promise.all([
+    loadProducts(),
+    loadBusinessAnalytics(),
+    loadCatalogImportConfig(),
+  ]);
 }
 
-function clearImportSelection() {
+function clearImportSelection({ preserveSourceType = false, preserveProfiles = false } = {}) {
   importFile.value = null;
+  importPreview.value = null;
+  importCurrentJob.value = null;
   importPreviewRows.value = [];
   importPreviewHeaders.value = [];
   importDetectedHeaders.value = [];
-  importSummary.totalRows = 0;
-  importSummary.validRows = 0;
-  importSummary.invalidRows = 0;
-  importSummary.warnings = [];
-  Object.keys(importMapping).forEach((key) => {
-    importMapping[key] = "";
-  });
+  importSkippedRowIds.value = [];
+  importApprovedGroupKeys.value = [];
+  importJsonPayload.value = "";
+  importJsonRecordPath.value = "";
+  importApiSource.sourceName = "";
+  importApiSource.url = "";
+  importApiSource.method = "GET";
+  importApiSource.recordPath = "";
+  importApiSource.headersText = "";
+  importApiSource.bodyText = "";
+  importApiSource.syncEnabled = true;
+  importApiSource.syncIntervalMinutes = "60";
+  syncImportSummary({});
+  if (!preserveSourceType) {
+    importSourceType.value = "csv";
+  }
+  if (!preserveProfiles) {
+    importSelectedProfileId.value = 0;
+    importSelectedSourceId.value = 0;
+    importProfileDraftName.value = "";
+    importSaveProfile.value = false;
+  }
+  replaceImportMapping(selectedImportProfile.value?.fieldMapping || {});
   if (importFileInput.value) {
     importFileInput.value.value = "";
   }
@@ -2454,139 +2767,281 @@ async function applyBulkStockUpdate() {
       </p>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card bulk-import-surface" aria-label="Importo artikuj nga Excel">
+    <section v-if="canManageCatalog" class="card admin-list-card bulk-import-surface" aria-label="Flexible catalog import">
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Bulk import</p>
-          <h2>Import Products</h2>
-          <p class="admin-compact-copy">Ngarko CSV / Excel dhe shto produkte ne katalog me nje proces te qarte.</p>
+          <p class="section-label">Catalog import</p>
+          <h2>Flexible import pipeline</h2>
+          <p class="admin-compact-copy">Ngarko CSV / XLSX, lidhe JSON / API feeds, bej mapping, kontrollo parent + variants dhe pastaj kryeje importin.</p>
         </div>
       </div>
 
-      <div class="bulk-import-grid">
-        <article class="bulk-import-upload glass-strong">
-          <h3>Upload file</h3>
-          <p class="section-text">Formatet e lejuara: CSV, XLSX. Ne CSV mund te shohesh preview dhe mapping para importit.</p>
-          <label class="bulk-import-dropzone">
-            <input
-              ref="importFileInput"
-              type="file"
-              accept=".xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              @change="handleImportFileChange"
+      <div class="bulk-import-shell">
+        <article class="bulk-import-panel glass-strong">
+          <div class="bulk-import-section-head">
+            <div>
+              <h3>Source setup</h3>
+              <p class="section-text">Pipeline-i i ri nuk shkruan direkt ne produkte. Cdo burim kalon ne preview, mapping, normalizim dhe grouping.</p>
+            </div>
+            <span class="summary-chip">{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
+          </div>
+
+          <div class="bulk-import-toolbar">
+            <label class="field">
+              <span>Source type</span>
+              <select v-model="importSourceType" @change="handleImportSourceTypeChange">
+                <option value="csv">CSV</option>
+                <option value="xlsx">XLSX</option>
+                <option value="json">JSON payload</option>
+                <option value="api-json">API / JSON feed</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Mapping profile</span>
+              <select v-model.number="importSelectedProfileId">
+                <option :value="0">No saved profile</option>
+                <option
+                  v-for="profile in importProfiles"
+                  :key="`import-profile-${profile.id}`"
+                  :value="profile.id"
+                >
+                  {{ profile.profileName }} · {{ profile.sourceType }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Saved source</span>
+              <select v-model.number="importSelectedSourceId">
+                <option :value="0">No saved source</option>
+                <option
+                  v-for="source in importSources"
+                  :key="`import-source-${source.id}`"
+                  :value="source.id"
+                >
+                  {{ source.sourceName }} · {{ source.sourceType }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <div v-if="importSourceType === 'csv' || importSourceType === 'xlsx'" class="bulk-import-source-card">
+            <label class="bulk-import-dropzone">
+              <input
+                ref="importFileInput"
+                type="file"
+                accept=".xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                @change="handleImportFileChange"
+              >
+              <strong>{{ importFile ? importFile.name : "Zgjidh skedarin e katalogut" }}</strong>
+              <span>{{ importFile ? "Skedari eshte gati per preview." : "CSV ose XLSX nga furnitori ose nga biznesi yt." }}</span>
+            </label>
+          </div>
+
+          <div v-else-if="importSourceType === 'json'" class="bulk-import-source-card bulk-import-source-card--stack">
+            <label class="field">
+              <span>Record path</span>
+              <input v-model="importJsonRecordPath" type="text" placeholder="products.items" />
+            </label>
+            <label class="field">
+              <span>JSON payload</span>
+              <textarea
+                v-model="importJsonPayload"
+                rows="8"
+                placeholder='[{"Product Name":"Basic Tee","Qty":5,"Price":12.99}]'
+              />
+            </label>
+          </div>
+
+          <div v-else class="bulk-import-source-card bulk-import-source-card--stack">
+            <div class="bulk-import-toolbar">
+              <label class="field">
+                <span>Source name</span>
+                <input v-model="importApiSource.sourceName" type="text" placeholder="Wholesale feed" />
+              </label>
+              <label class="field">
+                <span>Method</span>
+                <select v-model="importApiSource.method">
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Record path</span>
+                <input v-model="importApiSource.recordPath" type="text" placeholder="data.products" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span>API URL</span>
+              <input v-model="importApiSource.url" type="url" placeholder="https://supplier.example.com/feed.json" />
+            </label>
+
+            <div class="bulk-import-toolbar">
+              <label class="field">
+                <span>Headers JSON</span>
+                <textarea v-model="importApiSource.headersText" rows="5" placeholder='{"Authorization":"Bearer token"}' />
+              </label>
+              <label class="field">
+                <span>Body JSON</span>
+                <textarea v-model="importApiSource.bodyText" rows="5" placeholder='{"include":"products"}' />
+              </label>
+            </div>
+
+            <div class="bulk-import-toolbar">
+              <label class="field">
+                <span>Sync interval (minutes)</span>
+                <input v-model="importApiSource.syncIntervalMinutes" type="number" min="15" step="15" />
+              </label>
+              <label class="field field-checkbox">
+                <span>Sync enabled</span>
+                <input v-model="importApiSource.syncEnabled" type="checkbox" />
+              </label>
+            </div>
+          </div>
+
+          <div class="bulk-import-toolbar">
+            <label class="field">
+              <span>Profile name</span>
+              <input v-model="importProfileDraftName" type="text" placeholder="Boutique CSV profile" />
+            </label>
+            <label class="field field-checkbox">
+              <span>Save profile on preview</span>
+              <input v-model="importSaveProfile" type="checkbox" />
+            </label>
+          </div>
+
+          <div class="auth-form-actions bulk-import-actions">
+            <button type="button" :disabled="importIsPreviewLoading" @click="prepareImportPreview">
+              {{ importIsPreviewLoading ? "Preparing..." : "Create preview" }}
+            </button>
+            <button
+              class="button-secondary"
+              type="button"
+              :disabled="!importPreviewHasChanges || importIsPreviewLoading"
+              @click="loadImportJobPreview(importCurrentJob?.id)"
             >
-            <strong>{{ importFile ? importFile.name : "Zvarrit skedarin ketu ose kliko per upload" }}</strong>
-            <span>{{ importFile ? "Skedari eshte gati per import." : "CSV / Excel per artikujt e biznesit" }}</span>
-          </label>
-          <div class="auth-form-actions">
-            <button type="button" @click="downloadImportTemplate">Download Template</button>
+              Refresh preview
+            </button>
+            <button class="button-secondary" type="button" @click="saveCurrentImportProfile">
+              Save profile
+            </button>
+            <button
+              v-if="importSourceType === 'api-json'"
+              class="button-secondary"
+              type="button"
+              @click="saveCurrentImportSource"
+            >
+              Save source
+            </button>
+            <button
+              v-if="importSourceType === 'api-json'"
+              class="button-secondary"
+              type="button"
+              :disabled="!importSelectedSourceId || importIsSyncLoading"
+              @click="syncCurrentImportSource()"
+            >
+              {{ importIsSyncLoading ? "Syncing..." : "Sync source" }}
+            </button>
+            <button class="button-secondary" type="button" @click="downloadImportTemplate">
+              Quick-start template
+            </button>
           </div>
         </article>
 
-        <article class="bulk-import-instructions glass-soft">
-          <h3>Kolonat e rekomanduara</h3>
-          <p class="section-text">Sigurohu qe skedari te kete te pakten emrin e produktit dhe cmimin.</p>
-          <div class="product-detail-tags product-detail-tags-admin">
-            <span class="product-detail-tag">Product Name</span>
-            <span class="product-detail-tag">Description</span>
-            <span class="product-detail-tag">Price</span>
-            <span class="product-detail-tag">SKU</span>
-            <span class="product-detail-tag">Stock</span>
-            <span class="product-detail-tag">Category</span>
-            <span class="product-detail-tag">Image URL</span>
-            <span class="product-detail-tag">Size</span>
-            <span class="product-detail-tag">Color</span>
-          </div>
-        </article>
+        <aside class="bulk-import-side">
+          <article class="bulk-import-panel glass-soft">
+            <div class="bulk-import-section-head">
+              <div>
+                <h3>Summary</h3>
+                <p class="section-text">Kontroll i shpejte perpara commit.</p>
+              </div>
+            </div>
+
+            <div class="bulk-import-summary-grid">
+              <div class="summary-chip glass-soft">
+                <span>Total rows</span>
+                <strong>{{ importSummary.totalRows }}</strong>
+              </div>
+              <div class="summary-chip glass-soft">
+                <span>Valid rows</span>
+                <strong>{{ importSummary.validRows }}</strong>
+              </div>
+              <div class="summary-chip glass-soft">
+                <span>Invalid rows</span>
+                <strong>{{ importSummary.invalidRows }}</strong>
+              </div>
+              <div class="summary-chip glass-soft">
+                <span>Parent groups</span>
+                <strong>{{ importSummary.parentProducts }}</strong>
+              </div>
+              <div class="summary-chip glass-soft">
+                <span>Warnings</span>
+                <strong>{{ importSummary.warningsCount }}</strong>
+              </div>
+              <div class="summary-chip glass-soft">
+                <span>Hard errors</span>
+                <strong>{{ importSummary.hardErrorsCount }}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="bulk-import-panel glass-soft">
+            <div class="bulk-import-section-head">
+              <div>
+                <h3>Recent jobs</h3>
+                <p class="section-text">Rihap preview-t e fundit pa e ngarkuar skedarin nga e para.</p>
+              </div>
+            </div>
+
+            <div v-if="importRecentJobs.length === 0" class="admin-empty-state">
+              Ende nuk ka import jobs te ruajtur.
+            </div>
+            <div v-else class="bulk-import-job-list">
+              <button
+                v-for="job in importRecentJobs.slice(0, 6)"
+                :key="`import-job-${job.id}`"
+                class="bulk-import-job-card"
+                type="button"
+                @click="loadImportJobPreview(job.id)"
+              >
+                <strong>#{{ job.id }} · {{ job.sourceType }}</strong>
+                <span>{{ job.originalFilename || "Manual preview" }}</span>
+                <small>{{ job.summary?.validRows || 0 }} valid · {{ job.summary?.parentProducts || 0 }} groups</small>
+              </button>
+            </div>
+          </article>
+        </aside>
       </div>
 
-      <article v-if="importDetectedHeaders.length > 0" class="bulk-import-mapping glass-strong">
+      <article v-if="importDetectedHeaders.length > 0" class="bulk-import-panel bulk-import-mapping glass-strong">
         <div class="bulk-import-section-head">
-          <h3>Column mapping</h3>
-          <p class="section-text">Përshtat kolonat e skedarit me fushat e produktit.</p>
+          <div>
+            <h3>Field mapping</h3>
+            <p class="section-text">Mapo kolonat e biznesit me modelin e brendshem kanonik. Vlerat jo-standarde kalojne si warnings, jo si bllokim i menjehershem.</p>
+          </div>
         </div>
+
         <div class="bulk-import-mapping-grid">
-          <label class="field">
-            <span>Product Name</span>
-            <select v-model="importMapping.productName">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-name-${header}`" :value="header">{{ header }}</option>
+          <label
+            v-for="fieldName in importFieldList"
+            :key="`mapping-${fieldName}`"
+            class="field"
+          >
+            <span>{{ formatImportFieldLabel(fieldName) }}</span>
+            <select v-model="importMapping[fieldName]">
+              <option value="">Skip / not provided</option>
+              <option
+                v-for="header in importDetectedHeaders"
+                :key="`map-${fieldName}-${header}`"
+                :value="header"
+              >
+                {{ header }}
+              </option>
             </select>
           </label>
-          <label class="field">
-            <span>Description</span>
-            <select v-model="importMapping.description">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-desc-${header}`" :value="header">{{ header }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Price</span>
-            <select v-model="importMapping.price">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-price-${header}`" :value="header">{{ header }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>SKU</span>
-            <select v-model="importMapping.sku">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-sku-${header}`" :value="header">{{ header }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Stock</span>
-            <select v-model="importMapping.stock">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-stock-${header}`" :value="header">{{ header }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Category</span>
-            <select v-model="importMapping.category">
-              <option value="">Zgjidh kolonen</option>
-              <option v-for="header in importDetectedHeaders" :key="`map-category-${header}`" :value="header">{{ header }}</option>
-            </select>
-          </label>
-        </div>
-      </article>
-
-      <article class="bulk-import-summary">
-        <div class="summary-chip glass-soft">
-          <span>Total rows</span>
-          <strong>{{ importSummary.totalRows }}</strong>
-        </div>
-        <div class="summary-chip glass-soft">
-          <span>Valid rows</span>
-          <strong>{{ importSummary.validRows }}</strong>
-        </div>
-        <div class="summary-chip glass-soft">
-          <span>Invalid rows</span>
-          <strong>{{ importSummary.invalidRows }}</strong>
-        </div>
-      </article>
-
-      <article class="bulk-import-preview glass-soft">
-        <div class="bulk-import-section-head">
-          <h3>Preview</h3>
-          <p class="section-text">Shfaqen rreshtat e pare per kontroll para importit.</p>
-        </div>
-        <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke lexuar skedarin...</div>
-        <div v-else-if="importPreviewRows.length === 0" class="admin-empty-state">
-          Nuk ka preview. Ngarko nje skedar CSV per te pare rreshtat para importit.
-        </div>
-        <div v-else class="bulk-import-table-wrap">
-          <table class="bulk-import-table">
-            <thead>
-              <tr>
-                <th v-for="header in importPreviewHeaders" :key="`head-${header}`">{{ header }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, rowIndex) in importPreviewRows" :key="`row-${rowIndex}`">
-                <td v-for="header in importPreviewHeaders" :key="`cell-${rowIndex}-${header}`">{{ row[header] || "—" }}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </article>
 
@@ -2594,11 +3049,137 @@ async function applyBulkStockUpdate() {
         {{ importSummary.warnings.join(" ") }}
       </div>
 
+      <article class="bulk-import-shell bulk-import-shell--review">
+        <div class="bulk-import-panel glass-soft">
+          <div class="bulk-import-section-head">
+            <div>
+              <h3>Grouping preview</h3>
+              <p class="section-text">Ketu kontrollohen parent products dhe variants para shkrimit ne katalog.</p>
+            </div>
+          </div>
+
+          <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke pergatitur preview...</div>
+          <div v-else-if="importPreviewGroups.length === 0" class="admin-empty-state">
+            Krijo nje preview per te pare grouping-un e varianteve.
+          </div>
+          <div v-else class="bulk-import-group-list">
+            <article
+              v-for="group in importPreviewGroups.slice(0, 8)"
+              :key="`import-group-${group.groupKey}`"
+              class="bulk-import-group-card"
+            >
+              <div class="bulk-import-group-head">
+                <div>
+                  <h4>{{ group.parent?.title || "Untitled group" }}</h4>
+                  <p>{{ group.parent?.canonicalCategory || "uncategorized" }} · {{ group.variants?.length || 0 }} variants</p>
+                </div>
+                <label class="field-checkbox bulk-import-check">
+                  <span>Approve</span>
+                  <input
+                    type="checkbox"
+                    :checked="importApprovedGroupKeys.includes(group.groupKey)"
+                    @change="toggleImportGroupApproval(group.groupKey)"
+                  >
+                </label>
+              </div>
+
+              <div class="product-detail-tags product-detail-tags-admin">
+                <span class="product-detail-tag">Group key: {{ group.groupKey }}</span>
+                <span class="product-detail-tag">Price: {{ formatPrice(group.parent?.priceRange?.min || 0) }}</span>
+                <span class="product-detail-tag">Stock: {{ group.parent?.stock || 0 }}</span>
+              </div>
+
+              <p v-if="group.warnings?.length" class="bulk-import-inline-warning">{{ group.warnings.join(" ") }}</p>
+              <p v-if="group.errors?.length" class="bulk-import-inline-error">{{ group.errors.join(" ") }}</p>
+
+              <div class="bulk-import-variant-list">
+                <div
+                  v-for="variant in group.variants?.slice(0, 4)"
+                  :key="`${group.groupKey}-${variant.key}`"
+                  class="bulk-import-variant-row"
+                >
+                  <strong>{{ variant.label || variant.key }}</strong>
+                  <span>{{ variant.sku || "No SKU" }}</span>
+                  <span>{{ formatPrice(variant.price || 0) }} · {{ variant.stock || 0 }} pcs</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="bulk-import-panel glass-soft">
+          <div class="bulk-import-section-head">
+            <div>
+              <h3>Row preview</h3>
+              <p class="section-text">Shfaqen rreshtat e normalizuar me warnings dhe errors per review manual.</p>
+            </div>
+          </div>
+
+          <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke pergatitur rreshtat...</div>
+          <div v-else-if="importPreviewRecords.length === 0" class="admin-empty-state">
+            Ende nuk ka rreshta preview.
+          </div>
+          <div v-else class="bulk-import-record-list">
+            <article
+              v-for="record in importPreviewRecords.slice(0, 10)"
+              :key="`import-record-${record.sourceRowId}`"
+              class="bulk-import-record-card"
+              :class="{
+                'is-error': record.errors?.length,
+                'is-skipped': importSkippedRowIds.includes(record.sourceRowId),
+              }"
+            >
+              <div class="bulk-import-record-head">
+                <div>
+                  <strong>#{{ record.sourceRowId }}</strong>
+                  <span>{{ record.normalizedData?.title || record.mappedData?.title || "Untitled row" }}</span>
+                </div>
+                <label class="field-checkbox bulk-import-check">
+                  <span>Skip</span>
+                  <input
+                    type="checkbox"
+                    :checked="importSkippedRowIds.includes(record.sourceRowId)"
+                    @change="toggleImportRowSkip(record.sourceRowId)"
+                  >
+                </label>
+              </div>
+
+              <div class="product-detail-tags product-detail-tags-admin">
+                <span class="product-detail-tag">Category: {{ record.normalizedData?.category || "—" }}</span>
+                <span class="product-detail-tag">Group: {{ record.normalizedData?.groupKey || "—" }}</span>
+                <span class="product-detail-tag">Price: {{ formatPrice(record.normalizedData?.price || 0) }}</span>
+                <span class="product-detail-tag">Stock: {{ record.normalizedData?.stock || 0 }}</span>
+              </div>
+
+              <div class="bulk-import-record-grid">
+                <div>
+                  <h5>Mapped</h5>
+                  <p>{{ record.mappedData?.title || "—" }}</p>
+                </div>
+                <div>
+                  <h5>Normalized</h5>
+                  <p>{{ record.normalizedData?.normalizedTitle || record.normalizedData?.title || "—" }}</p>
+                </div>
+                <div>
+                  <h5>Attributes</h5>
+                  <p>{{ Object.keys(record.normalizedData?.attributes || {}).length ? Object.entries(record.normalizedData.attributes).map(([key, value]) => `${formatImportFieldLabel(key)}: ${value}`).join(" · ") : "No variant attributes" }}</p>
+                </div>
+              </div>
+
+              <p v-if="record.warnings?.length" class="bulk-import-inline-warning">{{ record.warnings.join(" ") }}</p>
+              <p v-if="record.errors?.length" class="bulk-import-inline-error">{{ record.errors.join(" ") }}</p>
+            </article>
+          </div>
+        </div>
+      </article>
+
       <form class="auth-form" @submit.prevent="submitImportProducts">
         <div class="auth-form-actions">
-          <button type="submit">Import Products</button>
-          <button class="button-secondary" type="button" @click="clearImportSelection">Cancel</button>
-          <button class="button-secondary" type="button" @click="downloadImportTemplate">Download Template</button>
+          <button type="submit" :disabled="importIsCommitLoading || !importCurrentJob?.id">
+            {{ importIsCommitLoading ? "Importing..." : "Commit import" }}
+          </button>
+          <button class="button-secondary" type="button" @click="clearImportSelection()">Reset</button>
+          <button class="button-secondary" type="button" @click="triggerImportPicker">Choose file</button>
         </div>
       </form>
 
@@ -3034,6 +3615,164 @@ async function applyBulkStockUpdate() {
   align-items: start;
 }
 
+.bulk-import-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.bulk-import-shell--review {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  margin-top: 18px;
+}
+
+.bulk-import-panel {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(47, 52, 70, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+}
+
+.bulk-import-side {
+  display: grid;
+  gap: 18px;
+}
+
+.bulk-import-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bulk-import-toolbar .field textarea,
+.bulk-import-source-card textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+.field-checkbox {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.field-checkbox input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.bulk-import-source-card {
+  display: grid;
+  gap: 14px;
+}
+
+.bulk-import-source-card--stack {
+  gap: 16px;
+}
+
+.bulk-import-actions {
+  flex-wrap: wrap;
+}
+
+.bulk-import-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bulk-import-job-list,
+.bulk-import-group-list,
+.bulk-import-record-list,
+.bulk-import-variant-list {
+  display: grid;
+  gap: 12px;
+}
+
+.bulk-import-job-card,
+.bulk-import-group-card,
+.bulk-import-record-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(47, 52, 70, 0.08);
+  background: rgba(248, 250, 252, 0.92);
+  text-align: left;
+  color: inherit;
+}
+
+.bulk-import-job-card strong,
+.bulk-import-group-card h4,
+.bulk-import-record-head strong {
+  color: #111827;
+}
+
+.bulk-import-job-card span,
+.bulk-import-group-head p,
+.bulk-import-record-head span,
+.bulk-import-record-grid p,
+.bulk-import-variant-row span {
+  color: #64748b;
+}
+
+.bulk-import-group-head,
+.bulk-import-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bulk-import-group-head h4,
+.bulk-import-record-grid h5 {
+  margin: 0;
+}
+
+.bulk-import-group-head p,
+.bulk-import-record-grid p {
+  margin: 0;
+}
+
+.bulk-import-check {
+  justify-items: end;
+}
+
+.bulk-import-variant-row,
+.bulk-import-record-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bulk-import-record-card.is-error {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.92);
+}
+
+.bulk-import-record-card.is-skipped {
+  opacity: 0.72;
+}
+
+.bulk-import-inline-warning,
+.bulk-import-inline-error {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.bulk-import-inline-warning {
+  color: #b45309;
+}
+
+.bulk-import-inline-error {
+  color: #b91c1c;
+}
+
 .product-builder-form,
 .product-builder-aside {
   display: grid;
@@ -3226,12 +3965,18 @@ async function applyBulkStockUpdate() {
 }
 
 @media (max-width: 1100px) {
+  .bulk-import-shell,
+  .bulk-import-shell--review,
   .product-builder-shell {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 840px) {
+  .bulk-import-toolbar,
+  .bulk-import-summary-grid,
+  .bulk-import-variant-row,
+  .bulk-import-record-grid,
   .business-dashboard-workspace-grid,
   .business-dashboard-next-grid,
   .product-builder-steps,

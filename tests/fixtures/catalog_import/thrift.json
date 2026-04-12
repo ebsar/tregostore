@@ -1,0 +1,34 @@
+[
+  {
+    "id": "thr-1",
+    "groupId": "levi-denim-jacket",
+    "Product Name": "Vintage Levi's Denim Jacket",
+    "Description": "Clean thrifted jacket from the 90s.",
+    "Price": 45,
+    "Qty": 1,
+    "Color": "Blue",
+    "Size": "medium",
+    "Condition": "very good",
+    "Era": "90s",
+    "Material": "Denim",
+    "Category": "Second Hand Clothing",
+    "Brand": "Levi's",
+    "SKU": "THR-LEVIS-M"
+  },
+  {
+    "id": "thr-2",
+    "groupId": "levi-denim-jacket",
+    "Product Name": "Vintage Levi's Denim Jacket",
+    "Description": "Clean thrifted jacket from the 90s.",
+    "Price": 45,
+    "Qty": 1,
+    "Color": "Blue",
+    "Size": "large",
+    "Condition": "very good",
+    "Era": "90s",
+    "Material": "Denim",
+    "Category": "Second Hand Clothing",
+    "Brand": "Levi's",
+    "SKU": "THR-LEVIS-L"
+  }
+]
