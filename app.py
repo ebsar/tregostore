@@ -1481,6 +1481,96 @@ def migrate_database(connection: DatabaseConnection) -> None:
 
     ensure_runtime_meta_table(connection)
 
+    if not table_exists(connection, "user_sessions"):
+        connection.execute(
+            """
+            CREATE TABLE user_sessions (
+                token TEXT PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE user_sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id
+        ON user_sessions(user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
+        ON user_sessions(expires_at)
+        """
+    )
+
+    if not table_exists(connection, "email_verification_codes"):
+        connection.execute(
+            """
+            CREATE TABLE email_verification_codes (
+                user_id BIGINT PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE email_verification_codes (
+                user_id INTEGER PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    if not table_exists(connection, "password_reset_codes"):
+        connection.execute(
+            """
+            CREATE TABLE password_reset_codes (
+                user_id BIGINT PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE password_reset_codes (
+                user_id INTEGER PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
     if not column_exists(connection, "users", "first_name"):
         connection.execute(
             "ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"
