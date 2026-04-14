@@ -3227,4 +3227,234 @@ async function handleCart(productId) {
     min-width: 150px;
   }
 }
+
+.commerce-home-page {
+  gap: 20px;
+  background: #ffffff;
+}
+
+.commerce-home-hero {
+  gap: 16px;
+}
+
+.commerce-home-hero-main,
+.commerce-home-side-card,
+.commerce-home-best-deals,
+.commerce-home-category-showcase {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
+}
+
+.commerce-home-hero-main {
+  min-height: 408px;
+  padding: 30px 32px;
+  background:
+    radial-gradient(circle at top right, rgba(212, 160, 23, 0.1), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, #ffffff, #fffdf5);
+}
+
+.commerce-home-hero-copy {
+  gap: 12px;
+}
+
+.commerce-home-hero-copy h1 {
+  color: #111827;
+  font-size: clamp(2.1rem, 3vw, 3.15rem);
+}
+
+.commerce-home-hero-copy p {
+  color: #6b7280;
+  font-size: 0.98rem;
+}
+
+.commerce-home-hero-kicker {
+  color: #d4a017;
+}
+
+.commerce-home-hero-cta,
+.commerce-home-banner-cta,
+.commerce-home-primary-action {
+  min-height: 42px;
+  border-radius: 14px;
+  background: #d4a017;
+  color: #111827;
+  box-shadow: none;
+}
+
+.commerce-home-hero-price {
+  width: 88px;
+  height: 88px;
+  background: #fff7da;
+  color: #d4a017;
+  box-shadow: none;
+}
+
+.commerce-home-hero-dot.is-active {
+  background: #d4a017;
+}
+
+.commerce-home-side-card {
+  min-height: 198px;
+  padding: 20px;
+  border-radius: 22px;
+}
+
+.commerce-home-side-card.is-dark {
+  background:
+    radial-gradient(circle at top right, rgba(220, 38, 38, 0.08), rgba(255, 255, 255, 0) 36%),
+    linear-gradient(180deg, #ffffff, #fff7f7);
+  color: #111827;
+}
+
+.commerce-home-side-card.is-light {
+  background: linear-gradient(180deg, #ffffff, #fffdf5);
+}
+
+.commerce-home-side-copy span,
+.commerce-home-featured-banner span {
+  color: #dc2626;
+}
+
+.commerce-home-side-copy em {
+  color: #d4a017;
+}
+
+.commerce-home-side-copy strong {
+  color: #111827;
+  font-size: 1.5rem;
+}
+
+.commerce-home-side-copy small {
+  color: #6b7280;
+}
+
+.commerce-home-service-strip {
+  gap: 10px;
+}
+
+.commerce-home-service-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.commerce-home-service-icon {
+  color: #d4a017;
+  background: #fff7da;
+}
+
+.commerce-home-best-deals,
+.commerce-home-category-showcase {
+  gap: 18px;
+  padding: 20px;
+}
+
+.commerce-home-countdown strong {
+  background: #fff7da;
+  color: #a16207;
+}
+
+.commerce-home-section-link,
+.commerce-home-featured-tabs a.is-accent {
+  color: #d4a017;
+}
+
+.commerce-home-best-grid {
+  border-color: rgba(15, 23, 42, 0.08);
+  border-radius: 22px;
+}
+
+.commerce-home-best-card {
+  background: #ffffff;
+  border-right-color: rgba(15, 23, 42, 0.08);
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+.commerce-home-best-badge,
+.commerce-home-featured-badge {
+  background: #fff7da;
+  color: #a16207;
+}
+
+.commerce-home-best-badge.is-alert,
+.commerce-home-featured-badge.is-alert {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.commerce-home-best-price strong,
+.commerce-home-featured-price strong,
+.commerce-home-featured-rating,
+.commerce-home-best-rating {
+  color: #d4a017;
+}
+
+.commerce-home-icon-action {
+  border-color: rgba(15, 23, 42, 0.08);
+  color: #d4a017;
+  background: #fff8e7;
+}
+
+.commerce-home-category-arrow {
+  background: #d4a017;
+  color: #111827;
+}
+
+.commerce-home-category-card {
+  min-height: 162px;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
+}
+
+.commerce-home-featured-block {
+  gap: 16px;
+}
+
+.commerce-home-featured-banner {
+  background:
+    radial-gradient(circle at top right, rgba(212, 160, 23, 0.14), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, #ffffff, #fffdf5);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 24px;
+}
+
+.commerce-home-featured-banner strong {
+  color: #111827;
+}
+
+.commerce-home-featured-banner p {
+  color: #6b7280;
+}
+
+.commerce-home-featured-card {
+  border-radius: 20px;
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+@media (max-width: 760px) {
+  .commerce-home-page {
+    gap: 16px;
+  }
+
+  .commerce-home-hero-main,
+  .commerce-home-best-deals,
+  .commerce-home-category-showcase {
+    padding: 18px;
+  }
+
+  .commerce-home-hero-main {
+    min-height: 348px;
+    padding-bottom: 34px;
+  }
+
+  .commerce-home-hero-price {
+    width: 70px;
+    height: 70px;
+  }
+}
 </style>

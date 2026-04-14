@@ -401,9 +401,6 @@ function updateSpeedInsightsRoute() {
 
   <CommerceHeader />
 
-  <div class="background-orb orb-left"></div>
-  <div class="background-orb orb-right"></div>
-
   <div class="app-shell" :class="shellClass">
     <main class="app-main" :class="mainClass">
       <RouterView />

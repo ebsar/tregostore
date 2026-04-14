@@ -1,7 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import ManagedProductCard from "../components/ManagedProductCard.vue";
 import ProductVariantConfigurator from "../components/ProductVariantConfigurator.vue";
 import {
   commitBusinessCatalogImportPreview,
@@ -32,10 +31,10 @@ import {
   DELIVERY_METHOD_OPTIONS,
   formatCategoryLabel,
   formatCount,
+  formatDateLabel,
   formatPrice,
-  formatRoleLabel,
-  formatVerificationStatusLabel,
   formatStockQuantity,
+  formatVerificationStatusLabel,
   getProductImageGallery,
 } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
@@ -52,12 +51,7 @@ const logoPreviewUrl = ref("");
 const selectedFiles = ref([]);
 const previewUrls = ref([]);
 const editingProduct = ref(null);
-const productFormSection = ref(null);
 const productTitleInput = ref(null);
-const profileCardSection = ref(null);
-const shippingSection = ref(null);
-const promotionsSection = ref(null);
-const productsManagementSection = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
 const importSourceType = ref("csv");
@@ -84,6 +78,7 @@ const importSaveProfile = ref(false);
 const importSkippedRowIds = ref([]);
 const importApprovedGroupKeys = ref([]);
 const importMapping = reactive({});
+const activeSection = ref("analytics");
 const importApiSource = reactive({
   sourceName: "",
   url: "",
@@ -100,7 +95,6 @@ const productCategoryFilter = ref("");
 const productStockFilter = ref("all");
 const productStatusFilter = ref("all");
 const productSort = ref("updated-desc");
-const productViewMode = ref("rows");
 const bulkCategoryValue = ref("");
 const bulkStockValue = ref("");
 const promotionForm = reactive({
@@ -240,12 +234,12 @@ const productPricingReady = computed(() => {
 const productChecklist = computed(() => ([
   {
     key: "title",
-    label: "Titull dhe pershkrim",
+    label: "Titull + pershkrim",
     done: Boolean(String(productForm.title || "").trim() && String(productForm.description || "").trim()),
   },
   {
     key: "pricing",
-    label: "Cmim dhe zbritje valide",
+    label: "Cmim valid",
     done: productPricingReady.value,
   },
   {
@@ -264,31 +258,31 @@ const productFormSteps = computed(() => ([
   {
     id: "details",
     label: "Detajet",
-    caption: "Titull, kategori dhe pershkrim",
+    caption: "Titull, kategori, copy",
     done: productChecklist.value.find((item) => item.key === "title")?.done,
   },
   {
     id: "pricing",
     label: "Cmimi",
-    caption: "Regular, sale dhe afati",
+    caption: "Cmim dhe sale",
     done: productChecklist.value.find((item) => item.key === "pricing")?.done,
   },
   {
     id: "variants",
     label: "Variantet",
-    caption: "Ngjyra, madhesia dhe stoku",
+    caption: "Opsione dhe stok",
     done: productChecklist.value.find((item) => item.key === "variants")?.done,
   },
   {
     id: "media",
     label: "Media",
-    caption: "Cover dhe galeria",
+    caption: "Cover dhe galeri",
     done: productChecklist.value.find((item) => item.key === "media")?.done,
   },
   {
     id: "review",
     label: "Preview",
-    caption: "Kontroll para ruajtjes",
+    caption: "Check final",
     done: productReadyToSave.value,
   },
 ]));
@@ -460,115 +454,188 @@ const importPreviewHasChanges = computed(() => Boolean(importCurrentJob.value?.i
 const shouldShowProfileCard = computed(
   () => !businessProfile.value || !isBusinessVerified.value || showVerifiedProfileEditor.value,
 );
-const dashboardSingleColumn = computed(
-  () => !canManageCatalog.value || !shouldShowProfileCard.value,
-);
-const editBusinessHelperText = computed(() => {
-  if (!businessProfile.value || !isBusinessVerified.value) {
-    return "";
-  }
-
-  if (profileEditAccessStatus.value === "approved") {
-    return "Admini e ka aprovuar editimin. Kliko butonin per ta hapur formen.";
-  }
-
-  if (profileEditAccessStatus.value === "pending") {
-    return "Kerkesa per editim eshte ne pritje te admini.";
-  }
-
-  return "Klikimi dergon kerkese te admini. Pasi te aprovohet, forma hapet vetem kur ta klikosh perseri.";
-});
-const businessWorkspaceActions = computed(() => ([
+const dashboardSections = computed(() => ([
   {
-    key: "add-product",
-    title: "Shto artikull",
-    copy: "Hape builder-in dhe vazhdo direkt me produktin e ardhshem.",
-    disabled: !canManageCatalog.value,
+    key: "analytics",
+    label: "Analytics",
+    navLabel: "Dashboard",
+    visible: true,
   },
   {
-    key: "messages",
-    title: "Mesazhet",
-    copy: "Shko te inbox-i per pyetje, porosi dhe support.",
-    route: "/mesazhet",
-  },
-  {
-    key: "orders",
-    title: "Porosite e biznesit",
-    copy: "Kontrollo porosite pa dale nga fluksi ditor i punes.",
-    route: "/porosite-e-biznesit",
+    key: "stock",
+    label: "Stoku",
+    navLabel: "Stock",
+    visible: canManageCatalog.value,
   },
   {
     key: "shipping",
-    title: "Transporti",
-    copy: "Perditeso standard, express dhe pickup ne nje vend.",
-    disabled: !canManageCatalog.value,
+    label: "Transport",
+    navLabel: "Shipping",
+    visible: canManageCatalog.value,
   },
   {
-    key: "promotions",
-    title: "Promocionet",
-    copy: promotions.value.length
-      ? `${promotions.value.length} oferta aktive ose te ruajtura.`
-      : "Krijo kuponin ose zbritjen e pare per biznesin.",
-    disabled: !canManageCatalog.value,
+    key: "add-product",
+    label: "Shto",
+    navLabel: "Add",
+    visible: canManageCatalog.value,
+  },
+  {
+    key: "import",
+    label: "Import",
+    navLabel: "Import",
+    visible: canManageCatalog.value,
+  },
+  {
+    key: "offers",
+    label: "Ofertat",
+    navLabel: "Offers",
+    visible: canManageCatalog.value,
   },
   {
     key: "products",
-    title: "Produktet",
-    copy: products.value.length
-      ? `${products.value.length} artikuj jane gati per menaxhim.`
-      : "Sapo te shtosh artikujt, menaxhimi del ketu.",
-    disabled: !canManageCatalog.value,
+    label: "Produktet",
+    navLabel: "Products",
+    visible: canManageCatalog.value,
   },
   {
     key: "profile",
-    title: "Profili",
-    copy: isBusinessVerified.value
-      ? "Edito biznesin, logon dhe informacionin publik."
-      : "Ploteso profilin dhe vazhdo me verifikimin.",
+    label: "Profili",
+    navLabel: "Settings",
+    visible: shouldShowProfileCard.value,
   },
-]));
-const businessNextSteps = computed(() => {
-  const items = [];
-
-  if (!businessProfile.value) {
-    items.push({
-      key: "profile",
-      title: "Ploteso profilin e biznesit",
-      copy: "Pa te dhena baze, biznesi nuk mund te kaloje ne verifikim ose katalog.",
-    });
-  } else if (!isBusinessVerified.value) {
-    items.push({
-      key: "verify",
-      title: "Kerko verifikim",
-      copy: "Pasi verifikohet biznesi, hapen katalogu, publikimi dhe importi i artikujve.",
-    });
+]).filter((section) => section.visible));
+const activeSectionMeta = computed(() =>
+  dashboardSections.value.find((section) => section.key === activeSection.value) || dashboardSections.value[0] || null,
+);
+const dashboardSidebarSections = computed(() => dashboardSections.value.filter((section) =>
+  ["analytics", "products", "stock", "import", "offers", "profile"].includes(section.key),
+));
+const dashboardMetrics = computed(() => {
+  if (!analytics.value) {
+    return [];
   }
 
-  if (canManageCatalog.value && !products.value.length) {
-    items.push({
-      key: "add-product",
-      title: "Shto produktin e pare",
-      copy: "Nis me nje artikull cover qe ta besh dyqanin gati per vizitore.",
-    });
-  }
-
-  if (canManageCatalog.value && stockAlertCount.value > 0) {
-    items.push({
+  return [
+    {
+      key: "sales",
+      label: "Total Sales",
+      value: formatPrice(analytics.value.grossSales || 0),
+      meta: `${formatCount(analytics.value.unitsSold || 0)} sold`,
+      tone: "violet",
+    },
+    {
+      key: "orders",
+      label: "Orders",
+      value: formatCount(analytics.value.orderItems || 0),
+      meta: `${formatPrice(analytics.value.readyPayout || 0)} ready`,
+      tone: "mint",
+    },
+    {
+      key: "stock",
+      label: "Low Stock",
+      value: formatCount(stockAlertCount.value || 0),
+      meta: `${formatCount(outOfStockProducts.value.length || 0)} out`,
+      tone: "amber",
+    },
+    {
       key: "products",
-      title: "Kontrollo stokun",
-      copy: `${stockAlertCount.value} artikuj kerkojne vemendje para se te humben shitjet.`,
-    });
+      label: "Products",
+      value: formatCount(analytics.value.totalProducts || 0),
+      meta: `${formatCount(analytics.value.publicProducts || 0)} live`,
+      tone: "blue",
+    },
+  ];
+});
+const dashboardQuickActions = computed(() => [
+  { key: "add-product", label: "Add Product", tone: "violet" },
+  { key: "import", label: "Import", tone: "mint" },
+  { key: "stock", label: "Manage Stock", tone: "amber" },
+  { key: "offers", label: "Discount", tone: "pink" },
+]);
+const recentDashboardProducts = computed(() => products.value.slice(0, 4));
+const recentDiscounts = computed(() => promotions.value.slice(0, 3));
+const dashboardDateRangeLabel = computed(() => {
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString("en-US", { month: "short" });
+  const year = now.getFullYear();
+  const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+  return `${monthLabel} 1 - ${monthLabel} ${lastDay}`;
+});
+const dashboardAvatarLabel = computed(() => {
+  const businessName = String(profileForm.businessName || businessProfile.value?.businessName || "").trim();
+  if (businessName) {
+    return businessName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((chunk) => chunk.charAt(0).toUpperCase())
+      .join("");
   }
 
-  if (canManageCatalog.value && promotions.value.length === 0) {
-    items.push({
-      key: "promotions",
-      title: "Krijo oferten e pare",
-      copy: "Promocionet e qarta e bejne faqen dhe checkout-in me bindes.",
-    });
+  const currentUser = appState.currentUser || {};
+  const email = String(currentUser.email || "").trim();
+  if (email) {
+    return email.slice(0, 2).toUpperCase();
+  }
+  return "BP";
+});
+const dashboardChartLabels = computed(() => {
+  const base = new Date();
+  return Array.from({ length: 7 }, (_, index) => {
+    const nextDate = new Date(base);
+    nextDate.setDate(base.getDate() - (6 - index));
+    return nextDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  });
+});
+const dashboardChartValues = computed(() => {
+  if (!analytics.value) {
+    return [420, 560, 740, 470, 710, 640, 860];
   }
 
-  return items.slice(0, 4);
+  const seeds = [
+    Number(analytics.value.grossSales || 0),
+    Number(analytics.value.sellerEarnings || 0),
+    Number(analytics.value.readyPayout || 0),
+    Number(analytics.value.pendingPayout || 0),
+    Number(analytics.value.viewsCount || 0),
+    Number(analytics.value.wishlistCount || 0),
+    Number(analytics.value.cartCount || 0),
+  ];
+  const maxSeed = Math.max(...seeds, 1);
+  return seeds.map((value, index) => {
+    const normalized = 260 + (value / maxSeed) * 560;
+    return Math.round(normalized + ((index % 2 === 0 ? 1 : -1) * 35));
+  });
+});
+const dashboardChartPoints = computed(() => {
+  const values = dashboardChartValues.value;
+  const width = 640;
+  const height = 220;
+  const paddingX = 18;
+  const paddingY = 18;
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueRange = Math.max(maxValue - minValue, 1);
+  return values.map((value, index) => {
+    const x = paddingX + (index * (width - paddingX * 2)) / Math.max(values.length - 1, 1);
+    const y = height - paddingY - ((value - minValue) / valueRange) * (height - paddingY * 2);
+    return { x, y, value };
+  });
+});
+const dashboardChartLinePath = computed(() => {
+  const points = dashboardChartPoints.value;
+  if (!points.length) {
+    return "";
+  }
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+});
+const dashboardChartAreaPath = computed(() => {
+  const points = dashboardChartPoints.value;
+  if (!points.length) {
+    return "";
+  }
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  return `${dashboardChartLinePath.value} L ${lastPoint.x} 220 L ${firstPoint.x} 220 Z`;
 });
 
 function formatPromotionSectionLabel(sectionValue) {
@@ -589,53 +656,19 @@ function getStockAlertLabel(product) {
   return `Stok • ${formatStockQuantity(stockQuantity)}`;
 }
 
-function scrollToDashboardSection(sectionRef) {
-  sectionRef.value?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+function handleDashboardQuickAction(actionKey) {
+  if (actionKey === "add-product") {
+    openAddProductForm();
+    return;
+  }
+  setActiveSection(actionKey);
 }
 
-function handleBusinessWorkspaceAction(action) {
-  if (!action || action.disabled) {
+function setActiveSection(sectionKey) {
+  if (!dashboardSections.value.some((section) => section.key === sectionKey)) {
     return;
   }
-
-  if (action.route) {
-    router.push(action.route);
-    return;
-  }
-
-  if (action.key === "add-product") {
-    void openAddProductForm();
-    return;
-  }
-
-  if (action.key === "shipping") {
-    scrollToDashboardSection(shippingSection);
-    return;
-  }
-
-  if (action.key === "promotions") {
-    scrollToDashboardSection(promotionsSection);
-    return;
-  }
-
-  if (action.key === "products") {
-    scrollToDashboardSection(productsManagementSection);
-    return;
-  }
-
-  if (action.key === "verify") {
-    void requestVerificationReview();
-    return;
-  }
-
-  if (action.key === "profile") {
-    if (shouldShowProfileCard.value) {
-      scrollToDashboardSection(profileCardSection);
-      return;
-    }
-
-    void handleBusinessEditButton();
-  }
+  activeSection.value = sectionKey;
 }
 
 onMounted(async () => {
@@ -664,11 +697,25 @@ onMounted(async () => {
       canManageCatalog.value ? loadPromotions() : Promise.resolve(),
       canManageCatalog.value ? loadCatalogImportConfig() : Promise.resolve(),
     ]);
+    activeSection.value = !canManageCatalog.value && shouldShowProfileCard.value
+      ? "profile"
+      : "analytics";
     await handleRouteView();
   } finally {
     markRouteReady();
   }
 });
+
+watch(
+  dashboardSections,
+  (sections) => {
+    if (sections.some((section) => section.key === activeSection.value)) {
+      return;
+    }
+    activeSection.value = sections[0]?.key || "analytics";
+  },
+  { immediate: true },
+);
 
 watch(
   () => route.query.view,
@@ -816,10 +863,10 @@ async function handleBusinessEditButton() {
 
   if (profileEditAccessStatus.value === "approved") {
     showVerifiedProfileEditor.value = true;
+    setActiveSection("profile");
     ui.profileMessage = "Admini e ka aprovuar editimin. Tani mund t'i ruash ndryshimet.";
     ui.profileType = "success";
     await nextTick();
-    window.scrollTo({ top: 0, behavior: "smooth" });
     return;
   }
 
@@ -1049,19 +1096,13 @@ async function handleRouteView() {
     return;
   }
 
+  setActiveSection("add-product");
   resetProductForm();
   await nextTick();
-
-  if (businessProfile.value && productFormSection.value) {
-    productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => {
-      focusProductFormStep("details");
-      productTitleInput.value?.focus?.();
-    }, 220);
-    return;
-  }
-
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.setTimeout(() => {
+    focusProductFormStep("details");
+    productTitleInput.value?.focus?.();
+  }, 120);
 }
 
 async function openAddProductForm() {
@@ -1069,19 +1110,17 @@ async function openAddProductForm() {
     return;
   }
 
+  setActiveSection("add-product");
   resetProductForm();
   await nextTick();
-
-  if (productFormSection.value) {
-    productFormSection.value.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => {
-      focusProductFormStep("details");
-      productTitleInput.value?.focus?.();
-    }, 220);
-  }
+  window.setTimeout(() => {
+    focusProductFormStep("details");
+    productTitleInput.value?.focus?.();
+  }, 120);
 }
 
 function beginProductEdit(product) {
+  setActiveSection("add-product");
   editingProduct.value = product;
   hydrateProductFormFromProduct(productForm, {
     ...product,
@@ -1207,6 +1246,7 @@ function handleImportSourceTypeChange() {
 
 function handleImportFileChange(event) {
   importFile.value = event.target.files?.[0] || null;
+  setActiveSection("import");
   if (!importFile.value) {
     ui.importMessage = "";
     ui.importType = "";
@@ -1512,6 +1552,7 @@ function clearImportSelection({ preserveSourceType = false, preserveProfiles = f
 }
 
 function triggerImportPicker() {
+  setActiveSection("import");
   importFileInput.value?.click?.();
 }
 
@@ -1918,29 +1959,6 @@ async function applyBulkStockUpdate() {
 
 <template>
   <section class="business-dashboard-page" aria-label="Biznesi juaj">
-    <header class="admin-products-header">
-      <div>
-        <p class="section-label">Paneli i biznesit</p>
-        <h1>Biznesi juaj</h1>
-        <p class="admin-products-intro">
-          Nga kjo faqe mund ta menaxhosh profilin e biznesit dhe katalogun vetem pasi biznesi te verifikohet nga admini.
-        </p>
-      </div>
-      <div class="business-dashboard-header-actions">
-        <div v-if="businessProfile && isBusinessVerified" class="business-dashboard-edit-access">
-          <button class="nav-action nav-action-secondary" type="button" @click="handleBusinessEditButton">
-            Edito biznesin
-          </button>
-          <p class="business-dashboard-edit-copy">{{ editBusinessHelperText }}</p>
-        </div>
-        <div class="admin-user-chip">
-          <span>Sesioni aktiv</span>
-          <strong>{{ appState.user ? `${appState.user.fullName} • ${formatRoleLabel(appState.user.role)}` : "Duke u kontrolluar..." }}</strong>
-        </div>
-      </div>
-    </header>
-
-    <p class="admin-access-note">{{ ui.accessNote }}</p>
     <div
       v-if="!shouldShowProfileCard && ui.profileMessage"
       class="form-message"
@@ -1951,113 +1969,258 @@ async function applyBulkStockUpdate() {
       {{ ui.profileMessage }}
     </div>
 
-    <section v-if="analytics" class="business-dashboard-analytics-grid" aria-label="Analytics e biznesit">
-      <article class="summary-chip">
-        <span>Artikuj publik</span>
-        <strong>{{ analytics.publicProducts }} / {{ analytics.totalProducts }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Njesi te shitura</span>
-        <strong>{{ analytics.unitsSold }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Qarkullimi</span>
-        <strong>{{ formatPrice(analytics.grossSales) }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Fitimi i biznesit</span>
-        <strong>{{ formatPrice(analytics.sellerEarnings) }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Payout gati</span>
-        <strong>{{ formatPrice(analytics.readyPayout) }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Payout ne pritje</span>
-        <strong>{{ formatPrice(analytics.pendingPayout) }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Promocione aktive</span>
-        <strong>{{ analytics.activePromotions }}</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Rating mesatar</span>
-        <strong>{{ Number(analytics.averageRating || 0).toFixed(1) }}/5</strong>
-      </article>
-      <article class="summary-chip">
-        <span>Review / Returne</span>
-        <strong>{{ analytics.reviewCount }} / {{ analytics.openReturns }}</strong>
-      </article>
-      <article
-        v-for="item in engagementSummaryItems"
-        :key="`business-engagement-${item.label}`"
-        class="summary-chip"
-      >
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-      </article>
-    </section>
-
-    <section class="card business-dashboard-workspace-card" aria-label="Veprimet kryesore te panelit">
-      <div class="profile-card-header">
-        <div>
-          <p class="section-label">Workspace i biznesit</p>
-          <h2>Hyrje te shpejta per punen e dites</h2>
-          <p class="section-text">
-            Keto hyrje jane menduar per hapat qe biznesi i perdor me shpesh: produktet, porosite, mesazhet, transporti dhe promocionet.
-          </p>
+    <div class="business-dashboard-shell">
+      <aside class="card business-dashboard-sidebar" aria-label="Navigimi i dashboard-it">
+        <div class="business-dashboard-brand">
+          <div class="business-dashboard-brand-mark">T</div>
+          <div class="business-dashboard-brand-copy">
+            <strong>Tregio Pro</strong>
+            <span>Business</span>
+          </div>
         </div>
-      </div>
 
-      <div class="business-dashboard-workspace-grid">
-        <button
-          v-for="item in businessWorkspaceActions"
-          :key="item.key"
-          class="business-dashboard-workspace-action"
-          type="button"
-          :disabled="item.disabled"
-          @click="handleBusinessWorkspaceAction(item)"
+        <div class="business-dashboard-side-menu" role="tablist" aria-label="Seksionet e dashboard-it">
+          <button
+            v-for="section in dashboardSidebarSections"
+            :key="section.key"
+            class="business-dashboard-side-button"
+            :class="{ 'is-active': activeSection === section.key }"
+            type="button"
+            role="tab"
+            :aria-selected="activeSection === section.key"
+            @click="setActiveSection(section.key)"
+          >
+            <span class="business-dashboard-side-icon"></span>
+            <span>{{ section.navLabel || section.label }}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="business-dashboard-main">
+        <header class="card business-dashboard-toolbar">
+          <div class="business-dashboard-toolbar-tabs">
+            <button
+              v-for="section in dashboardSections"
+              :key="`top-tab-${section.key}`"
+              class="business-dashboard-toolbar-tab"
+              :class="{ 'is-active': activeSection === section.key }"
+              type="button"
+              @click="setActiveSection(section.key)"
+            >
+              {{ section.label }}
+            </button>
+          </div>
+
+          <div class="business-dashboard-toolbar-meta">
+            <button class="business-dashboard-toolbar-icon" type="button" aria-label="Njoftime">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4a4 4 0 0 0-4 4v2.1c0 .6-.2 1.1-.5 1.6L6 14.5V16h12v-1.5l-1.5-2.8c-.3-.5-.5-1-.5-1.6V8a4 4 0 0 0-4-4Z"></path>
+                <path d="M10 18a2 2 0 0 0 4 0"></path>
+              </svg>
+            </button>
+            <div class="business-dashboard-toolbar-range">{{ dashboardDateRangeLabel }}</div>
+            <div class="business-dashboard-toolbar-avatar">{{ dashboardAvatarLabel }}</div>
+          </div>
+        </header>
+
+        <section
+          v-show="activeSection === 'analytics'"
+          class="business-dashboard-overview"
+          aria-label="Analytics e biznesit"
         >
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.copy }}</span>
-        </button>
-      </div>
-    </section>
+          <div v-if="analytics" class="business-dashboard-overview-grid-stack">
+            <div class="business-dashboard-metric-grid">
+              <article
+                v-for="metric in dashboardMetrics"
+                :key="metric.key"
+                class="card business-dashboard-metric-card"
+                :data-tone="metric.tone"
+              >
+                <div class="business-dashboard-metric-icon"></div>
+                <div class="business-dashboard-metric-copy">
+                  <span>{{ metric.label }}</span>
+                  <strong>{{ metric.value }}</strong>
+                  <small>{{ metric.meta }}</small>
+                </div>
+              </article>
+            </div>
+
+            <div class="business-dashboard-overview-grid">
+              <article class="card business-dashboard-chart-card">
+                <div class="business-dashboard-card-head">
+                  <div>
+                    <h2>Sales Overview</h2>
+                    <span>{{ activeSectionMeta?.label || "Dashboard" }}</span>
+                  </div>
+                  <div class="business-dashboard-card-pill">Last 7 Days</div>
+                </div>
+
+                <div class="business-dashboard-chart-frame">
+                  <svg viewBox="0 0 640 220" class="business-dashboard-chart" role="img" aria-label="Grafiku i overview">
+                    <g class="business-dashboard-chart-grid">
+                      <line v-for="line in 5" :key="`chart-grid-${line}`" x1="18" :y1="line * 40" x2="622" :y2="line * 40"></line>
+                    </g>
+                    <path class="business-dashboard-chart-area" :d="dashboardChartAreaPath"></path>
+                    <path class="business-dashboard-chart-line" :d="dashboardChartLinePath"></path>
+                    <circle
+                      v-for="(point, index) in dashboardChartPoints"
+                      :key="`chart-point-${index}`"
+                      class="business-dashboard-chart-point"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="5"
+                    ></circle>
+                  </svg>
+
+                  <div class="business-dashboard-chart-labels">
+                    <span v-for="label in dashboardChartLabels" :key="`chart-label-${label}`">{{ label }}</span>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card business-dashboard-actions-card">
+                <div class="business-dashboard-card-head">
+                  <div>
+                    <h2>Quick Actions</h2>
+                    <span>Fast access</span>
+                  </div>
+                </div>
+
+                <div class="business-dashboard-actions-grid">
+                  <button
+                    v-for="action in dashboardQuickActions"
+                    :key="action.key"
+                    class="business-dashboard-action-card"
+                    :data-tone="action.tone"
+                    type="button"
+                    @click="handleDashboardQuickAction(action.key)"
+                  >
+                    <span class="business-dashboard-action-icon">{{ action.label.charAt(0) }}</span>
+                    <strong>{{ action.label }}</strong>
+                  </button>
+                </div>
+              </article>
+            </div>
+
+            <div class="business-dashboard-overview-grid business-dashboard-overview-grid--bottom">
+              <article class="card business-dashboard-list-card">
+                <div class="business-dashboard-card-head">
+                  <div>
+                    <h2>Recent Products</h2>
+                    <span>{{ products.length }} total</span>
+                  </div>
+                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('products')">View All</button>
+                </div>
+
+                <div v-if="recentDashboardProducts.length === 0" class="admin-empty-state">
+                  Ende nuk ka produkte.
+                </div>
+                <div v-else class="business-dashboard-list-stack">
+                  <article
+                    v-for="product in recentDashboardProducts"
+                    :key="`recent-dashboard-product-${product.id}`"
+                    class="business-dashboard-product-row"
+                  >
+                    <img :src="product.imagePath" :alt="product.title" loading="lazy" decoding="async">
+                    <div class="business-dashboard-product-copy">
+                      <strong>{{ product.title }}</strong>
+                      <span>{{ product.articleNumber || `#${product.id}` }}</span>
+                    </div>
+                    <div class="business-dashboard-row-meta">
+                      <span class="business-dashboard-row-status" :class="{ 'is-low': Number(product.stockQuantity || 0) <= STOCK_ALERT_THRESHOLD }">
+                        {{ Number(product.stockQuantity || 0) > STOCK_ALERT_THRESHOLD ? "In Stock" : "Low" }}
+                      </span>
+                      <strong>{{ formatStockQuantity(product.stockQuantity) }}</strong>
+                    </div>
+                  </article>
+                </div>
+              </article>
+
+              <article class="card business-dashboard-list-card">
+                <div class="business-dashboard-card-head">
+                  <div>
+                    <h2>Stock Alerts</h2>
+                    <span>{{ stockAlertCount }} items</span>
+                  </div>
+                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('stock')">View All</button>
+                </div>
+
+                <div v-if="stockAlertProducts.length === 0" class="admin-empty-state">
+                  Nuk ka alerte ne stok.
+                </div>
+                <div v-else class="business-dashboard-list-stack">
+                  <article
+                    v-for="product in stockAlertProducts.slice(0, 4)"
+                    :key="`overview-stock-alert-${product.id}`"
+                    class="business-dashboard-alert-row"
+                  >
+                    <span class="business-dashboard-alert-dot"></span>
+                    <div class="business-dashboard-alert-copy">
+                      <strong>{{ product.title }}</strong>
+                      <span>{{ formatCategoryLabel(product.category) }}</span>
+                    </div>
+                    <strong class="business-dashboard-alert-qty">{{ formatStockQuantity(product.stockQuantity) }}</strong>
+                  </article>
+                </div>
+              </article>
+
+              <article class="card business-dashboard-list-card">
+                <div class="business-dashboard-card-head">
+                  <div>
+                    <h2>Active Discounts</h2>
+                    <span>{{ promotions.length }} live</span>
+                  </div>
+                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('offers')">View All</button>
+                </div>
+
+                <div v-if="recentDiscounts.length === 0" class="admin-empty-state">
+                  Nuk ka oferta aktive.
+                </div>
+                <div v-else class="business-dashboard-list-stack">
+                  <article
+                    v-for="promotion in recentDiscounts"
+                    :key="`overview-discount-${promotion.id}`"
+                    class="business-dashboard-discount-row"
+                  >
+                    <div class="business-dashboard-discount-copy">
+                      <span class="business-dashboard-discount-code">{{ promotion.code }}</span>
+                      <strong>{{ promotion.title || "Promotion" }}</strong>
+                      <small>{{ promotion.discountType === "percent" ? `${promotion.discountValue}% off` : formatPrice(promotion.discountValue) }}</small>
+                    </div>
+                    <span class="business-dashboard-discount-status">{{ promotion.isActive ? "Active" : "Paused" }}</span>
+                  </article>
+                </div>
+
+                <button class="business-dashboard-outline-action" type="button" @click="setActiveSection('offers')">
+                  Create Discount
+                </button>
+              </article>
+            </div>
+          </div>
+          <div v-else class="card business-dashboard-panel">
+            <div class="admin-empty-state">
+              Analytics nuk u ngarkuan ende.
+            </div>
+          </div>
+        </section>
 
     <section
-      v-if="businessNextSteps.length > 0"
-      class="business-dashboard-next-grid"
-      aria-label="Hapat e rekomanduar per biznesin"
+      v-if="canManageCatalog"
+      v-show="activeSection === 'stock'"
+      class="card business-stock-alerts-card business-dashboard-panel"
+      aria-label="Alertet e stokut"
     >
-      <button
-        v-for="item in businessNextSteps"
-        :key="item.key"
-        class="business-dashboard-next-card"
-        type="button"
-        @click="handleBusinessWorkspaceAction(item)"
-      >
-        <p class="section-label">Next step</p>
-        <strong>{{ item.title }}</strong>
-        <span>{{ item.copy }}</span>
-      </button>
-    </section>
-
-    <section v-if="stockAlertCount > 0" class="card business-stock-alerts-card" aria-label="Alertet e stokut">
       <div class="profile-card-header">
         <div>
-          <p class="section-label">Stock alerts</p>
-          <h2>Produktet qe kerkojne vemendje</h2>
-          <p class="section-text">
-            Ketu shfaqen artikujt me stok te ulet ose te mbaruar qe te mos mbeten pa u kontrolluar.
-          </p>
+          <h2>Stoku</h2>
         </div>
         <div class="summary-chip">
-          <span>Ne veshtrim</span>
+          <span>Ne risk</span>
           <strong>{{ stockAlertCount }}</strong>
         </div>
       </div>
 
-      <div class="business-stock-alerts-grid">
+      <div v-if="stockAlertCount > 0" class="business-stock-alerts-grid">
         <article
           v-for="product in stockAlertProducts"
           :key="`stock-alert-${product.id}`"
@@ -2070,29 +2233,24 @@ async function applyBulkStockUpdate() {
             <p>{{ getStockAlertLabel(product) }}</p>
           </div>
           <button class="nav-action nav-action-secondary business-stock-alert-action" type="button" @click="beginProductEdit(product)">
-            Edito artikullin
+            Edito
           </button>
         </article>
       </div>
-
-      <p v-if="stockAlertCount > stockAlertProducts.length" class="business-stock-alerts-note">
-        Po shfaqen {{ stockAlertProducts.length }} nga {{ stockAlertCount }} produkte me stok te ulet ose te mbaruar.
-      </p>
+      <div v-else class="admin-empty-state">
+        Nuk ka produkte ne risk.
+      </div>
     </section>
 
     <section
       v-if="canManageCatalog"
-      ref="shippingSection"
-      class="card business-shipping-card"
+      v-show="activeSection === 'shipping'"
+      class="card business-shipping-card business-dashboard-panel"
       aria-label="Transporti i biznesit"
     >
       <div class="profile-card-header">
         <div>
-          <p class="section-label">Transporti i biznesit</p>
-          <h2>Rregullat e dergeses</h2>
-          <p class="section-text">
-            Klienti vazhdon te shohe `Standard`, `Express` dhe `Pickup`, por checkout-i llogarit koston sipas rregullave qe vendos ky biznes.
-          </p>
+          <h2>Transport</h2>
         </div>
       </div>
 
@@ -2102,7 +2260,6 @@ async function applyBulkStockUpdate() {
             <div class="business-shipping-method-head">
               <div>
                 <strong>Dergese standard</strong>
-                <p class="section-text">Opsioni i balancuar per shumicen e porosive.</p>
               </div>
               <label class="business-shipping-toggle">
                 <input v-model="shippingForm.standardEnabled" type="checkbox">
@@ -2125,7 +2282,6 @@ async function applyBulkStockUpdate() {
             <div class="business-shipping-method-head">
               <div>
                 <strong>Dergese express</strong>
-                <p class="section-text">Per porosi me urgjence dhe ritem me te shpejte.</p>
               </div>
               <label class="business-shipping-toggle">
                 <input v-model="shippingForm.expressEnabled" type="checkbox">
@@ -2148,7 +2304,6 @@ async function applyBulkStockUpdate() {
             <div class="business-shipping-method-head">
               <div>
                 <strong>Terheqje ne biznes</strong>
-                <p class="section-text">Lejoje kur klienti mund ta marre porosine direkt te biznesi yt.</p>
               </div>
               <label class="business-shipping-toggle">
                 <input v-model="shippingForm.pickupEnabled" type="checkbox">
@@ -2205,9 +2360,6 @@ async function applyBulkStockUpdate() {
           <div class="business-shipping-city-rates-head">
             <div>
               <strong>Tarifa sipas qytetit</strong>
-              <p class="section-text">
-                Vendos shtesat e qyteteve vetem per biznesin tend. Nese nje qytet mungon, checkout-i bie te rregulli i pergjithshem.
-              </p>
             </div>
             <button type="button" class="business-shipping-city-add" @click="addShippingCityRate">
               Shto qytet
@@ -2247,12 +2399,8 @@ async function applyBulkStockUpdate() {
           </div>
         </div>
 
-        <p class="section-text business-shipping-footnote">
-          Pickup merr adresen dhe orarin tend, ndersa dergesat me transport perdorin fillimisht tarifat qe vendos ti per qytetet specifike.
-        </p>
-
         <div class="auth-form-actions">
-          <button type="submit">Ruaj transportin</button>
+          <button type="submit">Ruaj</button>
         </div>
       </form>
 
@@ -2261,16 +2409,12 @@ async function applyBulkStockUpdate() {
       </div>
     </section>
 
-    <div class="business-dashboard-layout" :class="{ 'business-dashboard-layout--single': dashboardSingleColumn }">
-      <section v-if="shouldShowProfileCard" ref="profileCardSection" class="card business-profile-card">
+    <section
+      v-if="shouldShowProfileCard"
+      v-show="activeSection === 'profile'"
+      class="card business-profile-card business-dashboard-panel"
+    >
         <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
-        <p class="section-text">
-          {{
-            businessProfile && isBusinessVerified
-              ? "Admini e ka hapur perkohesisht editimin. Pasi t'i ruash ndryshimet, forma mbyllet perseri."
-              : "Ploteso te dhenat e biznesit. Katalogu i produkteve aktivizohet vetem pasi admini ta verifikoje biznesin."
-          }}
-        </p>
 
         <form class="auth-form" @submit.prevent="saveBusinessProfile">
           <label class="field">
@@ -2338,7 +2482,7 @@ async function applyBulkStockUpdate() {
           </label>
 
           <p class="product-upload-help">
-            Nese biznesi yt ka logo, mund ta ngarkosh ketu. Ne te kunderten mund ta lesh bosh.
+            Logo opsionale.
           </p>
 
           <div class="product-upload-preview" aria-live="polite">
@@ -2353,15 +2497,7 @@ async function applyBulkStockUpdate() {
 
           <div v-if="businessProfile" class="marketplace-status-card">
             <div>
-              <p class="section-label">Verifikimi</p>
               <strong>{{ formatVerificationStatusLabel(businessProfile.verificationStatus) }}</strong>
-              <p class="section-text">
-                {{
-                  isBusinessVerified
-                    ? "Biznesi eshte i verifikuar. Editimi i ketij profili hapet vetem me aprovimin e adminit."
-                    : "Pasi verifikohet biznesi, hapet katalogu i produkteve dhe profili shfaqet me badge me te besueshme."
-                }}
-              </p>
             </div>
             <button
               v-if="['unverified', 'rejected'].includes(String(businessProfile.verificationStatus || ''))"
@@ -2369,42 +2505,34 @@ async function applyBulkStockUpdate() {
               type="button"
               @click="requestVerificationReview"
             >
-              Kerko verifikim
+              Verifiko
             </button>
           </div>
 
           <div class="auth-form-actions">
-            <button type="submit">{{ businessProfile && isBusinessVerified ? "Ruaj ndryshimet" : "Ruaje biznesin" }}</button>
-            <button
-              v-if="businessProfile && isBusinessVerified"
-              class="button-secondary"
-              type="button"
-              @click="showVerifiedProfileEditor = false"
-            >
-              Mbylle
-            </button>
+            <button type="submit">Ruaj</button>
           </div>
         </form>
 
         <div class="form-message" :class="ui.profileType" role="status" aria-live="polite">
           {{ ui.profileMessage }}
         </div>
-      </section>
+    </section>
 
-      <section v-if="canManageCatalog" ref="productFormSection" class="card admin-form-card product-builder-card">
+    <section
+      v-if="canManageCatalog"
+      v-show="activeSection === 'add-product'"
+      class="card admin-form-card product-builder-card business-dashboard-panel"
+    >
         <div class="product-builder-head">
           <div>
-            <p class="section-label">Product builder</p>
             <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
-            <p class="section-text">
-              Organizoje produktin me hapa te qarte: detajet, cmimi, variantet, media dhe preview final para ruajtjes.
-            </p>
           </div>
           <button class="button-secondary" type="button" @click="resetProductForm">Reset</button>
         </div>
 
         <p v-if="editingProduct" class="admin-edit-state">
-          Po editon nje artikull te biznesit tend. Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
+          Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
         </p>
 
         <div class="product-builder-shell">
@@ -2419,8 +2547,6 @@ async function applyBulkStockUpdate() {
                 @click="focusProductFormStep(step.id)"
               >
                 <strong>{{ step.label }}</strong>
-                <span>{{ step.caption }}</span>
-                <small>{{ step.done ? "Gati" : "Ne pritje" }}</small>
               </button>
             </div>
 
@@ -2431,11 +2557,10 @@ async function applyBulkStockUpdate() {
             >
               <div class="product-builder-block-head">
                 <div>
-                  <p class="section-label">1. Detajet baze</p>
                   <h3>Emri, kodi dhe pershkrimi</h3>
                 </div>
                 <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
-                  {{ ui.productAiBusy ? "Duke analizuar..." : "Sugjero me AI" }}
+                  {{ ui.productAiBusy ? "AI..." : "AI" }}
                 </button>
               </div>
 
@@ -2516,7 +2641,7 @@ async function applyBulkStockUpdate() {
               </div>
 
               <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Vazhdo te cmimi</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Tjetra</button>
               </div>
             </section>
 
@@ -2527,7 +2652,6 @@ async function applyBulkStockUpdate() {
             >
               <div class="product-builder-block-head">
                 <div>
-                  <p class="section-label">2. Cmimi</p>
                   <h3>Regular price, sale dhe afati</h3>
                 </div>
               </div>
@@ -2558,7 +2682,7 @@ async function applyBulkStockUpdate() {
 
               <div class="auth-form-actions">
                 <button class="button-secondary" type="button" @click="focusProductFormStep('details')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Vazhdo te variantet</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Tjetra</button>
               </div>
             </section>
 
@@ -2569,9 +2693,8 @@ async function applyBulkStockUpdate() {
             >
               <div class="product-builder-block-head">
                 <div>
-                  <p class="section-label">3. Kategoria dhe variantet</p>
                   <h3>Ngjyra, madhesia, tipi dhe stoku</h3>
-                  <p class="product-builder-note">Per secilin variant mund te ruash cmim ose foto specifike qe zgjedhja ne product page te ndryshoje sakte sipas ngjyres ose madhesise.</p>
+                  <p class="product-builder-note">Ruaj cmim ose foto specifike per variant.</p>
                 </div>
                 <div class="product-builder-inline-summary">
                   <span class="summary-chip">
@@ -2589,7 +2712,7 @@ async function applyBulkStockUpdate() {
 
               <div class="auth-form-actions">
                 <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Vazhdo te media</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Tjetra</button>
               </div>
             </section>
 
@@ -2600,7 +2723,6 @@ async function applyBulkStockUpdate() {
             >
               <div class="product-builder-block-head">
                 <div>
-                  <p class="section-label">4. Media</p>
                   <h3>Cover dhe galeria e produktit</h3>
                 </div>
                 <span class="summary-chip">
@@ -2615,7 +2737,7 @@ async function applyBulkStockUpdate() {
               </label>
 
               <p class="product-upload-help">
-                Ngarko cover-in e produktit dhe disa foto shtese. Nese po editon produktin, fotot ekzistuese ruhen derisa te zgjedhesh te reja.
+                Cover dhe foto shtese.
               </p>
 
               <div class="product-upload-preview" aria-live="polite">
@@ -2635,7 +2757,7 @@ async function applyBulkStockUpdate() {
 
               <div class="auth-form-actions">
                 <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('review')">Preview final</button>
+                <button class="button-secondary" type="button" @click="focusProductFormStep('review')">Tjetra</button>
               </div>
             </section>
 
@@ -2646,8 +2768,7 @@ async function applyBulkStockUpdate() {
             >
               <div class="product-builder-block-head">
                 <div>
-                  <p class="section-label">5. Preview final</p>
-                  <h3>Kontrolloje artikullin para ruajtjes</h3>
+                  <h3>Kontroll final</h3>
                 </div>
               </div>
 
@@ -2657,7 +2778,6 @@ async function applyBulkStockUpdate() {
                   <div v-else class="product-builder-review-empty">Pa cover</div>
                 </div>
                 <div class="product-builder-review-copy">
-                  <p class="section-label">{{ formatCategoryLabel(productForm.category) || "Kategoria e produktit" }}</p>
                   <h3>{{ productForm.title || "Titulli i produktit" }}</h3>
                   <p>{{ productForm.description || "Pershkrimi do te shfaqet ketu sapo ta plotesosh." }}</p>
                   <div class="product-builder-price-preview">
@@ -2716,7 +2836,6 @@ async function applyBulkStockUpdate() {
 
           <aside class="product-builder-aside">
             <article class="product-builder-aside-card">
-              <p class="section-label">Quick summary</p>
               <h3>{{ editingProduct ? "Artikull ne editim" : "Artikull i ri" }}</h3>
               <div class="product-builder-aside-grid">
                 <div class="summary-chip">
@@ -2736,19 +2855,10 @@ async function applyBulkStockUpdate() {
                   <strong>{{ productMediaCount }}</strong>
                 </div>
               </div>
-              <p class="section-text product-builder-aside-copy">
-                Preview anash te ndihmon ta kuptosh shpejt nese produkti eshte gati per publikim.
-              </p>
             </article>
 
             <article class="product-builder-aside-card">
-              <p class="section-label">Ruajtja</p>
               <h3>{{ productReadyToSave ? "Produkti duket gati" : "Mungojne disa hapa" }}</h3>
-              <p class="section-text">
-                {{ productReadyToSave
-                  ? "Titulli, cmimi, stoku dhe media jane plotesuar. Mund ta ruash produktin."
-                  : "Ploteso te pakten titullin, pershkrimin, cmimin, stokun dhe nje foto para ruajtjes." }}
-              </p>
             </article>
           </aside>
         </div>
@@ -2756,23 +2866,26 @@ async function applyBulkStockUpdate() {
         <div class="form-message" :class="ui.productTypeMessage" role="status" aria-live="polite">
           {{ ui.productMessage }}
         </div>
-      </section>
-    </div>
-
-    <section v-if="businessProfile && !canManageCatalog" class="card business-dashboard-freeze-card" aria-label="Katalogu i ngrire">
-      <p class="section-label">Katalogu i ngrire</p>
-      <h2>Produktet hapen pasi admini ta verifikoje biznesin</h2>
-      <p class="section-text">
-        Deri atehere nuk mund te shtosh, editosh, importosh apo publikosh produkte. Ploteso profilin dhe dergo kerkese per verifikim.
-      </p>
     </section>
 
-    <section v-if="canManageCatalog" class="card admin-list-card bulk-import-surface" aria-label="Flexible catalog import">
+    <section
+      v-if="businessProfile && !canManageCatalog"
+      v-show="activeSection === 'profile'"
+      class="card business-dashboard-freeze-card business-dashboard-panel"
+      aria-label="Katalogu i ngrire"
+    >
+      <h2>Produktet hapen pasi admini ta verifikoje biznesin</h2>
+    </section>
+
+    <section
+      v-if="canManageCatalog"
+      v-show="activeSection === 'import'"
+      class="card admin-list-card bulk-import-surface business-dashboard-panel"
+      aria-label="Flexible catalog import"
+    >
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Catalog import</p>
-          <h2>Flexible import pipeline</h2>
-          <p class="admin-compact-copy">Ngarko CSV / XLSX, lidhe JSON / API feeds, bej mapping, kontrollo parent + variants dhe pastaj kryeje importin.</p>
+          <h2>Import</h2>
         </div>
       </div>
 
@@ -2781,7 +2894,6 @@ async function applyBulkStockUpdate() {
           <div class="bulk-import-section-head">
             <div>
               <h3>Source setup</h3>
-              <p class="section-text">Pipeline-i i ri nuk shkruan direkt ne produkte. Cdo burim kalon ne preview, mapping, normalizim dhe grouping.</p>
             </div>
             <span class="summary-chip">{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
           </div>
@@ -2915,7 +3027,7 @@ async function applyBulkStockUpdate() {
 
           <div class="auth-form-actions bulk-import-actions">
             <button type="button" :disabled="importIsPreviewLoading" @click="prepareImportPreview">
-              {{ importIsPreviewLoading ? "Preparing..." : "Create preview" }}
+              {{ importIsPreviewLoading ? "..." : "Preview" }}
             </button>
             <button
               class="button-secondary"
@@ -2923,10 +3035,10 @@ async function applyBulkStockUpdate() {
               :disabled="!importPreviewHasChanges || importIsPreviewLoading"
               @click="loadImportJobPreview(importCurrentJob?.id)"
             >
-              Refresh preview
+              Refresh
             </button>
             <button class="button-secondary" type="button" @click="saveCurrentImportProfile">
-              Save profile
+              Ruaj profil
             </button>
             <button
               v-if="importSourceType === 'api-json'"
@@ -2934,7 +3046,7 @@ async function applyBulkStockUpdate() {
               type="button"
               @click="saveCurrentImportSource"
             >
-              Save source
+              Ruaj source
             </button>
             <button
               v-if="importSourceType === 'api-json'"
@@ -2943,10 +3055,10 @@ async function applyBulkStockUpdate() {
               :disabled="!importSelectedSourceId || importIsSyncLoading"
               @click="syncCurrentImportSource()"
             >
-              {{ importIsSyncLoading ? "Syncing..." : "Sync source" }}
+              {{ importIsSyncLoading ? "..." : "Sync" }}
             </button>
             <button class="button-secondary" type="button" @click="downloadImportTemplate">
-              Quick-start template
+              Template
             </button>
           </div>
         </article>
@@ -2956,7 +3068,6 @@ async function applyBulkStockUpdate() {
             <div class="bulk-import-section-head">
               <div>
                 <h3>Summary</h3>
-                <p class="section-text">Kontroll i shpejte perpara commit.</p>
               </div>
             </div>
 
@@ -2992,7 +3103,6 @@ async function applyBulkStockUpdate() {
             <div class="bulk-import-section-head">
               <div>
                 <h3>Recent jobs</h3>
-                <p class="section-text">Rihap preview-t e fundit pa e ngarkuar skedarin nga e para.</p>
               </div>
             </div>
 
@@ -3020,7 +3130,6 @@ async function applyBulkStockUpdate() {
         <div class="bulk-import-section-head">
           <div>
             <h3>Field mapping</h3>
-            <p class="section-text">Mapo kolonat e biznesit me modelin e brendshem kanonik. Vlerat jo-standarde kalojne si warnings, jo si bllokim i menjehershem.</p>
           </div>
         </div>
 
@@ -3054,7 +3163,6 @@ async function applyBulkStockUpdate() {
           <div class="bulk-import-section-head">
             <div>
               <h3>Grouping preview</h3>
-              <p class="section-text">Ketu kontrollohen parent products dhe variants para shkrimit ne katalog.</p>
             </div>
           </div>
 
@@ -3111,7 +3219,6 @@ async function applyBulkStockUpdate() {
           <div class="bulk-import-section-head">
             <div>
               <h3>Row preview</h3>
-              <p class="section-text">Shfaqen rreshtat e normalizuar me warnings dhe errors per review manual.</p>
             </div>
           </div>
 
@@ -3176,10 +3283,10 @@ async function applyBulkStockUpdate() {
       <form class="auth-form" @submit.prevent="submitImportProducts">
         <div class="auth-form-actions">
           <button type="submit" :disabled="importIsCommitLoading || !importCurrentJob?.id">
-            {{ importIsCommitLoading ? "Importing..." : "Commit import" }}
+            {{ importIsCommitLoading ? "..." : "Import" }}
           </button>
           <button class="button-secondary" type="button" @click="clearImportSelection()">Reset</button>
-          <button class="button-secondary" type="button" @click="triggerImportPicker">Choose file</button>
+          <button class="button-secondary" type="button" @click="triggerImportPicker">File</button>
         </div>
       </form>
 
@@ -3190,15 +3297,13 @@ async function applyBulkStockUpdate() {
 
     <section
       v-if="canManageCatalog"
-      ref="promotionsSection"
-      class="card admin-list-card"
+      v-show="activeSection === 'offers'"
+      class="card admin-list-card business-dashboard-panel"
       aria-label="Promocionet e biznesit"
     >
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Promocionet</p>
-          <h2>Kuponet dhe ofertat</h2>
-          <p class="admin-compact-copy">{{ promotions.length }} aktive ose te ruajtura</p>
+          <h2>Oferta</h2>
         </div>
       </div>
 
@@ -3293,7 +3398,7 @@ async function applyBulkStockUpdate() {
         </label>
 
         <div class="auth-form-actions">
-          <button type="submit">Ruaje promocionin</button>
+          <button type="submit">Ruaj</button>
         </div>
       </form>
 
@@ -3305,14 +3410,12 @@ async function applyBulkStockUpdate() {
         <article v-for="promotion in promotions" :key="promotion.id" class="card account-section notification-card">
           <div class="notification-card-head">
             <div>
-              <p class="section-label">{{ promotion.code }}</p>
               <h2>{{ promotion.title || "Promocion" }}</h2>
             </div>
             <strong>
               {{ promotion.discountType === "percent" ? `${promotion.discountValue}%` : formatPrice(promotion.discountValue) }}
             </strong>
           </div>
-          <p class="section-text">{{ promotion.description || "Pa pershkrim shtese." }}</p>
           <div class="order-item-marketplace-meta">
             <span class="summary-chip">
               <span>Statusi</span>
@@ -3347,18 +3450,16 @@ async function applyBulkStockUpdate() {
 
     <section
       v-if="canManageCatalog"
-      ref="productsManagementSection"
-      class="card admin-list-card products-management-surface"
+      v-show="activeSection === 'products'"
+      class="card admin-list-card products-management-surface business-dashboard-panel"
     >
       <div class="admin-list-header">
         <div>
-          <p class="section-label">Products</p>
-          <h2>Products Management</h2>
-          <p class="admin-compact-copy">{{ filteredProducts.length }} / {{ products.length }} artikuj</p>
+          <h2>Produktet</h2>
         </div>
         <div class="auth-form-actions">
-          <button type="button" @click="openAddProductForm">Add Product</button>
-          <button class="button-secondary" type="button" @click="triggerImportPicker">Import Products</button>
+          <button type="button" @click="openAddProductForm">Shto</button>
+          <button class="button-secondary" type="button" @click="triggerImportPicker">Import</button>
         </div>
       </div>
 
@@ -3393,14 +3494,6 @@ async function applyBulkStockUpdate() {
           </select>
         </label>
         <label class="field">
-          <span>Statusi</span>
-          <select v-model="productStatusFilter">
-            <option value="all">Te gjitha</option>
-            <option value="public">Publik</option>
-            <option value="hidden">I fshehur</option>
-          </select>
-        </label>
-        <label class="field">
           <span>Sort</span>
           <select v-model="productSort">
             <option value="updated-desc">Me te rejat</option>
@@ -3412,19 +3505,14 @@ async function applyBulkStockUpdate() {
             <option value="stock-desc">Stoku ne ulje</option>
           </select>
         </label>
-        <div class="products-view-toggle">
-          <button type="button" :class="{ active: productViewMode === 'rows' }" @click="productViewMode = 'rows'">Rows</button>
-          <button type="button" :class="{ active: productViewMode === 'cards' }" @click="productViewMode = 'cards'">Cards</button>
-        </div>
       </div>
 
       <div v-if="hasSelectedProducts" class="products-bulk-actions glass-medium">
-        <p>{{ selectedProducts.length }} produkte te zgjedhura</p>
         <div class="products-bulk-actions-grid">
-          <button class="button-secondary" type="button" @click="applyBulkVisibility(true)">Bulk activate</button>
-          <button class="button-secondary" type="button" @click="applyBulkVisibility(false)">Bulk deactivate</button>
+          <button class="button-secondary" type="button" @click="applyBulkVisibility(true)">Aktivo</button>
+          <button class="button-secondary" type="button" @click="applyBulkVisibility(false)">Caktivizo</button>
           <label class="field">
-            <span>Bulk category</span>
+            <span>Kategori</span>
             <select v-model="bulkCategoryValue">
               <option value="">Zgjidh kategorine</option>
               <option v-for="option in productCategoryOptions" :key="`bulk-category-${option.value}`" :value="option.value">
@@ -3432,14 +3520,14 @@ async function applyBulkStockUpdate() {
               </option>
             </select>
           </label>
-          <button class="button-secondary" type="button" :disabled="!bulkCategoryValue" @click="applyBulkCategory">Bulk change category</button>
+          <button class="button-secondary" type="button" :disabled="!bulkCategoryValue" @click="applyBulkCategory">Ruaj</button>
           <label class="field">
-            <span>Bulk stock</span>
+            <span>Stok</span>
             <input v-model="bulkStockValue" type="number" min="0" step="1" placeholder="0">
           </label>
-          <button class="button-secondary" type="button" :disabled="bulkStockValue === ''" @click="applyBulkStockUpdate">Bulk stock update</button>
-          <button class="button-danger" type="button" @click="applyBulkDelete">Bulk delete</button>
-          <button class="button-secondary" type="button" @click="clearSelectedProducts">Clear</button>
+          <button class="button-secondary" type="button" :disabled="bulkStockValue === ''" @click="applyBulkStockUpdate">Ruaj</button>
+          <button class="button-danger" type="button" @click="applyBulkDelete">Fshi</button>
+          <button class="button-secondary" type="button" @click="clearSelectedProducts">Pastro</button>
         </div>
       </div>
 
@@ -3447,7 +3535,7 @@ async function applyBulkStockUpdate() {
         {{ ui.listMessage }}
       </div>
 
-      <div class="admin-products-list admin-products-list-scroll" :class="{ 'is-row-view': productViewMode === 'rows' }">
+      <div class="admin-products-list admin-products-list-scroll is-row-view">
         <div v-if="products.length === 0" class="admin-empty-state">
           Ende nuk ke artikuj. Shto nje produkt ose importo nje skedar.
         </div>
@@ -3457,7 +3545,7 @@ async function applyBulkStockUpdate() {
         </div>
 
         <template v-else>
-          <article v-if="productViewMode === 'rows'" class="products-table-shell">
+          <article class="products-table-shell">
             <table class="products-table">
               <thead>
                 <tr>
@@ -3533,61 +3621,797 @@ async function applyBulkStockUpdate() {
               </tbody>
             </table>
           </article>
-
-          <template v-else>
-            <ManagedProductCard
-              v-for="product in filteredProducts"
-              :key="product.id"
-              :product="product"
-              @edit="beginProductEdit"
-              @delete="handleDeleteProduct"
-              @toggle-visibility="handleToggleVisibility"
-              @toggle-stock-public="handleToggleStock"
-            />
-          </template>
         </template>
       </div>
     </section>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.business-dashboard-workspace-card {
-  display: grid;
-  gap: 16px;
-  margin-bottom: 18px;
+:global(body[data-page="business-dashboard"] .page-main-admin) {
+  padding: calc(var(--page-nav-clearance) + 12px) 0 20px;
+  background: #ffffff;
 }
 
-.business-dashboard-workspace-grid,
-.business-dashboard-next-grid {
+:global(body[data-page="business-dashboard"]) {
+  background: #ffffff;
+}
+
+.business-dashboard-page {
+  --dashboard-gap: 8px;
+  --dashboard-gap-tight: 6px;
+  --dashboard-radius: 14px;
+  --dashboard-radius-lg: 18px;
+  --dashboard-pad: 10px;
+  --dashboard-pad-tight: 8px;
+  width: 100%;
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--dashboard-gap);
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
+.business-dashboard-page > .admin-list-card,
+.business-dashboard-sidebar,
+.business-dashboard-tab-shell,
+.business-dashboard-panel,
+.business-dashboard-workspace-card,
+.business-stock-alerts-card,
+.business-shipping-card,
+.business-profile-card,
+.product-builder-card,
+.business-dashboard-freeze-card {
+  padding: var(--dashboard-pad);
+  border-radius: var(--dashboard-radius-lg);
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+}
+
+.business-dashboard-tab-shell {
+  padding: 6px;
+}
+
+.business-dashboard-shell {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
+}
+
+.business-dashboard-sidebar {
+  padding: 12px 10px;
+  align-self: start;
+  min-height: calc(100vh - var(--page-nav-clearance) - 40px);
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.business-dashboard-main {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.business-dashboard-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+}
+
+.business-dashboard-brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #7968ff 0%, #6558ea 100%);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.business-dashboard-brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.business-dashboard-brand-copy strong {
+  font-size: 1.02rem;
+  color: #1f2937;
+}
+
+.business-dashboard-brand-copy span {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.business-dashboard-side-menu {
+  display: grid;
+  gap: 4px;
+}
+
+.business-dashboard-side-button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.business-dashboard-side-button.is-active {
+  background: #f3f0ff;
+  color: #6d5df6;
+  border-color: rgba(109, 93, 246, 0.08);
+}
+
+.business-dashboard-side-icon {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  flex: 0 0 auto;
+}
+
+.business-dashboard-side-button.is-active .business-dashboard-side-icon {
+  background: #6d5df6;
+}
+
+.business-dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.business-dashboard-toolbar-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.business-dashboard-toolbar-tab {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid #ececf3;
+  background: #ffffff;
+  color: #6b7280;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.business-dashboard-toolbar-tab.is-active {
+  background: linear-gradient(180deg, #6f62f6 0%, #6356e8 100%);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(99, 86, 232, 0.18);
+}
+
+.business-dashboard-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.business-dashboard-toolbar-icon,
+.business-dashboard-toolbar-range,
+.business-dashboard-toolbar-avatar {
+  border: 1px solid #ececf3;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.business-dashboard-toolbar-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.business-dashboard-toolbar-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.business-dashboard-toolbar-range {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.business-dashboard-toolbar-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #8b83d9;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.business-dashboard-overview {
+  display: grid;
+  gap: 10px;
+}
+
+.business-dashboard-overview-grid-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.business-dashboard-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.business-dashboard-metric-card {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.business-dashboard-metric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: #f3f0ff;
+}
+
+.business-dashboard-metric-card[data-tone="mint"] .business-dashboard-metric-icon {
+  background: #e9fbf1;
+}
+
+.business-dashboard-metric-card[data-tone="amber"] .business-dashboard-metric-icon {
+  background: #fff4db;
+}
+
+.business-dashboard-metric-card[data-tone="blue"] .business-dashboard-metric-icon {
+  background: #eaf4ff;
+}
+
+.business-dashboard-metric-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.business-dashboard-metric-copy span {
+  font-size: 0.76rem;
+  color: #8b93a7;
+  font-weight: 600;
+}
+
+.business-dashboard-metric-copy strong {
+  font-size: 1.45rem;
+  line-height: 1;
+  color: #1f2937;
+}
+
+.business-dashboard-metric-copy small {
+  font-size: 0.74rem;
+  color: #6dba8b;
+  font-weight: 600;
+}
+
+.business-dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(260px, 0.86fr);
+  gap: 10px;
+}
+
+.business-dashboard-overview-grid--bottom {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.business-dashboard-chart-card,
+.business-dashboard-actions-card,
+.business-dashboard-list-card {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.business-dashboard-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.business-dashboard-card-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1f2937;
+}
+
+.business-dashboard-card-head span {
+  font-size: 0.74rem;
+  color: #9aa3b5;
+}
+
+.business-dashboard-card-pill {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid #ececf3;
+  display: inline-flex;
+  align-items: center;
+  color: #6b7280;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.business-dashboard-chart-frame {
+  display: grid;
+  gap: 8px;
+}
+
+.business-dashboard-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.business-dashboard-chart-grid line {
+  stroke: #edf0f7;
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.business-dashboard-chart-area {
+  fill: rgba(111, 98, 246, 0.1);
+}
+
+.business-dashboard-chart-line {
+  fill: none;
+  stroke: #6f62f6;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.business-dashboard-chart-point {
+  fill: #6f62f6;
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.business-dashboard-chart-labels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.business-dashboard-chart-labels span {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #9aa3b5;
+}
+
+.business-dashboard-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.business-dashboard-action-card {
+  min-height: 86px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #eff1f7;
+  background: #ffffff;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  text-align: left;
+  color: #374151;
+  cursor: pointer;
+}
+
+.business-dashboard-action-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #f3f0ff;
+  color: #6f62f6;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.business-dashboard-action-card[data-tone="mint"] .business-dashboard-action-icon {
+  background: #e9fbf1;
+  color: #20a464;
+}
+
+.business-dashboard-action-card[data-tone="amber"] .business-dashboard-action-icon {
+  background: #fff4db;
+  color: #e99527;
+}
+
+.business-dashboard-action-card[data-tone="pink"] .business-dashboard-action-icon {
+  background: #ffe9f5;
+  color: #eb5ea8;
+}
+
+.business-dashboard-action-card strong {
+  font-size: 0.86rem;
+  line-height: 1.2;
+}
+
+.business-dashboard-list-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.business-dashboard-product-row,
+.business-dashboard-alert-row,
+.business-dashboard-discount-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+}
+
+.business-dashboard-product-row {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+}
+
+.business-dashboard-product-row img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f8fafc;
+}
+
+.business-dashboard-product-copy,
+.business-dashboard-alert-copy,
+.business-dashboard-discount-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.business-dashboard-product-copy strong,
+.business-dashboard-alert-copy strong,
+.business-dashboard-discount-copy strong {
+  font-size: 0.86rem;
+  line-height: 1.2;
+  color: #1f2937;
+}
+
+.business-dashboard-product-copy span,
+.business-dashboard-alert-copy span,
+.business-dashboard-discount-copy small {
+  font-size: 0.72rem;
+  color: #98a2b3;
+}
+
+.business-dashboard-row-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.business-dashboard-row-meta strong {
+  font-size: 0.82rem;
+  color: #1f2937;
+}
+
+.business-dashboard-row-status {
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: #ebfbf2;
+  color: #2aa76a;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.business-dashboard-row-status.is-low {
+  background: #fff4db;
+  color: #e99527;
+}
+
+.business-dashboard-alert-row {
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+}
+
+.business-dashboard-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+}
+
+.business-dashboard-alert-qty {
+  font-size: 0.8rem;
+  color: #ef4444;
+}
+
+.business-dashboard-discount-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f3f8;
+}
+
+.business-dashboard-discount-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.business-dashboard-discount-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  width: fit-content;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #ffe9f5;
+  color: #eb5ea8;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.business-dashboard-discount-status {
+  font-size: 0.72rem;
+  color: #20a464;
+  font-weight: 700;
+}
+
+.business-dashboard-outline-action,
+.business-dashboard-link-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid #dcd8ff;
+  background: #ffffff;
+  color: #6f62f6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.business-dashboard-link-button {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.business-dashboard-tab-list {
+  display: grid;
+  gap: 4px;
+}
+
+.business-dashboard-tab-button {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #f7f8fb;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.business-dashboard-tab-button.is-active {
+  background: #ffffff;
+  color: #111827;
+  border-color: rgba(255, 106, 43, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 106, 43, 0.12);
+}
+
+.business-dashboard-panel {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-products-header,
+.admin-list-header,
+.profile-card-header,
+.product-builder-head,
+.product-builder-block-head,
+.bulk-import-section-head {
+  gap: 6px;
+}
+
+.admin-products-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.admin-products-header h1 {
+  font-size: clamp(1.12rem, 1.55vw, 1.5rem);
+  line-height: 1.05;
+  margin: 0;
+}
+
+.business-dashboard-page h2 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+
+.business-dashboard-page h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.15;
+}
+
+.admin-compact-copy,
+.section-text,
+.product-builder-note,
+.product-upload-help {
+  font-size: 0.72rem;
+  line-height: 1.28;
+}
+
+.admin-compact-copy,
+.section-text,
+.product-upload-help,
+.product-builder-note {
+  margin: 0;
+}
+
+.business-dashboard-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+
+.business-dashboard-header-meta {
+  min-width: 0;
+}
+
+.business-dashboard-header-chip {
+  min-width: 64px;
+}
+
+.business-dashboard-edit-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  max-width: none;
+}
+
+.business-dashboard-icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.business-dashboard-icon-button svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.business-dashboard-page :deep(.section-label) {
+  display: none;
+}
+
+.business-dashboard-page :deep(.summary-chip),
+.business-dashboard-page .summary-chip {
+  min-width: 0;
+  padding: 5px 7px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: none;
+}
+
+.business-dashboard-page :deep(.summary-chip span),
+.business-dashboard-page .summary-chip span {
+  margin-bottom: 2px;
+  font-size: 0.61rem;
+  letter-spacing: 0.08em;
+}
+
+.business-dashboard-page :deep(.summary-chip strong),
+.business-dashboard-page .summary-chip strong {
+  font-size: 0.82rem;
+}
+
+.business-dashboard-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.business-dashboard-workspace-card {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.business-dashboard-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 4px;
 }
 
 .business-dashboard-workspace-action,
 .business-dashboard-next-card {
-  display: grid;
-  gap: 8px;
-  padding: 18px 20px;
-  border-radius: 22px;
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  background: rgba(255, 255, 255, 0.8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #ffffff;
   color: inherit;
-  text-align: left;
-  box-shadow: 0 14px 30px rgba(31, 41, 55, 0.06);
+  text-align: center;
+  box-shadow: none;
 }
 
 .business-dashboard-workspace-action strong,
 .business-dashboard-next-card strong {
   color: #1f2937;
-  font-size: 1rem;
-}
-
-.business-dashboard-workspace-action span,
-.business-dashboard-next-card span {
-  color: #6b7280;
-  line-height: 1.55;
+  font-size: 0.72rem;
+  line-height: 1;
 }
 
 .business-dashboard-workspace-action:disabled {
@@ -3595,9 +4419,187 @@ async function applyBulkStockUpdate() {
   cursor: not-allowed;
 }
 
+.business-dashboard-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.business-dashboard-layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.business-shipping-card {
+  margin: 0;
+}
+
+.business-shipping-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.business-shipping-method-card {
+  padding: 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.business-shipping-method-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.business-shipping-method-head strong {
+  display: block;
+  color: #2d4334;
+  font-size: 0.84rem;
+}
+
+.business-shipping-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5c7061;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.business-shipping-toggle input {
+  accent-color: #4f7c63;
+}
+
+.business-shipping-city-rates {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.business-shipping-city-rates-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.business-shipping-city-rates-head strong {
+  display: block;
+  color: #2d4334;
+  font-size: 0.82rem;
+}
+
+.business-shipping-city-list {
+  display: grid;
+  gap: 6px;
+}
+
+.business-shipping-city-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(100px, 0.7fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.business-shipping-city-add,
+.business-shipping-city-remove,
+.business-stock-alert-action {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 0.72rem;
+}
+
+.marketplace-status-card {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+}
+
+.admin-edit-state {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  line-height: 1.2;
+  font-size: 0.74rem;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.field-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.business-dashboard-page :deep(.field) {
+  margin: 0;
+}
+
+.business-dashboard-page :deep(.field span) {
+  font-size: 0.68rem;
+  margin-bottom: 2px;
+}
+
+.business-dashboard-page :deep(.field input),
+.business-dashboard-page :deep(.field select),
+.business-dashboard-page :deep(.field textarea) {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+.business-dashboard-page :deep(.field textarea) {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.business-dashboard-page :deep(.auth-form) {
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.business-dashboard-page :deep(.auth-form-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.business-dashboard-page :deep(.auth-form-actions > button),
+.business-dashboard-page :deep(.button-secondary),
+.business-dashboard-page :deep(.button-danger),
+.business-dashboard-page .nav-action,
+.business-dashboard-page .products-row-actions button {
+  width: auto;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 0.72rem;
+}
+
 .product-builder-card {
   display: grid;
-  gap: 20px;
+  gap: 6px;
 }
 
 .product-builder-head,
@@ -3605,74 +4607,280 @@ async function applyBulkStockUpdate() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
 }
 
 .product-builder-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 2.35fr) minmax(176px, 0.62fr);
+  gap: 6px;
   align-items: start;
+}
+
+.product-builder-form,
+.product-builder-aside {
+  display: grid;
+  gap: 5px;
+}
+
+.product-builder-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.product-builder-step {
+  display: grid;
+  gap: 1px;
+  padding: 6px 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.product-builder-step strong {
+  font-size: 0.72rem;
+}
+
+.product-builder-step span,
+.product-builder-step small {
+  display: none;
+}
+
+.product-builder-step.is-active {
+  border-color: rgba(255, 106, 43, 0.4);
+  box-shadow: none;
+}
+
+.product-builder-step.is-done small {
+  color: #ff6a2b;
+}
+
+.product-builder-block,
+.product-builder-aside-card {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.product-builder-block.is-active {
+  border-color: rgba(255, 106, 43, 0.22);
+}
+
+.product-builder-inline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.product-builder-note.is-warning {
+  color: #b45309;
+}
+
+.product-builder-review-card {
+  display: grid;
+  grid-template-columns: minmax(112px, 148px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.product-builder-review-media {
+  min-height: 118px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.product-builder-review-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.product-builder-review-empty {
+  width: 100%;
+  height: 100%;
+  min-height: 118px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.product-builder-review-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.product-builder-review-copy h3,
+.product-builder-aside-card h3 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.product-builder-review-copy p,
+.product-builder-aside-copy {
+  margin: 0;
+}
+
+.product-builder-price-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product-builder-price-preview strong {
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.product-builder-price-preview span {
+  color: #6b7280;
+  text-decoration: line-through;
+}
+
+.product-builder-price-preview mark {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(255, 106, 43, 0.14);
+  color: #c2410c;
+}
+
+.product-builder-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.product-builder-checklist-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+}
+
+.product-builder-checklist-item strong {
+  color: #1f2937;
+  font-size: 0.8rem;
+}
+
+.product-builder-checklist-item small {
+  color: #6b7280;
+  font-size: 0.7rem;
+}
+
+.product-builder-checklist-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(47, 52, 70, 0.18);
+}
+
+.product-builder-checklist-item.is-done .product-builder-checklist-dot {
+  background: #ff6a2b;
+}
+
+.product-builder-aside-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.business-dashboard-page :deep(.product-upload-preview) {
+  gap: 6px;
+}
+
+.business-dashboard-page :deep(.product-upload-preview-item) {
+  padding: 5px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+}
+
+.business-dashboard-page :deep(.product-upload-preview-image) {
+  border-radius: 8px;
+}
+
+.business-dashboard-page :deep(.product-upload-empty) {
+  min-height: 78px;
+  padding: 10px;
+  border-radius: 9px;
+  font-size: 0.72rem;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.14);
 }
 
 .bulk-import-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(230px, 0.72fr);
+  gap: 6px;
   align-items: start;
 }
 
 .bulk-import-shell--review {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .bulk-import-panel {
   display: grid;
-  gap: 16px;
-  padding: 22px;
-  border-radius: 24px;
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+  gap: 5px;
+  padding: 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  box-shadow: none;
 }
 
-.bulk-import-side {
+.bulk-import-side,
+.bulk-import-source-card,
+.bulk-import-job-list,
+.bulk-import-group-list,
+.bulk-import-record-list,
+.bulk-import-variant-list {
   display: grid;
-  gap: 18px;
+  gap: 6px;
+}
+
+.bulk-import-source-card--stack {
+  gap: 6px;
 }
 
 .bulk-import-toolbar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 6px;
 }
 
 .bulk-import-toolbar .field textarea,
 .bulk-import-source-card textarea {
-  min-height: 132px;
-  resize: vertical;
+  min-height: 72px;
 }
 
 .field-checkbox {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   align-content: start;
 }
 
 .field-checkbox input {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   margin: 0;
-}
-
-.bulk-import-source-card {
-  display: grid;
-  gap: 14px;
-}
-
-.bulk-import-source-card--stack {
-  gap: 16px;
 }
 
 .bulk-import-actions {
@@ -3681,27 +4889,19 @@ async function applyBulkStockUpdate() {
 
 .bulk-import-summary-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.bulk-import-job-list,
-.bulk-import-group-list,
-.bulk-import-record-list,
-.bulk-import-variant-list {
-  display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .bulk-import-job-card,
 .bulk-import-group-card,
 .bulk-import-record-card {
   display: grid;
-  gap: 10px;
-  padding: 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  background: rgba(248, 250, 252, 0.92);
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
   text-align: left;
   color: inherit;
 }
@@ -3725,7 +4925,7 @@ async function applyBulkStockUpdate() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .bulk-import-group-head h4,
@@ -3742,11 +4942,17 @@ async function applyBulkStockUpdate() {
   justify-items: end;
 }
 
+.bulk-import-mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .bulk-import-variant-row,
 .bulk-import-record-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 5px;
 }
 
 .bulk-import-record-card.is-error {
@@ -3761,8 +4967,8 @@ async function applyBulkStockUpdate() {
 .bulk-import-inline-warning,
 .bulk-import-inline-error {
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.72rem;
+  line-height: 1.32;
 }
 
 .bulk-import-inline-warning {
@@ -3773,221 +4979,335 @@ async function applyBulkStockUpdate() {
   color: #b91c1c;
 }
 
-.product-builder-form,
-.product-builder-aside {
-  display: grid;
-  gap: 18px;
+.bulk-import-section-head p {
+  margin: 0;
 }
 
-.product-builder-steps {
+.notifications-list {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: 5px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
-.product-builder-step {
+.business-stock-alerts-card {
   display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.business-stock-alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 5px;
+}
+
+.business-stock-alert-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+}
+
+.business-stock-alert-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.business-stock-alert-copy strong {
+  color: #2f3a4d;
+  font-size: 0.82rem;
+}
+
+.business-stock-alert-copy p {
+  margin: 0;
+  color: #6c7285;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.business-stock-alert-category {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.business-stock-alerts-note {
+  margin: 0;
+  color: #6b5d76;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.products-management-surface {
   gap: 6px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  background: rgba(255, 255, 255, 0.76);
-  color: inherit;
-  text-align: left;
-  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.06);
 }
 
-.product-builder-step strong {
-  font-size: 0.95rem;
+.products-controls {
+  grid-template-columns: minmax(220px, 1.65fr) repeat(3, minmax(94px, 0.72fr));
+  gap: 4px;
+  align-items: end;
+  padding: 4px 5px;
+  border-radius: 9px;
+  margin-bottom: 4px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: none;
 }
 
-.product-builder-step span,
-.product-builder-step small {
-  color: #6b7280;
-}
-
-.product-builder-step.is-active {
-  border-color: rgba(255, 106, 43, 0.28);
-  box-shadow: 0 16px 34px rgba(255, 106, 43, 0.12);
-}
-
-.product-builder-step.is-done small {
-  color: #ff6a2b;
-}
-
-.product-builder-block,
-.product-builder-aside-card {
-  display: grid;
-  gap: 16px;
-  padding: 22px;
-  border-radius: 24px;
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 16px 36px rgba(31, 41, 55, 0.07);
-}
-
-.product-builder-block.is-active {
-  border-color: rgba(255, 106, 43, 0.24);
-}
-
-.product-builder-inline-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.product-builder-note {
+.products-controls .field,
+.products-bulk-actions-grid .field {
   margin: 0;
-  font-size: 0.94rem;
-  color: #556070;
 }
 
-.product-builder-note.is-warning {
-  color: #b45309;
+.products-controls .admin-compact-search {
+  margin: 0;
 }
 
-.field-row-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.products-bulk-actions {
+  margin: 0;
+  padding: 4px 5px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: none;
 }
 
-.product-builder-review-card {
+.products-bulk-actions p {
+  margin: 0 0 3px;
+  font-size: 0.72rem;
+}
+
+.products-bulk-actions-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: stretch;
+  gap: 5px;
+  grid-template-columns: repeat(8, minmax(72px, 1fr));
+  align-items: end;
 }
 
-.product-builder-review-media {
-  min-height: 220px;
+.products-table-shell {
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: none;
+}
+
+.products-table th,
+.products-table td {
+  padding: 5px 4px;
+  font-size: 0.72rem;
+}
+
+.products-table-product {
+  min-width: 172px;
+}
+
+.products-table-product img {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.products-table-product p {
+  margin: 1px 0 0;
+  font-size: 0.62rem;
+  line-height: 1.1;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  border-radius: 22px;
-  background: rgba(245, 243, 241, 0.92);
 }
 
-.product-builder-review-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+.products-row-actions {
+  display: inline-flex;
+  gap: 3px;
 }
 
-.product-builder-review-empty {
-  width: 100%;
-  height: 100%;
-  min-height: 220px;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
-  font-weight: 700;
+.products-row-metrics {
+  min-width: 98px;
+  gap: 3px;
 }
 
-.product-builder-review-copy {
-  display: grid;
-  gap: 12px;
+.products-row-metric {
+  padding: 3px 4px;
+  border-radius: 7px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.14);
 }
 
-.product-builder-review-copy h3,
-.product-builder-aside-card h3 {
-  margin: 0;
-  color: #1f2937;
+.products-row-metric small {
+  font-size: 0.5rem;
 }
 
-.product-builder-review-copy p,
-.product-builder-aside-copy {
-  margin: 0;
+.products-row-metric strong {
+  font-size: 0.64rem;
 }
 
-.product-builder-price-preview {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
+@media (max-width: 1240px) {
+  .business-dashboard-shell {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
 
-.product-builder-price-preview strong {
-  font-size: 1.35rem;
-  color: #1f2937;
-}
+  .business-dashboard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-.product-builder-price-preview span {
-  color: #6b7280;
-  text-decoration: line-through;
-}
+  .business-dashboard-overview-grid,
+  .business-dashboard-overview-grid--bottom {
+    grid-template-columns: 1fr;
+  }
 
-.product-builder-price-preview mark {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 106, 43, 0.14);
-  color: #c2410c;
-}
-
-.product-builder-checklist {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-
-.product-builder-checklist-item {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(245, 243, 241, 0.9);
-}
-
-.product-builder-checklist-item strong {
-  color: #1f2937;
-}
-
-.product-builder-checklist-item small {
-  color: #6b7280;
-}
-
-.product-builder-checklist-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(47, 52, 70, 0.18);
-}
-
-.product-builder-checklist-item.is-done .product-builder-checklist-dot {
-  background: #ff6a2b;
-}
-
-.product-builder-aside-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-@media (max-width: 1100px) {
+  .business-dashboard-layout,
   .bulk-import-shell,
   .bulk-import-shell--review,
   .product-builder-shell {
     grid-template-columns: 1fr;
   }
+
+  .products-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .products-bulk-actions-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .business-dashboard-header-actions {
+    justify-content: flex-start;
+  }
 }
 
-@media (max-width: 840px) {
-  .bulk-import-toolbar,
-  .bulk-import-summary-grid,
-  .bulk-import-variant-row,
-  .bulk-import-record-grid,
-  .business-dashboard-workspace-grid,
-  .business-dashboard-next-grid,
-  .product-builder-steps,
-  .field-row-3,
-  .product-builder-review-card {
+@media (max-width: 980px) {
+  .business-dashboard-shell {
     grid-template-columns: 1fr;
   }
 
-  .product-builder-head,
-  .product-builder-block-head {
+  .business-dashboard-sidebar {
+    padding: 10px;
+    min-height: auto;
+  }
+
+  .business-dashboard-side-menu {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: grid;
+  }
+
+  .business-dashboard-toolbar {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .business-dashboard-toolbar-meta {
+    justify-content: space-between;
+  }
+
+  .business-dashboard-toolbar-tabs {
+    width: 100%;
+  }
+
+  .business-dashboard-analytics-grid,
+  .business-shipping-settings-grid,
+  .bulk-import-toolbar,
+  .bulk-import-summary-grid,
+  .bulk-import-mapping-grid,
+  .bulk-import-variant-row,
+  .bulk-import-record-grid,
+  .product-builder-aside-grid,
+  .field-row-3,
+  .product-builder-steps,
+  .products-controls,
+  .products-bulk-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .business-dashboard-page {
+    width: min(100%, calc(100vw - 16px));
+    gap: 8px;
+  }
+
+  .business-dashboard-metric-grid,
+  .business-dashboard-actions-grid,
+  .business-dashboard-side-menu {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-products-header,
+  .admin-list-header,
+  .profile-card-header,
+  .product-builder-head,
+  .product-builder-block-head,
+  .bulk-import-section-head,
+  .field-row,
+  .field-row-3,
+  .business-dashboard-workspace-grid,
+  .business-stock-alerts-grid,
+  .business-shipping-settings-grid,
+  .product-builder-steps,
+  .product-builder-review-card,
+  .bulk-import-toolbar,
+  .bulk-import-summary-grid,
+  .bulk-import-mapping-grid,
+  .bulk-import-variant-row,
+  .bulk-import-record-grid,
+  .products-controls,
+  .products-bulk-actions-grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .business-dashboard-header-actions,
+  .business-dashboard-edit-access {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .business-dashboard-edit-access {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .business-dashboard-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .business-dashboard-toolbar-range,
+  .business-dashboard-toolbar-avatar,
+  .business-dashboard-toolbar-icon,
+  .business-dashboard-toolbar-tab {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .business-dashboard-product-row,
+  .business-dashboard-alert-row,
+  .business-dashboard-discount-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .business-dashboard-row-meta {
+    justify-items: start;
+  }
+
+  .marketplace-status-card,
+  .business-stock-alert-card,
+  .business-shipping-city-row {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .business-shipping-city-rates-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .products-row-actions {
+    flex-wrap: wrap;
   }
 }
 </style>

@@ -588,4 +588,60 @@ const badgeLabel = computed(() => {
     right: 7px;
   }
 }
+
+.marketplace-card {
+  gap: 8px;
+  max-width: 232px;
+  min-height: 382px;
+  padding: 10px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.05);
+}
+
+.marketplace-card-media {
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfbff, #f4f5ff);
+  box-shadow: none;
+}
+
+.marketplace-card-badge {
+  background: #dc2626;
+  border-color: rgba(220, 38, 38, 0.2);
+  box-shadow: none;
+}
+
+.product-card-overlay-button {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  color: #d4a017;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+}
+
+.product-card-overlay-button.active {
+  background: #d4a017;
+  color: #111827;
+}
+
+.marketplace-card-price-current {
+  color: #d4a017;
+}
+
+.marketplace-card-buyers-count,
+.marketplace-card-business-name,
+.marketplace-card-price-old {
+  color: #7b8497;
+}
+
+.marketplace-card-rating {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
+
+@media (max-width: 820px) {
+  .marketplace-card {
+    min-height: 318px;
+    border-radius: 20px;
+  }
+}
 </style>

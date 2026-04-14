@@ -154,6 +154,25 @@ struct TregoRecommendationSection: Codable, Identifiable, Equatable {
     var id: String { key }
 }
 
+struct TregoHomeCategoryOption: Identifiable, Equatable {
+    let key: String
+    let title: String
+
+    var id: String { key }
+}
+
+struct TregoHomeFeedSnapshot: Equatable {
+    let railSections: [TregoRecommendationSection]
+    let gridProducts: [TregoProduct]
+    let categoryOptions: [TregoHomeCategoryOption]
+
+    static let empty = TregoHomeFeedSnapshot(
+        railSections: [],
+        gridProducts: [],
+        categoryOptions: [.init(key: "all", title: "Te gjitha")]
+    )
+}
+
 struct TregoProductReview: Codable, Identifiable, Equatable {
     let id: Int
     let rating: Int?
@@ -767,6 +786,12 @@ struct TregoPageFetchResult<T: Equatable> {
     let message: String?
 }
 
+struct TregoCachedProductDetail: Equatable {
+    let product: TregoProduct?
+    let reviews: [TregoProductReview]
+    let recommendationSections: [TregoRecommendationSection]
+}
+
 final class TregoAPIClient {
     private struct TregoMultipartUpload {
         let data: Data
@@ -784,7 +809,7 @@ final class TregoAPIClient {
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.requestCachePolicy = .useProtocolCachePolicy
         session = URLSession(configuration: config)
         decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -2085,6 +2110,11 @@ struct TregoAuthenticationPrompt: Identifiable {
 
 @MainActor
 final class TregoNativeAppStore: ObservableObject {
+    private struct TregoProductDetailCacheEntry {
+        let payload: TregoCachedProductDetail
+        let createdAt: Date
+    }
+
     private static let viewedHistoryStorageKey = "trego-ios-native-viewed-history"
     private let sessionRefreshThrottleSeconds: TimeInterval = 12
 
@@ -2095,6 +2125,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var appSettings = TregoAppSettings.load()
     @Published var homeProducts: [TregoProduct] = []
     @Published var homeRecommendationSections: [TregoRecommendationSection] = []
+    @Published private(set) var homeFeedSnapshot = TregoHomeFeedSnapshot.empty
     @Published var homeLoading = false
     @Published var homeLoadingMore = false
     @Published var homeHasMore = false
@@ -2108,6 +2139,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var viewedHistory: [TregoViewedHistoryEntry] = []
     @Published var recentlyViewedProducts: [TregoProduct] = []
     @Published var wishlist: [TregoProduct] = []
+    @Published private(set) var wishlistProductIDs: Set<Int> = []
     @Published var wishlistLoading = false
     @Published var cart: [TregoCartItem] = []
     @Published var cartLoading = false
@@ -2145,11 +2177,19 @@ final class TregoNativeAppStore: ObservableObject {
     private var homeOffset = 0
     private var searchOffset = 0
     private var lastSearchTerm = ""
+    private var activeSearchRequestID = UUID()
+    private var productDetailCache: [Int: TregoProductDetailCacheEntry] = [:]
+    private let homePageSize = 16
+    private let searchPageSize = 16
+    private let homeRecommendationLimit = 8
+    private let homeRailLimit = 12
+    private let productDetailCacheTTL: TimeInterval = 180
 
     init() {
         let history = Self.loadViewedHistory()
         viewedHistory = history
         recentlyViewedProducts = history.map(\.product)
+        rebuildHomeFeedSnapshot()
     }
 
     var tabBadges: [LiquidGlassTab: String] {
@@ -2214,7 +2254,8 @@ final class TregoNativeAppStore: ObservableObject {
 
         if user?.role == "business" {
             homeRecommendationSections = []
-        } else {
+            rebuildHomeFeedSnapshot()
+        } else if hasLoadedHome, !homeLoading {
             Task { [weak self] in
                 await self?.loadHomeRecommendations()
             }
@@ -2240,10 +2281,11 @@ final class TregoNativeAppStore: ObservableObject {
             homeLoading = false
         }
 
-        async let recommendations = api.fetchHomeRecommendations(limit: 10)
-        let result = await api.fetchMarketplaceProductsPageResult(limit: 24, offset: 0)
+        async let recommendations = api.fetchHomeRecommendations(limit: homeRecommendationLimit)
+        let result = await api.fetchMarketplaceProductsPageResult(limit: homePageSize, offset: 0)
         guard result.didSucceed else {
             homeRecommendationSections = await recommendations
+            rebuildHomeFeedSnapshot()
             if !homeProducts.isEmpty {
                 showToast(result.message ?? "Produktet aktuale u ruajten. Rifreskimi deshtoi.")
             }
@@ -2256,10 +2298,12 @@ final class TregoNativeAppStore: ObservableObject {
         homeOffset = page.offset + page.items.count
         homeHasMore = page.hasMore
         hasLoadedHome = true
+        rebuildHomeFeedSnapshot()
     }
 
     func loadHomeRecommendations() async {
-        homeRecommendationSections = await api.fetchHomeRecommendations(limit: 10)
+        homeRecommendationSections = await api.fetchHomeRecommendations(limit: homeRecommendationLimit)
+        rebuildHomeFeedSnapshot()
     }
 
     func loadMoreHomeIfNeeded() async {
@@ -2267,7 +2311,7 @@ final class TregoNativeAppStore: ObservableObject {
         homeLoadingMore = true
         defer { homeLoadingMore = false }
 
-        let result = await api.fetchMarketplaceProductsPageResult(limit: 24, offset: homeOffset)
+        let result = await api.fetchMarketplaceProductsPageResult(limit: homePageSize, offset: homeOffset)
         guard result.didSucceed else {
             showToast(result.message ?? "Produktet aktuale u ruajten. Ngarkimi i metejshem deshtoi.")
             return
@@ -2277,6 +2321,7 @@ final class TregoNativeAppStore: ObservableObject {
         homeProducts = mergeUniqueProducts(existing: homeProducts, incoming: page.items)
         homeOffset = page.offset + page.items.count
         homeHasMore = page.hasMore
+        rebuildHomeFeedSnapshot()
     }
 
     var personalizationConsentPending: Bool {
@@ -2290,12 +2335,14 @@ final class TregoNativeAppStore: ObservableObject {
     func allowPersonalizedRecommendations() {
         appSettings.personalizationConsentStatus = "allowed"
         appSettings.persist()
+        rebuildHomeFeedSnapshot()
         showToast("Rekomandimet personale u aktivizuan.")
     }
 
     func declinePersonalizedRecommendations() {
         appSettings.personalizationConsentStatus = "declined"
         appSettings.persist()
+        rebuildHomeFeedSnapshot()
         showToast("Rekomandimet personale mbeten te fikura.")
     }
 
@@ -2348,6 +2395,11 @@ final class TregoNativeAppStore: ObservableObject {
         await performSearch()
     }
 
+    func loadSearchIfNeeded() async {
+        guard !searchLoading, searchResults.isEmpty else { return }
+        await performSearch()
+    }
+
     func performSearch(forceProductsFallback: Bool = false) async {
         await performSearch(forceProductsFallback: forceProductsFallback, append: false)
     }
@@ -2356,12 +2408,17 @@ final class TregoNativeAppStore: ObservableObject {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = trimmed.lowercased()
         let isFreshSearch = !append || normalizedQuery != lastSearchTerm
+        let requestID: UUID
 
         if append {
             guard searchHasMore, !searchLoadingMore else { return }
+            guard normalizedQuery == lastSearchTerm else { return }
             searchLoadingMore = true
+            requestID = activeSearchRequestID
         } else {
             searchLoading = true
+            requestID = UUID()
+            activeSearchRequestID = requestID
         }
 
         defer {
@@ -2379,7 +2436,8 @@ final class TregoNativeAppStore: ObservableObject {
         }
 
         if trimmed.isEmpty {
-            let page = await api.fetchMarketplaceProductsPage(limit: 18, offset: append ? searchOffset : 0)
+            let page = await api.fetchMarketplaceProductsPage(limit: searchPageSize, offset: append ? searchOffset : 0)
+            guard requestID == activeSearchRequestID else { return }
             searchResults = append
                 ? mergeUniqueProducts(existing: searchResults, incoming: page.items)
                 : page.items
@@ -2388,9 +2446,11 @@ final class TregoNativeAppStore: ObservableObject {
             return
         }
 
-        let page = await api.searchProductsPage(query: trimmed, limit: 18, offset: append ? searchOffset : 0)
+        let page = await api.searchProductsPage(query: trimmed, limit: searchPageSize, offset: append ? searchOffset : 0)
+        guard requestID == activeSearchRequestID else { return }
         if page.items.isEmpty && forceProductsFallback && !append {
-            let fallbackPage = await api.fetchMarketplaceProductsPage(limit: 18, offset: 0)
+            let fallbackPage = await api.fetchMarketplaceProductsPage(limit: searchPageSize, offset: 0)
+            guard requestID == activeSearchRequestID else { return }
             searchResults = fallbackPage.items
             searchOffset = fallbackPage.offset + fallbackPage.items.count
             searchHasMore = fallbackPage.hasMore
@@ -2411,6 +2471,7 @@ final class TregoNativeAppStore: ObservableObject {
     func performImageSearch(upload: TregoImageSearchUpload) async {
         selectedTab = .kerko
         searchLoading = true
+        activeSearchRequestID = UUID()
         searchResults = await api.searchProducts(imageUpload: upload)
         searchOffset = searchResults.count
         searchHasMore = false
@@ -2427,12 +2488,14 @@ final class TregoNativeAppStore: ObservableObject {
         viewedHistory = [entry] + filtered.prefix(29)
         persistViewedHistory()
         recentlyViewedProducts = viewedHistory.map(\.product)
+        rebuildHomeFeedSnapshot()
     }
 
     func removeViewedHistoryProduct(productID: Int) {
         viewedHistory.removeAll { $0.product.id == productID }
         persistViewedHistory()
         recentlyViewedProducts = viewedHistory.map(\.product)
+        rebuildHomeFeedSnapshot()
     }
 
     private func mergeUniqueProducts(existing: [TregoProduct], incoming: [TregoProduct]) -> [TregoProduct] {
@@ -2447,11 +2510,15 @@ final class TregoNativeAppStore: ObservableObject {
     func loadWishlist() async {
         guard user != nil else {
             wishlist = []
+            syncWishlistIndex()
+            rebuildHomeFeedSnapshot()
             return
         }
         wishlistLoading = true
         wishlist = await api.fetchWishlist()
         wishlistLoading = false
+        syncWishlistIndex()
+        rebuildHomeFeedSnapshot()
     }
 
     func loadCart() async {
@@ -2595,14 +2662,14 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     func isWishlisted(productId: Int) -> Bool {
-        wishlist.contains(where: { $0.id == productId })
+        wishlistProductIDs.contains(productId)
     }
 
     func toggleWishlist(for product: TregoProduct) async {
         guard await ensureAuthenticatedSessionOrPrompt(
             message: "Per ta ruajtur produktin ne wishlist duhet te kyqeni ose te krijoni llogari."
         ) else { return }
-        let wasWishlisted = wishlist.contains(where: { $0.id == product.id })
+        let wasWishlisted = wishlistProductIDs.contains(product.id)
         let previousWishlist = wishlist
 
         if wasWishlisted {
@@ -2610,19 +2677,21 @@ final class TregoNativeAppStore: ObservableObject {
         } else {
             wishlist = [product] + wishlist.filter { $0.id != product.id }
         }
+        syncWishlistIndex()
+        rebuildHomeFeedSnapshot()
 
         let response = await api.toggleWishlist(productId: product.id)
         if response.ok == true {
             if let items = response.items {
                 wishlist = items
             }
-            await loadHomeRecommendations()
-            if selectedTab == .kerko {
-                await performSearch()
-            }
+            syncWishlistIndex()
+            rebuildHomeFeedSnapshot()
             showToast(response.message ?? "Wishlist u perditesua.")
         } else {
             wishlist = previousWishlist
+            syncWishlistIndex()
+            rebuildHomeFeedSnapshot()
             globalMessage = response.message ?? response.errors?.joined(separator: " ") ?? "Wishlist nuk u perditesua."
         }
     }
@@ -2652,7 +2721,6 @@ final class TregoNativeAppStore: ObservableObject {
 
         if response.ok == true {
             await loadCart()
-            await loadHomeRecommendations()
             showToast(response.message ?? "Produkti u shtua ne cart.")
         } else {
             globalMessage = response.message ?? "Produkti nuk u shtua ne cart."
@@ -2926,6 +2994,7 @@ final class TregoNativeAppStore: ObservableObject {
         sessionLoaded = true
         sessionRefreshing = false
         wishlist = []
+        syncWishlistIndex()
         cart = []
         orders = []
         conversations = []
@@ -2945,10 +3014,13 @@ final class TregoNativeAppStore: ObservableObject {
         authRoute = nil
         accountAuthRoute = .login
         selectedConversation = nil
+        productDetailCache.removeAll()
+        rebuildHomeFeedSnapshot()
     }
 
     private func clearAuthenticatedData() {
         wishlist = []
+        syncWishlistIndex()
         cart = []
         orders = []
         conversations = []
@@ -2962,6 +3034,7 @@ final class TregoNativeAppStore: ObservableObject {
         adminReports = []
         adminOrders = []
         adminLaunchAds = []
+        rebuildHomeFeedSnapshot()
     }
 
     private func applyAuthenticatedUserSnapshot(_ sessionUser: TregoSessionUser) {
@@ -3336,10 +3409,108 @@ final class TregoNativeAppStore: ObservableObject {
         if recentlyViewedProducts.contains(where: { $0.id == product.id }) {
             score += 2
         }
-        if wishlist.contains(where: { $0.id == product.id }) {
+        if wishlistProductIDs.contains(product.id) {
             score += 3
         }
         return score
+    }
+
+    func cachedProductDetailPayload(for productID: Int) -> TregoCachedProductDetail? {
+        guard let entry = productDetailCache[productID] else { return nil }
+        guard Date().timeIntervalSince(entry.createdAt) < productDetailCacheTTL else {
+            productDetailCache.removeValue(forKey: productID)
+            return nil
+        }
+        return entry.payload
+    }
+
+    func storeProductDetailPayload(_ payload: TregoCachedProductDetail, for productID: Int) {
+        productDetailCache[productID] = TregoProductDetailCacheEntry(payload: payload, createdAt: Date())
+    }
+
+    private func syncWishlistIndex() {
+        wishlistProductIDs = Set(wishlist.map(\.id))
+    }
+
+    private func rebuildHomeFeedSnapshot() {
+        let railSections = resolvedHomeRailSections()
+        let excludedIDs = Set(railSections.flatMap(\.products).map(\.id))
+        let personalized = personalizedHomeProducts(from: homeProducts)
+        let merged = personalized + homeProducts
+
+        var seen = Set<Int>()
+        let gridProducts = merged.filter { product in
+            guard !excludedIDs.contains(product.id) else { return false }
+            return seen.insert(product.id).inserted
+        }
+
+        let effectiveGridProducts = gridProducts.isEmpty ? homeProducts : gridProducts
+        let categoryKeys = Set(effectiveGridProducts.compactMap { normalizedCategoryKey(for: $0) })
+        let sortedCategoryKeys = categoryKeys.sorted {
+            TregoNativeProductCatalog.sectionLabel(for: $0) < TregoNativeProductCatalog.sectionLabel(for: $1)
+        }
+        let categoryOptions = [TregoHomeCategoryOption(key: "all", title: "Te gjitha")]
+            + sortedCategoryKeys.map { TregoHomeCategoryOption(key: $0, title: TregoNativeProductCatalog.sectionLabel(for: $0)) }
+
+        homeFeedSnapshot = TregoHomeFeedSnapshot(
+            railSections: railSections,
+            gridProducts: effectiveGridProducts,
+            categoryOptions: categoryOptions
+        )
+    }
+
+    private func resolvedHomeRailSections() -> [TregoRecommendationSection] {
+        if !homeRecommendationSections.isEmpty {
+            return homeRecommendationSections.map { section in
+                TregoRecommendationSection(
+                    key: section.key,
+                    title: section.title,
+                    subtitle: section.subtitle,
+                    products: Array(section.products.prefix(homeRailLimit))
+                )
+            }
+            .filter { !$0.products.isEmpty }
+        }
+
+        let recommendedProducts = Array(personalizedHomeProducts(from: homeProducts).prefix(homeRailLimit))
+        let newArrivalProducts = Array(
+            homeProducts
+                .sorted { String($0.createdAt ?? "") > String($1.createdAt ?? "") }
+                .prefix(homeRailLimit)
+        )
+        let trendingSeed = homeProducts.filter { $0.isTrending == true }
+        let trendingProducts = Array(
+            (!trendingSeed.isEmpty ? trendingSeed : homeProducts.sorted(by: promoScore))
+                .prefix(homeRailLimit)
+        )
+
+        return [
+            TregoRecommendationSection(
+                key: "recommended-for-you",
+                title: "Recommended for you",
+                subtitle: "Based on your activity in the app.",
+                products: recommendedProducts
+            ),
+            TregoRecommendationSection(
+                key: "new-arrivals",
+                title: "New arrivals",
+                subtitle: "Fresh products added recently.",
+                products: newArrivalProducts
+            ),
+            TregoRecommendationSection(
+                key: "best-sellers",
+                title: "Best sellers",
+                subtitle: "Products with the strongest sales and demand.",
+                products: trendingProducts
+            ),
+        ]
+        .filter { !$0.products.isEmpty }
+    }
+
+    private func promoScore(lhs: TregoProduct, rhs: TregoProduct) -> Bool {
+        let leftScore = Double(lhs.buyersCount ?? 0) * 2.5 + Double(lhs.reviewCount ?? 0) + Double(lhs.averageRating ?? 0)
+        let rightScore = Double(rhs.buyersCount ?? 0) * 2.5 + Double(rhs.reviewCount ?? 0) + Double(rhs.averageRating ?? 0)
+        return leftScore > rightScore
     }
 
     private func normalizedCategoryKey(for product: TregoProduct) -> String? {

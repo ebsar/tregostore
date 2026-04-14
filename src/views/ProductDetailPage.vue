@@ -4420,4 +4420,142 @@ function getReviewAvatarStyle(name) {
     grid-template-columns: 82px minmax(0, 1fr);
   }
 }
+
+.pdp-page {
+  gap: 22px;
+  padding-bottom: 12px;
+}
+
+.pdp-breadcrumbs {
+  padding: 16px 20px;
+  border-radius: 24px;
+  border-color: rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.pdp-back-link {
+  border-color: rgba(15, 23, 42, 0.08);
+  color: #d4a017;
+  background: #fff8e7;
+}
+
+.pdp-hero {
+  gap: 32px;
+  padding: 28px;
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.05);
+}
+
+.pdp-gallery-stage {
+  background: linear-gradient(180deg, #ffffff, #fafaff);
+}
+
+.pdp-gallery-thumb.active {
+  border-color: #d4a017;
+  box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.16);
+}
+
+.pdp-gallery-arrow {
+  background: #d4a017;
+  color: #111827;
+  box-shadow: none;
+}
+
+.pdp-rating-row,
+.pdp-business-posted,
+.pdp-meta-column p,
+.pdp-description-copy p,
+.pdp-info-paragraph,
+.pdp-side-list li,
+.pdp-bullet-list li,
+.pdp-additional-detail-line,
+.pdp-additional-highlights-list li,
+.pdp-review-copy,
+.pdp-review-bar-value {
+  color: #6b7280;
+}
+
+.pdp-price-current {
+  color: #d4a017;
+}
+
+.pdp-offer-badge {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.pdp-tag,
+.pdp-checkout-card {
+  background: #ffffff;
+}
+
+.pdp-color-swatch.active {
+  border-color: #d4a017;
+  box-shadow: 0 0 0 4px rgba(212, 160, 23, 0.16);
+}
+
+.pdp-primary-button,
+.pdp-review-form button {
+  background: #d4a017;
+  color: #111827;
+  box-shadow: none;
+}
+
+.pdp-primary-button.active {
+  background: #b48712;
+  color: #111827;
+}
+
+.pdp-secondary-button,
+.pdp-review-toggle {
+  border-color: rgba(212, 160, 23, 0.24);
+  color: #d4a017;
+  background: #fff8e7;
+}
+
+.pdp-utility-action.active,
+.pdp-checkout-badge,
+.pdp-mini-card-price {
+  color: #d4a017;
+}
+
+.pdp-tab-button.active::after,
+.pdp-review-bar-fill {
+  background: #d4a017;
+}
+
+.pdp-review-score-card {
+  background: #fff7da;
+}
+
+.pdp-review-score-card span,
+.pdp-review-score-card strong,
+.pdp-feedback-head h3,
+.pdp-description-copy h2,
+.pdp-info-group h3,
+.pdp-spec-group h3,
+.pdp-side-card h3,
+.pdp-headline h1,
+.pdp-mini-card-title {
+  color: #111827;
+}
+
+.pdp-related-board,
+.pdp-detail-tabs {
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
+}
+
+.pdp-mini-card {
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+@media (max-width: 820px) {
+  .pdp-breadcrumbs,
+  .pdp-hero,
+  .pdp-tab-panel {
+    padding: 18px;
+  }
+}
 </style>

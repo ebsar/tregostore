@@ -1041,17 +1041,17 @@ function renderIcon(icon) {
 }
 
 .commerce-home-header-action:hover {
-  color: #ffd36b;
+  color: #d4a017;
   transform: translateY(-1px);
 }
 
 .commerce-home-header-action:focus-visible {
-  outline: 2px solid rgba(255, 211, 107, 0.75);
+  outline: 2px solid rgba(212, 160, 23, 0.28);
   outline-offset: 4px;
 }
 
 .commerce-home-header-action[aria-expanded="true"] {
-  color: #ffd36b;
+  color: #d4a017;
 }
 
 .commerce-home-header-action-icon {
@@ -1333,6 +1333,206 @@ function renderIcon(icon) {
 
   .commerce-home-login-overlay-panel {
     width: min(100%, 700px);
+  }
+}
+
+.commerce-header {
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+}
+
+.commerce-home-shell {
+  background: #ffffff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+}
+
+.commerce-home-promo-bar {
+  min-height: 54px;
+  padding: 10px 24px;
+  background: linear-gradient(180deg, #ffffff, #fbfbff);
+  color: #111827;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.commerce-home-promo-copy {
+  gap: 10px;
+}
+
+.commerce-home-promo-copy strong {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.commerce-home-promo-badge {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.14);
+}
+
+.commerce-home-promo-cta {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: #d4a017;
+  color: #111827;
+  box-shadow: none;
+}
+
+.commerce-home-promo-close {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(15, 23, 42, 0.08);
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.commerce-home-info-bar {
+  display: none;
+}
+
+.commerce-home-header-bar {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 16px 24px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.commerce-home-brand {
+  color: #111827;
+}
+
+.commerce-home-brand img {
+  width: 58px;
+  height: 58px;
+}
+
+.commerce-home-search {
+  min-height: 54px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background: #f8f9ff;
+  box-shadow: none;
+}
+
+.commerce-home-search-input {
+  color: #111827;
+}
+
+.commerce-home-search-input::placeholder {
+  color: #94a3b8;
+}
+
+.commerce-home-search-visual,
+.commerce-home-search-submit {
+  color: #d4a017;
+}
+
+.commerce-home-header-actions {
+  gap: 8px;
+}
+
+.commerce-home-header-action {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff8e7;
+  color: #d4a017;
+  box-shadow: none;
+}
+
+.commerce-home-header-action:hover,
+.commerce-home-header-action[aria-expanded="true"] {
+  color: #111827;
+  background: #d4a017;
+}
+
+.commerce-home-header-action:focus-visible {
+  outline: 2px solid rgba(212, 160, 23, 0.28);
+}
+
+.commerce-home-header-badge {
+  top: -4px;
+  right: -4px;
+  background: #111827;
+  color: #ffffff;
+}
+
+.commerce-home-mobile-toggle {
+  color: #d4a017;
+}
+
+.commerce-home-subnav {
+  min-height: 56px;
+  padding: 10px 24px;
+  background: #ffffff;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.commerce-home-subnav-select {
+  min-height: 40px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: #f8f9ff;
+  color: #111827;
+}
+
+.commerce-home-subnav-links a,
+.commerce-home-subnav-links button {
+  color: #6b7280;
+}
+
+.commerce-home-subnav-links a:hover,
+.commerce-home-subnav-links button:hover {
+  color: #d4a017;
+}
+
+.commerce-home-mobile-panel {
+  background: #ffffff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+}
+
+.commerce-home-mobile-search,
+.commerce-home-mobile-select,
+.commerce-home-mobile-action {
+  border-radius: 14px;
+}
+
+.commerce-home-mobile-action {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: #fff8e7;
+  color: #d4a017;
+}
+
+.commerce-home-login-overlay {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (max-width: 760px) {
+  .commerce-home-promo-bar {
+    padding: 10px 14px;
+  }
+
+  .commerce-home-header-bar {
+    padding: 12px 16px;
+    background: #ffffff;
+  }
+
+  .commerce-home-brand img {
+    width: 50px;
+    height: 50px;
+  }
+
+  .commerce-home-mobile-panel {
+    padding: 14px;
   }
 }
 </style>

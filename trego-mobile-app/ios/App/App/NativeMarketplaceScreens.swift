@@ -7,6 +7,7 @@ import SafariServices
 import CoreLocation
 import PassKit
 import UniformTypeIdentifiers
+import ImageIO
 
 struct TregoNativeRootView: View {
     @StateObject private var store = TregoNativeAppStore()
@@ -229,7 +230,7 @@ struct TregoNativeRootView: View {
         case .home:
             await store.loadHomeIfNeeded()
         case .kerko:
-            await store.performSearch()
+            await store.loadSearchIfNeeded()
         case .businesses:
             await store.loadPublicBusinesses()
         case .cart:
@@ -685,14 +686,14 @@ private struct TregoHomeScreen: View {
 
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        ForEach(homeCategoryOptions, id: \.0) { option in
+                                        ForEach(homeCategoryOptions) { option in
                                             Button {
-                                                selectedHomeCategoryKey = option.0
+                                                selectedHomeCategoryKey = option.key
                                             } label: {
-                                                Text(option.1)
+                                                Text(option.title)
                                                     .font(.system(size: 13, weight: .bold))
                                                     .foregroundStyle(
-                                                        selectedHomeCategoryKey == option.0
+                                                        selectedHomeCategoryKey == option.key
                                                         ? .white
                                                         : Color.primary.opacity(colorScheme == .dark ? 0.94 : 0.82)
                                                     )
@@ -701,7 +702,7 @@ private struct TregoHomeScreen: View {
                                                     .background(
                                                         Capsule()
                                                             .fill(
-                                                                selectedHomeCategoryKey == option.0
+                                                                selectedHomeCategoryKey == option.key
                                                                 ? TregoNativeTheme.accent
                                                                 : (
                                                                     colorScheme == .dark
@@ -713,7 +714,7 @@ private struct TregoHomeScreen: View {
                                                     .overlay {
                                                         Capsule()
                                                             .strokeBorder(
-                                                                selectedHomeCategoryKey == option.0
+                                                                selectedHomeCategoryKey == option.key
                                                                 ? TregoNativeTheme.accent.opacity(0.18)
                                                                 : (
                                                                     colorScheme == .dark
@@ -882,6 +883,12 @@ private struct TregoHomeScreen: View {
                     }
                 }
             }
+            .onChange(of: homeCategoryOptions) { options in
+                guard options.contains(where: { $0.key == selectedHomeCategoryKey }) else {
+                    selectedHomeCategoryKey = "all"
+                    return
+                }
+            }
             .confirmationDialog(
                 "Rekomandime personale",
                 isPresented: $showsPersonalizationPrompt,
@@ -904,119 +911,47 @@ private struct TregoHomeScreen: View {
         .navigationViewStyle(.stack)
     }
 
-    private var trendingProducts: [TregoProduct] {
-        let manuallySelected = store.homeProducts.filter { $0.isTrending == true }
-        if !manuallySelected.isEmpty {
-            return Array(manuallySelected.prefix(12))
-        }
-        return Array(store.homeProducts.sorted(by: promoScore).prefix(12))
-    }
-
-    private var newArrivalProducts: [TregoProduct] {
-        return Array(
-            store.homeProducts
-                .sorted { String($0.createdAt ?? "") > String($1.createdAt ?? "") }
-                .prefix(12)
-        )
-    }
-
-    private var recommendedProducts: [TregoProduct] {
-        let personalized = store.personalizedHomeProducts(from: store.homeProducts)
-        if !personalized.isEmpty {
-            return Array(personalized.prefix(12))
-        }
-        return Array(store.homeProducts.prefix(12))
-    }
-
     private var homeRailSections: [TregoHomeRailModel] {
-        if !store.homeRecommendationSections.isEmpty {
-            return store.homeRecommendationSections.compactMap { section in
-                let tint: Color
-                let cardStyle: TregoHomeRailCardStyle
-                switch section.key {
-                case "recommended-for-you":
-                    tint = Color(red: 0.16, green: 0.65, blue: 0.34)
-                    cardStyle = .metricsOnly
-                case "new-arrivals":
-                    tint = Color.orange.opacity(0.88)
-                    cardStyle = .standard
-                case "best-sellers":
-                    tint = Color.red.opacity(0.88)
-                    cardStyle = .metricsOnly
-                default:
-                    tint = TregoNativeTheme.accent
-                    cardStyle = .standard
-                }
-
-                return TregoHomeRailModel(
-                    id: section.key,
-                    title: section.title,
-                    tint: tint,
-                    cardStyle: cardStyle,
-                    products: Array(section.products.prefix(12)),
-                    subtitle: section.subtitle ?? ""
-                )
+        store.homeFeedSnapshot.railSections.compactMap { section in
+            let tint: Color
+            let cardStyle: TregoHomeRailCardStyle
+            switch section.key {
+            case "recommended-for-you":
+                tint = Color(red: 0.16, green: 0.65, blue: 0.34)
+                cardStyle = .metricsOnly
+            case "new-arrivals":
+                tint = Color.orange.opacity(0.88)
+                cardStyle = .standard
+            case "best-sellers":
+                tint = Color.red.opacity(0.88)
+                cardStyle = .metricsOnly
+            default:
+                tint = TregoNativeTheme.accent
+                cardStyle = .standard
             }
-            .filter { !$0.products.isEmpty }
+
+            return TregoHomeRailModel(
+                id: section.key,
+                title: section.title,
+                tint: tint,
+                cardStyle: cardStyle,
+                products: section.products,
+                subtitle: section.subtitle ?? ""
+            )
         }
-
-        return [
-            TregoHomeRailModel(
-                id: "recommended-for-you",
-                title: "Recommended for you",
-                tint: Color(red: 0.16, green: 0.65, blue: 0.34),
-                cardStyle: .metricsOnly,
-                products: recommendedProducts,
-                subtitle: "Based on your activity in the app."
-            ),
-            TregoHomeRailModel(
-                id: "new-arrivals",
-                title: "New arrivals",
-                tint: Color.orange.opacity(0.88),
-                cardStyle: .standard,
-                products: newArrivalProducts,
-                subtitle: "Fresh products added recently."
-            ),
-            TregoHomeRailModel(
-                id: "best-sellers",
-                title: "Best sellers",
-                tint: Color.red.opacity(0.88),
-                cardStyle: .metricsOnly,
-                products: trendingProducts,
-                subtitle: "Products with the strongest sales and demand."
-            ),
-        ]
-        .filter { !$0.products.isEmpty }
-    }
-
-    private var recommendedGridProducts: [TregoProduct] {
-        let excludedIds = Set(homeRailSections.flatMap(\.products).map(\.id))
-        let personalized = store.personalizedHomeProducts(from: store.homeProducts)
-        let merged = personalized + store.homeProducts
-
-        var seen = Set<Int>()
-        let unique = merged.filter { product in
-            guard !excludedIds.contains(product.id) else { return false }
-            return seen.insert(product.id).inserted
-        }
-
-        let sortedUnique = unique.sorted { recommendationScore(for: $0) > recommendationScore(for: $1) }
-        if !sortedUnique.isEmpty {
-            return sortedUnique
-        }
-
-        return store.homeProducts.sorted { recommendationScore(for: $0) > recommendationScore(for: $1) }
     }
 
     private var filteredRecommendedGridProducts: [TregoProduct] {
-        guard selectedHomeCategoryKey != "all" else { return recommendedGridProducts }
-        return recommendedGridProducts.filter { homeCategoryKey(for: $0) == selectedHomeCategoryKey }
+        guard selectedHomeCategoryKey != "all" else { return store.homeFeedSnapshot.gridProducts }
+        return store.homeFeedSnapshot.gridProducts.filter { homeCategoryKey(for: $0) == selectedHomeCategoryKey }
     }
 
-    private var homeCategoryOptions: [(String, String)] {
-        let categoryKeys = Set(recommendedGridProducts.compactMap { homeCategoryKey(for: $0) })
-        let sorted = categoryKeys.sorted { TregoNativeProductCatalog.sectionLabel(for: $0) < TregoNativeProductCatalog.sectionLabel(for: $1) }
-        return [("all", "Te gjitha")] + sorted.map { ($0, TregoNativeProductCatalog.sectionLabel(for: $0)) }
+    private var recommendedGridProducts: [TregoProduct] {
+        store.homeFeedSnapshot.gridProducts
+    }
+
+    private var homeCategoryOptions: [TregoHomeCategoryOption] {
+        store.homeFeedSnapshot.categoryOptions
     }
 
     private var hasAnyHomeContent: Bool {
@@ -1033,24 +968,6 @@ private struct TregoHomeScreen: View {
             .lowercased()
         guard let rawValue, !rawValue.isEmpty else { return nil }
         return TregoNativeProductCatalog.section(for: rawValue)
-    }
-
-    private func promoScore(lhs: TregoProduct, rhs: TregoProduct) -> Bool {
-        let leftScore = Double(lhs.buyersCount ?? 0) * 2.5 + Double(lhs.reviewCount ?? 0) + Double(lhs.averageRating ?? 0)
-        let rightScore = Double(rhs.buyersCount ?? 0) * 2.5 + Double(rhs.reviewCount ?? 0) + Double(rhs.averageRating ?? 0)
-        return leftScore > rightScore
-    }
-
-    private func recommendationScore(for product: TregoProduct) -> Double {
-        let daySeed = Double(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1)
-        let personalizedIndex = Double(store.personalizedHomeProducts(from: store.homeProducts).firstIndex(where: { $0.id == product.id }) ?? 40)
-        let personalizationBoost = max(0, 40 - personalizedIndex) * 1.6
-        let engagementBoost = Double(product.buyersCount ?? 0) * 0.42
-            + Double(product.wishlistCount ?? 0) * 0.28
-            + Double(product.reviewCount ?? 0) * 0.24
-            + Double(product.averageRating ?? 0) * 1.4
-        let stableRandomOffset = Double((product.id * 37 + Int(daySeed) * 17) % 19) * 0.11
-        return personalizationBoost + engagementBoost + stableRandomOffset
     }
 
     private var isCameraPickerPresented: Binding<Bool> {
@@ -11104,7 +11021,10 @@ private struct TregoProductCard: View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .top) {
                 Button(action: onTap) {
-                    TregoRemoteImage(imagePath: product.imagePath)
+                    TregoRemoteImage(
+                        imagePath: product.imagePath,
+                        targetSize: CGSize(width: 320, height: imageHeight * 2)
+                    )
                         .frame(height: imageHeight)
                         .clipShape(RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous))
                 }
@@ -11116,10 +11036,10 @@ private struct TregoProductCard: View {
                             .font(.system(size: iconSize, weight: .bold))
                             .foregroundStyle(isWishlisted ? Color.red : Color.primary)
                             .frame(width: iconButtonSize, height: iconButtonSize)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .background(Color.white, in: Circle())
                             .overlay {
                                 Circle()
-                                    .strokeBorder(Color.white.opacity(0.34), lineWidth: 0.6)
+                                    .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.8)
                             }
                     }
                     .buttonStyle(.plain)
@@ -11131,10 +11051,10 @@ private struct TregoProductCard: View {
                             .font(.system(size: iconSize, weight: .bold))
                             .foregroundStyle(TregoNativeTheme.accent)
                             .frame(width: iconButtonSize, height: iconButtonSize)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .background(Color.white, in: Circle())
                             .overlay {
                                 Circle()
-                                    .strokeBorder(Color.white.opacity(0.34), lineWidth: 0.6)
+                                    .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.8)
                             }
                     }
                     .buttonStyle(.plain)
@@ -11202,11 +11122,15 @@ private struct TregoProductCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: cardHeight, alignment: .topLeading)
         .padding(11)
-        .tregoGlassRectBackground(cornerRadius: cardCornerRadius)
+        .background(
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(Color.white)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(colorScheme == .dark ? .white.opacity(0.14) : .white.opacity(0.42), lineWidth: 0.7)
+                .strokeBorder(Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), lineWidth: 0.9)
         }
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.05), radius: 10, y: 4)
     }
 
     private var isSaleProduct: Bool {
@@ -12336,10 +12260,91 @@ private struct TregoBusinessExplorerCardSkeleton: View {
     }
 }
 
+private struct TregoRemoteImageRequest: Hashable {
+    let url: URL
+    let pixelWidth: Int
+    let pixelHeight: Int
+
+    var cacheKey: NSString {
+        "\(url.absoluteString)|\(pixelWidth)x\(pixelHeight)" as NSString
+    }
+}
+
 private final class TregoRemoteImageMemoryCache {
-    static let shared = NSCache<NSURL, UIImage>()
+    static let shared: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 220
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
 
     private init() {}
+}
+
+private actor TregoRemoteImagePipeline {
+    static let shared = TregoRemoteImagePipeline()
+
+    private var inFlightTasks: [TregoRemoteImageRequest: Task<UIImage?, Never>] = [:]
+
+    func image(for request: TregoRemoteImageRequest) async -> UIImage? {
+        if let cached = TregoRemoteImageMemoryCache.shared.object(forKey: request.cacheKey) {
+            return cached
+        }
+
+        if let task = inFlightTasks[request] {
+            return await task.value
+        }
+
+        let task = Task<UIImage?, Never> {
+            let urlRequest = URLRequest(url: request.url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
+            if let cachedResponse = URLCache.shared.cachedResponse(for: urlRequest),
+               let cachedImage = Self.downsampledImage(from: cachedResponse.data, for: request)
+            {
+                TregoRemoteImageMemoryCache.shared.setObject(cachedImage, forKey: request.cacheKey, cost: cachedResponse.data.count)
+                return cachedImage
+            }
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: urlRequest)
+                guard !Task.isCancelled else { return nil }
+                guard let image = Self.downsampledImage(from: data, for: request) else { return nil }
+                URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: data), for: urlRequest)
+                TregoRemoteImageMemoryCache.shared.setObject(image, forKey: request.cacheKey, cost: data.count)
+                return image
+            } catch {
+                return nil
+            }
+        }
+
+        inFlightTasks[request] = task
+        let image = await task.value
+        inFlightTasks[request] = nil
+        return image
+    }
+
+    private static func downsampledImage(from data: Data, for request: TregoRemoteImageRequest) -> UIImage? {
+        let maxDimension = max(request.pixelWidth, request.pixelHeight, 64)
+        let options = [
+            kCGImageSourceShouldCache: false,
+        ] as CFDictionary
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
+            return nil
+        }
+
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+        ] as CFDictionary
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+
+        return UIImage(cgImage: cgImage)
+    }
 }
 
 @MainActor
@@ -12348,53 +12353,44 @@ private final class TregoRemoteImageLoader: ObservableObject {
     @Published private(set) var isLoading = false
 
     private var task: Task<Void, Never>?
-    private var currentURL: URL?
+    private var currentRequest: TregoRemoteImageRequest?
 
-    func load(imagePath: String?) {
+    func load(imagePath: String?, targetSize: CGSize, scale: CGFloat) {
+        let resolvedScale = max(scale, 1)
+        let pixelWidth = max(Int(targetSize.width * resolvedScale), 64)
+        let pixelHeight = max(Int(targetSize.height * resolvedScale), 64)
         let url = TregoAPIClient.imageURL(from: imagePath)
+        let request = url.map { TregoRemoteImageRequest(url: $0, pixelWidth: pixelWidth, pixelHeight: pixelHeight) }
 
-        if currentURL == url && (image != nil || isLoading) {
+        if currentRequest == request && (image != nil || isLoading) {
             return
         }
 
         task?.cancel()
-        currentURL = url
+        currentRequest = request
         image = nil
         isLoading = false
 
-        guard let url else { return }
+        guard let request else { return }
 
-        if let cached = TregoRemoteImageMemoryCache.shared.object(forKey: url as NSURL) {
+        if let cached = TregoRemoteImageMemoryCache.shared.object(forKey: request.cacheKey) {
             image = cached
-            return
-        }
-
-        let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
-        if
-            let cachedResponse = URLCache.shared.cachedResponse(for: request),
-            let cachedImage = UIImage(data: cachedResponse.data)
-        {
-            TregoRemoteImageMemoryCache.shared.setObject(cachedImage, forKey: url as NSURL)
-            image = cachedImage
             return
         }
 
         isLoading = true
         task = Task { [weak self] in
             guard let self else { return }
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard !Task.isCancelled else { return }
-                if let fetchedImage = UIImage(data: data) {
-                    TregoRemoteImageMemoryCache.shared.setObject(fetchedImage, forKey: url as NSURL)
-                    URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
-                    image = fetchedImage
-                }
-            } catch {
-                currentURL = nil
-            }
+            let fetchedImage = await TregoRemoteImagePipeline.shared.image(for: request)
+            guard !Task.isCancelled, currentRequest == request else { return }
+            image = fetchedImage
             isLoading = false
         }
+    }
+
+    func cancel() {
+        task?.cancel()
+        isLoading = false
     }
 
     deinit {
@@ -12404,22 +12400,20 @@ private final class TregoRemoteImageLoader: ObservableObject {
 
 private struct TregoRemoteImage: View {
     let imagePath: String?
+    var targetSize: CGSize = CGSize(width: 320, height: 320)
+
+    @Environment(\.displayScale) private var displayScale
     @StateObject private var loader = TregoRemoteImageLoader()
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.92), Color.white.opacity(0.55)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(Color.white)
 
             if let image = loader.image {
                 Image(uiImage: image)
                     .resizable()
+                    .interpolation(.medium)
                     .scaledToFill()
             } else if loader.isLoading {
                 TregoSkeletonBlock(cornerRadius: 24, height: 120)
@@ -12427,13 +12421,20 @@ private struct TregoRemoteImage: View {
             } else {
                 Image(systemName: "photo")
                     .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(0.34))
+                    .foregroundStyle(Color.primary.opacity(0.26))
             }
         }
         .clipped()
-        .task(id: imagePath) {
-            loader.load(imagePath: imagePath)
+        .task(id: taskIdentifier) {
+            loader.load(imagePath: imagePath, targetSize: targetSize, scale: displayScale)
         }
+        .onDisappear {
+            loader.cancel()
+        }
+    }
+
+    private var taskIdentifier: String {
+        "\(imagePath ?? "none")-\(Int(targetSize.width))x\(Int(targetSize.height))-\(displayScale)"
     }
 }
 
