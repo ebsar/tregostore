@@ -6,7 +6,7 @@ defineProps<{
 </script>
 
 <template>
-  <section class="surface-card empty-panel">
+  <section>
     <h3>{{ title }}</h3>
     <p>{{ copy }}</p>
     <slot />

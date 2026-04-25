@@ -128,8 +128,8 @@ async function handleOpenProduct(productId: number) {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page">
+    <IonContent :fullscreen="true">
+      <div>
         <AppPageHeader
           kicker="Insights"
           :title="headerTitle"
@@ -142,7 +142,7 @@ async function handleOpenProduct(productId: number) {
           title="Kyçu si biznes"
           copy="Ky ekran përdor të njëjtin profil biznesi dhe të njëjtin katalog."
         >
-          <IonButton class="cta-button business-hub-login-button" @click="router.push({ path: '/login', query: { redirect: route.fullPath } })">
+          <IonButton @click="router.push({ path: '/login', query: { redirect: route.fullPath } })">
             Login
           </IonButton>
         </EmptyStatePanel>
@@ -154,39 +154,39 @@ async function handleOpenProduct(productId: number) {
         />
 
         <template v-else>
-          <section v-if="highlightedOrderId > 0" class="surface-card section-card">
-            <p class="section-kicker">Nga njoftimi</p>
-            <h2 class="business-hub-inline-title">Porosia #{{ highlightedOrderId }} kerkon vemendje</h2>
-            <p class="section-copy business-hub-inline-copy">
+          <section v-if="highlightedOrderId > 0">
+            <p>Nga njoftimi</p>
+            <h2>Porosia #{{ highlightedOrderId }} kerkon vemendje</h2>
+            <p>
               {{ highlightedOrderCopy }}
             </p>
           </section>
 
-          <section class="surface-card surface-card--strong summary-surface-card">
-            <p class="section-kicker">{{ isAdmin ? "Admin" : "Profili" }}</p>
-            <h2 class="business-hub-inline-title">{{ profile?.businessName || sessionState.user.businessName || "Dashboard" }}</h2>
-            <p class="section-copy business-hub-inline-copy">
+          <section>
+            <p>{{ isAdmin ? "Admin" : "Profili" }}</p>
+            <h2>{{ profile?.businessName || sessionState.user.businessName || "Dashboard" }}</h2>
+            <p>
               {{ overviewCopy }}
             </p>
-            <div class="meta-pill-row business-hub-meta-row">
-              <span class="meta-pill">{{ overviewLabel }}</span>
-              <span class="meta-pill">{{ overviewValue }}</span>
+            <div>
+              <span>{{ overviewLabel }}</span>
+              <span>{{ overviewValue }}</span>
             </div>
           </section>
 
-          <section class="surface-card section-card stack-list">
-            <div class="section-head">
+          <section>
+            <div>
               <div>
-                <p class="section-kicker">Insights</p>
+                <p>Insights</p>
                 <h2>Sa interes po marrin produktet</h2>
               </div>
             </div>
 
-            <div class="mini-stat-grid business-insights-grid">
+            <div>
               <article
                 v-for="item in insightCards"
                 :key="`insight-${item.label}`"
-                class="mini-stat"
+               
               >
                 <strong>{{ item.value }}</strong>
                 <span>{{ item.label }}</span>
@@ -194,19 +194,19 @@ async function handleOpenProduct(productId: number) {
             </div>
           </section>
 
-          <section class="surface-card section-card stack-list">
-            <div class="section-head">
+          <section>
+            <div>
               <div>
-                <p class="section-kicker">Operacionet</p>
+                <p>Operacionet</p>
                 <h2>{{ isAdmin ? "Kalo te paneli operativ" : "Kalo te studio e biznesit" }}</h2>
               </div>
             </div>
 
-            <div class="chip-row">
+            <div>
               <button
                 v-for="item in operationalLinks"
                 :key="item.label"
-                class="chip"
+               
                 type="button"
                 @click="router.push(item.to)"
               >
@@ -215,15 +215,15 @@ async function handleOpenProduct(productId: number) {
             </div>
           </section>
 
-          <section class="stack-list">
-            <div class="section-head">
+          <section>
+            <div>
               <div>
-                <p class="section-kicker">Produktet</p>
+                <p>Produktet</p>
                 <h2>{{ hubSectionTitle }}</h2>
               </div>
             </div>
 
-            <div v-if="products.length" class="product-grid">
+            <div v-if="products.length">
               <ProductCardMobile
                 v-for="product in products"
                 :key="product.id"
@@ -245,31 +245,3 @@ async function handleOpenProduct(productId: number) {
   </IonPage>
 </template>
 
-<style scoped>
-.business-hub-login-button {
-  margin-top: 14px;
-}
-
-.business-hub-inline-title {
-  margin: 0;
-  color: var(--trego-dark);
-}
-
-.business-hub-inline-copy {
-  margin-top: 8px;
-}
-
-.business-hub-meta-row {
-  margin-top: 14px;
-}
-
-.business-insights-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-@media (max-width: 360px) {
-  .business-insights-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

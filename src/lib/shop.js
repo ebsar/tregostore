@@ -18,6 +18,7 @@ export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_DELIVERY_METHOD_KEY = "trego_checkout_delivery_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
+export const ORDER_SUCCESS_SNAPSHOT_KEY = "trego_order_success_snapshot";
 export const TRACK_ORDER_LOOKUP_KEY = "trego_track_order_lookup";
 export const SAVED_FOR_LATER_ITEMS_KEY = "trego_saved_for_later_items";
 export const APP_LOADER_MIN_DURATION_MS = 160;
@@ -365,6 +366,60 @@ export function consumeOrderConfirmationMessage() {
   } catch (error) {
     console.error(error);
     return "";
+  }
+}
+
+function normalizeOrderSuccessSnapshot(payload) {
+  const order = payload?.order && typeof payload.order === "object" ? payload.order : null;
+  const orderId = Math.max(0, Math.trunc(Number(payload?.orderId || order?.id || 0) || 0));
+  if (!order || !orderId) {
+    return null;
+  }
+
+  return {
+    orderId,
+    order,
+    message: String(payload?.message || "").trim(),
+    paymentStatus: String(payload?.paymentStatus || "").trim().toLowerCase(),
+    stripeStatus: String(payload?.stripeStatus || "").trim().toLowerCase(),
+    savedAt: String(payload?.savedAt || "").trim() || new Date().toISOString(),
+  };
+}
+
+export function persistOrderSuccessSnapshot(payload) {
+  try {
+    const snapshot = normalizeOrderSuccessSnapshot(payload);
+    if (!snapshot) {
+      return null;
+    }
+
+    window.sessionStorage.setItem(ORDER_SUCCESS_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    return snapshot;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export function readOrderSuccessSnapshot() {
+  try {
+    const rawValue = window.sessionStorage.getItem(ORDER_SUCCESS_SNAPSHOT_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    return normalizeOrderSuccessSnapshot(JSON.parse(rawValue));
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export function clearOrderSuccessSnapshot() {
+  try {
+    window.sessionStorage.removeItem(ORDER_SUCCESS_SNAPSHOT_KEY);
+  } catch (error) {
+    console.error(error);
   }
 }
 
@@ -829,6 +884,62 @@ export function formatFulfillmentStatusLabel(status) {
   };
 
   return labels[String(status || "").trim()] || "Ne proces";
+}
+
+export function summarizeOrderFulfillmentStatus(items = []) {
+  const statuses = Array.isArray(items)
+    ? items
+      .map((item) => String(item?.fulfillmentStatus || item?.status || "").trim().toLowerCase())
+      .filter(Boolean)
+    : [];
+
+  if (statuses.length === 0) {
+    return "pending_confirmation";
+  }
+
+  const uniqueStatuses = new Set(statuses);
+  if (uniqueStatuses.has("pending_confirmation")) {
+    return "pending_confirmation";
+  }
+  if (uniqueStatuses.size === 1 && uniqueStatuses.has("returned")) {
+    return "returned";
+  }
+  if (uniqueStatuses.size === 1 && uniqueStatuses.has("cancelled")) {
+    return "cancelled";
+  }
+  if (uniqueStatuses.has("cancelled") && uniqueStatuses.size > 1) {
+    return "partially_confirmed";
+  }
+
+  const onlyDeliveredStates = [...uniqueStatuses].every((status) => ["delivered", "returned"].includes(status));
+  if (onlyDeliveredStates) {
+    return "delivered";
+  }
+
+  const onlyShippedStates = [...uniqueStatuses].every((status) => ["shipped", "delivered", "returned"].includes(status));
+  if (onlyShippedStates) {
+    return "shipped";
+  }
+
+  const onlyPackedStates = [...uniqueStatuses].every((status) => ["packed", "shipped", "delivered", "returned"].includes(status));
+  if (onlyPackedStates) {
+    return "packed";
+  }
+
+  const onlyConfirmedStates = [...uniqueStatuses].every((status) => ["confirmed", "packed", "shipped", "delivered", "returned"].includes(status));
+  if (onlyConfirmedStates) {
+    if (uniqueStatuses.has("delivered")) {
+      return "delivered";
+    }
+    if (uniqueStatuses.has("shipped")) {
+      return "shipped";
+    }
+    if (uniqueStatuses.has("packed")) {
+      return "packed";
+    }
+  }
+
+  return "confirmed";
 }
 
 export function buildFulfillmentTimeline(item = {}) {

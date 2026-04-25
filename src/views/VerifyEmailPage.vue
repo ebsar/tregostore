@@ -1,6 +1,11 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import { useRoute, useRouter } from "vue-router";
+import AuthField from "../components/auth/AuthField.vue";
+import AuthPrimaryButton from "../components/auth/AuthPrimaryButton.vue";
+import AuthSecondaryButton from "../components/auth/AuthSecondaryButton.vue";
+import AuthShell from "../components/auth/AuthShell.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { markRouteReady } from "../stores/app-state";
 
@@ -53,7 +58,6 @@ async function submitForm() {
     form.code = "";
     successRedirectUrl.value = data.redirectTo || "/login";
     showSuccessDialog.value = true;
-    document.body.classList.add("dialog-open");
   } catch (error) {
     ui.message = "Serveri nuk po pergjigjet. Provoje perseri.";
     ui.type = "error";
@@ -96,90 +100,94 @@ async function resendCode() {
 </script>
 
 <template>
-  <section class="login-hero" aria-label="Verify email hero">
-    <section class="card auth-card login-card verify-email-card">
-      <p class="section-label">Verifiko emailin</p>
-      <h1>Verifiko emailin</h1>
-      <div class="verify-email-brand">
-        <img src="/trego-logo.webp?v=20260410" alt="TREGIO logo" class="verify-email-logo" />
-        <span>TREGIO</span>
+  <AuthShell
+    title="Verify your email"
+    description="Enter the 6 digit code we sent to your inbox. Codes stay valid for 30 minutes and older codes expire when a new one is requested."
+    :message="ui.message"
+    :message-type="ui.type"
+  >
+    <form class="auth-form" @submit.prevent="submitForm">
+      <AuthField
+        id="verify-email"
+        v-model="form.email"
+        label="Email"
+        name="email"
+        type="email"
+        placeholder="name@email.com"
+        required
+      />
+
+      <AuthField
+        id="verify-code"
+        v-model="form.code"
+        label="Verification code"
+        name="code"
+        type="text"
+        inputmode="numeric"
+        maxlength="6"
+        placeholder="123456"
+        required
+      />
+
+      <div class="auth-inline-actions">
+        <AuthPrimaryButton :loading="ui.loading" loading-label="Verifying...">
+          Verify email
+        </AuthPrimaryButton>
+
+        <AuthSecondaryButton
+          :loading="ui.resendLoading"
+          loading-label="Sending..."
+          @click="resendCode"
+        >
+          Resend code
+        </AuthSecondaryButton>
       </div>
-      <p class="section-text">
-        Pasi e krijon llogarine, kodi 6-shifror vjen ne email. Kodi vlen 30 minuta. Nese skadon, kerkoje kodin e ri dhe kodi i vjeter nuk vlen me.
+    </form>
+
+    <template #footer>
+      <p class="auth-helper">
+        Already have the code and want to sign in?
+        <RouterLink class="auth-link" to="/login">
+          Continue to sign in
+        </RouterLink>
       </p>
-
-      <form class="auth-form" @submit.prevent="submitForm">
-        <label class="field">
-          <span>Email</span>
-          <input
-            v-model="form.email"
-            name="email"
-            type="email"
-            placeholder="p.sh. emri@email.com"
-            required
-          >
-        </label>
-
-        <label class="field">
-          <span>Kodi i verifikimit</span>
-          <input
-            v-model="form.code"
-            name="code"
-            type="text"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="p.sh. 123456"
-            required
-          >
-        </label>
-
-        <div class="auth-form-actions">
-          <button id="verify-email-submit-button" type="submit" :disabled="ui.loading">
-            {{ ui.loading ? "Duke verifikuar..." : "Verifiko emailin" }}
-          </button>
-          <button
-            id="verify-email-resend-button"
-            class="button-secondary"
-            type="button"
-            :disabled="ui.resendLoading"
-            @click="resendCode"
-          >
-            {{ ui.resendLoading ? "Duke derguar..." : "Dergoje kodin perseri" }}
-          </button>
-        </div>
-      </form>
-
-      <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-        {{ ui.message }}
-      </div>
-      <p class="form-footer">
-        E ke tashme kodin dhe do te kyçesh?
-        <RouterLink class="inline-link" to="/login">Vazhdo te Login</RouterLink>
-      </p>
-    </section>
-  </section>
+    </template>
+  </AuthShell>
 
   <div
     v-if="showSuccessDialog"
-    id="verify-email-success-dialog"
-    class="verify-email-dialog is-visible"
+    class="verify-email-overlay"
+    role="presentation"
   >
-    <div class="verify-email-dialog-backdrop"></div>
     <div
-      class="verify-email-dialog-card"
+      class="verify-email-success"
       role="dialog"
       aria-modal="true"
       aria-labelledby="verify-email-success-title"
     >
-      <div class="verify-email-dialog-icon" aria-hidden="true">✓</div>
-      <p class="section-label">Verifikimi perfundoi</p>
-      <h2 id="verify-email-success-title">Email-i u verifikua me sukses</h2>
-      <p class="section-text verify-email-success-copy">
-        Llogaria jote tani eshte aktive dhe e sigurt. Shtyp “Vazhdo te Login” për të hyrë në personalizimin e ofertave.
-      </p>
-      <button id="verify-email-success-continue" type="button" @click="goToSuccessRedirect">
-        Vazhdo te Login
-      </button>
+      <div class="verify-email-success__mark" aria-hidden="true">✓</div>
+      <p>Email verified</p>
+      <h2 id="verify-email-success-title">Your account is ready</h2>
+      <p>Your email has been confirmed successfully. Continue to sign in and start using the marketplace.</p>
+      <div class="verify-email-success__actions">
+        <AuthPrimaryButton type="button" @click="goToSuccessRedirect">
+          Continue to sign in
+        </AuthPrimaryButton>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.verify-email-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(17, 17, 17, 0.18);
+  backdrop-filter: blur(4px);
+}
+</style>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
+import PasswordToggleButton from "./PasswordToggleButton.vue";
 import { formatDateLabel, formatRoleLabel } from "../lib/shop";
 
 const props = defineProps({
@@ -39,44 +40,41 @@ function submitPassword() {
 </script>
 
 <template>
-  <article class="admin-user-item">
-    <div class="admin-user-copy">
-      <p class="admin-user-meta">
+  <article class="admin-user-card">
+    <div class="admin-user-card__header">
+      <div class="admin-user-card__meta">
+      <p class="admin-user-card__eyebrow">
         {{ formatRoleLabel(user.role) }}<template v-if="isCurrentUser"> • Ti</template>
       </p>
       <h3>{{ user.fullName }}</h3>
       <p>{{ user.email }}</p>
-      <span class="admin-user-created">Krijuar me {{ formatDateLabel(user.createdAt) }}</span>
+      <span>Krijuar me {{ formatDateLabel(user.createdAt) }}</span>
+      </div>
     </div>
 
-    <div class="admin-user-actions">
-      <div class="admin-user-password-row">
-        <div class="admin-password-input-wrap">
+    <div class="admin-user-card__actions">
+      <div class="admin-user-card__password">
+        <div class="password-control">
           <input
             v-model="newPassword"
-            class="admin-user-password-input"
             :type="passwordInputType"
             placeholder="Fjalekalim i ri"
           >
-          <button
-            class="admin-password-toggle"
-            type="button"
-            aria-label="Shfaq fjalekalimin"
-            @click="passwordInputType = passwordInputType === 'password' ? 'text' : 'password'"
-          >
-            <span class="admin-password-toggle-icon">{{ passwordInputType === "password" ? "Sy" : "Fsheh" }}</span>
-          </button>
+          <PasswordToggleButton
+            :visible="passwordInputType === 'text'"
+            @toggle="passwordInputType = passwordInputType === 'password' ? 'text' : 'password'"
+          />
         </div>
-        <button class="product-action-button admin-action-button" type="button" @click="submitPassword">
+        <button class="market-button market-button--primary" type="button" @click="submitPassword">
           <span>Ruaje fjalekalimin</span>
         </button>
       </div>
 
-      <div class="admin-user-button-row">
+      <div class="admin-user-card__role-actions">
         <button
           v-for="option in roleOptions"
           :key="option.role"
-          class="product-action-button admin-action-button"
+          class="market-button market-button--secondary"
           type="button"
           :disabled="isCurrentUser"
           @click="$emit('change-role', { userId: user.id, role: option.role })"
@@ -84,7 +82,7 @@ function submitPassword() {
           <span>{{ option.label }}</span>
         </button>
         <button
-          class="product-action-button admin-action-button admin-action-danger"
+          class="market-button market-button--ghost"
           type="button"
           :disabled="isCurrentUser"
           @click="$emit('delete', user)"

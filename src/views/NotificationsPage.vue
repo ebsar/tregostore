@@ -1,5 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
+import AccountUtilityShell from "../components/account/AccountUtilityShell.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { formatDateLabel } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
@@ -44,59 +46,69 @@ async function loadNotifications() {
 </script>
 
 <template>
-  <section class="account-page notifications-page" aria-label="Njoftimet">
-    <header class="account-header profile-page-header">
-      <div>
-        <p class="section-label">Marketplace</p>
-        <h1>Njoftimet</h1>
-        <p class="section-text">
-          Ketu i gjen perditesimet per porosite, verifikimet, review-t dhe kthimet.
-        </p>
+  <AccountUtilityShell
+    v-if="!ui.guest"
+    active-key="notifications"
+    eyebrow="Marketplace inbox"
+    title="Notifications"
+    description="Keep up with order updates, verification changes, reviews, and marketplace alerts from one clean place."
+    :status-message="ui.message"
+    :status-type="ui.type"
+    :notification-count="notifications.length"
+    search-placeholder="Search notifications or dashboard"
+  >
+    <section class="account-card">
+      <div class="account-card__header">
+        <div>
+          <h2>Recent updates</h2>
+          <p>Notifications are marked as read automatically after they are loaded here.</p>
+        </div>
       </div>
-    </header>
 
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-      {{ ui.message }}
-    </div>
+      <div v-if="notifications.length === 0" class="market-empty">
+        <h2>No notifications yet</h2>
+        <p>Order updates, verification changes, and review alerts will appear here.</p>
+      </div>
 
-    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
-      <h2>Per te pare njoftimet duhet te kyçesh.</h2>
-      <p>Krijo llogari ose hyni ne llogarine tende per te marre perditesimet per porosite, verifikimet dhe mesazhet.</p>
-      <div class="collection-guest-gate-actions">
-        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fnjoftimet">
-          Login
-        </RouterLink>
-        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fnjoftimet">
-          Sign Up
-        </RouterLink>
+      <div v-else class="notifications-list">
+        <article
+          v-for="notification in notifications"
+          :key="notification.id"
+          class="notification-card"
+        >
+          <div class="notification-card__header">
+            <div>
+              <h2>{{ notification.title || "Notification" }}</h2>
+              <p>{{ notification.body }}</p>
+            </div>
+
+            <div class="notification-card__meta">
+              <strong>{{ formatDateLabel(notification.createdAt) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="notification.href" class="account-form__actions">
+            <RouterLink class="market-button market-button--secondary" :to="notification.href">
+              Open update
+            </RouterLink>
+          </div>
+        </article>
       </div>
     </section>
+  </AccountUtilityShell>
 
-    <div v-else-if="notifications.length === 0" class="card account-section orders-empty-card">
-      <h2>Ende nuk ka njoftime.</h2>
-    </div>
-
-    <div v-else class="notifications-list">
-      <article
-        v-for="notification in notifications"
-        :key="notification.id"
-        class="card account-section notification-card"
-      >
-        <div class="notification-card-head">
-          <div>
-            <p class="section-label">{{ formatDateLabel(notification.createdAt) }}</p>
-            <h2>{{ notification.title || "Njoftim" }}</h2>
-          </div>
-          <RouterLink
-            v-if="notification.href"
-            class="nav-action nav-action-secondary"
-            :to="notification.href"
-          >
-            Hape
-          </RouterLink>
-        </div>
-        <p class="section-text">{{ notification.body }}</p>
-      </article>
+  <section v-else class="market-page market-page--wide dashboard-page" aria-label="Notifications">
+    <div class="market-empty account-gate">
+      <h2>Sign in to see your notifications</h2>
+      <p>Create an account or log in to receive order updates, verification alerts, and marketplace messages.</p>
+      <div class="account-gate__actions">
+        <RouterLink class="market-button market-button--primary" to="/login?redirect=%2Fnjoftimet">
+          Login
+        </RouterLink>
+        <RouterLink class="market-button market-button--secondary" to="/signup?redirect=%2Fnjoftimet">
+          Sign up
+        </RouterLink>
+      </div>
     </div>
   </section>
 </template>

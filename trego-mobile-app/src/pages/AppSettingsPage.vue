@@ -119,8 +119,8 @@ onMounted(async () => {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page mobile-page--app-settings">
+    <IonContent :fullscreen="true">
+      <div>
         <AppPageHeader
           kicker="App settings"
           title="Preferences"
@@ -128,15 +128,15 @@ onMounted(async () => {
           back-to="/tabs/account"
         />
 
-        <section class="surface-card section-card app-settings-card">
-          <div class="section-head app-settings-head">
+        <section>
+          <div>
             <div>
-              <p class="section-kicker">Kontrollet</p>
+              <p>Kontrollet</p>
               <h2>Zgjidhjet e app-it</h2>
             </div>
             <button
               v-if="canManagePush"
-              class="settings-push-button"
+             
               type="button"
               @click="handleEnablePushNotifications"
             >
@@ -144,13 +144,13 @@ onMounted(async () => {
             </button>
           </div>
 
-          <div class="settings-select-list">
+          <div>
             <label
               v-for="setting in settingOptions"
               :key="setting.key"
-              class="settings-select-row"
+             
             >
-              <span class="settings-select-label">
+              <span>
                 <IonIcon :icon="setting.icon" />
                 {{ setting.label }}
               </span>
@@ -169,39 +169,39 @@ onMounted(async () => {
             </label>
           </div>
 
-          <p v-if="pushUi.message" class="settings-feedback" :class="`is-${pushUi.type}`">
+          <p v-if="pushUi.message">
             {{ pushUi.message }}
           </p>
         </section>
 
-        <section class="surface-card section-card app-settings-card">
-          <div class="section-head app-settings-head">
+        <section>
+          <div>
             <div>
-              <p class="section-kicker">Push status</p>
+              <p>Push status</p>
               <h2>APNs / FCM readiness</h2>
             </div>
           </div>
 
-          <div class="settings-select-list">
-            <div class="settings-select-row push-status-row">
-              <span class="settings-select-label">Provider</span>
+          <div>
+            <div>
+              <span>Provider</span>
               <strong>{{ pushStatus.configured ? "OneSignal → APNs/FCM" : "I pakonfiguruar" }}</strong>
             </div>
-            <div class="settings-select-row push-status-row">
-              <span class="settings-select-label">Platforma</span>
+            <div>
+              <span>Platforma</span>
               <strong>{{ pushStatus.platform }}</strong>
             </div>
-            <div class="settings-select-row push-status-row">
-              <span class="settings-select-label">Permission</span>
+            <div>
+              <span>Permission</span>
               <strong>{{ pushStatus.permission }}</strong>
             </div>
-            <div class="settings-select-row push-status-row">
-              <span class="settings-select-label">Subscription</span>
+            <div>
+              <span>Subscription</span>
               <strong>{{ pushStatus.subscribed ? "Aktive" : "Jo aktive" }}</strong>
             </div>
           </div>
 
-          <p class="settings-feedback is-info">
+          <p>
             Push-et reale varen edhe nga konfigurimi i OneSignal, APNs per iOS, dhe FCM per Android.
           </p>
         </section>
@@ -210,101 +210,3 @@ onMounted(async () => {
   </IonPage>
 </template>
 
-<style scoped>
-.mobile-page--app-settings {
-  gap: 14px;
-}
-
-.app-settings-card {
-  display: grid;
-  gap: 14px;
-}
-
-.app-settings-head {
-  align-items: center;
-}
-
-.settings-push-button {
-  min-height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 106, 43, 0.12);
-  color: var(--trego-accent);
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.settings-select-list {
-  display: grid;
-  gap: 10px;
-}
-
-.settings-select-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.66);
-  border: 1px solid var(--trego-border);
-}
-
-.settings-select-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--trego-dark);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.settings-select-label ion-icon {
-  color: var(--trego-accent);
-  font-size: 1rem;
-}
-
-.settings-select-row select {
-  min-width: 124px;
-  min-height: 38px;
-  padding: 0 10px;
-  border-radius: 14px;
-  border: 1px solid var(--trego-input-border);
-  background: rgba(255, 255, 255, 0.88);
-  color: var(--trego-dark);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.settings-feedback {
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
-.settings-feedback.is-success {
-  color: #15803d;
-}
-
-.settings-feedback.is-info {
-  color: var(--trego-muted);
-}
-
-.push-status-row strong {
-  color: var(--trego-dark);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-@media (max-width: 420px) {
-  .settings-select-row {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-select-row select {
-    width: 100%;
-    min-width: 0;
-  }
-}
-</style>

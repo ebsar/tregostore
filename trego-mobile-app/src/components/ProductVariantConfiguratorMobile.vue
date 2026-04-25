@@ -135,42 +135,42 @@ function getColorSwatchStyle(colorValue: string) {
 </script>
 
 <template>
-  <label class="checkout-field">
+  <label>
     <span>Kategoria e faqes</span>
-    <select v-model="form.pageSection" class="mobile-select" @change="handleSectionChange">
+    <select v-model="form.pageSection" @change="handleSectionChange">
       <option v-for="option in sectionOptions" :key="option.value" :value="option.value">
         {{ option.label }}
       </option>
     </select>
   </label>
 
-  <label v-if="audienceOptions.length > 0" class="checkout-field">
+  <label v-if="audienceOptions.length > 0">
     <span>Nenkategoria</span>
-    <select v-model="form.audience" class="mobile-select" @change="handleSectionChange">
+    <select v-model="form.audience" @change="handleSectionChange">
       <option v-for="option in audienceOptions" :key="option.value" :value="option.value">
         {{ option.label }}
       </option>
     </select>
   </label>
 
-  <label class="checkout-field">
+  <label>
     <span>Lloji i produktit</span>
-    <select v-model="form.productType" class="mobile-select">
+    <select v-model="form.productType">
       <option v-for="option in productTypeOptions" :key="option.value" :value="option.value">
         {{ option.label }}
       </option>
     </select>
   </label>
 
-  <div v-if="packageAmountSection" class="checkout-grid">
-    <label class="checkout-field">
+  <div v-if="packageAmountSection">
+    <label>
       <span>Sasia e produktit</span>
-      <input v-model="form.packageAmountValue" class="promo-input" type="number" min="0.01" step="0.01" placeholder="250" />
+      <input v-model="form.packageAmountValue" type="number" min="0.01" step="0.01" placeholder="250" />
     </label>
 
-    <label class="checkout-field">
+    <label>
       <span>Njesia</span>
-      <select v-model="form.packageAmountUnit" class="mobile-select">
+      <select v-model="form.packageAmountUnit">
         <option v-for="option in PRODUCT_AMOUNT_UNIT_OPTIONS" :key="option.value" :value="option.value">
           {{ option.label }}
         </option>
@@ -178,23 +178,23 @@ function getColorSwatchStyle(colorValue: string) {
     </label>
   </div>
 
-  <div v-if="colorInventorySection" class="checkout-field">
+  <div v-if="colorInventorySection">
     <span>Ngjyrat ne dispozicion</span>
-    <div class="product-color-selector-grid">
+    <div>
       <label
         v-for="option in PRODUCT_REQUIRED_COLOR_OPTIONS"
         :key="option.value"
-        class="product-color-selector-chip"
-        :class="{ 'is-selected': form.selectedColors.includes(option.value) }"
+       
+       
       >
         <input
-          class="product-color-selector-input"
+         
           type="checkbox"
           :checked="form.selectedColors.includes(option.value)"
           @change="toggleColor(option.value, $event)"
         >
-        <span class="product-color-selector-swatch" :style="getColorSwatchStyle(option.value)" aria-hidden="true" />
-        <span class="product-color-selector-copy">
+        <span aria-hidden="true" />
+        <span>
           <strong>{{ option.label }}</strong>
           <small>{{ form.selectedColors.includes(option.value) ? "E zgjedhur" : "Aktivizo" }}</small>
         </span>
@@ -202,157 +202,39 @@ function getColorSwatchStyle(colorValue: string) {
     </div>
   </div>
 
-  <div v-if="clothingSection && form.clothingColorVariants.length > 0" class="variant-stack">
-    <div v-for="colorVariant in form.clothingColorVariants" :key="colorVariant.color" class="variant-card">
-      <p class="variant-title">{{ PRODUCT_COLOR_LABELS[colorVariant.color] || colorVariant.color }}</p>
-      <div class="variant-size-grid">
-        <label v-for="sizeEntry in colorVariant.sizeEntries" :key="`${colorVariant.color}-${sizeEntry.size}`" class="variant-size-row">
-          <span class="variant-size-check">
+  <div v-if="clothingSection && form.clothingColorVariants.length > 0">
+    <div v-for="colorVariant in form.clothingColorVariants" :key="colorVariant.color">
+      <p>{{ PRODUCT_COLOR_LABELS[colorVariant.color] || colorVariant.color }}</p>
+      <div>
+        <label v-for="sizeEntry in colorVariant.sizeEntries" :key="`${colorVariant.color}-${sizeEntry.size}`">
+          <span>
             <input v-model="sizeEntry.enabled" type="checkbox">
             <strong>{{ sizeEntry.size }}</strong>
           </span>
-          <div class="variant-field-grid">
-            <input v-model="sizeEntry.quantity" class="promo-input" type="number" min="0" step="1" :disabled="!sizeEntry.enabled" placeholder="Stok" />
-            <input v-model="sizeEntry.price" class="promo-input" type="number" min="0" step="0.01" :disabled="!sizeEntry.enabled" placeholder="Cmimi" />
-            <input v-model="sizeEntry.imagePath" class="promo-input" type="text" :disabled="!sizeEntry.enabled" placeholder="Foto e variantit" />
+          <div>
+            <input v-model="sizeEntry.quantity" type="number" min="0" step="1" :disabled="!sizeEntry.enabled" placeholder="Stok" />
+            <input v-model="sizeEntry.price" type="number" min="0" step="0.01" :disabled="!sizeEntry.enabled" placeholder="Cmimi" />
+            <input v-model="sizeEntry.imagePath" type="text" :disabled="!sizeEntry.enabled" placeholder="Foto e variantit" />
           </div>
         </label>
       </div>
     </div>
   </div>
 
-  <div v-else-if="colorInventorySection && form.colorStockVariants.length > 0" class="variant-stack">
-    <label v-for="colorEntry in form.colorStockVariants" :key="colorEntry.color" class="variant-color-row">
+  <div v-else-if="colorInventorySection && form.colorStockVariants.length > 0">
+    <label v-for="colorEntry in form.colorStockVariants" :key="colorEntry.color">
       <strong>{{ PRODUCT_COLOR_LABELS[colorEntry.color] || colorEntry.color }}</strong>
-      <div class="variant-field-grid">
-        <input v-model="colorEntry.quantity" class="promo-input" type="number" min="0" step="1" placeholder="Stok" />
-        <input v-model="colorEntry.price" class="promo-input" type="number" min="0" step="0.01" placeholder="Cmimi" />
-        <input v-model="colorEntry.imagePath" class="promo-input" type="text" placeholder="Foto e variantit" />
+      <div>
+        <input v-model="colorEntry.quantity" type="number" min="0" step="1" placeholder="Stok" />
+        <input v-model="colorEntry.price" type="number" min="0" step="0.01" placeholder="Cmimi" />
+        <input v-model="colorEntry.imagePath" type="text" placeholder="Foto e variantit" />
       </div>
     </label>
   </div>
 
-  <label v-if="!clothingSection && (!colorInventorySection || form.colorStockVariants.length === 0)" class="checkout-field">
+  <label v-if="!clothingSection && (!colorInventorySection || form.colorStockVariants.length === 0)">
     <span>Sasia ne stok</span>
-    <input v-model="form.simpleStockQuantity" class="promo-input" type="number" min="0" step="1" />
+    <input v-model="form.simpleStockQuantity" type="number" min="0" step="1" />
   </label>
 </template>
 
-<style scoped>
-.mobile-select {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 14px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 18px;
-  background: var(--trego-input-bg);
-  color: var(--trego-dark);
-}
-
-.product-color-selector-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.product-color-selector-chip {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 18px;
-  background: var(--trego-interactive-bg);
-}
-
-.product-color-selector-chip.is-selected {
-  border-color: var(--trego-selection-border);
-  box-shadow: var(--trego-selection-shadow);
-}
-
-.product-color-selector-input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.product-color-selector-swatch {
-  width: 34px;
-  height: 34px;
-  border-radius: 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-
-.product-color-selector-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.product-color-selector-copy strong,
-.product-color-selector-copy small {
-  margin: 0;
-}
-
-.product-color-selector-copy small {
-  color: var(--trego-muted);
-}
-
-.variant-stack {
-  display: grid;
-  gap: 12px;
-}
-
-.variant-card {
-  padding: 14px;
-  border-radius: 20px;
-  border: 1px solid var(--trego-input-border);
-  background: var(--trego-interactive-bg);
-}
-
-.variant-title {
-  margin: 0 0 10px;
-  color: var(--trego-dark);
-  font-weight: 800;
-}
-
-.variant-size-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.variant-size-row,
-.variant-color-row {
-  display: grid;
-  gap: 8px;
-}
-
-.variant-field-grid {
-  display: grid;
-  grid-template-columns: 84px 104px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.variant-size-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--trego-dark);
-}
-
-@media (max-width: 420px) {
-  .product-color-selector-grid,
-  .variant-size-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .variant-field-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .variant-field-grid :last-child {
-    grid-column: 1 / -1;
-  }
-}
-</style>

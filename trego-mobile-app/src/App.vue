@@ -251,13 +251,10 @@ watch(
 
     <div
       v-if="showStatusBanner"
-      class="app-status-banner"
-      :class="{
-        'is-offline': !isOnline,
-        'is-loading': isOnline && !sessionState.sessionLoaded,
-      }"
+     
+     
     >
-      <span class="app-status-dot" />
+      <span />
       <span>{{ bannerLabel }}</span>
       <small>{{ route.meta?.tabLabel || "TREGIO Mobile" }}</small>
     </div>

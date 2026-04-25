@@ -1058,108 +1058,106 @@ onBeforeUnmount(() => {
 <template>
   <nav
     ref="navElement"
-    class="site-nav"
-    :class="{
-      'mobile-menu-open': mobileMenuOpen,
-    }"
+   
+   
     aria-label="Navigimi kryesor"
   >
-    <RouterLink class="brand has-logo" to="/">
-      <img class="brand-logo" src="/trego-logo.webp?v=20260410" alt="Logo e TREGIO" width="1024" height="1024" fetchpriority="high">
-      <span class="sr-only">TREGIO</span>
+    <RouterLink to="/">
+      <img src="/trego-logo.webp?v=20260410" alt="Logo e TREGIO" width="1024" height="1024" fetchpriority="high">
+      <span>TREGIO</span>
     </RouterLink>
 
-    <div class="nav-mobile-tray">
+    <div>
       <RouterLink
         v-if="isBusinessUser"
-        class="nav-icon-button add-product-button nav-mobile-shortcut"
+       
         to="/biznesi-juaj?view=add-product"
         aria-label="Shto artikull te ri"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 5v14"></path>
           <path d="M5 12h14"></path>
         </svg>
       </RouterLink>
 
       <button
-        class="nav-icon-button search-button nav-mobile-shortcut"
+       
         type="button"
         aria-label="Kerko ketu"
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
-        <span class="nav-mobile-search-label">Kerko ketu...</span>
+        <span>Kerko ketu...</span>
       </button>
 
       <RouterLink
         v-if="showConsumerNavigation"
-        class="nav-icon-button wishlist-link nav-mobile-shortcut"
+       
         to="/wishlist"
         aria-label="Wishlist"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
         </svg>
       </RouterLink>
 
       <RouterLink
         v-if="showConsumerNavigation"
-        class="nav-icon-button cart-button nav-mobile-shortcut"
+       
         to="/cart"
         aria-label="My Cart"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
           <circle cx="10" cy="19" r="1.4"></circle>
           <circle cx="18" cy="19" r="1.4"></circle>
         </svg>
-        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+        <span :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
       </RouterLink>
 
       <button
         v-if="showMessagesShortcut"
-        class="nav-icon-button messages-button nav-mobile-shortcut"
+       
         type="button"
         aria-label="Mesazhet"
         @click="handleMessagesClick"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
         </svg>
-        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+        <span :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
       </button>
 
       <button
         v-if="mobileMenuOpen && isMobileViewport && appState.user"
-        class="nav-icon-button nav-mobile-menu-search-trigger"
+       
         type="button"
         aria-label="Kerko ne menune tende"
         :aria-expanded="mobileQuickSearchOpen ? 'true' : 'false'"
         @click="toggleMobileQuickSearch"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
       </button>
 
       <button
-        class="nav-mobile-toggle"
+       
         type="button"
         :aria-expanded="mobileMenuOpen ? 'true' : 'false'"
         aria-controls="site-nav-mobile-panel"
         :aria-label="mobileMenuOpen ? 'Mbylle menune' : 'Hape menune'"
         @click="toggleMobileMenu"
       >
-        <svg v-if="!mobileMenuOpen" class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg v-if="!mobileMenuOpen" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 7h16M4 12h16M4 17h16"></path>
         </svg>
-        <svg v-else class="nav-mobile-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg v-else viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 6l12 12M18 6 6 18"></path>
         </svg>
       </button>
@@ -1168,53 +1166,53 @@ onBeforeUnmount(() => {
     <Transition name="nav-floating-panel">
       <div
         v-if="mobileMenuOpen && isMobileViewport && appState.user && mobileQuickSearchOpen"
-        class="nav-mobile-menu-search-panel"
+       
         @click.stop
       >
-        <label class="nav-mobile-menu-search-field" for="nav-mobile-menu-search-input">
-          <svg class="nav-mobile-menu-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <label for="nav-mobile-menu-search-input">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="6"></circle>
             <path d="m20 20-4.2-4.2"></path>
           </svg>
           <input
-            id="nav-mobile-menu-search-input"
+           
             ref="mobileQuickSearchInputElement"
             v-model="mobileQuickSearchQuery"
-            class="nav-mobile-menu-search-input"
+           
             type="search"
             autocomplete="off"
             placeholder="Kerko mesazhe, porosi, adresa..."
           >
         </label>
 
-        <div class="nav-mobile-menu-search-results" aria-live="polite">
+        <div aria-live="polite">
           <template v-if="!mobileQuickSearchHasQuery">
-            <section v-if="mobileQuickSearchRecent.length > 0" class="nav-mobile-menu-search-group">
-              <div class="nav-mobile-menu-search-group-head">
-                <p class="nav-mobile-menu-search-group-title">Kerkuar se fundi</p>
+            <section v-if="mobileQuickSearchRecent.length > 0">
+              <div>
+                <p>Kerkuar se fundi</p>
                 <button
-                  class="nav-mobile-menu-search-clear"
+                 
                   type="button"
                   @click="clearRecentMobileQuickSearches"
                 >
                   Pastro
                 </button>
               </div>
-              <div class="nav-mobile-menu-search-chip-list">
+              <div>
                 <div
                   v-for="term in mobileQuickSearchRecent"
                   :key="term"
-                  class="nav-mobile-menu-search-chip-wrap"
+                 
                 >
                   <button
-                    class="nav-mobile-menu-search-chip"
+                   
                     type="button"
                     @click="applyMobileQuickSearchTerm(term)"
                   >
                     {{ term }}
                   </button>
                   <button
-                    class="nav-mobile-menu-search-chip-remove"
+                   
                     type="button"
                     :aria-label="`Hiq ${term} nga historiku`"
                     @click.stop="removeRecentMobileQuickSearch(term)"
@@ -1227,32 +1225,32 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section v-if="mobileQuickSearchSuggestions.length > 0" class="nav-mobile-menu-search-group">
-              <p class="nav-mobile-menu-search-group-title">Sugjerime per ty</p>
+            <section v-if="mobileQuickSearchSuggestions.length > 0">
+              <p>Sugjerime per ty</p>
               <button
                 v-for="action in mobileQuickSearchSuggestions"
                 :key="JSON.stringify(action.to)"
-                class="nav-mobile-menu-search-result"
+               
                 type="button"
                 @click="openMobileQuickAction(action)"
               >
-                <span class="nav-mobile-menu-search-result-copy">
-                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
-                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                <span>
+                  <strong>{{ action.label }}</strong>
+                  <span>{{ action.description }}</span>
                 </span>
-                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M9 6l6 6-6 6"></path>
                 </svg>
               </button>
             </section>
 
-            <section v-if="mobileQuickSearchPublicSuggestions.length > 0" class="nav-mobile-menu-search-group">
-              <p class="nav-mobile-menu-search-group-title">Faqe publike</p>
-              <div class="nav-mobile-menu-search-chip-list">
+            <section v-if="mobileQuickSearchPublicSuggestions.length > 0">
+              <p>Faqe publike</p>
+              <div>
                 <button
                   v-for="action in mobileQuickSearchPublicSuggestions"
                   :key="JSON.stringify(action.to)"
-                  class="nav-mobile-menu-search-chip"
+                 
                   type="button"
                   @click="openMobileQuickAction(action)"
                 >
@@ -1263,39 +1261,39 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-else>
-            <section v-if="filteredMobileQuickSearchActions.length > 0" class="nav-mobile-menu-search-group">
-              <p class="nav-mobile-menu-search-group-title">Opsionet e llogarise</p>
+            <section v-if="filteredMobileQuickSearchActions.length > 0">
+              <p>Opsionet e llogarise</p>
               <button
                 v-for="action in filteredMobileQuickSearchActions"
                 :key="JSON.stringify(action.to)"
-                class="nav-mobile-menu-search-result"
+               
                 type="button"
                 @click="openMobileQuickAction(action)"
               >
-                <span class="nav-mobile-menu-search-result-copy">
-                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
-                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                <span>
+                  <strong>{{ action.label }}</strong>
+                  <span>{{ action.description }}</span>
                 </span>
-                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M9 6l6 6-6 6"></path>
                 </svg>
               </button>
             </section>
 
-            <section v-if="filteredMobileQuickSearchPublicActions.length > 0" class="nav-mobile-menu-search-group">
-              <p class="nav-mobile-menu-search-group-title">Faqe publike</p>
+            <section v-if="filteredMobileQuickSearchPublicActions.length > 0">
+              <p>Faqe publike</p>
               <button
                 v-for="action in filteredMobileQuickSearchPublicActions"
                 :key="JSON.stringify(action.to)"
-                class="nav-mobile-menu-search-result"
+               
                 type="button"
                 @click="openMobileQuickAction(action)"
               >
-                <span class="nav-mobile-menu-search-result-copy">
-                  <strong class="nav-mobile-menu-search-result-title">{{ action.label }}</strong>
-                  <span class="nav-mobile-menu-search-result-description">{{ action.description }}</span>
+                <span>
+                  <strong>{{ action.label }}</strong>
+                  <span>{{ action.description }}</span>
                 </span>
-                <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M9 6l6 6-6 6"></path>
                 </svg>
               </button>
@@ -1303,10 +1301,10 @@ onBeforeUnmount(() => {
 
             <section
               v-if="mobileQuickSearchLoading || mobileQuickSearchProducts.length > 0 || mobileQuickSearchMessage"
-              class="nav-mobile-menu-search-group"
+             
             >
-              <p class="nav-mobile-menu-search-group-title">Produkte</p>
-              <div v-if="mobileQuickSearchLoading" class="nav-mobile-menu-search-loading">
+              <p>Produkte</p>
+              <div v-if="mobileQuickSearchLoading">
                 Po kerkohet ne katalog...
               </div>
 
@@ -1314,40 +1312,40 @@ onBeforeUnmount(() => {
                 <button
                   v-for="product in mobileQuickSearchProducts"
                   :key="product.id"
-                  class="nav-mobile-menu-search-product"
+                 
                   type="button"
                   @click="openMobileQuickProduct(product)"
                 >
-                  <span class="nav-mobile-menu-search-product-image-wrap">
+                  <span>
                     <img
-                      class="nav-mobile-menu-search-product-image"
+                     
                       :src="getMobileQuickSearchProductImage(product)"
                       :alt="product.title || product.productName || 'Produkt'"
                       loading="lazy"
                     >
                   </span>
-                  <span class="nav-mobile-menu-search-product-copy">
-                    <strong class="nav-mobile-menu-search-product-title">
+                  <span>
+                    <strong>
                       {{ product.title || product.productName || "Produkt" }}
                     </strong>
-                    <span class="nav-mobile-menu-search-product-price">
+                    <span>
                       {{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}
                     </span>
                   </span>
-                  <svg class="nav-mobile-menu-search-result-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M9 6l6 6-6 6"></path>
                   </svg>
                 </button>
               </template>
 
-              <p v-else class="nav-mobile-menu-search-empty">
+              <p v-else>
                 {{ mobileQuickSearchMessage }}
               </p>
             </section>
 
             <p
               v-if="!mobileQuickSearchLoading && !filteredMobileQuickSearchActions.length && !filteredMobileQuickSearchPublicActions.length && !mobileQuickSearchProducts.length && !mobileQuickSearchMessage"
-              class="nav-mobile-menu-search-empty"
+             
             >
               Nuk u gjet asnje opsion ose produkt me kete kerkim.
             </p>
@@ -1359,31 +1357,31 @@ onBeforeUnmount(() => {
     <Transition name="nav-floating-panel">
       <form
         v-if="searchMenuOpen"
-        class="nav-search-panel"
+       
         role="search"
         @click.stop
         @submit.prevent="submitNavSearch"
       >
-        <label class="sr-only" for="nav-search-input">Kerko produktet</label>
-        <div class="nav-search-field">
-          <span class="nav-search-field-icon" aria-hidden="true">
+        <label for="nav-search-input">Kerko produktet</label>
+        <div>
+          <span aria-hidden="true">
             <svg viewBox="0 0 24 24">
               <circle cx="11" cy="11" r="6"></circle>
               <path d="m20 20-4.2-4.2"></path>
             </svg>
           </span>
           <input
-            id="nav-search-input"
+           
             ref="searchInputElement"
             v-model="searchQuery"
-            class="nav-search-input"
+           
             type="search"
             name="q"
             placeholder="Kerko ketu..."
             autocomplete="off"
           >
           <button
-            class="nav-search-camera"
+           
             type="button"
             aria-label="Kerko me foto"
             @click="openNavVisualSearchPicker"
@@ -1396,26 +1394,26 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="nav-search-preview">
+        <div>
           <template v-if="!searchQuery.trim()">
-            <div v-if="navSearchRecent.length > 0" class="nav-search-group">
-              <div class="nav-search-group-head">
-                <p class="nav-search-group-title">Kerkuar se fundi</p>
-                <button class="nav-search-clear" type="button" @click="clearNavSearchHistory">
+            <div v-if="navSearchRecent.length > 0">
+              <div>
+                <p>Kerkuar se fundi</p>
+                <button type="button" @click="clearNavSearchHistory">
                   Pastro
                 </button>
               </div>
-              <div class="nav-search-chip-row">
+              <div>
                 <div
                   v-for="term in navSearchRecent"
                   :key="term"
-                  class="nav-search-chip-wrap"
+                 
                 >
-                  <button class="nav-search-chip" type="button" @click="applyNavSearchTerm(term)">
+                  <button type="button" @click="applyNavSearchTerm(term)">
                     {{ term }}
                   </button>
                   <button
-                    class="nav-search-chip-remove"
+                   
                     type="button"
                     :aria-label="`Hiq ${term} nga historiku`"
                     @click.stop="removeNavSearchHistoryEntry(term)"
@@ -1428,13 +1426,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="nav-search-group">
-              <p class="nav-search-group-title">Kerkime te shpejta</p>
-              <div class="nav-search-chip-row">
+            <div>
+              <p>Kerkime te shpejta</p>
+              <div>
                 <button
                   v-for="prompt in AI_SEARCH_PROMPTS"
                   :key="prompt"
-                  class="nav-search-chip"
+                 
                   type="button"
                   @click="applySearchPrompt(prompt)"
                 >
@@ -1443,13 +1441,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="nav-search-group">
-              <p class="nav-search-group-title">Shfleto kategorite</p>
-              <div class="nav-search-chip-row">
+            <div>
+              <p>Shfleto kategorite</p>
+              <div>
                 <button
                   v-for="item in navSearchBrowseSuggestions"
                   :key="item.label"
-                  class="nav-search-chip"
+                 
                   type="button"
                   @click="openNavSearchSuggestion(item.to)"
                 >
@@ -1460,95 +1458,95 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-else>
-            <div class="nav-search-loading" v-if="navSearchLoading">
+            <div v-if="navSearchLoading">
               Po kerkohet ne katalog...
             </div>
 
             <template
               v-else-if="navSearchProducts.length > 0 || navSearchBusinesses.length > 0 || navSearchCategories.length > 0"
             >
-              <div v-if="navSearchProducts.length > 0" class="nav-search-group">
-                <p class="nav-search-group-title">Produkte</p>
-                <div class="nav-search-suggestion-list">
+              <div v-if="navSearchProducts.length > 0">
+                <p>Produkte</p>
+                <div>
                   <button
                     v-for="product in navSearchProducts"
                     :key="`product-${product.id}`"
-                    class="nav-search-suggestion-item"
+                   
                     type="button"
                     @click="openNavSearchProduct(product)"
                   >
-                    <span class="nav-search-suggestion-image">
+                    <span>
                       <img
                         :src="product.imagePath || product.image_path || product.image || '/bujqesia.webp'"
                         :alt="product.title || product.productName || 'Produkt'"
                         loading="lazy"
                       >
                     </span>
-                    <span class="nav-search-suggestion-copy">
+                    <span>
                       <strong>{{ product.title || product.productName || "Produkt" }}</strong>
                       <span>{{ product.price ? formatPrice(product.price) : "Cmimi sipas artikullit" }}</span>
                     </span>
-                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M9 6l6 6-6 6"></path>
                     </svg>
                   </button>
                 </div>
               </div>
 
-              <div v-if="navSearchBusinesses.length > 0" class="nav-search-group">
-                <p class="nav-search-group-title">Biznese</p>
-                <div class="nav-search-suggestion-list">
+              <div v-if="navSearchBusinesses.length > 0">
+                <p>Biznese</p>
+                <div>
                   <button
                     v-for="business in navSearchBusinesses"
                     :key="`business-${business.id}`"
-                    class="nav-search-suggestion-item"
+                   
                     type="button"
                     @click="openNavSearchBusiness(business)"
                   >
-                    <span class="nav-search-suggestion-image is-logo">
+                    <span>
                       <img
                         v-if="business.logoPath"
                         :src="business.logoPath"
                         :alt="business.businessName || 'Biznes'"
                         loading="lazy"
                       >
-                      <span v-else class="nav-search-suggestion-avatar-fallback">
+                      <span v-else>
                         {{ String(business.businessName || "B").trim().slice(0, 1).toUpperCase() }}
                       </span>
                     </span>
-                    <span class="nav-search-suggestion-copy">
+                    <span>
                       <strong>{{ business.businessName || "Biznes" }}</strong>
                       <span>{{ business.city || business.businessDescription || "Profili publik i biznesit" }}</span>
                     </span>
-                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M9 6l6 6-6 6"></path>
                     </svg>
                   </button>
                 </div>
               </div>
 
-              <div v-if="navSearchCategories.length > 0" class="nav-search-group">
-                <p class="nav-search-group-title">Kategori</p>
-                <div class="nav-search-suggestion-list">
+              <div v-if="navSearchCategories.length > 0">
+                <p>Kategori</p>
+                <div>
                   <button
                     v-for="item in navSearchCategories"
                     :key="`category-${item.href}`"
-                    class="nav-search-suggestion-item is-category"
+                   
                     type="button"
                     @click="openNavSearchSuggestion(item.href)"
                   >
-                    <span class="nav-search-suggestion-image is-icon">
+                    <span>
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M5 7h14"></path>
                         <path d="M5 12h14"></path>
                         <path d="M5 17h9"></path>
                       </svg>
                     </span>
-                    <span class="nav-search-suggestion-copy">
+                    <span>
                       <strong>{{ item.label || "Kategori" }}</strong>
                       <span>{{ item.subtitle || "Shfleto kategorine" }}</span>
                     </span>
-                    <svg class="nav-search-suggestion-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M9 6l6 6-6 6"></path>
                     </svg>
                   </button>
@@ -1556,13 +1554,13 @@ onBeforeUnmount(() => {
               </div>
             </template>
 
-            <p v-else class="nav-search-no-results">
+            <p v-else>
               {{ navSearchMessage || "Nuk u gjet asnje rezultat per kete kerkim." }}
             </p>
 
             <button
               v-if="searchQuery.trim()"
-              class="nav-search-see-all"
+             
               type="button"
               @click="openSearchResultsPage()"
             >
@@ -1573,7 +1571,7 @@ onBeforeUnmount(() => {
 
         <input
           ref="navVisualSearchInputElement"
-          class="sr-only"
+         
           type="file"
           accept="image/*"
           capture="environment"
@@ -1582,36 +1580,36 @@ onBeforeUnmount(() => {
       </form>
     </Transition>
 
-    <div v-if="showConsumerNavigation" id="site-nav-mobile-panel" class="nav-links">
+    <div v-if="showConsumerNavigation">
       <template v-for="section in PRIMARY_NAVIGATION" :key="section.key">
-        <div v-if="section.groups?.length" class="nav-dropdown" :class="{ open: openDropdownKey === section.key }">
+        <div v-if="section.groups?.length">
           <button
-            class="nav-dropdown-trigger"
+           
             type="button"
             :aria-expanded="openDropdownKey === section.key ? 'true' : 'false'"
             :aria-label="`Hape menune per ${section.label}`"
             @click="toggleDropdown(section.key)"
           >
             <span>{{ section.label }}</span>
-            <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m7 10 5 5 5-5"></path>
             </svg>
           </button>
 
-          <div class="nav-dropdown-menu nav-dropdown-menu-rich" :hidden="openDropdownKey !== section.key">
+          <div :hidden="openDropdownKey !== section.key">
             <RouterLink
-              class="nav-dropdown-all-link"
+             
               :to="section.href"
               @click="closeExpandedPanels"
             >
               Shih te gjitha
             </RouterLink>
 
-            <div class="nav-dropdown-group-items nav-dropdown-shortcuts">
+            <div>
               <RouterLink
                 v-for="group in section.groups"
                 :key="group.key"
-                class="nav-dropdown-item nav-dropdown-shortcut-link"
+               
                 :to="group.href"
                 @click="closeExpandedPanels"
               >
@@ -1623,7 +1621,7 @@ onBeforeUnmount(() => {
 
         <RouterLink
           v-else
-          class="nav-link"
+         
           :to="section.href"
           @click="closeExpandedPanels"
         >
@@ -1632,27 +1630,27 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
-    <div class="nav-actions">
+    <div>
       <RouterLink
         v-if="isBusinessUser"
-        class="nav-icon-button add-product-button"
+       
         to="/biznesi-juaj?view=add-product"
         aria-label="Shto artikull te ri"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 5v14"></path>
           <path d="M5 12h14"></path>
         </svg>
       </RouterLink>
 
       <button
-        class="nav-icon-button search-button"
+       
         type="button"
         aria-label="Kerko ketu"
         :aria-expanded="searchMenuOpen ? 'true' : 'false'"
         @click="toggleSearchPanel"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6"></circle>
           <path d="m20 20-4.2-4.2"></path>
         </svg>
@@ -1660,67 +1658,67 @@ onBeforeUnmount(() => {
 
       <RouterLink
         v-if="showConsumerNavigation"
-        class="nav-icon-button wishlist-link"
+       
         to="/wishlist"
         aria-label="Wishlist"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
         </svg>
       </RouterLink>
 
       <RouterLink
         v-if="showConsumerNavigation"
-        class="nav-icon-button cart-button"
+       
         to="/cart"
         aria-label="My Cart"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 5h2l2.1 9.1a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H7.2"></path>
           <circle cx="10" cy="19" r="1.4"></circle>
           <circle cx="18" cy="19" r="1.4"></circle>
         </svg>
-        <span class="nav-cart-badge" :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
+        <span :hidden="appState.cartCount <= 0">{{ cartBadgeLabel }}</span>
       </RouterLink>
 
       <button
         v-if="showMessagesShortcut"
-        class="nav-icon-button messages-button"
+       
         type="button"
         aria-label="Mesazhet"
         @click="handleMessagesClick"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 6.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3v-3H5A1.5 1.5 0 0 1 3.5 16V8A1.5 1.5 0 0 1 5 6.5Z"></path>
         </svg>
-        <span class="nav-cart-badge nav-messages-badge" :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
+        <span :hidden="unreadMessagesCount <= 0">{{ unreadMessagesBadgeLabel }}</span>
       </button>
 
       <template v-if="!appState.user">
-        <RouterLink class="nav-action nav-action-secondary nav-link-login" to="/login">
+        <RouterLink to="/login">
           Login
         </RouterLink>
-        <RouterLink class="nav-action nav-action-primary nav-link-signup" to="/signup">
+        <RouterLink to="/signup">
           Sign Up
         </RouterLink>
       </template>
 
       <div
         v-else
-        class="nav-user-menu"
-        :class="{ open: userMenuOpen && !isMobileViewport }"
+       
+       
       >
         <button
-          class="nav-user-trigger"
+         
           type="button"
           :aria-expanded="userMenuOpen && !isMobileViewport ? 'true' : 'false'"
           aria-label="Hape menune e perdoruesit"
           @click="handleUserTrigger"
         >
-          <span class="nav-user-avatar" aria-hidden="true">
+          <span aria-hidden="true">
             <img
               v-if="userAvatarPath"
-              class="nav-user-avatar-image"
+             
               :src="userAvatarPath"
               :alt="userDisplayName"
               width="160"
@@ -1728,7 +1726,7 @@ onBeforeUnmount(() => {
               loading="lazy"
               decoding="async"
             >
-            <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+            <span v-else>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
                 <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
@@ -1736,22 +1734,22 @@ onBeforeUnmount(() => {
             </span>
           </span>
 
-          <span class="nav-user-trigger-copy">
-            <span class="nav-user-name">{{ userDisplayName }}</span>
+          <span>
+            <span>{{ userDisplayName }}</span>
           </span>
 
-          <svg class="nav-user-trigger-chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="m7 10 5 5 5-5"></path>
           </svg>
         </button>
 
         <Transition name="nav-floating-panel">
-          <div v-if="userMenuOpen && !isMobileViewport" class="nav-user-panel">
-            <div class="nav-user-panel-head">
-              <span class="nav-user-avatar nav-user-avatar-large" aria-hidden="true">
+          <div v-if="userMenuOpen && !isMobileViewport">
+            <div>
+              <span aria-hidden="true">
                 <img
                   v-if="userAvatarPath"
-                  class="nav-user-avatar-image"
+                 
                   :src="userAvatarPath"
                   :alt="userDisplayName"
                   width="160"
@@ -1759,7 +1757,7 @@ onBeforeUnmount(() => {
                   loading="lazy"
                   decoding="async"
                 >
-                <span v-else class="nav-user-avatar-fallback nav-user-avatar-icon">
+                <span v-else>
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 12a4.25 4.25 0 1 0-4.25-4.25A4.25 4.25 0 0 0 12 12Z"></path>
                     <path d="M4.75 19.25a7.25 7.25 0 0 1 14.5 0"></path>
@@ -1767,32 +1765,32 @@ onBeforeUnmount(() => {
                 </span>
               </span>
 
-              <div class="nav-user-panel-copy">
-                <p class="nav-user-panel-label">{{ userPanelLabel }}</p>
-                <strong class="nav-user-panel-name">{{ userDisplayName }}</strong>
-                <span class="nav-user-panel-email">{{ appState.user.email }}</span>
+              <div>
+                <p>{{ userPanelLabel }}</p>
+                <strong>{{ userDisplayName }}</strong>
+                <span>{{ appState.user.email }}</span>
               </div>
             </div>
 
-            <div class="nav-user-panel-links">
+            <div>
               <RouterLink
                 v-for="link in userMenuLinks"
                 :key="link.href"
-                class="nav-user-panel-link"
+               
                 :to="link.href"
                 @click="closeExpandedPanels"
               >
                 <span>{{ link.label }}</span>
                 <span
                   v-if="link.showUnreadNotifications && unreadNotificationsCount > 0"
-                  class="nav-user-panel-link-badge"
+                 
                 >
                   {{ unreadNotificationsBadgeLabel }}
                 </span>
               </RouterLink>
             </div>
 
-            <button class="nav-user-panel-logout" type="button" @click="handleLogout">
+            <button type="button" @click="handleLogout">
               Shkycu
             </button>
           </div>

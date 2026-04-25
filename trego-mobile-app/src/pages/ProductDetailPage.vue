@@ -625,44 +625,41 @@ onUnmounted(() => {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page product-detail-page">
-        <section v-if="loading" class="surface-card empty-panel">
+    <IonContent :fullscreen="true">
+      <div>
+        <section v-if="loading">
           <IonSpinner name="crescent" />
         </section>
 
         <template v-else-if="product">
           <transition name="cart-toast">
-            <div v-if="toastVisible" class="product-detail-toast">
+            <div v-if="toastVisible">
               <IonIcon :icon="checkmarkCircle" />
               <span>{{ toastMessage }}</span>
             </div>
           </transition>
 
-          <div class="page-back-anchor">
+          <div>
             <AppBackButton back-to="/tabs/home" />
           </div>
 
-          <p v-if="inlineMessage" class="product-inline-message" :class="inlineTone">{{ inlineMessage }}</p>
+          <p v-if="inlineMessage">{{ inlineMessage }}</p>
 
-          <section class="product-hero">
-            <div class="product-media-frame">
+          <section>
+            <div>
               <img
                 :src="activeImagePath ? getProductImage({ imagePath: activeImagePath }) : getProductImage(product)"
                 :alt="product.title"
               />
-              <span v-if="discount" class="product-detail-badge">-{{ discount }}%</span>
+              <span v-if="discount">-{{ discount }}%</span>
             </div>
 
-            <div v-if="variantVisualOptions.length > 1" class="product-variant-rail">
+            <div v-if="variantVisualOptions.length > 1">
               <button
                 v-for="item in variantVisualOptions"
                 :key="item.key"
-                class="variant-visual-chip"
-                :class="{
-                  active: (item.kind === 'color' && selectedColor === item.value) || (!selectedColor && activeImagePath === item.imagePath),
-                  unavailable: !item.inStock,
-                }"
+               
+               
                 type="button"
                 :disabled="!item.inStock"
                 @click="chooseVariantVisual(item)"
@@ -673,72 +670,72 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="product-copy-stack">
-            <div class="product-title-row">
+          <section>
+            <div>
               <div>
                 <h1>{{ product.title }}</h1>
-                <div class="product-rating-row">
-                  <span class="product-star-row">
+                <div>
+                  <span>
                     <IonIcon
                       v-for="(isActive, index) in ratingStars"
                       :key="`star-${index}`"
                       :icon="star"
-                      :class="{ active: isActive }"
+                     
                     />
                   </span>
-                  <span class="product-rating-number">{{ ratingNumber }}</span>
-                  <span class="product-sold-count">{{ soldCount }} shitje</span>
+                  <span>{{ ratingNumber }}</span>
+                  <span>{{ soldCount }} shitje</span>
                 </div>
               </div>
 
-              <div class="product-meta-actions">
-                <button class="product-meta-action" type="button" @click="handleWishlist">
+              <div>
+                <button type="button" @click="handleWishlist">
                   <IonIcon :icon="heartOutline" />
                 </button>
-                <button class="product-meta-action" type="button" @click="handleShare">
+                <button type="button" @click="handleShare">
                   <IonIcon :icon="shareSocialOutline" />
                 </button>
               </div>
             </div>
 
-            <div class="meta-pill-row">
-              <span v-if="product.businessName" class="meta-pill meta-pill--brand">
+            <div>
+              <span v-if="product.businessName">
                 <IonIcon :icon="storefrontOutline" />
                 {{ product.businessName }}
               </span>
-              <span v-for="detail in detailChips" :key="detail" class="meta-pill">{{ detail }}</span>
+              <span v-for="detail in detailChips" :key="detail">{{ detail }}</span>
             </div>
 
-            <section class="price-focus-card" :class="{ 'is-sale': hasSale }">
-              <div class="price-focus-copy">
+            <section>
+              <div>
                 <p>Çmimi aktual</p>
                 <strong>{{ formatPrice(selectedVariantPrice) }}</strong>
                 <small v-if="hasSale">{{ formatPrice(comparePrice) }}</small>
               </div>
 
-              <div class="price-focus-meta">
-                <span v-if="selectedVariantLabel !== 'Standard'" class="price-focus-pill">{{ selectedVariantLabel }}</span>
-                <span class="price-focus-stock" :class="{ 'is-out': !hasStock }">
+              <div>
+                <span v-if="selectedVariantLabel !== 'Standard'">{{ selectedVariantLabel }}</span>
+                <span>
                   {{ hasStock ? `${selectedVariantStock || product.stockQuantity || 0} ne stok` : "Pa stok" }}
                 </span>
-                <span v-if="product.saleEndsAt" class="price-focus-note">Zgjat deri {{ formatDateLabel(product.saleEndsAt) }}</span>
+                <span v-if="product.saleEndsAt">Zgjat deri {{ formatDateLabel(product.saleEndsAt) }}</span>
               </div>
             </section>
 
-            <section class="delivery-section">
-              <div class="section-head-inline section-head-inline--tight">
+            <section>
+              <div>
                 <div>
-                  <p class="section-kicker">Transporti</p>
+                  <p>Transporti</p>
                   <h2>Si deshiron ta marresh?</h2>
                 </div>
               </div>
 
-              <div class="delivery-options">
+              <div>
                 <button
                   v-for="option in shippingOptions"
                   :key="option.value"
-                  class="delivery-option"
-                  :class="{ active: selectedDeliveryMethod === option.value }"
+                 
+                 
                   type="button"
                   @click="selectedDeliveryMethod = option.value"
                 >
@@ -750,34 +747,34 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <div class="tiny-info-stack">
-                <span class="tiny-info-pill">
+              <div>
+                <span>
                   <IonIcon :icon="returnUpBackOutline" />
                   Free return within 3 days
                 </span>
 
-                <button class="tiny-privacy-button" type="button" @click="privacyOpen = true">
+                <button type="button" @click="privacyOpen = true">
                   <span>Security &amp; Privacy</span>
                   <IonIcon :icon="informationCircleOutline" />
                 </button>
               </div>
             </section>
 
-            <section class="product-description">
-              <div class="section-head-inline section-head-inline--tight">
+            <section>
+              <div>
                 <div>
-                  <p class="section-kicker">Pershkrimi</p>
+                  <p>Pershkrimi</p>
                   <h2>Detajet e produktit</h2>
                 </div>
               </div>
-              <p class="section-copy section-copy--body">
+              <p>
                 {{ product.description || "Pershkrimi i produktit do te shfaqet ketu duke perdorur te njejten databaze si webfaqja." }}
               </p>
             </section>
 
-            <section class="seller-mini-panel">
-              <div class="seller-mini-copy">
-                <div class="seller-mini-title">
+            <section>
+              <div>
+                <div>
                   <strong>{{ product.businessName || "TREGIO Marketplace" }}</strong>
                   <IonIcon
                     v-if="String(product.businessVerificationStatus || '').trim().toLowerCase() === 'verified'"
@@ -786,62 +783,62 @@ onUnmounted(() => {
                 </div>
                 <span>{{ selectedShippingOption.title }} · {{ selectedShippingOption.copy }}</span>
               </div>
-              <button class="seller-mini-link" type="button" @click="openSellerStore">
+              <button type="button" @click="openSellerStore">
                 Hap dyqanin
                 <IonIcon :icon="arrowForwardOutline" />
               </button>
             </section>
           </section>
 
-          <section class="surface-card section-card stack-list">
-            <div class="section-head-inline reviews-head">
+          <section>
+            <div>
               <div>
-                <p class="section-kicker">Reviews</p>
+                <p>Reviews</p>
                 <h2>Vleresimet e bleresve</h2>
               </div>
-              <div class="reviews-summary">
+              <div>
                 <strong>{{ ratingNumber }}</strong>
                 <span>{{ reviewCount }}</span>
               </div>
             </div>
 
-            <div v-if="reviewsLoading" class="surface-card empty-panel">
+            <div v-if="reviewsLoading">
               <IonSpinner name="crescent" />
             </div>
 
-            <div v-else-if="reviews.length" class="stack-list review-list">
-              <article v-for="review in reviews" :key="review.id" class="review-card">
-                <div class="review-card-top">
+            <div v-else-if="reviews.length">
+              <article v-for="review in reviews" :key="review.id">
+                <div>
                   <div>
-                    <p class="section-kicker review-author">{{ review.authorName || "Klient" }}</p>
+                    <p>{{ review.authorName || "Klient" }}</p>
                     <h3>{{ review.title || `${review.rating || 0} yje` }}</h3>
                   </div>
-                  <span class="review-rating">{{ Number(review.rating || 0).toFixed(1) }}</span>
+                  <span>{{ Number(review.rating || 0).toFixed(1) }}</span>
                 </div>
-                <p class="section-copy section-copy--body">{{ review.body || "Pa pershkrim shtese." }}</p>
-                <img v-if="review.photoPath" :src="getProductImage({ imagePath: review.photoPath })" :alt="review.title || 'Review photo'" class="review-photo" />
-                <small class="review-date">{{ formatDateLabel(String(review.createdAt || "")) }}</small>
+                <p>{{ review.body || "Pa pershkrim shtese." }}</p>
+                <img v-if="review.photoPath" :src="getProductImage({ imagePath: review.photoPath })" :alt="review.title || 'Review photo'" />
+                <small>{{ formatDateLabel(String(review.createdAt || "")) }}</small>
               </article>
             </div>
 
-            <p v-else class="section-copy">Ende nuk ka reviews per kete produkt.</p>
-            <p v-if="canSubmitReview" class="section-copy review-note">
+            <p v-else>Ende nuk ka reviews per kete produkt.</p>
+            <p v-if="canSubmitReview">
               Pas pranimit te porosise, ky produkt lejon edhe review nga llogaria jote.
             </p>
           </section>
 
-          <section v-if="displayRecommendationSections.length" class="stack-list product-recommendations">
+          <section v-if="displayRecommendationSections.length">
             <template v-for="section in displayRecommendationSections" :key="section.key">
-              <div class="section-head">
+              <div>
                 <h2>{{ section.title }}</h2>
-                <small v-if="section.subtitle" class="section-copy">{{ section.subtitle }}</small>
+                <small v-if="section.subtitle">{{ section.subtitle }}</small>
               </div>
 
-              <div v-if="relatedLoading" class="surface-card empty-panel">
+              <div v-if="relatedLoading">
                 <IonSpinner name="crescent" />
               </div>
 
-              <div v-else class="product-grid product-grid--recommended">
+              <div v-else>
                 <ProductCardMobile
                   v-for="item in section.products"
                   :key="`${section.key}-${item.id}`"
@@ -854,39 +851,39 @@ onUnmounted(() => {
             </template>
           </section>
 
-          <div class="product-bottom-spacer" />
+          <div />
 
-          <section class="product-bottom-pill">
-            <button class="pill-side-button" type="button" @click="openSellerStore">
+          <section>
+            <button type="button" @click="openSellerStore">
               <IonIcon :icon="storefrontOutline" />
               <span>Store</span>
             </button>
 
-            <button class="pill-side-button" type="button" :disabled="messageBusy" @click="handleMessageBusiness">
+            <button type="button" :disabled="messageBusy" @click="handleMessageBusiness">
               <IonIcon :icon="chatbubbleEllipsesOutline" />
               <span>{{ messageBusy ? "..." : "Mesazh" }}</span>
             </button>
 
-            <button class="pill-cta-button" type="button" :disabled="!hasStock" @click="openVariantSheet">
+            <button type="button" :disabled="!hasStock" @click="openVariantSheet">
               <IonIcon :icon="bagHandleOutline" />
               <span>Add to cart</span>
             </button>
           </section>
 
           <transition name="sheet-fade">
-            <div v-if="variantSheetOpen" class="sheet-overlay" @click.self="variantSheetOpen = false">
-              <section class="variant-sheet">
-                <div class="variant-sheet-head">
+            <div v-if="variantSheetOpen" @click.self="variantSheetOpen = false">
+              <section>
+                <div>
                   <div>
-                    <p class="section-kicker">Cart selection</p>
+                    <p>Cart selection</p>
                     <h2>{{ product.title }}</h2>
                   </div>
-                  <button class="sheet-close" type="button" @click="variantSheetOpen = false">
+                  <button type="button" @click="variantSheetOpen = false">
                     <IonIcon :icon="closeOutline" />
                   </button>
                 </div>
 
-                <div class="variant-sheet-summary">
+                <div>
                   <img :src="activeImagePath ? getProductImage({ imagePath: activeImagePath }) : getProductImage(product)" :alt="product.title" />
                   <div>
                     <strong>{{ formatPrice(selectedVariantPrice) }}</strong>
@@ -895,14 +892,14 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div v-if="colorOptions.length" class="product-option-group">
-                  <p class="product-option-label">Ngjyra</p>
-                  <div class="product-option-row">
+                <div v-if="colorOptions.length">
+                  <p>Ngjyra</p>
+                  <div>
                     <button
                       v-for="option in colorOptions"
                       :key="option.value"
-                      class="product-option-chip"
-                      :class="{ active: selectedColor === option.value, unavailable: !option.inStock }"
+                     
+                     
                       type="button"
                       :disabled="!option.inStock"
                       @click="chooseColor(option.value)"
@@ -912,14 +909,14 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div v-if="sizeOptions.length" class="product-option-group">
-                  <p class="product-option-label">Madhesia</p>
-                  <div class="product-option-row">
+                <div v-if="sizeOptions.length">
+                  <p>Madhesia</p>
+                  <div>
                     <button
                       v-for="option in sizeOptions"
                       :key="option.value"
-                      class="product-option-chip"
-                      :class="{ active: selectedSize === option.value, unavailable: !option.inStock }"
+                     
+                     
                       type="button"
                       :disabled="!option.inStock"
                       @click="chooseSize(option.value)"
@@ -929,19 +926,19 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="sheet-quantity-row">
+                <div>
                   <div>
-                    <p class="product-option-label">Sasia</p>
+                    <p>Sasia</p>
                     <small>{{ selectedVariantStock || product.stockQuantity || 0 }} cope te lira</small>
                   </div>
-                  <div class="product-quantity-control">
+                  <div>
                     <button type="button" :disabled="selectedQuantity <= 1" @click="decrementQuantity">-</button>
                     <span>{{ selectedQuantity }}</span>
                     <button type="button" :disabled="selectedQuantity >= quantityMax" @click="incrementQuantity">+</button>
                   </div>
                 </div>
 
-                <IonButton class="cta-button sheet-add-button" :disabled="cartBusy || !hasStock" @click="confirmAddToCart">
+                <IonButton :disabled="cartBusy || !hasStock" @click="confirmAddToCart">
                   <IonIcon slot="start" :icon="addOutline" />
                   {{ cartBusy ? "Po shtohet..." : "Add to cart" }}
                 </IonButton>
@@ -950,12 +947,12 @@ onUnmounted(() => {
           </transition>
 
           <transition name="sheet-fade">
-            <div v-if="privacyOpen" class="sheet-overlay sheet-overlay--privacy" @click.self="privacyOpen = false">
-              <section class="privacy-popover">
-                <button class="sheet-close privacy-close" type="button" @click="privacyOpen = false">
+            <div v-if="privacyOpen" @click.self="privacyOpen = false">
+              <section>
+                <button type="button" @click="privacyOpen = false">
                   <IonIcon :icon="closeOutline" />
                 </button>
-                <div class="privacy-copy">
+                <div>
                   <strong>Security &amp; Privacy</strong>
                   <p>We protect your privacy and keep your personal details safe and secure.</p>
                 </div>
@@ -974,732 +971,3 @@ onUnmounted(() => {
   </IonPage>
 </template>
 
-<style scoped>
-.product-detail-page {
-  gap: 18px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
-}
-
-.product-grid--recommended {
-  align-items: start;
-}
-
-.product-inline-message {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 18px;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.product-inline-message.error {
-  background: rgba(220, 38, 38, 0.12);
-  color: #b91c1c;
-}
-
-.product-inline-message.success {
-  background: rgba(34, 197, 94, 0.12);
-  color: #15803d;
-}
-
-.product-detail-toast {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
-  left: 16px;
-  right: 16px;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(22, 163, 74, 0.96);
-  color: #fff;
-  box-shadow: 0 18px 36px rgba(22, 163, 74, 0.22);
-}
-
-.product-detail-toast ion-icon {
-  font-size: 1rem;
-}
-
-.product-hero {
-  display: grid;
-  gap: 12px;
-}
-
-.product-media-frame {
-  position: relative;
-  overflow: hidden;
-  border-radius: 30px;
-  aspect-ratio: 1;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.product-media-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.product-detail-badge {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(220, 38, 38, 0.92);
-  color: #fff7f7;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.product-variant-rail {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.variant-visual-chip {
-  flex: 0 0 84px;
-  display: grid;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 20px;
-  background: var(--trego-surface);
-}
-
-.variant-visual-chip.active {
-  border-color: rgba(255, 106, 43, 0.52);
-  box-shadow: 0 12px 22px rgba(255, 106, 43, 0.12);
-}
-
-.variant-visual-chip.unavailable {
-  opacity: 0.42;
-}
-
-.variant-visual-chip img {
-  width: 100%;
-  height: 68px;
-  border-radius: 14px;
-  object-fit: cover;
-}
-
-.variant-visual-chip span {
-  color: var(--trego-dark);
-  font-size: 0.68rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.product-copy-stack {
-  display: grid;
-  gap: 16px;
-}
-
-.product-title-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.product-title-row h1 {
-  margin: 0;
-  color: var(--trego-dark);
-  font-size: clamp(1.3rem, 6vw, 1.72rem);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
-}
-
-.product-rating-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 8px;
-  color: var(--trego-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.product-star-row {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.product-star-row ion-icon {
-  font-size: 0.72rem;
-  color: rgba(31, 41, 55, 0.22);
-}
-
-.product-star-row ion-icon.active {
-  color: #f59e0b;
-}
-
-.product-rating-number,
-.product-sold-count {
-  line-height: 1;
-}
-
-.product-meta-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.product-meta-action {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--trego-dark);
-  box-shadow: 0 10px 20px rgba(31, 41, 55, 0.08);
-}
-
-.meta-pill--brand {
-  color: var(--trego-accent);
-}
-
-.price-focus-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px;
-  border-radius: 26px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 36px rgba(31, 41, 55, 0.08);
-}
-
-.price-focus-card.is-sale {
-  background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), rgba(254, 226, 226, 0.92));
-  border-color: rgba(248, 113, 113, 0.24);
-}
-
-.price-focus-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.price-focus-copy p {
-  margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.price-focus-copy strong {
-  color: var(--trego-dark);
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.price-focus-copy small {
-  color: rgba(185, 28, 28, 0.8);
-  font-size: 0.82rem;
-  font-weight: 800;
-  text-decoration: line-through;
-}
-
-.price-focus-meta {
-  display: grid;
-  justify-items: end;
-  gap: 6px;
-  text-align: right;
-}
-
-.price-focus-pill,
-.price-focus-stock {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--trego-dark);
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.price-focus-stock.is-out {
-  color: #b91c1c;
-}
-
-.price-focus-note {
-  color: var(--trego-muted);
-  font-size: 0.7rem;
-  line-height: 1.35;
-  max-width: 12ch;
-}
-
-.delivery-section {
-  display: grid;
-  gap: 12px;
-}
-
-.section-head-inline--tight h2 {
-  margin: 2px 0 0;
-  font-size: 1.06rem;
-}
-
-.delivery-options {
-  display: grid;
-  gap: 10px;
-}
-
-.delivery-option {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  padding: 14px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 22px;
-  background: var(--trego-surface);
-}
-
-.delivery-option.active {
-  border-color: rgba(255, 106, 43, 0.45);
-  box-shadow: 0 14px 28px rgba(255, 106, 43, 0.12);
-}
-
-.delivery-option ion-icon {
-  margin-top: 2px;
-  color: var(--trego-accent);
-  font-size: 1.05rem;
-}
-
-.delivery-option strong {
-  display: block;
-  color: var(--trego-dark);
-  font-size: 0.88rem;
-}
-
-.delivery-option span {
-  display: block;
-  margin-top: 3px;
-  color: var(--trego-muted);
-  font-size: 0.74rem;
-}
-
-.tiny-info-stack {
-  display: grid;
-  gap: 8px;
-}
-
-.tiny-info-pill,
-.tiny-privacy-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--trego-input-border);
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--trego-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.tiny-privacy-button {
-  justify-content: center;
-}
-
-.product-description,
-.seller-mini-panel {
-  padding: 16px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--trego-border);
-}
-
-.seller-mini-panel {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-}
-
-.seller-mini-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.seller-mini-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.seller-mini-title strong {
-  color: var(--trego-dark);
-  font-size: 0.95rem;
-}
-
-.seller-mini-title ion-icon {
-  color: #22c55e;
-  font-size: 0.95rem;
-}
-
-.seller-mini-copy span {
-  color: var(--trego-muted);
-  font-size: 0.74rem;
-}
-
-.seller-mini-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--trego-accent);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.reviews-head {
-  align-items: center;
-}
-
-.reviews-summary {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-}
-
-.reviews-summary strong {
-  color: var(--trego-dark);
-  font-size: 1.18rem;
-}
-
-.reviews-summary span {
-  color: var(--trego-muted);
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-
-.review-list {
-  gap: 12px;
-}
-
-.review-card {
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid var(--trego-border);
-}
-
-.review-card-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.review-card-top h3 {
-  margin: 2px 0 0;
-  color: var(--trego-dark);
-  font-size: 0.95rem;
-}
-
-.review-author {
-  margin: 0;
-}
-
-.review-rating {
-  color: var(--trego-accent);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.review-photo {
-  width: 88px;
-  height: 88px;
-  border-radius: 18px;
-  object-fit: cover;
-}
-
-.review-date,
-.review-note {
-  color: var(--trego-muted);
-  font-size: 0.72rem;
-}
-
-.product-recommendations {
-  padding-bottom: 8px;
-}
-
-.product-bottom-spacer {
-  height: 12px;
-}
-
-.product-bottom-pill {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-  z-index: 70;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  padding: 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.34);
-  box-shadow:
-    0 18px 40px rgba(31, 41, 55, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-}
-
-.pill-side-button,
-.pill-cta-button {
-  min-height: 48px;
-  border: 0;
-  border-radius: 999px;
-  font-size: 0.84rem;
-  font-weight: 800;
-}
-
-.pill-side-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 14px;
-  background: rgba(255, 255, 255, 0.68);
-  color: var(--trego-dark);
-}
-
-.pill-cta-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 16px;
-  background: linear-gradient(180deg, rgba(255, 106, 43, 0.98), rgba(240, 94, 35, 0.92));
-  color: #fff;
-  box-shadow: 0 16px 28px rgba(255, 106, 43, 0.28);
-}
-
-.sheet-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: grid;
-  align-items: end;
-  padding: 18px 14px calc(env(safe-area-inset-bottom, 0px) + 14px);
-  background: rgba(15, 23, 42, 0.24);
-}
-
-.sheet-overlay--privacy {
-  align-items: center;
-}
-
-.variant-sheet,
-.privacy-popover {
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.88);
-  background: rgba(251, 249, 247, 0.98);
-  box-shadow: 0 24px 56px rgba(31, 41, 55, 0.18);
-}
-
-.variant-sheet {
-  padding: 18px 16px;
-  display: grid;
-  gap: 14px;
-}
-
-.variant-sheet-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.variant-sheet-head h2 {
-  margin: 2px 0 0;
-  color: var(--trego-dark);
-  font-size: 1.08rem;
-  line-height: 1.16;
-}
-
-.sheet-close {
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(31, 41, 55, 0.08);
-  color: var(--trego-dark);
-}
-
-.variant-sheet-summary {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-}
-
-.variant-sheet-summary img {
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
-  border-radius: 20px;
-}
-
-.variant-sheet-summary strong {
-  display: block;
-  color: var(--trego-dark);
-  font-size: 1.06rem;
-}
-
-.variant-sheet-summary span,
-.variant-sheet-summary small {
-  display: block;
-  color: var(--trego-muted);
-  font-size: 0.74rem;
-  margin-top: 3px;
-}
-
-.product-option-group {
-  display: grid;
-  gap: 10px;
-}
-
-.product-option-label {
-  margin: 0;
-  color: var(--trego-dark);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.product-option-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.product-option-chip {
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--trego-dark);
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.product-option-chip.active {
-  border-color: rgba(255, 106, 43, 0.5);
-  background: rgba(255, 106, 43, 0.12);
-  color: var(--trego-accent);
-}
-
-.product-option-chip.unavailable {
-  opacity: 0.42;
-}
-
-.sheet-quantity-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-}
-
-.sheet-quantity-row small {
-  color: var(--trego-muted);
-  font-size: 0.72rem;
-}
-
-.product-quantity-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--trego-input-border);
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.product-quantity-control button {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(31, 41, 55, 0.08);
-  color: var(--trego-dark);
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.product-quantity-control span {
-  min-width: 18px;
-  text-align: center;
-  color: var(--trego-dark);
-  font-size: 0.86rem;
-  font-weight: 800;
-}
-
-.sheet-add-button {
-  margin-top: 4px;
-}
-
-.privacy-popover {
-  position: relative;
-  width: min(100%, 320px);
-  padding: 16px;
-}
-
-.privacy-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-}
-
-.privacy-copy {
-  display: grid;
-  gap: 6px;
-  max-width: 26ch;
-}
-
-.privacy-copy strong {
-  color: var(--trego-dark);
-  font-size: 0.86rem;
-}
-
-.privacy-copy p {
-  margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.72rem;
-  line-height: 1.45;
-}
-
-.cart-toast-enter-active,
-.cart-toast-leave-active,
-.sheet-fade-enter-active,
-.sheet-fade-leave-active {
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.cart-toast-enter-from,
-.cart-toast-leave-to,
-.sheet-fade-enter-from,
-.sheet-fade-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
-}
-</style>

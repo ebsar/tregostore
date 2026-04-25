@@ -1,10 +1,28 @@
 <script setup>
-import { onMounted } from "vue";
+import { onMounted, reactive } from "vue";
 import { useRouter } from "vue-router";
-import HeaderAccountDropdown from "../components/HeaderAccountDropdown.vue";
+import AuthField from "../components/auth/AuthField.vue";
+import AuthPrimaryButton from "../components/auth/AuthPrimaryButton.vue";
+import AuthSelectField from "../components/auth/AuthSelectField.vue";
+import AuthShell from "../components/auth/AuthShell.vue";
+import { requestJson, resolveApiMessage } from "../lib/api";
+import { getVerifyEmailUrl } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
+const form = reactive({
+  fullName: "",
+  email: "",
+  phoneNumber: "",
+  birthDate: "",
+  gender: "",
+  password: "",
+});
+const ui = reactive({
+  loading: false,
+  message: "",
+  type: "",
+});
 
 onMounted(async () => {
   try {
@@ -17,81 +35,177 @@ onMounted(async () => {
     markRouteReady();
   }
 });
+
+function isStrongPassword(password) {
+  return (
+    password.length >= 8
+    && /[A-Za-z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password)
+  );
+}
+
+async function submitForm() {
+  ui.loading = true;
+  ui.message = "";
+  ui.type = "";
+
+  if (!isStrongPassword(form.password)) {
+    ui.message = "Password must be at least 8 characters and include a letter, number, and symbol.";
+    ui.type = "error";
+    ui.loading = false;
+    return;
+  }
+
+  const submittedEmail = form.email.trim();
+
+  try {
+    const { response, data } = await requestJson("/api/register", {
+      method: "POST",
+      body: JSON.stringify({
+        fullName: form.fullName.trim(),
+        email: submittedEmail,
+        password: form.password,
+        phoneNumber: form.phoneNumber.trim(),
+        birthDate: form.birthDate,
+        gender: form.gender,
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "We couldn't create your account.");
+      ui.type = "error";
+      return;
+    }
+
+    const hasDeliveryWarnings = Array.isArray(data?.warnings) && data.warnings.length > 0;
+    ui.message = data.message || "Account created successfully.";
+    ui.type = hasDeliveryWarnings ? "error" : "success";
+
+    if (hasDeliveryWarnings) {
+      form.password = "";
+      return;
+    }
+
+    form.fullName = "";
+    form.email = "";
+    form.phoneNumber = "";
+    form.birthDate = "";
+    form.gender = "";
+    form.password = "";
+
+    await router.push(data.redirectTo || getVerifyEmailUrl(submittedEmail));
+  } catch (error) {
+    ui.message = "The server is not responding. Please try again.";
+    ui.type = "error";
+    console.error(error);
+  } finally {
+    ui.loading = false;
+  }
+}
 </script>
 
 <template>
-  <section class="auth-page" aria-label="Sign up page">
-    <div class="auth-page-breadcrumb-strip">
-      <div class="auth-page-breadcrumb-inner">
-        <nav class="auth-page-breadcrumbs" aria-label="Breadcrumb">
-          <RouterLink to="/">Home</RouterLink>
-          <span>›</span>
-          <span>User Account</span>
-          <span>›</span>
-          <strong>Sign Up</strong>
-        </nav>
-      </div>
-    </div>
+  <AuthShell
+    title="Create your account"
+    :show-brand="false"
+    :message="ui.message"
+    :message-type="ui.type"
+  >
+    <form class="auth-form" @submit.prevent="submitForm">
+      <AuthField
+        id="signup-name"
+        v-model="form.fullName"
+        label="Full name"
+        name="fullName"
+        type="text"
+        autocomplete="name"
+        required
+      />
 
-    <div class="auth-page-shell">
-      <HeaderAccountDropdown standalone sync-route-tabs initial-mode="signup" />
-    </div>
-  </section>
+      <AuthField
+        id="signup-email"
+        v-model="form.email"
+        label="Email"
+        name="email"
+        type="email"
+        autocomplete="email"
+        inputmode="email"
+        required
+      />
+
+      <AuthField
+        id="signup-phone"
+        v-model="form.phoneNumber"
+        label="Phone number"
+        name="phoneNumber"
+        type="tel"
+        autocomplete="tel"
+        inputmode="tel"
+        placeholder="+383 44 123 456"
+      />
+
+      <div class="signup-form__row">
+        <AuthField
+          id="signup-birth-date"
+          v-model="form.birthDate"
+          label="Date of birth"
+          name="birthDate"
+          type="date"
+          autocomplete="bday"
+        />
+
+        <AuthSelectField
+          id="signup-gender"
+          v-model="form.gender"
+          label="Gender"
+          name="gender"
+          :options="[
+            { value: '', label: 'Select gender' },
+            { value: 'mashkull', label: 'Male' },
+            { value: 'femer', label: 'Female' },
+            { value: 'tjeter', label: 'Other' },
+          ]"
+        />
+      </div>
+
+      <AuthField
+        id="signup-password"
+        v-model="form.password"
+        label="Password"
+        name="password"
+        type="password"
+        autocomplete="new-password"
+        required
+      />
+
+      <AuthPrimaryButton :loading="ui.loading" loading-label="Creating account...">
+        Create account
+      </AuthPrimaryButton>
+    </form>
+
+    <template #footer>
+      <p class="auth-helper">
+        Already have an account?
+        <RouterLink class="auth-link" to="/login">
+          Sign in
+        </RouterLink>
+      </p>
+    </template>
+  </AuthShell>
 </template>
 
 <style scoped>
-.auth-page {
-  width: 100%;
-  background:
-    radial-gradient(circle at top center, rgba(255, 255, 255, 0.95) 0%, rgba(247, 249, 252, 0.92) 34%, rgba(255, 255, 255, 0.98) 100%);
+.signup-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.auth-page-breadcrumb-strip {
-  width: 100%;
-  background: #f4f6f8;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-}
-
-.auth-page-breadcrumb-inner {
-  width: min(1280px, calc(100vw - 48px));
-  margin: 0 auto;
-  padding: 20px 0;
-}
-
-.auth-page-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  color: #64748b;
-  font-size: 1rem;
-}
-
-.auth-page-breadcrumbs a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.auth-page-breadcrumbs strong {
-  color: #2f9cf3;
-  font-weight: 700;
-}
-
-.auth-page-shell {
-  display: flex;
-  justify-content: center;
-  min-height: calc(100vh - 160px);
-  padding: clamp(40px, 7vw, 80px) 20px 96px;
-}
-
-@media (max-width: 720px) {
-  .auth-page-breadcrumb-inner {
-    width: min(100vw - 24px, 1280px);
-    padding: 16px 0;
-  }
-
-  .auth-page-shell {
-    padding: 28px 12px 56px;
+@media (max-width: 560px) {
+  .signup-form__row {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 </style>

@@ -8,7 +8,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="login-greeting-toast is-visible">
+  <div class="market-login-toast">
     Pershendetje {{ message }}!
   </div>
 </template>

@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
+import AccountUtilityShell from "../components/account/AccountUtilityShell.vue";
+import PasswordToggleButton from "../components/PasswordToggleButton.vue";
 import { requestJson, resolveApiMessage, uploadProfilePhoto } from "../lib/api";
-import { getAccountDashboardMenuItems } from "../lib/account-navigation";
 import { createEmptyAddress, getBusinessInitials, getProfileValuesFromUser, normalizeAddress } from "../lib/shop";
-import { appState, ensureSessionLoaded, logoutUser, markRouteReady, refreshSession } from "../stores/app-state";
+import { appState, ensureSessionLoaded, markRouteReady, refreshSession } from "../stores/app-state";
 
 const router = useRouter();
 const profileImageInput = ref(null);
@@ -34,11 +35,10 @@ const ui = reactive({
   deleteType: "",
 });
 const deletePassword = ref("");
+const deletePasswordVisible = ref(false);
 
 const previewImage = computed(() => previewUrl.value || formState.profileImagePath || "");
 const placeholderInitials = computed(() => getBusinessInitials(formState.fullName || formState.displayName || "User"));
-
-const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, "settings"));
 
 onMounted(async () => {
   try {
@@ -230,497 +230,217 @@ async function handleDelete() {
     router.push(data.redirectTo || "/signup");
   }, 800);
 }
-
-async function handleLogout() {
-  const { response, data } = await logoutUser();
-  if (!response.ok || !data?.ok) {
-    ui.message = data?.message || "Dalja nga llogaria nuk funksionoi.";
-    ui.type = "error";
-    return;
-  }
-
-  await router.push("/");
-}
-
-function renderDashboardIcon(icon) {
-  switch (icon) {
-    case "dashboard":
-      return "M4 5.5A1.5 1.5 0 0 1 5.5 4H11v6.5H4Zm9 0V4h5.5A1.5 1.5 0 0 1 20 5.5V11h-7ZM4 13h7v7H5.5A1.5 1.5 0 0 1 4 18.5Zm9 0h7v5.5A1.5 1.5 0 0 1 18.5 20H13Z";
-    case "orders":
-      return "M6 5h12a1 1 0 0 1 1 1v12H5V6a1 1 0 0 1 1-1Zm2 3h8M8 11h8M8 14h5";
-    case "pin":
-      return "M12 21s6-5.6 6-10.2A6 6 0 1 0 6 10.8C6 15.4 12 21 12 21Zm0-8a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z";
-    case "bag":
-      return "M4 7h16l-1.4 11.2A2 2 0 0 1 16.6 20H7.4a2 2 0 0 1-2-1.8ZM9 9V6.8A3 3 0 0 1 12 4a3 3 0 0 1 3 2.8V9";
-    case "heart":
-      return "m12 20.4-1.2-1C5.4 14.6 2 11.5 2 7.8A4.8 4.8 0 0 1 6.8 3 5.3 5.3 0 0 1 12 5.9 5.3 5.3 0 0 1 17.2 3 4.8 4.8 0 0 1 22 7.8c0 3.7-3.4 6.8-8.8 11.6z";
-    case "compare":
-      return "M6.9 8.7a5.1 5.1 0 0 1 8.7-1.5l1.3-1.3v4.2h-4.2l1.5-1.5a3 3 0 1 0 .9 2.1h2.1a5.1 5.1 0 1 1-10.3 0c0-.3 0-.7.1-1zM17.1 15.3a5.1 5.1 0 0 1-8.7 1.5L7.1 18v-4.2h4.2l-1.5 1.5a3 3 0 1 0-.9-2.1H6.8a5.1 5.1 0 1 1 10.3 0c0 .3 0 .7-.1 1z";
-    case "card":
-      return "M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5Zm0 2.2h18M7 15h3";
-    case "history":
-      return "M12 6v6l4 2M4.9 7.8H2V3.9m.5 3.9A9 9 0 1 1 5 18";
-    case "settings":
-      return "M12 8.2a3.8 3.8 0 1 1 0 7.6 3.8 3.8 0 0 1 0-7.6Zm8 4-1.7.8c-.1.4-.3.8-.5 1.2l.7 1.8-1.7 1.7-1.8-.7c-.4.2-.8.4-1.2.5L12 20l-2.4-.7c-.4-.1-.8-.3-1.2-.5l-1.8.7-1.7-1.7.7-1.8c-.2-.4-.4-.8-.5-1.2L4 12.2l.8-2.2c.1-.4.3-.8.5-1.2l-.7-1.8L6.3 5l1.8.7c.4-.2.8-.4 1.2-.5L12 4l2.4.7c.4.1.8.3 1.2.5l1.8-.7 1.7 1.7-.7 1.8c.2.4.4.8.5 1.2Z";
-    default:
-      return "";
-  }
-}
 </script>
 
 <template>
-  <section class="account-page settings-dashboard-page" aria-label="Setting">
-    <div class="settings-breadcrumb-strip">
-      <div class="settings-breadcrumb-inner">
-        <nav class="settings-breadcrumbs" aria-label="Breadcrumb">
-          <RouterLink to="/">Home</RouterLink>
-          <span>›</span>
-          <RouterLink to="/llogaria">User Account</RouterLink>
-          <span>›</span>
-          <RouterLink to="/llogaria">Dashboard</RouterLink>
-          <span>›</span>
-          <strong>Setting</strong>
-        </nav>
-      </div>
-    </div>
-
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-      {{ ui.message }}
-    </div>
-
-    <div v-if="appState.user" class="settings-dashboard-layout">
-      <aside class="settings-dashboard-sidebar">
-        <div class="settings-dashboard-sidebar-card">
-          <RouterLink
-            v-for="item in dashboardMenuItems"
-            :key="`${item.href}-${item.label}`"
-            class="settings-dashboard-nav-link"
-            :class="{ 'is-active': item.active }"
-            :to="item.href"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path :d="renderDashboardIcon(item.icon)" />
-            </svg>
-            <span>{{ item.label }}</span>
-          </RouterLink>
-
-          <button class="settings-dashboard-nav-link settings-dashboard-nav-button" type="button" @click="handleLogout">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15 5h4v14h-4M10 8l4 4-4 4M14 12H4" />
-            </svg>
-            <span>Log-out</span>
-          </button>
-        </div>
-      </aside>
-
-      <div class="settings-dashboard-main">
-        <section class="settings-card">
-          <div class="settings-card-head">
-            <h1>Account Setting</h1>
+  <AccountUtilityShell
+    v-if="appState.user"
+    active-key="settings"
+    eyebrow="Account settings"
+    title="Personal details"
+    description="Keep your public profile, contact details, and delivery information accurate so the marketplace stays personalized and checkout-ready."
+    :status-message="ui.message"
+    :status-type="ui.type"
+    search-placeholder="Search settings, addresses, notifications"
+  >
+    <div class="account-workspace account-workspace--split">
+      <section class="account-card">
+        <div class="account-card__header">
+          <div>
+            <h2>Profile information</h2>
+            <p>Everything here stays connected to your account, saved orders, and delivery details.</p>
           </div>
+        </div>
 
-          <form class="settings-form" @submit.prevent="handleSave">
-            <div class="settings-profile-column">
-              <div class="settings-avatar">
-                <img v-if="previewImage" class="settings-avatar-image" :src="previewImage" alt="Foto e profilit">
-                <div v-else class="settings-avatar-placeholder">{{ placeholderInitials }}</div>
+        <form class="account-form" @submit.prevent="handleSave">
+          <div class="account-avatar-field">
+            <div class="account-avatar-field__preview">
+              <img v-if="previewImage" :src="previewImage" alt="Profile preview">
+              <span v-else>{{ placeholderInitials }}</span>
+            </div>
+
+            <div class="account-avatar-field__controls">
+              <div class="account-card__copy">
+                <h2>Profile photo</h2>
+                <p>Upload a clear image so your dashboard and messages feel more personal.</p>
               </div>
-
-              <label class="settings-photo-button" for="settings-profile-image">
-                Change photo
-              </label>
+              <div class="account-form__actions">
+                <label class="market-button market-button--secondary" for="settings-profile-image">
+                  Change photo
+                </label>
+                <button class="market-button market-button--ghost" type="button" @click="clearPickedFile">
+                  Clear
+                </button>
+              </div>
               <input
                 id="settings-profile-image"
                 ref="profileImageInput"
-                class="settings-photo-input"
+                class="account-avatar-field__file"
                 name="profileImage"
                 type="file"
                 accept="image/*"
                 @change="handleImageChange"
               >
-              <p class="settings-photo-file-name">{{ fileName }}</p>
+              <p class="account-avatar-field__hint">{{ fileName }}</p>
             </div>
-
-            <div class="settings-fields-column">
-              <div class="field-row">
-                <label class="field">
-                  <span>Display name</span>
-                  <input v-model="formState.displayName" type="text" placeholder="Display name" required>
-                </label>
-
-                <label class="field">
-                  <span>Username</span>
-                  <input v-model="formState.userName" type="text" readonly class="is-readonly">
-                </label>
-              </div>
-
-              <div class="field-row">
-                <label class="field">
-                  <span>Full Name</span>
-                  <input v-model="formState.fullName" type="text" placeholder="Full name" required>
-                </label>
-
-                <label class="field">
-                  <span>Email</span>
-                  <input v-model="formState.email" type="email" readonly class="is-readonly">
-                </label>
-              </div>
-
-              <div class="field-row">
-                <label class="field">
-                  <span>Secondary Email</span>
-                  <input v-model="formState.secondaryEmail" type="email" readonly class="is-readonly">
-                </label>
-
-                <label class="field">
-                  <span>Phone Number</span>
-                  <input v-model="formState.phoneNumber" type="tel" placeholder="+383 44 123 456">
-                </label>
-              </div>
-
-              <div class="field-row field-row--three">
-                <label class="field">
-                  <span>Country/Region</span>
-                  <input v-model="formState.country" type="text" placeholder="Kosove">
-                </label>
-
-                <label class="field">
-                  <span>States</span>
-                  <input v-model="formState.city" type="text" placeholder="Prishtine">
-                </label>
-
-                <label class="field">
-                  <span>Zip Code</span>
-                  <input v-model="formState.zipCode" type="text" placeholder="10000">
-                </label>
-              </div>
-
-              <label class="field">
-                <span>Street Address</span>
-                <input v-model="formState.addressLine" type="text" placeholder="Rruga, objekti, apartamenti">
-              </label>
-
-              <div class="settings-actions">
-                <button class="settings-save-button" type="submit">SAVE CHANGES</button>
-                <button class="ghost-button profile-cancel-button" type="button" @click="cancelChanges">Cancel</button>
-              </div>
-            </div>
-          </form>
-        </section>
-
-        <section class="settings-danger-card">
-          <div class="settings-card-head">
-            <h2>Danger Zone</h2>
           </div>
 
-          <div class="settings-danger-body">
-            <div>
-              <p class="section-text">
-                Nese e shkruan fjalekalimin dhe e konfirmon, llogaria do te fshihet komplet nga sistemi.
-              </p>
-            </div>
-
-            <form class="settings-danger-form" @submit.prevent="handleDelete">
-              <label class="field">
-                <span>Fjalekalimi</span>
-                <input v-model="deletePassword" type="password" placeholder="Shkruaje fjalekalimin per fshirje" required>
+          <div class="account-form__grid">
+            <div class="account-form__row">
+              <label>
+                <span>Display name</span>
+                <input v-model="formState.displayName" type="text" placeholder="Display name" required>
               </label>
 
-              <button class="profile-delete-button" type="submit">Fshije llogarine</button>
-            </form>
-
-            <div class="form-message" :class="ui.deleteType" role="status" aria-live="polite">
-              {{ ui.deleteMessage }}
+              <label>
+                <span>Username</span>
+                <input v-model="formState.userName" type="text" readonly>
+              </label>
             </div>
+
+            <div class="account-form__row">
+              <label>
+                <span>Full name</span>
+                <input v-model="formState.fullName" type="text" placeholder="Full name" required>
+              </label>
+
+              <label>
+                <span>Email</span>
+                <input v-model="formState.email" type="email" readonly>
+              </label>
+            </div>
+
+            <div class="account-form__row">
+              <label>
+                <span>Secondary email</span>
+                <input v-model="formState.secondaryEmail" type="email" readonly>
+              </label>
+
+              <label>
+                <span>Phone number</span>
+                <input v-model="formState.phoneNumber" type="tel" placeholder="+383 44 123 456">
+              </label>
+            </div>
+
+            <div class="account-form__row">
+              <label>
+                <span>Birth date</span>
+                <input v-model="formState.birthDate" type="date">
+              </label>
+
+              <label>
+                <span>Gender</span>
+                <select v-model="formState.gender">
+                  <option value="">Select gender</option>
+                  <option value="mashkull">Male</option>
+                  <option value="femer">Female</option>
+                  <option value="tjeter">Other</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="account-form__row--triple">
+              <label>
+                <span>Country / Region</span>
+                <input v-model="formState.country" type="text" placeholder="Kosovo">
+              </label>
+
+              <label>
+                <span>City</span>
+                <input v-model="formState.city" type="text" placeholder="Prishtine">
+              </label>
+
+              <label>
+                <span>ZIP code</span>
+                <input v-model="formState.zipCode" type="text" placeholder="10000">
+              </label>
+            </div>
+
+            <label>
+              <span>Street address</span>
+              <input v-model="formState.addressLine" type="text" placeholder="Street, building, apartment">
+            </label>
+          </div>
+
+          <div class="account-form__actions">
+            <button class="market-button market-button--primary" type="submit">
+              Save changes
+            </button>
+            <button class="market-button market-button--secondary" type="button" @click="cancelChanges">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <div class="account-stack">
+        <section class="account-card">
+          <div class="account-card__header">
+            <div>
+              <h2>Quick actions</h2>
+              <p>Existing account tools that were already supported are now easier to reach from settings.</p>
+            </div>
+          </div>
+
+          <div class="account-action-list">
+            <RouterLink class="market-button market-button--secondary" to="/ndrysho-fjalekalimin">
+              Change password
+            </RouterLink>
+            <RouterLink class="market-button market-button--secondary" to="/adresat">
+              Manage addresses
+            </RouterLink>
+            <RouterLink class="market-button market-button--secondary" to="/njoftimet">
+              View notifications
+            </RouterLink>
+            <RouterLink class="market-button market-button--secondary" to="/refund-returne">
+              Refunds & returns
+            </RouterLink>
+          </div>
+        </section>
+
+        <section class="account-card account-card--danger">
+          <div class="account-card__header">
+            <div>
+              <h2>Danger zone</h2>
+              <p>If you confirm your password below, the account will be deleted permanently from the system.</p>
+            </div>
+          </div>
+
+          <form class="account-form" @submit.prevent="handleDelete">
+            <label>
+              <span>Password</span>
+              <div class="password-control">
+                <input
+                  v-model="deletePassword"
+                  :type="deletePasswordVisible ? 'text' : 'password'"
+                  placeholder="Enter your password to delete the account"
+                  required
+                >
+                <PasswordToggleButton
+                  :visible="deletePasswordVisible"
+                  @toggle="deletePasswordVisible = !deletePasswordVisible"
+                />
+              </div>
+            </label>
+
+            <div class="account-form__actions">
+              <button class="market-button market-button--primary" type="submit">
+                Delete account
+              </button>
+            </div>
+          </form>
+
+          <div
+            v-if="ui.deleteMessage"
+            class="market-status"
+            :class="{ 'market-status--error': ui.deleteType === 'error', 'market-status--success': ui.deleteType === 'success' }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ ui.deleteMessage }}
           </div>
         </section>
       </div>
     </div>
-  </section>
+  </AccountUtilityShell>
 </template>
-
-<style scoped>
-.settings-dashboard-page {
-  width: min(1300px, calc(100vw - 48px));
-  margin: 0 auto;
-  padding: 0 0 80px;
-}
-
-.settings-breadcrumb-strip {
-  margin-inline: calc(50% - 50vw);
-  border-top: 1px solid rgba(15, 23, 42, 0.06);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f5f6f8;
-}
-
-.settings-breadcrumb-inner {
-  width: min(1300px, calc(100vw - 48px));
-  margin: 0 auto;
-  padding: 28px 0;
-}
-
-.settings-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  color: #64748b;
-  font-size: 1rem;
-}
-
-.settings-breadcrumbs a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.settings-breadcrumbs strong {
-  color: #2496f3;
-}
-
-.settings-dashboard-layout {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 38px;
-  align-items: start;
-  padding-top: 36px;
-}
-
-.settings-dashboard-sidebar-card {
-  display: grid;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.06);
-}
-
-.settings-dashboard-nav-link,
-.settings-dashboard-nav-button {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 54px;
-  padding: 0 22px;
-  border: 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  background: #fff;
-  color: #5b6775;
-  text-decoration: none;
-  font-size: 1rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.settings-dashboard-nav-link svg,
-.settings-dashboard-nav-button svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.settings-dashboard-nav-link.is-active {
-  background: #ff7f32;
-  color: #fff;
-  font-weight: 700;
-}
-
-.settings-dashboard-nav-button {
-  border-bottom: 0;
-}
-
-.settings-dashboard-main {
-  display: grid;
-  gap: 24px;
-}
-
-.settings-card,
-.settings-danger-card {
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.05);
-}
-
-.settings-card-head {
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.settings-card-head h1,
-.settings-card-head h2 {
-  margin: 0;
-  color: #202833;
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
-}
-
-.settings-form {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 24px;
-  padding: 24px;
-}
-
-.settings-profile-column {
-  display: grid;
-  justify-items: center;
-  align-content: start;
-  gap: 14px;
-}
-
-.settings-avatar {
-  width: 176px;
-  height: 176px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #0d7ec8, #31a6ef);
-}
-
-.settings-avatar-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.settings-avatar-placeholder {
-  color: #fff;
-  font-size: 3rem;
-  font-weight: 800;
-}
-
-.settings-photo-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 999px;
-  background: #f5f6f8;
-  color: #202833;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.settings-photo-input {
-  display: none;
-}
-
-.settings-photo-file-name {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.82rem;
-  text-align: center;
-}
-
-.settings-fields-column {
-  display: grid;
-  gap: 18px;
-}
-
-.field.is-readonly input,
-.is-readonly {
-  background: #fbfcfd;
-}
-
-.field-row--three {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 168px;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.settings-save-button {
-  min-height: 46px;
-  padding: 0 24px;
-  border: 0;
-  border-radius: 2px;
-  background: #ff7f32;
-  color: #fff;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.settings-danger-body {
-  display: grid;
-  gap: 18px;
-  padding: 24px;
-}
-
-.settings-danger-form {
-  display: flex;
-  align-items: end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-@media (max-width: 1080px) {
-  .settings-dashboard-layout,
-  .settings-form {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-profile-column {
-    justify-items: start;
-  }
-}
-
-@media (max-width: 720px) {
-  .settings-dashboard-page,
-  .settings-breadcrumb-inner {
-    width: min(100vw - 24px, 1300px);
-  }
-
-  .settings-dashboard-page {
-    padding-bottom: 48px;
-  }
-
-  .settings-dashboard-layout {
-    gap: 24px;
-    padding-top: 24px;
-  }
-
-  .settings-dashboard-nav-link,
-  .settings-dashboard-nav-button {
-    min-height: 50px;
-    padding-inline: 16px;
-    font-size: 0.95rem;
-  }
-
-  .settings-card-head,
-  .settings-form,
-  .settings-danger-body {
-    padding-inline: 16px;
-  }
-
-  .field-row--three {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-actions,
-  .settings-danger-form {
-    display: grid;
-  }
-
-  .settings-save-button,
-  .profile-delete-button,
-  .profile-cancel-button {
-    width: 100%;
-  }
-
-  .settings-avatar {
-    width: 148px;
-    height: 148px;
-  }
-}
-</style>

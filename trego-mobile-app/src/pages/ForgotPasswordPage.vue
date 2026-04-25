@@ -50,26 +50,26 @@ async function submit() {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page auth-page">
-        <section class="page-shell-with-back auth-shell">
-          <div class="page-back-anchor">
+    <IonContent :fullscreen="true">
+      <div>
+        <section>
+          <div>
             <AppBackButton back-to="/login" />
           </div>
-          <div class="auth-intro">
+          <div>
             <h1>FORGOT PASSWORD</h1>
           </div>
         </section>
 
-        <section class="surface-card surface-card--strong auth-form-card">
+        <section>
           <label>
             <span>Email</span>
-            <IonInput v-model="form.email" class="auth-input" type="email" placeholder="email@domain.com" />
+            <IonInput v-model="form.email" type="email" placeholder="email@domain.com" />
           </label>
 
-          <p v-if="form.message" class="auth-form-message" :class="form.type">{{ form.message }}</p>
+          <p v-if="form.message">{{ form.message }}</p>
 
-          <IonButton class="cta-button" :disabled="form.busy" @click="submit">
+          <IonButton :disabled="form.busy" @click="submit">
             {{ form.busy ? "Duke derguar..." : "Me dergo kodin" }}
           </IonButton>
         </section>
@@ -78,58 +78,3 @@ async function submit() {
   </IonPage>
 </template>
 
-<style scoped>
-.auth-page {
-  justify-content: center;
-  min-height: 100%;
-}
-
-.auth-shell {
-  gap: 8px;
-}
-
-.auth-intro {
-  text-align: center;
-  padding: 0 8px;
-}
-
-.auth-intro h1 {
-  margin: 0;
-  color: var(--trego-dark);
-  font-size: clamp(1.9rem, 8vw, 2.4rem);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.auth-form-card {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  padding: 22px 18px 20px;
-}
-
-.auth-form-card label {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.auth-form-card span {
-  color: var(--trego-dark);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.auth-form-message {
-  margin: 0;
-  font-size: 0.84rem;
-}
-
-.auth-form-message.error {
-  color: var(--trego-danger);
-}
-
-.auth-form-message.success {
-  color: #15803d;
-}
-</style>

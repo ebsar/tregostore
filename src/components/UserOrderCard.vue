@@ -1,12 +1,13 @@
 <script setup>
+import { computed } from "vue";
 import OrderItemCard from "./OrderItemCard.vue";
 import {
   buildFulfillmentTimeline,
-  formatOrderStatusBadgeLabel,
   formatDateLabel,
   formatDeliveryMethodLabel,
   formatEstimatedDeliveryLabel,
   formatFulfillmentStatusLabel,
+  formatOrderStatusBadgeLabel,
   formatPaymentMethodLabel,
   formatPrice,
   formatReturnRequestStatusLabel,
@@ -14,7 +15,7 @@ import {
   getFulfillmentTerminalEvent,
 } from "../lib/shop";
 
-defineProps({
+const props = defineProps({
   order: {
     type: Object,
     required: true,
@@ -27,6 +28,30 @@ defineProps({
 
 const emit = defineEmits(["request-return"]);
 
+const vendorGroups = computed(() => {
+  const groupedItems = new Map();
+
+  (Array.isArray(props.order?.items) ? props.order.items : []).forEach((item, index) => {
+    const businessName = String(item?.businessName || "").trim() || "Marketplace seller";
+    const key = `${businessName.toLowerCase()}-${index}`;
+    const existingEntry = Array.from(groupedItems.values()).find((entry) => entry.businessName === businessName);
+    if (existingEntry) {
+      existingEntry.items.push(item);
+      existingEntry.total += Number(item?.totalPrice || 0);
+      return;
+    }
+
+    groupedItems.set(key, {
+      key,
+      businessName,
+      items: [item],
+      total: Number(item?.totalPrice || 0),
+    });
+  });
+
+  return Array.from(groupedItems.values());
+});
+
 function timelineFor(item) {
   return buildFulfillmentTimeline(item);
 }
@@ -37,152 +62,176 @@ function terminalEventFor(item) {
 </script>
 
 <template>
-  <article class="card order-card">
-    <div class="order-card-top">
-      <div>
-        <p class="section-label">Porosia #{{ order.id || "-" }}</p>
+  <article class="user-order-card">
+    <header class="user-order-card__header">
+      <div class="user-order-card__header-copy">
+        <p>Order #{{ order.id || "-" }}</p>
         <h2>{{ formatFulfillmentStatusLabel(order.fulfillmentStatus || order.status) }}</h2>
-        <div v-if="formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status)" class="order-status-badges">
-          <span
-            class="order-status-badge"
-            :class="{
-              'is-pending': (order.fulfillmentStatus || order.status) === 'pending_confirmation',
-              'is-partial': (order.fulfillmentStatus || order.status) === 'partially_confirmed',
-            }"
-          >
-            {{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) }}
-          </span>
-        </div>
+        <span
+          v-if="formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status)"
+          class="dashboard-badge dashboard-badge--warning"
+        >
+          {{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) }}
+        </span>
       </div>
-      <div class="order-card-meta">
+
+      <div class="user-order-card__header-meta">
         <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
         <strong>{{ formatDateLabel(order.createdAt || "") }}</strong>
       </div>
-    </div>
+    </header>
 
-    <div class="order-summary-chips">
-      <div class="summary-chip">
-        <span>Produktet</span>
+    <div class="user-order-card__summary">
+      <div class="user-order-card__summary-item">
+        <span>Items</span>
         <strong>{{ order.totalItems || 0 }}</strong>
       </div>
-      <div class="summary-chip">
-        <span>Transporti</span>
+      <div class="user-order-card__summary-item">
+        <span>Shipping</span>
         <strong>{{ formatPrice(order.shippingAmount || 0) }}</strong>
       </div>
-      <div class="summary-chip">
-        <span>Shuma totale</span>
+      <div class="user-order-card__summary-item">
+        <span>Total</span>
         <strong>{{ formatPrice(order.totalPrice || 0) }}</strong>
+      </div>
+      <div class="user-order-card__summary-item">
+        <span>Payment status</span>
+        <strong>{{ String(order.paymentStatus || "paid").trim() || "paid" }}</strong>
       </div>
     </div>
 
-    <div class="order-card-body">
-      <div class="order-items-list">
-        <div v-for="item in order.items || []" :key="item.id" class="order-item-shell">
-          <OrderItemCard :item="item" />
-          <div class="order-item-timeline" aria-label="Rrjedha e porosise">
+    <div class="user-order-card__body">
+      <div class="user-order-card__items">
+        <article
+          v-for="vendor in vendorGroups"
+          :key="vendor.key"
+          class="user-order-card__vendor"
+        >
+          <header class="user-order-card__vendor-header">
+            <div>
+              <p>Seller</p>
+              <h3>{{ vendor.businessName }}</h3>
+            </div>
+            <strong>{{ formatPrice(vendor.total) }}</strong>
+          </header>
+
+          <div class="user-order-card__vendor-items">
             <div
-              v-for="step in timelineFor(item)"
-              :key="`${item.id}-${step.key}`"
-              class="order-timeline-step"
-              :class="{
-                'is-completed': step.isCompleted || step.isDelivered,
-                'is-current': step.isCurrent,
-              }"
+              v-for="item in vendor.items"
+              :key="item.id"
+              class="user-order-card__vendor-item"
             >
-              <span class="order-timeline-dot"></span>
-              <span class="order-timeline-copy">
-                <strong>{{ step.label }}</strong>
-                <span v-if="step.meta">{{ step.meta }}</span>
-              </span>
+              <OrderItemCard :item="item" :show-business-name="false" />
+
+              <div class="user-order-card__timeline" aria-label="Order timeline">
+                <div
+                  v-for="step in timelineFor(item)"
+                  :key="`${item.id}-${step.key}`"
+                  class="user-order-card__timeline-step"
+                >
+                  <span></span>
+                  <span>
+                    <strong>{{ step.label }}</strong>
+                    <span v-if="step.meta">{{ step.meta }}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div
+                v-if="terminalEventFor(item)"
+                class="user-order-card__terminal"
+              >
+                <strong>{{ terminalEventFor(item).label }}</strong>
+                <span v-if="terminalEventFor(item).meta">{{ terminalEventFor(item).meta }}</span>
+              </div>
+
+              <div class="user-order-card__facts">
+                <span class="user-order-card__fact">
+                  <span>Status</span>
+                  <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
+                </span>
+                <span v-if="item.trackingCode" class="user-order-card__fact">
+                  <span>Tracking</span>
+                  <strong>{{ item.trackingCode }}</strong>
+                </span>
+                <a
+                  v-if="item.trackingUrl"
+                  class="market-button market-button--ghost"
+                  :href="item.trackingUrl"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Track shipment
+                </a>
+                <button
+                  v-if="item.fulfillmentStatus === 'delivered' && !item.returnRequestStatus"
+                  class="market-button market-button--secondary"
+                  type="button"
+                  :disabled="busyOrderItemId === Number(item.id)"
+                  @click="emit('request-return', item)"
+                >
+                  {{ busyOrderItemId === Number(item.id) ? "Sending..." : "Request return" }}
+                </button>
+                <span v-else-if="item.returnRequestStatus" class="user-order-card__fact">
+                  <span>Return</span>
+                  <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
+                </span>
+              </div>
+
+              <div v-if="getAutomaticRefundNotice(item)" class="user-order-card__refund-note">
+                <strong>Automatic refund</strong>
+                <span>{{ getAutomaticRefundNotice(item) }}</span>
+              </div>
             </div>
           </div>
-          <div
-            v-if="terminalEventFor(item)"
-            class="order-terminal-event"
-            :class="`is-${terminalEventFor(item).tone}`"
-          >
-            <strong>{{ terminalEventFor(item).label }}</strong>
-            <span v-if="terminalEventFor(item).meta">{{ terminalEventFor(item).meta }}</span>
-          </div>
-          <div class="order-item-marketplace-meta">
-            <span class="summary-chip">
-              <span>Statusi</span>
-              <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
-            </span>
-            <span v-if="item.trackingCode" class="summary-chip">
-              <span>Tracking</span>
-              <strong>{{ item.trackingCode }}</strong>
-            </span>
-            <a
-              v-if="item.trackingUrl"
-              class="nav-action nav-action-secondary"
-              :href="item.trackingUrl"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Ndiqe dergesen
-            </a>
-            <button
-              v-if="item.fulfillmentStatus === 'delivered' && !item.returnRequestStatus"
-              class="nav-action nav-action-secondary"
-              type="button"
-              :disabled="busyOrderItemId === Number(item.id)"
-              @click="emit('request-return', item)"
-            >
-              {{ busyOrderItemId === Number(item.id) ? "Duke derguar..." : "Kerko kthim" }}
-            </button>
-            <span v-else-if="item.returnRequestStatus" class="summary-chip">
-              <span>Kthimi</span>
-              <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
-            </span>
-          </div>
-          <div v-if="getAutomaticRefundNotice(item)" class="order-refund-notice">
-            <strong>Refund automatik</strong>
-            <span>{{ getAutomaticRefundNotice(item) }}</span>
-          </div>
-        </div>
+        </article>
       </div>
 
-      <aside class="order-address-card">
-        <p class="section-label">Adresa e dergeses</p>
-        <div class="order-address-grid">
-          <div class="summary-chip">
-            <span>Adresa</span>
+      <aside class="user-order-card__aside">
+        <p>Shipping details</p>
+        <div class="user-order-card__meta-grid">
+          <div class="user-order-card__meta">
+            <span>Address</span>
             <strong>{{ order.addressLine || "-" }}</strong>
           </div>
-          <div class="summary-chip">
-            <span>Qyteti</span>
+          <div class="user-order-card__meta">
+            <span>City</span>
             <strong>{{ order.city || "-" }}</strong>
           </div>
-          <div class="summary-chip">
-            <span>Shteti</span>
+          <div class="user-order-card__meta">
+            <span>Country</span>
             <strong>{{ order.country || "-" }}</strong>
           </div>
-          <div class="summary-chip">
+          <div class="user-order-card__meta">
             <span>Zip code</span>
             <strong>{{ order.zipCode || "-" }}</strong>
           </div>
-          <div class="summary-chip">
-            <span>Numri i telefonit</span>
+          <div class="user-order-card__meta">
+            <span>Phone</span>
             <strong>{{ order.phoneNumber || "-" }}</strong>
           </div>
-          <div class="summary-chip">
-            <span>Dergesa</span>
+          <div class="user-order-card__meta">
+            <span>Delivery</span>
             <strong>{{ order.deliveryLabel || formatDeliveryMethodLabel(order.deliveryMethod) }}</strong>
           </div>
-          <div class="summary-chip">
-            <span>Afati</span>
+          <div class="user-order-card__meta">
+            <span>ETA</span>
             <strong>{{ formatEstimatedDeliveryLabel(order.deliveryMethod, order.estimatedDeliveryText) || "-" }}</strong>
           </div>
-          <a
-            class="nav-action nav-action-secondary order-invoice-button"
-            :href="`/api/orders/invoice?id=${order.id}`"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Shkarko faturen PDF
-          </a>
+          <div class="user-order-card__meta">
+            <span>Payment</span>
+            <strong>{{ formatPaymentMethodLabel(order.paymentMethod) }}</strong>
+          </div>
         </div>
+
+        <a
+          class="market-button market-button--secondary"
+          :href="`/api/orders/invoice?id=${order.id}`"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Download invoice
+        </a>
       </aside>
     </div>
   </article>

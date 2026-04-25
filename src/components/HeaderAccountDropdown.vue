@@ -479,27 +479,13 @@ async function openRoute(target) {
 </script>
 
 <template>
-  <div
-    class="header-auth-dropdown"
-    :class="{
-      'header-auth-dropdown--expanded': props.expanded || isSignupMode,
-      'header-auth-dropdown--standalone': props.standalone,
-    }"
-    @click.stop
-  >
+  <div class="overlay-panel overlay-panel--wide" @click.stop>
     <template v-if="!isAuthenticated">
-      <div
-        class="header-auth-card"
-        :class="{
-          'header-auth-card--signup': isSignupMode,
-          'header-auth-card--expanded': props.expanded || props.standalone || props.showClose,
-          'header-auth-card--tabbed': showTabbedAuth,
-        }"
-      >
+      <div class="auth-panel">
         <button
           v-if="props.showClose"
           type="button"
-          class="header-auth-close"
+          class="market-icon-button auth-panel__close"
           aria-label="Close"
           @click="$emit('close')"
         >
@@ -507,11 +493,9 @@ async function openRoute(target) {
         </button>
 
         <template v-if="showTabbedAuth">
-          <div class="header-auth-tabs" role="tablist" aria-label="Authentication tabs">
+          <div class="auth-panel__tabs" role="tablist" aria-label="Authentication tabs">
             <button
               type="button"
-              class="header-auth-tab"
-              :class="{ 'is-active': mode === 'login' }"
               role="tab"
               :aria-selected="mode === 'login'"
               @click="setMode('login')"
@@ -520,8 +504,8 @@ async function openRoute(target) {
             </button>
             <button
               type="button"
-              class="header-auth-tab"
-              :class="{ 'is-active': mode === 'signup' }"
+             
+             
               role="tab"
               :aria-selected="mode === 'signup'"
               @click="setMode('signup')"
@@ -530,8 +514,8 @@ async function openRoute(target) {
             </button>
           </div>
 
-          <form v-if="mode === 'login'" class="header-auth-form" @submit.prevent="submitLoginForm">
-            <label class="header-auth-field">
+          <form v-if="mode === 'login'" class="auth-panel__form" @submit.prevent="submitLoginForm">
+            <label class="auth-panel__field">
               <span>Email Address</span>
               <input
                 v-model="loginForm.identifier"
@@ -543,14 +527,14 @@ async function openRoute(target) {
               >
             </label>
 
-            <div class="header-auth-field-group">
-              <div class="header-auth-field-row">
+            <div class="auth-panel__stack">
+              <div class="auth-panel__inline">
                 <span>Password</span>
-                <button type="button" class="header-auth-text-link" @click="setMode('forgot', false)">
+                <button class="market-button market-button--ghost" type="button" @click="setMode('forgot', false)">
                   Forgot Password
                 </button>
               </div>
-              <label class="header-auth-field header-auth-field--password">
+              <label class="auth-panel__field auth-panel__password">
                 <input
                   v-model="loginForm.password"
                   :type="showLoginPassword ? 'text' : 'password'"
@@ -560,7 +544,7 @@ async function openRoute(target) {
                 >
                 <button
                   type="button"
-                  class="header-auth-password-toggle"
+                  class="market-icon-button"
                   :aria-label="showLoginPassword ? 'Hide password' : 'Show password'"
                   @click="showLoginPassword = !showLoginPassword"
                 >
@@ -574,7 +558,7 @@ async function openRoute(target) {
             </div>
 
             <button
-              class="header-auth-primary header-auth-primary--login"
+              class="market-button market-button--primary"
               type="submit"
               :disabled="ui.loading"
             >
@@ -585,9 +569,9 @@ async function openRoute(target) {
             </button>
           </form>
 
-          <form v-else class="header-auth-form" @submit.prevent="submitSignupForm">
-            <div class="header-auth-two-cols">
-              <label class="header-auth-field">
+          <form v-else class="auth-panel__form" @submit.prevent="submitSignupForm">
+            <div class="auth-panel__form-row">
+              <label class="auth-panel__field">
                 <span>Full Name</span>
                 <input
                   v-model="signupForm.fullName"
@@ -598,7 +582,7 @@ async function openRoute(target) {
                 >
               </label>
 
-              <label class="header-auth-field">
+              <label class="auth-panel__field">
                 <span>Phone Number</span>
                 <input
                   v-model="signupForm.phoneNumber"
@@ -610,7 +594,7 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <label class="header-auth-field">
+            <label class="auth-panel__field">
               <span>Email Address</span>
               <input
                 v-model="signupForm.email"
@@ -621,13 +605,13 @@ async function openRoute(target) {
               >
             </label>
 
-            <div class="header-auth-two-cols">
-              <label class="header-auth-field">
+            <div class="auth-panel__form-row">
+              <label class="auth-panel__field">
                 <span>Birth Date</span>
                 <input v-model="signupForm.birthDate" type="date" required>
               </label>
 
-              <label class="header-auth-field">
+              <label class="auth-panel__field">
                 <span>Gender</span>
                 <select v-model="signupForm.gender" required>
                   <option value="">Select</option>
@@ -637,9 +621,9 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <div class="header-auth-field-group">
+            <div class="auth-panel__stack">
               <span>Password</span>
-              <label class="header-auth-field header-auth-field--password">
+              <label class="auth-panel__field auth-panel__password">
                 <input
                   v-model="signupForm.password"
                   :type="showSignupPassword ? 'text' : 'password'"
@@ -649,7 +633,7 @@ async function openRoute(target) {
                 >
                 <button
                   type="button"
-                  class="header-auth-password-toggle"
+                  class="market-icon-button"
                   :aria-label="showSignupPassword ? 'Hide password' : 'Show password'"
                   @click="showSignupPassword = !showSignupPassword"
                 >
@@ -662,7 +646,7 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <button class="header-auth-primary" type="submit" :disabled="ui.loading">
+            <button class="market-button market-button--primary" type="submit" :disabled="ui.loading">
               <span>{{ ui.loading ? "LOADING..." : "CREATE ACCOUNT" }}</span>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M5 12h14M13 5l6 7-6 7" />
@@ -670,52 +654,52 @@ async function openRoute(target) {
             </button>
           </form>
 
-          <div class="header-auth-divider">
+          <div class="auth-panel__divider">
             <span>or</span>
           </div>
 
-          <div class="header-auth-socials">
-            <div v-if="googleEnabled" ref="googleButtonElement" class="header-auth-google-slot"></div>
+          <div class="auth-panel__socials">
+            <div v-if="googleEnabled" ref="googleButtonElement"></div>
             <button
               v-else
               type="button"
-              class="header-auth-social-button"
+              class="market-button market-button--secondary auth-panel__social-button"
               @click="showSocialAuthMessage('Google')"
             >
-              <span class="header-auth-social-icon header-auth-social-icon--google">G</span>
-              <span class="header-auth-social-label">
+              <span>G</span>
+              <span>
                 {{ mode === "signup" ? "Sign Up With Google" : "Login With Google" }}
               </span>
-              <span class="header-auth-social-spacer" aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
             </button>
             <button
               type="button"
-              class="header-auth-social-button"
+              class="market-button market-button--secondary auth-panel__social-button"
               @click="showSocialAuthMessage('Apple')"
             >
-              <span class="header-auth-social-icon header-auth-social-icon--apple"></span>
-              <span class="header-auth-social-label">
+              <span></span>
+              <span>
                 {{ mode === "signup" ? "Sign Up With Apple" : "Login With Apple" }}
               </span>
-              <span class="header-auth-social-spacer" aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
             </button>
           </div>
         </template>
 
         <template v-else-if="mode === 'forgot'">
-          <div class="header-auth-inline-top">
-            <button type="button" class="header-auth-back" @click="setMode('login', false)">
+          <div class="auth-panel__inline">
+            <button class="market-button market-button--ghost" type="button" @click="setMode('login', false)">
               ←
             </button>
             <h3>Forgot Password</h3>
           </div>
 
-          <p class="header-auth-copy">
+          <p>
             Enter your email and we’ll send a reset code without leaving this page.
           </p>
 
-          <form class="header-auth-form" @submit.prevent="submitForgotPasswordForm">
-            <label class="header-auth-field">
+          <form class="auth-panel__form" @submit.prevent="submitForgotPasswordForm">
+            <label class="auth-panel__field">
               <span>Email Address</span>
               <input
                 v-model="forgotForm.email"
@@ -726,7 +710,7 @@ async function openRoute(target) {
               >
             </label>
 
-            <button class="header-auth-primary" type="submit" :disabled="ui.loading">
+            <button class="market-button market-button--primary" type="submit" :disabled="ui.loading">
               <span>{{ ui.loading ? "LOADING..." : "SEND CODE" }}</span>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M5 12h14M13 5l6 7-6 7" />
@@ -736,19 +720,19 @@ async function openRoute(target) {
         </template>
 
         <template v-else-if="mode === 'reset'">
-          <div class="header-auth-inline-top">
-            <button type="button" class="header-auth-back" @click="setMode('forgot', false)">
+          <div class="auth-panel__inline">
+            <button class="market-button market-button--ghost" type="button" @click="setMode('forgot', false)">
               ←
             </button>
             <h3>Reset Password</h3>
           </div>
 
-          <p class="header-auth-copy">
+          <p>
             Enter the 6-digit code and set a new password.
           </p>
 
-          <form class="header-auth-form" @submit.prevent="submitResetPasswordForm">
-            <label class="header-auth-field">
+          <form class="auth-panel__form" @submit.prevent="submitResetPasswordForm">
+            <label class="auth-panel__field">
               <span>Email Address</span>
               <input
                 v-model="resetForm.email"
@@ -759,7 +743,7 @@ async function openRoute(target) {
               >
             </label>
 
-            <label class="header-auth-field">
+            <label class="auth-panel__field">
               <span>Reset Code</span>
               <input
                 v-model="resetForm.code"
@@ -771,9 +755,9 @@ async function openRoute(target) {
               >
             </label>
 
-            <div class="header-auth-field-group">
+            <div class="auth-panel__stack">
               <span>New Password</span>
-              <label class="header-auth-field header-auth-field--password">
+              <label class="auth-panel__field auth-panel__password">
                 <input
                   v-model="resetForm.newPassword"
                   :type="showResetPassword ? 'text' : 'password'"
@@ -783,7 +767,7 @@ async function openRoute(target) {
                 >
                 <button
                   type="button"
-                  class="header-auth-password-toggle"
+                  class="market-icon-button"
                   :aria-label="showResetPassword ? 'Hide password' : 'Show password'"
                   @click="showResetPassword = !showResetPassword"
                 >
@@ -796,9 +780,9 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <div class="header-auth-field-group">
+            <div class="auth-panel__stack">
               <span>Confirm Password</span>
-              <label class="header-auth-field header-auth-field--password">
+              <label class="auth-panel__field auth-panel__password">
                 <input
                   v-model="resetForm.confirmPassword"
                   :type="showResetConfirmPassword ? 'text' : 'password'"
@@ -808,7 +792,7 @@ async function openRoute(target) {
                 >
                 <button
                   type="button"
-                  class="header-auth-password-toggle"
+                  class="market-icon-button"
                   :aria-label="showResetConfirmPassword ? 'Hide password' : 'Show password'"
                   @click="showResetConfirmPassword = !showResetConfirmPassword"
                 >
@@ -821,36 +805,39 @@ async function openRoute(target) {
               </label>
             </div>
 
-            <div class="header-auth-inline-actions">
-              <button class="header-auth-primary" type="submit" :disabled="ui.loading">
+            <div class="auth-form__actions">
+              <button class="market-button market-button--primary" type="submit" :disabled="ui.loading">
                 <span>{{ ui.loading ? "LOADING..." : "SAVE PASSWORD" }}</span>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M5 12h14M13 5l6 7-6 7" />
                 </svg>
               </button>
-              <button class="header-auth-ghost" type="button" :disabled="ui.loading" @click="resendResetCode">
+              <button class="market-button market-button--secondary" type="button" :disabled="ui.loading" @click="resendResetCode">
                 RESEND CODE
               </button>
             </div>
           </form>
         </template>
 
-        <p v-if="ui.message" class="header-auth-message" :class="`is-${ui.type}`">
+        <p
+          v-if="ui.message"
+          :class="['market-status', ui.type === 'error' ? 'market-status--error' : ui.type === 'success' ? 'market-status--success' : '']"
+        >
           {{ ui.message }}
         </p>
       </div>
     </template>
 
     <template v-else>
-      <div class="header-auth-card header-auth-card--menu">
-        <p class="header-auth-eyebrow">Account</p>
-        <h3 class="header-auth-menu-title">Hi, {{ welcomeName }}</h3>
-        <div class="header-auth-menu">
+      <div class="auth-panel">
+        <p>Account</p>
+        <h3>Hi, {{ welcomeName }}</h3>
+        <div class="auth-panel__stack">
           <button
             v-for="action in accountActions"
             :key="action.label"
             type="button"
-            class="header-auth-menu-link"
+            class="market-button market-button--secondary"
             @click="openRoute(action.to)"
           >
             {{ action.label }}
@@ -858,7 +845,7 @@ async function openRoute(target) {
         </div>
         <button
           type="button"
-          class="header-auth-primary header-auth-primary--danger"
+          class="market-button market-button--primary"
           :disabled="ui.loading"
           @click="handleLogout"
         >
@@ -867,627 +854,13 @@ async function openRoute(target) {
             <path d="M5 12h14M13 5l6 7-6 7" />
           </svg>
         </button>
-        <p v-if="ui.message" class="header-auth-message" :class="`is-${ui.type}`">
+        <p
+          v-if="ui.message"
+          :class="['market-status', ui.type === 'error' ? 'market-status--error' : ui.type === 'success' ? 'market-status--success' : '']"
+        >
           {{ ui.message }}
         </p>
       </div>
     </template>
   </div>
 </template>
-
-<style scoped>
-.header-auth-dropdown {
-  width: min(432px, calc(100vw - 24px));
-}
-
-.header-auth-dropdown--expanded {
-  width: min(432px, calc(100vw - 24px));
-}
-
-.header-auth-dropdown--standalone {
-  width: min(432px, calc(100vw - 24px));
-}
-
-.header-auth-card {
-  position: relative;
-  display: grid;
-  gap: 14px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.09);
-  border-radius: 6px;
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
-  max-height: min(86svh, 760px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.header-auth-card--expanded {
-  gap: 14px;
-  border-radius: 6px;
-  box-shadow: 0 22px 44px rgba(15, 23, 42, 0.12);
-}
-
-.header-auth-card--tabbed.header-auth-card--expanded {
-  min-height: auto;
-}
-
-.header-auth-card--signup {
-  max-height: min(86svh, 820px);
-}
-
-.header-auth-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2;
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: rgba(255, 255, 255, 0.9);
-  color: #1f2937;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
-.header-auth-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-bottom: 1px solid rgba(15, 23, 42, 0.09);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #fff;
-}
-
-.header-auth-tab {
-  min-height: 48px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  background: #fff;
-  color: #7b8794;
-  font-size: 0.94rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.header-auth-tab.is-active {
-  color: #111827;
-  border-bottom-color: #ff7f32;
-}
-
-.header-auth-form,
-.header-auth-socials,
-.header-auth-inline-top,
-.header-auth-copy,
-.header-auth-message,
-.header-auth-menu,
-.header-auth-eyebrow,
-.header-auth-card h3 {
-  margin-left: 28px;
-  margin-right: 28px;
-}
-
-.header-auth-form,
-.header-auth-socials,
-.header-auth-menu {
-  display: grid;
-  gap: 12px;
-}
-
-.header-auth-socials,
-.header-auth-menu {
-  margin-bottom: 26px;
-}
-
-.header-auth-card--tabbed .header-auth-socials {
-  gap: 8px;
-  align-content: start;
-}
-
-.header-auth-card h3 {
-  margin-top: 0;
-  margin-bottom: 0;
-  color: #111827;
-  font-size: 1.2rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.header-auth-inline-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 22px;
-}
-
-.header-auth-inline-top h3 {
-  margin: 0;
-  text-align: left;
-}
-
-.header-auth-back {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
-  color: #111827;
-  font-size: 1.15rem;
-  cursor: pointer;
-}
-
-.header-auth-copy {
-  margin-top: -4px;
-  margin-bottom: 0;
-  color: #64748b;
-  line-height: 1.6;
-}
-
-.header-auth-field,
-.header-auth-field-group {
-  display: grid;
-  gap: 8px;
-}
-
-.header-auth-field span,
-.header-auth-field-group > span,
-.header-auth-field-row span {
-  color: #374151;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.header-auth-field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.header-auth-text-link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #2f9cf3;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.header-auth-field input,
-.header-auth-field select {
-  min-height: 36px;
-  width: 100%;
-  padding: 0 12px;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  background: #fff;
-  color: #111827;
-  font-size: 0.9rem;
-  border-radius: 2px;
-}
-
-.header-auth-card--tabbed .header-auth-field,
-.header-auth-card--tabbed .header-auth-field-group {
-  gap: 6px;
-}
-
-.header-auth-card--tabbed .header-auth-field span,
-.header-auth-card--tabbed .header-auth-field-group > span,
-.header-auth-card--tabbed .header-auth-field-row span {
-  font-size: 0.9rem;
-}
-
-.header-auth-card--tabbed .header-auth-field input,
-.header-auth-card--tabbed .header-auth-field select {
-  min-height: 34px;
-  padding: 0 12px;
-  font-size: 0.88rem;
-  border-radius: 2px;
-}
-
-.header-auth-field input:focus,
-.header-auth-field select:focus {
-  outline: none;
-  border-color: rgba(255, 127, 50, 0.8);
-  box-shadow: 0 0 0 3px rgba(255, 127, 50, 0.08);
-}
-
-.header-auth-field--password {
-  position: relative;
-}
-
-.header-auth-field--password input {
-  padding-right: 50px;
-}
-
-.header-auth-card--tabbed .header-auth-field--password input {
-  padding-right: 36px;
-}
-
-.header-auth-password-toggle {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  color: #4b5563;
-  transform: translateY(-50%);
-  cursor: pointer;
-}
-
-.header-auth-password-toggle svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.header-auth-two-cols {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.header-auth-card--tabbed .header-auth-two-cols {
-  gap: 8px;
-}
-
-.header-auth-primary,
-.header-auth-social-button,
-.header-auth-ghost,
-.header-auth-menu-link {
-  min-height: 36px;
-  width: 100%;
-  font-size: 0.84rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.header-auth-card--tabbed .header-auth-primary,
-.header-auth-card--tabbed .header-auth-social-button {
-  min-height: 36px;
-  font-size: 0.84rem;
-}
-
-.header-auth-card--tabbed .header-auth-social-button,
-.header-auth-card--tabbed .header-auth-google-slot {
-  width: 100%;
-  min-height: 36px;
-  justify-self: center;
-}
-
-.header-auth-card--tabbed .header-auth-google-slot {
-  display: flex;
-  align-items: center;
-}
-
-.header-auth-card--tabbed .header-auth-social-button {
-  box-sizing: border-box;
-  height: 36px;
-  gap: 10px;
-  padding: 0 14px;
-  font-size: 0.82rem;
-  line-height: 1;
-  white-space: nowrap;
-  justify-content: flex-start;
-  border-radius: 2px;
-}
-
-.header-auth-card--tabbed .header-auth-google-slot :deep(.nsm7Bb-HzV7m-LgbsSe-MJoBVe) {
-  width: 100% !important;
-  min-width: 0 !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  box-sizing: border-box !important;
-  border-radius: 2px !important;
-}
-
-.header-auth-card--tabbed .header-auth-google-slot :deep(div[role="button"]) {
-  width: 100% !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  border-radius: 2px !important;
-}
-
-.header-auth-card--tabbed .header-auth-social-icon {
-  width: 18px;
-  font-size: 1rem;
-}
-
-.header-auth-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  border: 0;
-  background: #ff7f32;
-  color: #fff;
-  border-radius: 2px;
-}
-
-.header-auth-primary--login {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 12px;
-  justify-self: center;
-  border-radius: 2px;
-}
-
-.header-auth-primary svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.header-auth-primary:disabled,
-.header-auth-ghost:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
-.header-auth-primary--danger {
-  margin: 0 26px 24px;
-}
-
-.header-auth-divider {
-  position: relative;
-  margin: 0 28px;
-  color: #7b8794;
-  text-align: center;
-}
-
-.header-auth-divider::before {
-  content: "";
-  position: absolute;
-  inset: 50% 0 auto;
-  border-top: 1px solid rgba(15, 23, 42, 0.1);
-}
-
-.header-auth-divider span {
-  position: relative;
-  display: inline-block;
-  padding: 0 14px;
-  background: #fff;
-  font-weight: 700;
-}
-
-.header-auth-google-slot {
-  display: flex;
-  justify-content: center;
-  min-height: 36px;
-}
-
-.header-auth-google-slot :deep(div[role="button"]) {
-  width: 100% !important;
-  border-radius: 2px !important;
-}
-
-.header-auth-social-button {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  background: #fff;
-  color: #475569;
-  text-align: center;
-}
-
-.header-auth-social-icon {
-  display: inline-flex;
-  width: 18px;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.header-auth-social-icon--google {
-  color: #4285f4;
-}
-
-.header-auth-social-icon--apple {
-  color: #111827;
-}
-
-.header-auth-social-label {
-  display: block;
-  min-width: 0;
-  color: inherit;
-  font-size: inherit;
-  font-weight: 600;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.header-auth-social-spacer {
-  display: block;
-  width: 18px;
-  height: 18px;
-  visibility: hidden;
-}
-
-.header-auth-inline-actions {
-  display: grid;
-  gap: 12px;
-}
-
-.header-auth-ghost {
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
-  color: #475569;
-}
-
-.header-auth-message {
-  margin-top: 0;
-  margin-bottom: 30px;
-  padding: 12px 14px;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.header-auth-message.is-error {
-  background: #fff1f2;
-  color: #be123c;
-}
-
-.header-auth-message.is-success {
-  background: #eff6ff;
-  color: #0f4c81;
-}
-
-.header-auth-card--menu {
-  padding-top: 28px;
-}
-
-.header-auth-menu-title {
-  margin-top: 0;
-  margin-bottom: 0;
-  color: #1f2937;
-  font-size: 1.55rem;
-  line-height: 1.15;
-}
-
-.header-auth-eyebrow {
-  margin-top: 0;
-  margin-bottom: -8px;
-  color: #ff7f32;
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.header-auth-menu-link {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #fff;
-  color: #1f2937;
-}
-
-@media (max-width: 640px) {
-  .header-auth-dropdown,
-  .header-auth-dropdown--expanded,
-  .header-auth-dropdown--standalone {
-    width: min(100vw - 16px, 432px);
-  }
-
-  .header-auth-form,
-  .header-auth-socials,
-  .header-auth-inline-top,
-  .header-auth-copy,
-  .header-auth-message,
-  .header-auth-menu,
-  .header-auth-eyebrow,
-  .header-auth-card h3,
-  .header-auth-divider {
-    margin-left: 16px;
-    margin-right: 16px;
-  }
-
-  .header-auth-primary--danger {
-    margin-left: 16px;
-    margin-right: 16px;
-    margin-bottom: 16px;
-  }
-
-  .header-auth-two-cols {
-    grid-template-columns: 1fr;
-  }
-
-  .header-auth-card,
-  .header-auth-card--expanded {
-    gap: 12px;
-    max-height: min(90svh, 760px);
-    border-radius: 6px;
-  }
-
-  .header-auth-card--tabbed.header-auth-card--expanded {
-    min-height: auto;
-  }
-
-  .header-auth-tab {
-    min-height: 46px;
-    font-size: 0.9rem;
-  }
-
-  .header-auth-field-row {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .header-auth-close {
-    top: 10px;
-    right: 10px;
-    width: 36px;
-    height: 36px;
-  }
-
-  .header-auth-social-button {
-    padding: 0 12px;
-  }
-
-  .header-auth-card--tabbed .header-auth-primary,
-  .header-auth-card--tabbed .header-auth-social-button {
-    min-height: 36px;
-    font-size: 0.82rem;
-  }
-
-  .header-auth-card--tabbed .header-auth-field input,
-  .header-auth-card--tabbed .header-auth-field select {
-    min-height: 34px;
-    padding: 0 10px;
-    font-size: 0.86rem;
-  }
-
-  .header-auth-card--tabbed .header-auth-social-button,
-  .header-auth-card--tabbed .header-auth-google-slot {
-    width: 100%;
-    min-height: 36px;
-  }
-
-  .header-auth-card--tabbed .header-auth-social-button {
-    height: 36px;
-  }
-
-  .header-auth-card--tabbed .header-auth-socials {
-    gap: 4px;
-  }
-
-  .header-auth-card--tabbed .header-auth-google-slot :deep(.nsm7Bb-HzV7m-LgbsSe-MJoBVe) {
-    width: 100% !important;
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  .header-auth-card--tabbed .header-auth-google-slot :deep(div[role="button"]) {
-    width: 100% !important;
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  .header-auth-primary--login {
-    width: 100%;
-  }
-}
-</style>

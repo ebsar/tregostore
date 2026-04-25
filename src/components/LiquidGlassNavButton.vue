@@ -140,7 +140,7 @@ const motionStyle = computed(() => {
     :is="as"
     ref="buttonRef"
     v-bind="forwardedAttrs"
-    :style="[attrs.style, motionStyle]"
+   
   >
     <slot />
   </component>

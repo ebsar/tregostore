@@ -68,6 +68,74 @@ export const PRODUCT_COLOR_LABELS = Object.fromEntries(
   (productCatalog.colorOptions || []).map((option) => [option.value, option.label]),
 );
 
+const VARIANT_ATTRIBUTE_PREFERRED_ORDER = [
+  "ram",
+  "storage",
+  "memory",
+  "processor",
+  "batteryCapacity",
+  "displaySize",
+  "camera",
+  "condition",
+  "material",
+  "fit",
+  "carrier",
+  "simType",
+  "connectivity",
+  "model",
+  "volume",
+  "skinType",
+  "scent",
+  "finish",
+  "dimensions",
+  "assemblyRequired",
+  "era",
+];
+
+function normalizeVariantAttributeKey(value) {
+  const normalizedValue = String(value || "")
+    .trim()
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  const keyAliases = {
+    rom: "storage",
+    memory: "ram",
+    battery: "batteryCapacity",
+    display: "displaySize",
+  };
+
+  const compactValue = normalizedValue.replace(/\s+/g, "");
+  return keyAliases[compactValue]
+    || normalizedValue.split(" ").map((segment, index) =>
+      index === 0
+        ? segment
+        : segment.charAt(0).toUpperCase() + segment.slice(1),
+    ).join("");
+}
+
+function slugifyVariantAttributeValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatVariantAttributeLabel(attributeKey) {
+  return String(attributeKey || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase())
+    .trim();
+}
+
 export function deriveSectionFromCategory(category) {
   const normalizedCategory = String(category || "").trim().toLowerCase();
   if (normalizedCategory === "cosmetics-kids") {
@@ -132,6 +200,11 @@ export function isClothingSection(sectionValue) {
     || String(sectionValue || "").trim().toLowerCase().startsWith("clothing-");
 }
 
+export function isTechnologySection(sectionValue) {
+  return String(sectionValue || "").trim().toLowerCase() === "technology"
+    || String(sectionValue || "").trim().toLowerCase().startsWith("technology-");
+}
+
 export function isCosmeticsSection(sectionValue) {
   return String(sectionValue || "").trim().toLowerCase() === "cosmetics"
     || String(sectionValue || "").trim().toLowerCase().startsWith("cosmetics-");
@@ -153,7 +226,34 @@ export function createDefaultClothingSizeEntries() {
     size: option.value,
     enabled: false,
     quantity: "0",
+    price: "",
+    imagePath: "",
   }));
+}
+
+export function createEmptyTechnologyVariant() {
+  return {
+    ram: "",
+    storage: "",
+    processor: "",
+    batteryCapacity: "",
+    displaySize: "",
+    camera: "",
+    color: "",
+    quantity: "0",
+    price: "",
+    imagePath: "",
+  };
+}
+
+export function createEmptyCustomVariantRow() {
+  return {
+    attributeKey: "",
+    attributeValue: "",
+    quantity: "0",
+    price: "",
+    imagePath: "",
+  };
 }
 
 export function createEmptyProductFormState() {
@@ -185,6 +285,8 @@ export function createEmptyProductFormState() {
     selectedColors: [],
     clothingColorVariants: [],
     colorStockVariants: [],
+    technologyVariants: [createEmptyTechnologyVariant()],
+    customVariantRows: [createEmptyCustomVariantRow()],
     imageGallery: [],
   };
 }
@@ -228,6 +330,24 @@ export function syncProductFormCatalogState(form) {
   if (!Array.isArray(form.colorStockVariants)) {
     form.colorStockVariants = [];
   }
+  if (!Array.isArray(form.technologyVariants)) {
+    form.technologyVariants = [createEmptyTechnologyVariant()];
+  }
+  if (!Array.isArray(form.customVariantRows)) {
+    form.customVariantRows = [createEmptyCustomVariantRow()];
+  }
+
+  if (isTechnologySection(section) && form.technologyVariants.length === 0) {
+    form.technologyVariants = [createEmptyTechnologyVariant()];
+  }
+
+  if (!isTechnologySection(section) && form.technologyVariants.length === 0) {
+    form.technologyVariants = [createEmptyTechnologyVariant()];
+  }
+
+  if (!isClothingSection(section) && !isTechnologySection(section) && form.customVariantRows.length === 0) {
+    form.customVariantRows = [createEmptyCustomVariantRow()];
+  }
 }
 
 export function formatVariantLabel(variant = {}) {
@@ -239,10 +359,32 @@ export function formatVariantLabel(variant = {}) {
     parts.push(String(variant.size).trim().toUpperCase());
   }
 
+  const attributes = variant?.attributes && typeof variant.attributes === "object" ? variant.attributes : {};
+  VARIANT_ATTRIBUTE_PREFERRED_ORDER.forEach((attributeKey) => {
+    const attributeValue = String(attributes[attributeKey] || "").trim();
+    if (!attributeValue || attributeKey === "color" || attributeKey === "size") {
+      return;
+    }
+    parts.push(attributeValue);
+  });
+  Object.keys(attributes)
+    .filter((attributeKey) =>
+      !["color", "size", ...VARIANT_ATTRIBUTE_PREFERRED_ORDER].includes(attributeKey)
+        && String(attributes[attributeKey] || "").trim(),
+    )
+    .sort((left, right) => left.localeCompare(right))
+    .forEach((attributeKey) => {
+      const attributeValue = String(attributes[attributeKey] || "").trim();
+      if (!attributeValue) {
+        return;
+      }
+      parts.push(`${formatVariantAttributeLabel(attributeKey)}: ${attributeValue}`);
+    });
+
   return parts.join(" / ") || "Standard";
 }
 
-export function buildVariantKey({ color = "", size = "" } = {}) {
+export function buildVariantKey({ color = "", size = "", attributes = {} } = {}) {
   const parts = [];
   const normalizedColor = String(color || "").trim().toLowerCase();
   const normalizedSize = String(size || "").trim().toUpperCase();
@@ -251,6 +393,29 @@ export function buildVariantKey({ color = "", size = "" } = {}) {
   }
   if (normalizedSize) {
     parts.push(`size:${normalizedSize}`);
+  }
+  if (attributes && typeof attributes === "object") {
+    VARIANT_ATTRIBUTE_PREFERRED_ORDER.forEach((attributeKey) => {
+      const attributeValue = String(attributes[attributeKey] || "").trim();
+      if (!attributeValue || attributeKey === "color" || attributeKey === "size") {
+        return;
+      }
+      parts.push(`${attributeKey}:${slugifyVariantAttributeValue(attributeValue)}`);
+    });
+    Object.keys(attributes)
+      .filter((attributeKey) =>
+        !["color", "size", ...VARIANT_ATTRIBUTE_PREFERRED_ORDER].includes(attributeKey)
+          && String(attributes[attributeKey] || "").trim(),
+      )
+      .sort((left, right) => left.localeCompare(right))
+      .forEach((attributeKey) => {
+        const attributeValue = String(attributes[attributeKey] || "").trim();
+        if (!attributeValue) {
+          return;
+        }
+        const normalizedKey = normalizeVariantAttributeKey(attributeKey) || attributeKey;
+        parts.push(`${normalizedKey}:${slugifyVariantAttributeValue(attributeValue)}`);
+      });
   }
   return parts.join("|") || "default";
 }
@@ -270,8 +435,17 @@ export function normalizeVariantInventory(value, fallback = {}) {
     const quantity = Math.max(0, Number.parseInt(String(candidate.quantity ?? "0"), 10) || 0);
     const rawPrice = Number(candidate.price ?? 0);
     const price = Number.isFinite(rawPrice) && rawPrice > 0 ? Number(rawPrice.toFixed(2)) : 0;
+    const rawCompareAtPrice = Number(candidate.compareAtPrice ?? 0);
+    const compareAtPrice = Number.isFinite(rawCompareAtPrice) && rawCompareAtPrice > price
+      ? Number(rawCompareAtPrice.toFixed(2))
+      : 0;
     const imagePath = String(candidate.imagePath || "").trim();
-    const key = buildVariantKey({ size, color });
+    const attributes = Object.fromEntries(
+      Object.entries(candidate.attributes && typeof candidate.attributes === "object" ? candidate.attributes : {})
+        .map(([attributeKey, attributeValue]) => [normalizeVariantAttributeKey(attributeKey), String(attributeValue || "").trim()])
+        .filter(([attributeKey, attributeValue]) => attributeKey && attributeValue),
+    );
+    const key = buildVariantKey({ size, color, attributes });
     if (seenKeys.has(key)) {
       return;
     }
@@ -282,9 +456,15 @@ export function normalizeVariantInventory(value, fallback = {}) {
       size,
       color,
       quantity,
-      label: formatVariantLabel({ size, color }),
+      label: formatVariantLabel({ size, color, attributes }),
       price,
+      compareAtPrice,
       imagePath,
+      sku: String(candidate.sku || "").trim(),
+      barcode: String(candidate.barcode || "").trim(),
+      sourceVariantKey: String(candidate.sourceVariantKey || "").trim(),
+      attributes,
+      colorLabel: String(candidate.colorLabel || "").trim(),
     });
   });
 
@@ -306,7 +486,13 @@ export function normalizeVariantInventory(value, fallback = {}) {
     quantity: fallbackQuantity,
     label: formatVariantLabel({ size: fallbackSize, color: fallbackColor }),
     price: 0,
+    compareAtPrice: 0,
     imagePath: "",
+    sku: "",
+    barcode: "",
+    sourceVariantKey: "",
+    attributes: {},
+    colorLabel: "",
   }];
 }
 
@@ -365,18 +551,43 @@ export function hydrateProductFormFromProduct(form, product) {
     return;
   }
 
-  if (supportsColorInventory(form.pageSection)) {
-    form.colorStockVariants = uniqueColors.map((color) => {
-      const existingEntry = inventory.find((entry) => entry.color === color);
-      return {
-        color,
-        quantity: String(existingEntry?.quantity ?? 0),
-        price: String(existingEntry?.price ?? ""),
-        imagePath: String(existingEntry?.imagePath || ""),
-      };
-    });
+  if (isTechnologySection(form.pageSection)) {
+    form.technologyVariants = inventory.length > 0
+      ? inventory.map((entry) => ({
+          ram: String(entry.attributes?.ram || entry.attributes?.memory || ""),
+          storage: String(entry.attributes?.storage || ""),
+          processor: String(entry.attributes?.processor || ""),
+          batteryCapacity: String(entry.attributes?.batteryCapacity || ""),
+          displaySize: String(entry.attributes?.displaySize || ""),
+          camera: String(entry.attributes?.camera || ""),
+          color: String(entry.color || ""),
+          quantity: String(entry.quantity ?? 0),
+          price: String(entry.price ?? ""),
+          imagePath: String(entry.imagePath || ""),
+        }))
+      : [createEmptyTechnologyVariant()];
     return;
   }
+
+  form.customVariantRows = inventory.length > 0
+    ? inventory.map((entry) => {
+        const attributeEntries = Object.entries(entry.attributes || {})
+          .filter(([attributeKey, attributeValue]) =>
+            !["color", "size"].includes(attributeKey) && String(attributeValue || "").trim(),
+          );
+        const [attributeKey, attributeValue] = attributeEntries[0] || [
+          entry.color ? "color" : "",
+          entry.color ? (PRODUCT_COLOR_LABELS[entry.color] || entry.color) : "",
+        ];
+        return {
+          attributeKey: String(attributeKey || ""),
+          attributeValue: String(attributeValue || ""),
+          quantity: String(entry.quantity ?? 0),
+          price: String(entry.price ?? ""),
+          imagePath: String(entry.imagePath || ""),
+        };
+      })
+    : [createEmptyCustomVariantRow()];
 
   if (inventory.length > 0) {
     form.simpleStockQuantity = String(
@@ -387,9 +598,20 @@ export function hydrateProductFormFromProduct(form, product) {
 
 export function buildVariantInventoryFromForm(form) {
   const section = String(form.pageSection || "").trim().toLowerCase();
+  const quantity = Math.max(0, Number.parseInt(String(form.simpleStockQuantity ?? "0"), 10) || 0);
+  const createDefaultEntry = () => ({
+    key: "default",
+    color: "",
+    size: "",
+    quantity,
+    label: "Standard",
+    price: 0,
+    imagePath: "",
+    attributes: {},
+  });
 
   if (isClothingSection(section)) {
-    return (Array.isArray(form.clothingColorVariants) ? form.clothingColorVariants : []).flatMap((colorVariant) =>
+    const clothingVariants = (Array.isArray(form.clothingColorVariants) ? form.clothingColorVariants : []).flatMap((colorVariant) =>
       (Array.isArray(colorVariant.sizeEntries) ? colorVariant.sizeEntries : [])
         .filter((entry) => entry.enabled)
         .map((entry) => ({
@@ -402,10 +624,97 @@ export function buildVariantInventoryFromForm(form) {
           imagePath: String(entry.imagePath || "").trim(),
         })),
     );
+    if (clothingVariants.length > 0) {
+      return clothingVariants;
+    }
+
+    const selectedColorEntries = (Array.isArray(form.clothingColorVariants) ? form.clothingColorVariants : [])
+      .map((colorVariant) => ({
+        key: buildVariantKey({ color: colorVariant.color }),
+        color: String(colorVariant.color || "").trim().toLowerCase(),
+        size: "",
+        quantity: 0,
+        label: formatVariantLabel({ color: colorVariant.color }),
+        price: 0,
+        imagePath: "",
+      }))
+      .filter((entry) => entry.color);
+
+    if (selectedColorEntries.length > 0) {
+      return quantity > 0 ? [...selectedColorEntries, createDefaultEntry()] : selectedColorEntries;
+    }
+  }
+
+  if (isTechnologySection(section)) {
+    const technologyVariants = (Array.isArray(form.technologyVariants) ? form.technologyVariants : [])
+      .map((entry) => {
+        const attributes = Object.fromEntries(
+          Object.entries({
+            ram: entry.ram,
+            storage: entry.storage,
+            processor: entry.processor,
+            batteryCapacity: entry.batteryCapacity,
+            displaySize: entry.displaySize,
+            camera: entry.camera,
+          }).filter(([, attributeValue]) => String(attributeValue || "").trim()),
+        );
+        const color = String(entry.color || "").trim().toLowerCase();
+        const normalizedQuantity = Math.max(0, Number.parseInt(String(entry.quantity ?? "0"), 10) || 0);
+        const normalizedPrice = Math.max(0, Number.parseFloat(String(entry.price ?? "0")) || 0);
+        const imagePath = String(entry.imagePath || "").trim();
+        const hasContent = Object.keys(attributes).length > 0 || color || normalizedQuantity > 0 || normalizedPrice > 0 || imagePath;
+        if (!hasContent) {
+          return null;
+        }
+        return {
+          key: buildVariantKey({ color, attributes }),
+          color,
+          size: "",
+          quantity: normalizedQuantity,
+          label: formatVariantLabel({ color, attributes }),
+          price: normalizedPrice,
+          imagePath,
+          attributes,
+        };
+      })
+      .filter(Boolean);
+    if (technologyVariants.length > 0) {
+      return technologyVariants;
+    }
+  }
+
+  if (!isClothingSection(section)) {
+    const customVariantRows = (Array.isArray(form.customVariantRows) ? form.customVariantRows : [])
+      .map((entry) => {
+        const attributeKey = normalizeVariantAttributeKey(entry.attributeKey);
+        const attributeValue = String(entry.attributeValue || "").trim();
+        const attributes = attributeKey && attributeValue ? { [attributeKey]: attributeValue } : {};
+        const normalizedQuantity = Math.max(0, Number.parseInt(String(entry.quantity ?? "0"), 10) || 0);
+        const normalizedPrice = Math.max(0, Number.parseFloat(String(entry.price ?? "0")) || 0);
+        const imagePath = String(entry.imagePath || "").trim();
+        const hasContent = Object.keys(attributes).length > 0 || normalizedQuantity > 0 || normalizedPrice > 0 || imagePath;
+        if (!hasContent) {
+          return null;
+        }
+        return {
+          key: buildVariantKey({ attributes }),
+          color: "",
+          size: "",
+          quantity: normalizedQuantity,
+          label: formatVariantLabel({ attributes }),
+          price: normalizedPrice,
+          imagePath,
+          attributes,
+        };
+      })
+      .filter(Boolean);
+    if (customVariantRows.length > 0) {
+      return customVariantRows;
+    }
   }
 
   if (supportsColorInventory(section)) {
-    return (Array.isArray(form.colorStockVariants) ? form.colorStockVariants : []).map((entry) => ({
+    const colorVariants = (Array.isArray(form.colorStockVariants) ? form.colorStockVariants : []).map((entry) => ({
       key: buildVariantKey({ color: entry.color }),
       color: String(entry.color || "").trim().toLowerCase(),
       size: "",
@@ -413,19 +722,15 @@ export function buildVariantInventoryFromForm(form) {
       label: formatVariantLabel({ color: entry.color }),
       price: Math.max(0, Number.parseFloat(String(entry.price ?? "0")) || 0),
       imagePath: String(entry.imagePath || "").trim(),
+      attributes: {},
     }));
+    if (colorVariants.length > 0) {
+      const variantStock = colorVariants.reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
+      return variantStock > 0 || quantity <= 0 ? colorVariants : [...colorVariants, createDefaultEntry()];
+    }
   }
 
-  const quantity = Math.max(0, Number.parseInt(String(form.simpleStockQuantity ?? "0"), 10) || 0);
   return quantity > 0
-    ? [{
-        key: "default",
-        color: "",
-        size: "",
-        quantity,
-        label: "Standard",
-        price: 0,
-        imagePath: "",
-      }]
+    ? [createDefaultEntry()]
     : [];
 }

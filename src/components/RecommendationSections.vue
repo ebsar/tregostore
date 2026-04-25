@@ -1,5 +1,6 @@
 <script setup>
-import ProductCard from "./ProductCard.vue";
+import { RouterLink } from "vue-router";
+import HomeProductCard from "./HomeProductCard.vue";
 
 defineProps({
   sections: {
@@ -37,103 +38,140 @@ defineProps({
 });
 
 const emit = defineEmits(["wishlist", "cart", "compare"]);
+
+function getSectionActionTo(section) {
+  const key = String(section?.key || "").trim().toLowerCase();
+
+  if (key === "new-arrivals") {
+    return {
+      path: "/kerko",
+      query: {
+        sort: "newest",
+      },
+    };
+  }
+
+  if (key === "best-sellers") {
+    return {
+      path: "/kerko",
+      query: {
+        sort: "popular",
+      },
+    };
+  }
+
+  return "/kerko";
+}
 </script>
 
 <template>
   <section
     v-for="section in sections"
     :key="section.key"
-    class="card glass recommendation-section"
+    class="product-collection"
     :aria-label="section.title"
   >
-    <header class="recommendation-section-head">
-      <div>
-        <p class="section-label">RECOMMENDATIONS</p>
-        <h2>{{ section.title }}</h2>
-      </div>
-      <p v-if="section.subtitle" class="section-text recommendation-section-copy">
-        {{ section.subtitle }}
-      </p>
+    <header class="recommendation-sections__header">
+      <h2 class="recommendation-sections__title">
+        {{ section.title }}
+      </h2>
+
+      <RouterLink
+        :to="getSectionActionTo(section)"
+        class="recommendation-sections__action"
+      >
+        View all
+      </RouterLink>
     </header>
 
-    <section
-      class="pet-products-grid recommendation-section-grid"
-      :class="{
-        'recommendation-section-grid--five': ['recommended-for-you', 'new-arrivals'].includes(section.key),
-      }"
-    >
-      <ProductCard
+    <section class="home-product-grid">
+      <HomeProductCard
         v-for="product in section.products"
         :key="`${section.key}-${product.id}`"
         :product="product"
+        compact
         :is-wishlisted="wishlistIds.includes(product.id)"
         :is-in-cart="cartIds.includes(product.id)"
         :wishlist-busy="busyWishlistIds.includes(product.id)"
         :cart-busy="busyCartIds.includes(product.id)"
-        :is-compared="comparedProductIds.includes(product.id)"
-        :show-overlay-actions="showOverlayActions"
-        :show-business-name="showBusinessName"
         @wishlist="emit('wishlist', $event)"
         @cart="emit('cart', $event)"
-        @compare="emit('compare', $event)"
       />
     </section>
   </section>
 </template>
 
 <style scoped>
-.recommendation-section {
-  display: grid;
-  gap: 20px;
-  padding: clamp(18px, 3vw, 28px);
+.recommendation-sections__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.recommendation-section-head {
-  display: grid;
-  gap: 10px;
-}
-
-.recommendation-section-head h2 {
+.recommendation-sections__title {
   margin: 0;
+  color: #111111;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-.recommendation-section-copy {
-  margin: 0;
-  max-width: 62ch;
+.recommendation-sections__action {
+  flex-shrink: 0;
+  color: #111111;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  transition: opacity 160ms ease;
 }
 
-.recommendation-section-grid {
-  align-items: stretch;
+.recommendation-sections__action:hover {
+  opacity: 0.66;
 }
 
-.recommendation-section-grid--five {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+.home-product-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 232px);
+  gap: 14px;
+  align-items: start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: none;
 }
 
-@media (max-width: 1200px) {
-  .recommendation-section-grid--five {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+.home-product-grid::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .home-product-grid {
+    grid-auto-columns: minmax(0, 224px);
   }
 }
 
-@media (max-width: 900px) {
-  .recommendation-section-grid--five {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+@media (max-width: 880px) {
+  .home-product-grid {
+    grid-auto-columns: minmax(0, 206px);
+    gap: 12px;
   }
 }
 
-@media (max-width: 720px) {
-  .recommendation-section {
-    gap: 16px;
-    padding: 16px;
+@media (max-width: 640px) {
+  .recommendation-sections__header {
+    margin-bottom: 14px;
   }
 
-  .recommendation-section-copy {
-    font-size: 0.9rem;
+  .recommendation-sections__title {
+    font-size: 18px;
   }
 
-  .recommendation-section-grid--five {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .home-product-grid {
+    grid-auto-columns: minmax(0, 194px);
   }
 }
 </style>

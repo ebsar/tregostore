@@ -5,6 +5,7 @@ const HomePage = () => import("../views/HomePage.vue");
 const SearchPage = () => import("../views/SearchPage.vue");
 const ProductDetailPage = () => import("../views/ProductDetailPage.vue");
 const BusinessProfilePage = () => import("../views/BusinessProfilePage.vue");
+const BusinessesPage = () => import("../views/BusinessesPage.vue");
 const LoginPage = () => import("../views/LoginPage.vue");
 const SignupPage = () => import("../views/SignupPage.vue");
 const VerifyEmailPage = () => import("../views/VerifyEmailPage.vue");
@@ -17,6 +18,8 @@ const MessagesPage = () => import("../views/MessagesPage.vue");
 const PersonalDataPage = () => import("../views/PersonalDataPage.vue");
 const AddressesPage = () => import("../views/AddressesPage.vue");
 const OrdersPage = () => import("../views/OrdersPage.vue");
+const PaymentMethodsPage = () => import("../views/PaymentMethodsPage.vue");
+const SupportPage = () => import("../views/SupportPage.vue");
 const TrackOrderPage = () => import("../views/TrackOrderPage.vue");
 const BusinessOrdersPage = () => import("../views/BusinessOrdersPage.vue");
 const RefundReturnsPage = () => import("../views/RefundReturnsPage.vue");
@@ -24,7 +27,11 @@ const NotificationsPage = () => import("../views/NotificationsPage.vue");
 const AdminOrdersPage = () => import("../views/AdminOrdersPage.vue");
 const CheckoutAddressPage = () => import("../views/CheckoutAddressPage.vue");
 const PaymentOptionsPage = () => import("../views/PaymentOptionsPage.vue");
+const OrderSuccessPage = () => import("../views/OrderSuccessPage.vue");
 const AdminProductsPage = () => import("../views/AdminProductsPage.vue");
+const AdminUsersPage = () => import("../views/AdminUsersPage.vue");
+const AdminDisputesPage = () => import("../views/AdminDisputesPage.vue");
+const AdminWorkspacePlaceholderPage = () => import("../views/AdminWorkspacePlaceholderPage.vue");
 const BusinessDashboardPage = () => import("../views/BusinessDashboardPage.vue");
 const RegisteredBusinessesPage = () => import("../views/RegisteredBusinessesPage.vue");
 const ProductComparePage = () => import("../views/ProductComparePage.vue");
@@ -36,8 +43,6 @@ const routes = [
     meta: {
       pageKey: "home",
       title: "TREGIO | Home",
-      shellClass: "page-shell page-shell-home-full",
-      mainClass: "page-main page-main-home",
     },
   },
   {
@@ -46,8 +51,6 @@ const routes = [
     meta: {
       pageKey: "search",
       title: "TREGIO | Kerko produkte",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-collection",
     },
   },
   {
@@ -60,8 +63,6 @@ const routes = [
     meta: {
       pageKey: "product-detail",
       title: "TREGIO | Produkti",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-product",
     },
   },
   {
@@ -70,8 +71,15 @@ const routes = [
     meta: {
       pageKey: "business-profile",
       title: "TREGIO | Profili i biznesit",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-collection",
+    },
+  },
+  {
+    path: "/bizneset",
+    component: BusinessesPage,
+    meta: {
+      pageKey: "businesses",
+      title: "TREGIO | Businesses",
+      routeLoader: true,
     },
   },
   {
@@ -80,8 +88,6 @@ const routes = [
     meta: {
       pageKey: "login",
       title: "TREGIO | Login",
-      shellClass: "page-shell page-shell-login",
-      mainClass: "page-main page-main-login",
     },
   },
   {
@@ -90,8 +96,6 @@ const routes = [
     meta: {
       pageKey: "signup",
       title: "TREGIO | Sign Up",
-      shellClass: "page-shell page-shell-signup",
-      mainClass: "page-main page-main-signup",
     },
   },
   {
@@ -100,8 +104,6 @@ const routes = [
     meta: {
       pageKey: "verify-email",
       title: "TREGIO | Verifiko Emailin",
-      shellClass: "page-shell page-shell-login",
-      mainClass: "page-main page-main-login",
     },
   },
   {
@@ -110,8 +112,6 @@ const routes = [
     meta: {
       pageKey: "forgot-password",
       title: "TREGIO | Kam harruar fjalekalimin",
-      shellClass: "page-shell",
-      mainClass: "page-main",
     },
   },
   {
@@ -120,8 +120,6 @@ const routes = [
     meta: {
       pageKey: "change-password",
       title: "TREGIO | Ndryshimi i fjalekalimit",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
     },
   },
   {
@@ -130,8 +128,6 @@ const routes = [
     meta: {
       pageKey: "wishlist",
       title: "TREGIO | Wishlist",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-collection",
       routeLoader: true,
     },
   },
@@ -141,8 +137,6 @@ const routes = [
     meta: {
       pageKey: "cart",
       title: "TREGIO | Cart",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-collection",
       routeLoader: true,
     },
   },
@@ -152,8 +146,6 @@ const routes = [
     meta: {
       pageKey: "account",
       title: "TREGIO | Llogaria",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -163,8 +155,6 @@ const routes = [
     meta: {
       pageKey: "account",
       title: "TREGIO | Mesazhet",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -174,8 +164,6 @@ const routes = [
     meta: {
       pageKey: "personal-data",
       title: "TREGIO | Te dhenat personale",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -185,8 +173,6 @@ const routes = [
     meta: {
       pageKey: "addresses",
       title: "TREGIO | Adresat",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -196,8 +182,24 @@ const routes = [
     meta: {
       pageKey: "orders",
       title: "TREGIO | Porosite",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/payments",
+    component: PaymentMethodsPage,
+    meta: {
+      pageKey: "payments",
+      title: "TREGIO | Payment Methods",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/support",
+    component: SupportPage,
+    meta: {
+      pageKey: "support",
+      title: "TREGIO | Support",
       routeLoader: true,
     },
   },
@@ -207,8 +209,6 @@ const routes = [
     meta: {
       pageKey: "track-order",
       title: "TREGIO | Track Order",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -218,8 +218,6 @@ const routes = [
     meta: {
       pageKey: "refund-returns",
       title: "TREGIO | Refund / Returne",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -229,8 +227,6 @@ const routes = [
     meta: {
       pageKey: "notifications",
       title: "TREGIO | Njoftimet",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -240,8 +236,6 @@ const routes = [
     meta: {
       pageKey: "business-orders",
       title: "TREGIO | Porosite e biznesit",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -251,8 +245,6 @@ const routes = [
     meta: {
       pageKey: "admin-orders",
       title: "TREGIO | Porosit e adminit",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -262,8 +254,6 @@ const routes = [
     meta: {
       pageKey: "checkout-address",
       title: "TREGIO | Adresa e porosise",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
       routeLoader: true,
     },
   },
@@ -273,8 +263,15 @@ const routes = [
     meta: {
       pageKey: "payment-options",
       title: "TREGIO | Menyra e pageses",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-account",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/porosia-u-konfirmua",
+    component: OrderSuccessPage,
+    meta: {
+      pageKey: "order-success",
+      title: "TREGIO | Order confirmed",
       routeLoader: true,
     },
   },
@@ -284,9 +281,89 @@ const routes = [
     meta: {
       pageKey: "admin-products",
       title: "TREGIO | Admin Products",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-admin",
       routeLoader: true,
+    },
+  },
+  {
+    path: "/admin-products/inventory",
+    component: AdminProductsPage,
+    meta: {
+      pageKey: "admin-products",
+      title: "TREGIO | Admin Inventory",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/admin-products/lista",
+    redirect: (to) => ({
+      path: "/admin-products/inventory",
+      query: to.query,
+    }),
+  },
+  {
+    path: "/admin-users",
+    component: AdminUsersPage,
+    meta: {
+      pageKey: "admin-users",
+      title: "TREGIO | Admin Users",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/admin-disputes",
+    component: AdminDisputesPage,
+    meta: {
+      pageKey: "admin-disputes",
+      title: "TREGIO | Admin Disputes",
+      routeLoader: true,
+    },
+  },
+  {
+    path: "/admin-categories",
+    component: AdminWorkspacePlaceholderPage,
+    meta: {
+      pageKey: "admin-categories",
+      title: "TREGIO | Admin Categories",
+      routeLoader: true,
+      dashboardPlaceholder: {
+        activeKey: "categories",
+        eyebrow: "Admin categories",
+        title: "Category management",
+        description: "Prepare category operations in the correct admin area without inventing fake backend behavior.",
+        note: "A dedicated categories API is not exposed yet, so this page stays as a clean integration point.",
+      },
+    },
+  },
+  {
+    path: "/admin-commissions",
+    component: AdminWorkspacePlaceholderPage,
+    meta: {
+      pageKey: "admin-commissions",
+      title: "TREGIO | Admin Commissions",
+      routeLoader: true,
+      dashboardPlaceholder: {
+        activeKey: "commissions",
+        eyebrow: "Admin commissions",
+        title: "Commission reporting",
+        description: "Keep commission reporting in its own workspace once the dedicated backend endpoint is exposed.",
+        note: "Commission values exist inside order item data, but a standalone admin reporting API is still missing.",
+      },
+    },
+  },
+  {
+    path: "/admin-payouts",
+    component: AdminWorkspacePlaceholderPage,
+    meta: {
+      pageKey: "admin-payouts",
+      title: "TREGIO | Admin Payouts",
+      routeLoader: true,
+      dashboardPlaceholder: {
+        activeKey: "payouts",
+        eyebrow: "Admin payouts",
+        title: "Vendor payout operations",
+        description: "This page reserves the right place for payout settlement and review once backend support is added.",
+        note: "The UI is prepared, but a dedicated admin payouts endpoint is not available yet.",
+      },
     },
   },
   {
@@ -295,8 +372,6 @@ const routes = [
     meta: {
       pageKey: "business-dashboard",
       title: "TREGIO | Biznesi juaj",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-admin",
       routeLoader: true,
     },
   },
@@ -306,8 +381,6 @@ const routes = [
     meta: {
       pageKey: "registered-businesses",
       title: "TREGIO | Bizneset e regjistruara",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-admin",
       routeLoader: true,
     },
   },
@@ -317,8 +390,6 @@ const routes = [
     meta: {
       pageKey: "product-compare",
       title: "TREGIO | Krahaso produktet",
-      shellClass: "page-shell",
-      mainClass: "page-main page-main-collection",
     },
   },
   {

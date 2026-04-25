@@ -280,36 +280,36 @@ watch([selectedSpotlight, selectedCategory], async () => {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page mobile-page--tabbed mobile-page--edge mobile-page--home">
-        <section class="home-topbar">
-          <button class="home-topbar-search" type="button" @click="openSearch">
-            <span class="home-topbar-search-copy">
+    <IonContent :fullscreen="true">
+      <div>
+        <section>
+          <button type="button" @click="openSearch">
+            <span>
               <strong>Kerko produkte dhe biznese</strong>
               <span>Katalogu, kategorite dhe ofertat aktive</span>
             </span>
-            <span class="home-topbar-search-arrow">
+            <span>
               <IonIcon :icon="arrowForwardOutline" />
             </span>
           </button>
 
-          <div class="home-topbar-actions">
-            <button class="home-topbar-visual home-topbar-action" type="button" aria-label="Visual search" @click="openSearch">
-              <span class="home-topbar-visual-icon">
+          <div>
+            <button type="button" aria-label="Visual search" @click="openSearch">
+              <span>
                 <IonIcon :icon="colorWandOutline" />
               </span>
             </button>
 
-            <button class="home-topbar-message home-topbar-action" type="button" aria-label="Mesazhet" @click="openMessages">
-              <span v-if="homeMessageBadge" class="home-topbar-badge">{{ homeMessageBadge }}</span>
+            <button type="button" aria-label="Mesazhet" @click="openMessages">
+              <span v-if="homeMessageBadge">{{ homeMessageBadge }}</span>
               <IonIcon :icon="chatbubbleEllipsesOutline" />
             </button>
           </div>
         </section>
 
-        <section class="surface-card surface-card--strong home-editorial-shell">
-          <div class="home-editorial-copy">
-            <p class="section-kicker">TREGIO mobile</p>
+        <section>
+          <div>
+            <p>TREGIO mobile</p>
             <h1>Me pak padding, me shume fokus te blerja.</h1>
             <p>
               {{
@@ -320,19 +320,19 @@ watch([selectedSpotlight, selectedCategory], async () => {
             </p>
           </div>
 
-          <div class="home-editorial-stats">
-            <article v-for="stat in heroStats" :key="stat.label" class="home-editorial-stat">
+          <div>
+            <article v-for="stat in heroStats" :key="stat.label">
               <strong>{{ stat.value }}</strong>
               <span>{{ stat.label }}</span>
             </article>
           </div>
 
-          <div class="chip-row home-spotlight-row">
+          <div>
             <button
               v-for="option in spotlightOptions"
               :key="option.key"
-              class="chip home-spotlight-chip"
-              :class="{ 'is-active': selectedSpotlight === option.key }"
+             
+             
               type="button"
               @click="setSpotlight(option.key)"
             >
@@ -341,39 +341,39 @@ watch([selectedSpotlight, selectedCategory], async () => {
           </div>
         </section>
 
-        <section v-if="loading" class="stack-list home-rail-stack">
+        <section v-if="loading">
           <RailSkeleton title="For You" />
           <RailSkeleton title="Trending" />
           <RailSkeleton title="Sales" />
         </section>
 
-        <section v-else-if="railSections.length" class="stack-list home-rail-stack">
+        <section v-else-if="railSections.length">
           <article
             v-for="section in railSections"
             :key="section.key"
-            class="surface-card home-rail-shell"
-            :class="`is-${section.tone}`"
+           
+           
           >
-            <div class="section-head home-rail-head">
-              <button class="home-rail-title" type="button" @click="setSpotlight(section.key)">
-                <span class="home-rail-icon">
+            <div>
+              <button type="button" @click="setSpotlight(section.key)">
+                <span>
                   <IonIcon :icon="section.icon" />
                 </span>
-                <span class="home-rail-copy">
-                  <p class="section-kicker">{{ section.title }}</p>
+                <span>
+                  <p>{{ section.title }}</p>
                   <h2>{{ section.subtitle }}</h2>
                 </span>
               </button>
-              <button class="home-rail-link" type="button" @click="setSpotlight(section.key)">
+              <button type="button" @click="setSpotlight(section.key)">
                 <IonIcon :icon="arrowForwardOutline" />
               </button>
             </div>
 
-            <div class="home-rail-track">
+            <div>
               <div
                 v-for="product in section.products"
                 :key="`${section.key}-${product.id}`"
-                class="home-rail-card"
+               
               >
                 <ProductCardMobile
                   :product="product"
@@ -387,29 +387,29 @@ watch([selectedSpotlight, selectedCategory], async () => {
           </article>
         </section>
 
-        <section v-if="categories.length > 1" class="home-filter-shell">
-          <span class="home-filter-divider" />
-          <div class="chip-row home-category-row">
+        <section v-if="categories.length > 1">
+          <span />
+          <div>
             <button
               v-for="category in categories"
               :key="category"
-              class="chip home-category-chip"
-              :class="{ 'is-active': selectedCategory === category }"
+             
+             
               type="button"
               @click="selectedCategory = category"
             >
               {{ category === "all" ? "Te gjitha" : category }}
             </button>
           </div>
-          <span class="home-filter-divider" />
+          <span />
         </section>
 
-        <section class="stack-list">
-          <div class="home-grid-head">
-            <span class="home-grid-title">Te gjitha</span>
+        <section>
+          <div>
+            <span>Te gjitha</span>
             <button
               v-if="selectedSpotlight !== 'all' || selectedCategory !== 'all'"
-              class="home-grid-reset-button"
+             
               type="button"
               @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
             >
@@ -417,11 +417,11 @@ watch([selectedSpotlight, selectedCategory], async () => {
             </button>
           </div>
 
-          <div v-if="loading" class="product-grid home-product-grid">
+          <div v-if="loading">
             <ProductCardSkeleton v-for="index in 6" :key="index" />
           </div>
 
-          <div v-else-if="filteredProducts.length" class="product-grid home-product-grid">
+          <div v-else-if="filteredProducts.length">
             <ProductCardMobile
               v-for="product in filteredProducts"
               :key="product.id"
@@ -454,383 +454,3 @@ watch([selectedSpotlight, selectedCategory], async () => {
   </IonPage>
 </template>
 
-<style scoped>
-.mobile-page--home {
-  gap: 12px;
-}
-
-.home-topbar {
-  position: sticky;
-  top: calc(env(safe-area-inset-top, 0px) + 6px);
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.home-topbar-search,
-.home-topbar-visual,
-.home-topbar-message {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.56);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.24), transparent 28%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 12px 24px rgba(31, 41, 55, 0.08);
-  color: var(--trego-dark);
-}
-
-.home-topbar-search {
-  flex: 1 1 auto;
-  min-height: 48px;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 14px 0 16px;
-  border-radius: 18px;
-  text-align: left;
-}
-
-.home-topbar-search-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.home-topbar-search-copy strong {
-  color: var(--trego-dark);
-  font-size: 0.84rem;
-  font-weight: 800;
-  line-height: 1.1;
-}
-
-.home-topbar-search-copy span {
-  color: var(--trego-muted);
-  font-size: 0.7rem;
-  line-height: 1.3;
-}
-
-.home-topbar-search-arrow,
-.home-topbar-actions {
-  display: inline-flex;
-  align-items: center;
-}
-
-.home-topbar-actions {
-  gap: 8px;
-}
-
-.home-topbar-search-arrow {
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.56);
-  color: var(--trego-accent);
-}
-
-.home-topbar-action {
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
-  min-height: 46px;
-  border-radius: 16px;
-  padding: 0;
-}
-
-.home-topbar-visual {
-  justify-content: center;
-}
-
-.home-topbar-visual-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(81, 192, 255, 0.2), rgba(120, 102, 255, 0.12));
-  color: #4f7cff;
-}
-
-.home-topbar-message {
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.home-topbar-badge {
-  position: absolute;
-  top: -5px;
-  right: -2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: #ff6a57;
-  color: #fff;
-  font-size: 0.62rem;
-  font-weight: 800;
-  line-height: 18px;
-  text-align: center;
-}
-
-.home-topbar-message ion-icon,
-.home-topbar-visual ion-icon,
-.home-topbar-search-arrow ion-icon {
-  font-size: 1rem;
-}
-
-.home-editorial-shell {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-}
-
-.home-editorial-copy {
-  display: grid;
-  gap: 8px;
-}
-
-.home-editorial-copy h1 {
-  margin: 0;
-  color: var(--trego-dark);
-  font-size: clamp(1.4rem, 6vw, 1.9rem);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
-}
-
-.home-editorial-copy p:last-child {
-  margin: 0;
-  color: var(--trego-muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.home-editorial-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.home-editorial-stat {
-  display: grid;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.6)),
-    linear-gradient(135deg, rgba(239, 107, 46, 0.08), rgba(36, 50, 74, 0.04));
-  border: 1px solid rgba(255, 255, 255, 0.72);
-}
-
-.home-editorial-stat strong {
-  color: var(--trego-dark);
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.home-editorial-stat span {
-  color: var(--trego-muted);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.home-spotlight-row {
-  gap: 8px;
-}
-
-.home-spotlight-chip.is-active,
-.home-category-chip.is-active {
-  background:
-    linear-gradient(135deg, rgba(239, 107, 46, 0.96), rgba(205, 83, 23, 0.92));
-  color: #fffdf9;
-  border-color: rgba(239, 107, 46, 0.32);
-  box-shadow: 0 10px 18px rgba(239, 107, 46, 0.16);
-}
-
-.home-rail-stack {
-  gap: 10px;
-}
-
-.home-rail-shell {
-  display: grid;
-  gap: 10px;
-  padding: 12px 0 12px 12px;
-}
-
-.home-rail-shell.is-for-you {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.82)),
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.12), transparent 30%);
-}
-
-.home-rail-shell.is-trending {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.82)),
-    radial-gradient(circle at top left, rgba(239, 68, 68, 0.12), transparent 30%);
-}
-
-.home-rail-shell.is-sale {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.82)),
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.14), transparent 30%);
-}
-
-.home-rail-head {
-  padding-right: 12px;
-}
-
-.home-rail-title {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.home-rail-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.home-rail-icon {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.54);
-  color: var(--trego-accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
-}
-
-.home-rail-head h2 {
-  font-size: 1rem;
-}
-
-.home-rail-link {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
-  color: var(--trego-accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.home-rail-track {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 180px);
-  gap: 10px;
-  overflow-x: auto;
-  padding-right: 12px;
-  scrollbar-width: none;
-}
-
-.home-rail-track::-webkit-scrollbar {
-  display: none;
-}
-
-.home-rail-card {
-  min-width: 0;
-}
-
-.home-filter-shell {
-  display: grid;
-  gap: 10px;
-}
-
-.home-filter-divider {
-  display: block;
-  width: 100%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.38), transparent);
-}
-
-.home-grid-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.home-grid-reset-button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: rgba(15, 23, 42, 0.62);
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.home-grid-title {
-  color: #1d4ed8;
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.home-product-grid {
-  gap: 12px;
-}
-
-body[data-theme="dark"] .home-topbar-visual,
-body[data-theme="dark"] .home-topbar-message,
-body[data-theme="dark"] .home-topbar-search,
-body[data-theme="dark"] .home-rail-link,
-body[data-theme="dark"] .home-rail-icon,
-body[data-theme="dark"] .home-editorial-stat {
-  border-color: rgba(198, 214, 242, 0.14);
-  background: rgba(19, 27, 42, 0.78);
-  color: rgba(241, 245, 249, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-body[data-theme="dark"] .home-topbar-visual-icon {
-  background: linear-gradient(135deg, rgba(81, 192, 255, 0.22), rgba(120, 102, 255, 0.18));
-  color: #8ab4ff;
-}
-
-body[data-theme="dark"] .home-topbar-search-copy strong,
-body[data-theme="dark"] .home-editorial-copy h1,
-body[data-theme="dark"] .home-editorial-stat strong {
-  color: rgba(241, 245, 249, 0.96);
-}
-
-body[data-theme="dark"] .home-topbar-search-copy span,
-body[data-theme="dark"] .home-editorial-copy p:last-child,
-body[data-theme="dark"] .home-editorial-stat span {
-  color: rgba(203, 213, 225, 0.76);
-}
-
-body[data-theme="dark"] .home-rail-shell.is-for-you,
-body[data-theme="dark"] .home-rail-shell.is-trending,
-body[data-theme="dark"] .home-rail-shell.is-sale {
-  background: rgba(7, 13, 24, 0.84);
-}
-
-@media (max-width: 420px) {
-  .home-editorial-stats {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

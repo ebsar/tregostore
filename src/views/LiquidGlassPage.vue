@@ -92,28 +92,28 @@ watch(
 </script>
 
 <template>
-  <section class="account-page" aria-label="Liquid Glass">
-    <header class="account-header">
+  <section aria-label="Liquid Glass">
+    <header>
       <div>
-        <p class="section-label">Eksperiment</p>
+        <p>Eksperiment</p>
         <h1>Liquid Glass</h1>
-        <p class="section-text">
+        <p>
           Kjo faqe eshte preview i vecante per efektin liquid glass. Nuk ndryshon pjeset tjera te webfaqes.
         </p>
       </div>
 
-      <div class="account-header-actions">
-        <button class="ghost-button" type="button" @click="router.back()">Mbyll</button>
+      <div>
+        <button type="button" @click="router.back()">Mbyll</button>
       </div>
     </header>
 
-    <section class="card liquid-glass-sandbox-card">
-      <div class="glass-controls-layout">
-        <div ref="previewStageRef" class="glass-controls-preview-stage">
-          <div class="glass-controls-preview-scene" aria-hidden="true"></div>
-          <div class="glass-controls-preview-scene-text" aria-hidden="true">TREGIO</div>
-          <div class="glass-controls-preview-glow is-primary" aria-hidden="true"></div>
-          <div class="glass-controls-preview-glow is-secondary" aria-hidden="true"></div>
+    <section>
+      <div>
+        <div ref="previewStageRef">
+          <div aria-hidden="true"></div>
+          <div aria-hidden="true">TREGIO</div>
+          <div aria-hidden="true"></div>
+          <div aria-hidden="true"></div>
 
           <LiquidGlass
             v-if="activeTab === 'userInfo'"
@@ -128,18 +128,18 @@ watch(
             :elasticity="activeControls.elasticity"
             :corner-radius="activeControls.cornerRadius"
             :over-light="activeControls.overLight"
-            :style="{ position: 'absolute', top: '50%', left: '50%' }"
+           
           >
-            <div class="glass-controls-user-card">
-              <div class="glass-controls-user-head">
-                <div class="glass-controls-avatar">J</div>
+            <div>
+              <div>
+                <div>J</div>
                 <div>
                   <strong>John Doe</strong>
                   <p>Software Engineer</p>
                 </div>
               </div>
 
-              <div class="glass-controls-user-meta">
+              <div>
                 <div>
                   <span>Email</span>
                   <strong>john@example.com</strong>
@@ -168,19 +168,19 @@ watch(
             :elasticity="0"
             :corner-radius="100"
             effect="liquidGlass"
-            :style="{ position: 'absolute', top: '22px', left: '18px', right: '18px' }"
+           
           >
-            <div class="glass-controls-navbar-preview">
-              <div class="glass-controls-navbar-brand">TREGIO</div>
-              <div class="glass-controls-navbar-links">
+            <div>
+              <div>TREGIO</div>
+              <div>
                 <span>Veshje</span>
                 <span>Beauty</span>
                 <span>Tech</span>
               </div>
-              <div class="glass-controls-navbar-actions">
-                <span class="glass-controls-navbar-dot"></span>
-                <span class="glass-controls-navbar-dot"></span>
-                <span class="glass-controls-navbar-pill">Login</span>
+              <div>
+                <span></span>
+                <span></span>
+                <span>Login</span>
               </div>
             </div>
           </LiquidGlassNavSurface>
@@ -199,9 +199,9 @@ watch(
             :corner-radius="activeControls.cornerRadius"
             :over-light="activeControls.overLight"
             padding="8px 16px"
-            :style="{ position: 'absolute', top: '50%', left: '50%' }"
+           
           >
-            <div class="glass-controls-logout">
+            <div>
               <span>Logout</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <path
@@ -214,33 +214,33 @@ watch(
             </div>
           </LiquidGlass>
 
-          <div class="glass-controls-preview-footer">
+          <div>
             <span>{{ activeTab === "userInfo" ? "User Info Card" : activeTab === "navbar" ? "Navbar Preview" : "Logout Button" }}</span>
             <strong>{{ activeModeLabel }}</strong>
           </div>
         </div>
 
-        <div class="glass-controls-panel">
-          <div class="glass-controls-tab-row">
+        <div>
+          <div>
             <button
-              class="glass-controls-tab"
-              :class="{ 'is-active': activeTab === 'userInfo' }"
+             
+             
               type="button"
               @click="activeTab = 'userInfo'"
             >
               User Info Card
             </button>
             <button
-              class="glass-controls-tab"
-              :class="{ 'is-active': activeTab === 'logOut' }"
+             
+             
               type="button"
               @click="activeTab = 'logOut'"
             >
               Logout Button
             </button>
             <button
-              class="glass-controls-tab"
-              :class="{ 'is-active': activeTab === 'navbar' }"
+             
+             
               type="button"
               @click="activeTab = 'navbar'"
             >
@@ -249,7 +249,7 @@ watch(
           </div>
 
           <template v-if="activeTab === 'navbar'">
-            <label class="field">
+            <label>
               <span>Refraction mode</span>
               <select v-model="navbarControls.mode">
                 <option
@@ -262,17 +262,17 @@ watch(
               </select>
             </label>
 
-            <label class="field">
+            <label>
               <span>Displacement scale</span>
               <input v-model.number="navbarControls.displacementScale" type="range" min="0" max="300" step="1">
             </label>
 
-            <label class="field">
+            <label>
               <span>Scale value</span>
               <input v-model.number="navbarControls.displacementScale" type="number" min="0" max="1000" step="1">
             </label>
 
-            <div class="glass-controls-note">
+            <div>
               <strong>Navbar live settings</strong>
               <p>Keto vlera ruhen ne browser dhe aplikohen direkt te navbar-i i webfaqes.</p>
               <span>Displacement aktual: {{ navbarDisplacementLabel }}</span>
@@ -280,7 +280,7 @@ watch(
           </template>
 
           <template v-else>
-          <label class="field">
+          <label>
             <span>Refraction mode</span>
             <select v-model="activeControls.mode">
               <option :value="GlassMode.standard">Standard</option>
@@ -290,34 +290,34 @@ watch(
             </select>
           </label>
 
-          <div class="glass-controls-radio-group">
-            <span class="glass-controls-radio-title">Effect type</span>
+          <div>
+            <span>Effect type</span>
             <label
               v-for="effectType in effectList"
               :key="effectType"
-              class="glass-controls-radio"
+             
             >
               <input v-model="effect" type="radio" name="effect" :value="effectType">
               <span>{{ effectNames[effectType] }}</span>
             </label>
           </div>
 
-          <label class="field">
+          <label>
             <span>Displacement scale</span>
             <input v-model.number="activeControls.displacementScale" type="range" min="0" max="200" step="1">
           </label>
 
-          <label class="field">
+          <label>
             <span>Blur amount</span>
             <input v-model.number="activeControls.blurAmount" type="range" min="0" max="1" step="0.01">
           </label>
 
-          <label class="field">
+          <label>
             <span>Saturation</span>
             <input v-model.number="activeControls.saturation" type="range" min="100" max="300" step="1">
           </label>
 
-          <label class="field">
+          <label>
             <span>Aberration intensity</span>
             <input
               v-model.number="activeControls.aberrationIntensity"
@@ -328,17 +328,17 @@ watch(
             >
           </label>
 
-          <label class="field">
+          <label>
             <span>Elasticity</span>
             <input v-model.number="activeControls.elasticity" type="range" min="0" max="1" step="0.01">
           </label>
 
-          <label class="field">
+          <label>
             <span>Corner radius</span>
             <input v-model.number="activeControls.cornerRadius" type="range" min="12" max="120" step="1">
           </label>
 
-          <label class="field glass-controls-checkbox">
+          <label>
             <input v-model="activeControls.overLight" type="checkbox">
             <span>Over light</span>
           </label>
@@ -349,323 +349,3 @@ watch(
   </section>
 </template>
 
-<style scoped>
-.liquid-glass-sandbox-card {
-  padding: 18px;
-}
-
-.glass-controls-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.glass-controls-preview-stage {
-  position: relative;
-  min-height: 420px;
-  border-radius: 28px;
-  border: 1px solid rgba(47, 52, 70, 0.12);
-  background: rgba(255, 255, 255, 0.92);
-  overflow: hidden;
-  box-shadow: 0 20px 44px rgba(31, 41, 55, 0.08);
-}
-
-.glass-controls-preview-scene {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(120% 90% at 18% 20%, rgba(255, 106, 43, 0.14), rgba(255, 255, 255, 0) 62%),
-    radial-gradient(100% 90% at 82% 14%, rgba(47, 52, 70, 0.1), rgba(255, 255, 255, 0) 62%),
-    linear-gradient(180deg, rgba(245, 243, 241, 0.95), rgba(245, 243, 241, 0.6));
-}
-
-.glass-controls-preview-scene-text {
-  position: absolute;
-  inset: auto auto 15% -6%;
-  font-size: clamp(4.4rem, 9vw, 7rem);
-  font-weight: 900;
-  letter-spacing: -0.08em;
-  color: rgba(47, 52, 70, 0.1);
-  transform: rotate(-4deg);
-  user-select: none;
-  pointer-events: none;
-}
-
-.glass-controls-preview-glow {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(30px);
-  opacity: 0.8;
-  pointer-events: none;
-}
-
-.glass-controls-preview-glow.is-primary {
-  width: 180px;
-  height: 180px;
-  left: -24px;
-  top: -24px;
-  background: rgba(255, 106, 43, 0.18);
-}
-
-.glass-controls-preview-glow.is-secondary {
-  width: 220px;
-  height: 220px;
-  right: -36px;
-  bottom: -56px;
-  background: rgba(47, 52, 70, 0.14);
-}
-
-.glass-controls-user-card {
-  width: 288px;
-  color: rgba(255, 255, 255, 0.94);
-}
-
-.glass-controls-preview-navbar-surface {
-  display: block;
-  width: auto;
-}
-
-.glass-controls-navbar-preview {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  min-height: 64px;
-  padding: 10px 16px;
-  color: rgba(47, 52, 70, 0.96);
-}
-
-.glass-controls-navbar-brand {
-  font-size: 1.15rem;
-  font-weight: 900;
-  letter-spacing: -0.05em;
-}
-
-.glass-controls-navbar-links {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-width: 0;
-  color: rgba(47, 52, 70, 0.78);
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.glass-controls-navbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.glass-controls-navbar-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(47, 52, 70, 0.18);
-  border: 1px solid rgba(47, 52, 70, 0.12);
-}
-
-.glass-controls-navbar-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.34);
-  border: 1px solid rgba(255, 255, 255, 0.44);
-  color: rgba(47, 52, 70, 0.92);
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.glass-controls-user-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.glass-controls-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  font-weight: 800;
-}
-
-.glass-controls-user-head strong,
-.glass-controls-user-meta strong {
-  display: block;
-  font-size: 0.98rem;
-}
-
-.glass-controls-user-head p,
-.glass-controls-user-meta span {
-  margin: 0;
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.76);
-}
-
-.glass-controls-user-meta {
-  display: grid;
-  gap: 10px;
-}
-
-.glass-controls-logout {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: rgba(255, 255, 255, 0.94);
-  font-weight: 700;
-  font-size: 1rem;
-}
-
-.glass-controls-logout svg {
-  width: 18px;
-  height: 18px;
-}
-
-.glass-controls-preview-footer {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.84rem;
-  color: rgba(47, 52, 70, 0.82);
-}
-
-.glass-controls-preview-footer strong {
-  color: rgba(31, 41, 55, 0.92);
-}
-
-.glass-controls-panel {
-  display: grid;
-  gap: 14px;
-  padding: 14px;
-  border-radius: 22px;
-  border: 1px solid rgba(47, 52, 70, 0.1);
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 18px 40px rgba(31, 41, 55, 0.08);
-}
-
-.glass-controls-tab-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.glass-controls-tab {
-  min-height: 42px;
-  border: 1px solid rgba(47, 52, 70, 0.1);
-  border-radius: 14px;
-  background: rgba(245, 243, 241, 0.85);
-  color: rgba(31, 41, 55, 0.78);
-  font-weight: 700;
-  transition: 0.2s ease;
-}
-
-.glass-controls-tab.is-active {
-  background: rgba(47, 52, 70, 0.94);
-  border-color: rgba(47, 52, 70, 0.94);
-  color: #fff;
-}
-
-.glass-controls-radio-group {
-  display: grid;
-  gap: 8px;
-}
-
-.glass-controls-radio-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: rgba(31, 41, 55, 0.84);
-}
-
-.glass-controls-radio {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 12px;
-  border-radius: 14px;
-  background: rgba(245, 243, 241, 0.78);
-  border: 1px solid rgba(47, 52, 70, 0.08);
-  color: rgba(31, 41, 55, 0.78);
-}
-
-.glass-controls-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.glass-controls-checkbox span {
-  margin: 0;
-}
-
-.glass-controls-note {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(47, 52, 70, 0.1);
-  background: rgba(245, 243, 241, 0.7);
-  color: rgba(31, 41, 55, 0.78);
-}
-
-.glass-controls-note strong {
-  color: rgba(31, 41, 55, 0.92);
-}
-
-.glass-controls-note p,
-.glass-controls-note span {
-  margin: 0;
-  font-size: 0.84rem;
-  line-height: 1.5;
-}
-
-@media (max-width: 920px) {
-  .glass-controls-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .glass-controls-preview-stage {
-    min-height: 360px;
-  }
-}
-
-@media (max-width: 640px) {
-  .liquid-glass-sandbox-card {
-    padding: 14px;
-  }
-
-  .glass-controls-preview-stage {
-    min-height: 320px;
-  }
-
-  .glass-controls-user-card {
-    width: min(250px, 72vw);
-  }
-
-  .glass-controls-tab-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .glass-controls-navbar-preview {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
-  }
-}
-</style>

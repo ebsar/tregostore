@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
+import MarketSectionTitle from "../components/MarketSectionTitle.vue";
 import ProductCard from "../components/ProductCard.vue";
+import HomeProductCard from "../components/HomeProductCard.vue";
 import RecommendationSections from "../components/RecommendationSections.vue";
+import SplitProductHero from "../components/SplitProductHero.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import {
   fetchHomeRecommendations,
@@ -66,8 +69,6 @@ const ui = reactive({
   type: "",
 });
 const commerceHeroIndex = ref(0);
-const dealsClockNow = ref(Date.now());
-const dealsCountdownTarget = Date.now() + (((16 * 24) + 21) * 60 * 60 * 1000) + (57 * 60 * 1000) + (23 * 1000);
 const businessUi = reactive({
   message: "",
   type: "",
@@ -80,7 +81,6 @@ let businessProfileRequestId = 0;
 let businessProductsRequestId = 0;
 let homeRecommendationsRequestId = 0;
 let commerceHeroAutoplayId = 0;
-let dealsCountdownIntervalId = 0;
 const isBusinessUser = computed(() => appState.user?.role === "business");
 const homeAnnouncementItems = [
   {
@@ -161,28 +161,6 @@ const commerceActionItems = computed(() => ([
     icon: "user",
   },
 ]));
-const commerceServiceCards = [
-  {
-    title: "FAST DELIVERY",
-    copy: "Delivery in 24/7 nga bizneset lokale.",
-    icon: "box",
-  },
-  {
-    title: "24 HOURS RETURN",
-    copy: "Kthim i qarte dhe i kontrolluar.",
-    icon: "return",
-  },
-  {
-    title: "SECURE PAYMENT",
-    copy: "Pagesa te sigurta dhe checkout i thjeshte.",
-    icon: "card",
-  },
-  {
-    title: "SUPPORT 24/7",
-    copy: "Support i drejtperdrejte me mesazhe.",
-    icon: "headset",
-  },
-];
 const homeNewsletterBenefits = [
   "Oferta reale nga produktet e publikuara",
   "Njoftime kur dalin artikuj te rinj",
@@ -888,27 +866,6 @@ const personalizedProducts = computed(() => {
 
   return fallbackProducts.slice(0, 8);
 });
-const homeBusinessBillboard = computed(() => {
-  const business = spotlightBusiness.value || featuredBusinesses.value[0] || null;
-  if (!business) {
-    return null;
-  }
-
-  const leadProduct = getBusinessLeadProduct(business);
-  const relatedProducts = buildUniqueProducts(
-    marketplaceProducts.value.filter(
-      (product) => normalizeLookupValue(product?.businessName) === normalizeLookupValue(business.businessName),
-    ),
-    3,
-  );
-
-  return {
-    business,
-    leadProduct,
-    relatedProducts,
-    target: business.profileUrl || getBusinessProfileUrl(business.id),
-  };
-});
 const heroSpotlightProduct = computed(() =>
   flashDealProducts.value[0]
   || bestSellerProducts.value[0]
@@ -937,6 +894,25 @@ const activeCommerceHeroProduct = computed(() => {
 
   return productsPool[commerceHeroIndex.value] || productsPool[0];
 });
+const heroLeadProduct = computed(() =>
+  activeCommerceHeroProduct.value
+  || commerceHeroProducts.value[0]
+  || marketplaceProducts.value[0]
+  || homeCatalogProducts.value[0]
+  || null,
+);
+const heroGridProducts = computed(() =>
+  buildUniqueProducts(
+    [
+      heroLeadProduct.value,
+      ...commerceHeroProducts.value,
+      ...marketplaceProducts.value,
+      ...homeCatalogProducts.value,
+      ...products.value,
+    ].filter((product) => Boolean(product?.imagePath)),
+    8,
+  ),
+);
 const commerceHeroSideCards = computed(() =>
   buildUniqueProducts(
     commerceHeroProducts.value.filter(
@@ -951,39 +927,6 @@ const heroMiniProducts = computed(() =>
     2,
   ),
 );
-const featuredCategoryCards = computed(() => {
-  return PRODUCT_PAGE_SECTION_OPTIONS.map((section) => {
-    const sectionProducts = marketplaceProducts.value.filter(
-      (product) => getProductSectionValue(product) === section.value,
-    );
-    if (sectionProducts.length === 0) {
-      return null;
-    }
-
-    const leadProduct = sectionProducts[0];
-    const navigationItem = quickNavigationItems.value.find((entry) => entry.key === section.value);
-
-    return {
-      ...section,
-      href: navigationItem?.href || "/kerko",
-      count: sectionProducts.length,
-      imagePath: leadProduct.imagePath,
-      helper: leadProduct.productType
-        ? formatCategoryLabel(leadProduct.productType)
-        : "Zgjedhje te kuruara per kete kategori",
-    };
-  })
-    .filter(Boolean)
-    .sort((left, right) => right.count - left.count)
-    .slice(0, 5);
-});
-const highestDiscountDisplay = computed(() => {
-  const highestDiscount = marketplaceProducts.value.reduce(
-    (maximum, product) => Math.max(maximum, getProductDiscountPercent(product)),
-    0,
-  );
-  return highestDiscount > 0 ? `${highestDiscount}%` : "Oferta";
-});
 const homeTestimonials = computed(() => {
   const businessNames = businesses.value.slice(0, 3).map((business) => business.businessName).filter(Boolean);
 
@@ -1014,87 +957,7 @@ const commerceHeaderCategories = computed(() =>
     label: section.label,
   })),
 );
-const bestDealsSection = computed(() =>
-  homeRecommendationSections.value.find((section) => section.key === "best-sellers")
-  || homeRecommendationSections.value.find((section) => section.key === "recommended-for-you")
-  || homeRecommendationSections.value.find((section) => section.key === "new-arrivals")
-  || null,
-);
-const visibleHomeRecommendationSections = computed(() => {
-  if (!bestDealsSection.value) {
-    return homeRecommendationSections.value;
-  }
-
-  return homeRecommendationSections.value.filter((section) => section.key !== bestDealsSection.value.key);
-});
-const bestDealsProducts = computed(() => {
-  const recommendationProducts = Array.isArray(bestDealsSection.value?.products)
-    ? bestDealsSection.value.products
-    : [];
-
-  const fallbackProducts = [
-    ...flashDealProducts.value,
-    ...bestSellerProducts.value,
-    ...newArrivalProducts.value,
-    ...popularNowProducts.value,
-    ...marketplaceProducts.value,
-  ];
-
-  return buildUniqueProducts(
-    [...recommendationProducts, ...fallbackProducts]
-      .filter((product) => hasProductAvailableStock(product))
-      .sort((left, right) => {
-        const discountDifference = getProductDiscountPercent(right) - getProductDiscountPercent(left);
-        if (discountDifference !== 0) {
-          return discountDifference;
-        }
-
-        return getProductPopularityScore(right) - getProductPopularityScore(left);
-      }),
-    9,
-  );
-});
-const categoryShelfCards = computed(() => featuredCategoryCards.value.slice(0, 6));
-const featuredProductsSection = computed(() =>
-  visibleHomeRecommendationSections.value.find((section) => section.key === "recommended-for-you")
-  || visibleHomeRecommendationSections.value.find((section) => section.key === "new-arrivals")
-  || visibleHomeRecommendationSections.value[0]
-  || null,
-);
-const featuredProductsShelf = computed(() => {
-  const recommendationProducts = Array.isArray(featuredProductsSection.value?.products)
-    ? featuredProductsSection.value.products
-    : [];
-
-  return buildUniqueProducts(
-    [
-      ...recommendationProducts,
-      ...popularNowProducts.value,
-      ...newArrivalProducts.value,
-      ...marketplaceProducts.value,
-    ].filter((product) => hasProductAvailableStock(product)),
-    8,
-  );
-});
-const featuredProductTabs = computed(() => {
-  const baseTabs = [
-    { label: "All Product", to: "/kerko", isAccent: false },
-    ...categoryShelfCards.value.slice(0, 4).map((category) => ({
-      label: category.label,
-      to: category.href || "/kerko",
-      isAccent: false,
-    })),
-  ];
-
-  baseTabs.push({
-    label: "Browse All Product",
-    to: "/kerko",
-    isAccent: true,
-  });
-
-  return baseTabs;
-});
-const dealsCountdownText = computed(() => formatCountdownLabel(dealsCountdownTarget - dealsClockNow.value));
+const visibleHomeRecommendationSections = computed(() => homeRecommendationSections.value);
 
 const collectionLabel = computed(() => {
   if (!products.value.length) {
@@ -1113,8 +976,6 @@ const collectionLabel = computed(() => {
 });
 
 onMounted(async () => {
-  startCommerceHeroAutoplay();
-  startDealsCountdown();
   ensureCompareItemsLoaded();
   recentlyViewedProducts.value = readRecentlyViewedProducts();
   stopProductsPageSizeSubscription = subscribeProductsPageSize((nextPageSize) => {
@@ -1136,9 +997,9 @@ onMounted(async () => {
     }
 
     const publicProductsPromise = loadProducts();
-    void loadHomeRecommendations();
-    void loadHomeCatalogProducts();
-    void loadBusinesses();
+    const homeRecommendationsPromise = loadHomeRecommendations();
+    const homeCatalogPromise = loadHomeCatalogProducts();
+    const businessesPromise = loadBusinesses();
     void ensureSessionLoaded()
       .then(async (user) => {
         if (user?.role === "business") {
@@ -1146,13 +1007,13 @@ onMounted(async () => {
           return;
         }
 
-        await Promise.all([refreshCollectionState(), loadHomeRecommendations()]);
+        await refreshCollectionState();
       })
       .catch((error) => {
         console.error(error);
       });
 
-    await publicProductsPromise;
+    await Promise.all([publicProductsPromise, homeRecommendationsPromise, homeCatalogPromise, businessesPromise]);
     markRouteReady();
   } catch (error) {
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
@@ -1163,8 +1024,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopProductsPageSizeSubscription();
-  stopCommerceHeroAutoplay();
-  stopDealsCountdown();
 });
 
 watch(
@@ -1173,7 +1032,6 @@ watch(
     if (commerceHeroIndex.value >= nextLength) {
       commerceHeroIndex.value = 0;
     }
-    startCommerceHeroAutoplay();
   },
 );
 
@@ -1591,65 +1449,6 @@ function goToCommerceHeroSlide(index) {
   startCommerceHeroAutoplay();
 }
 
-function startDealsCountdown() {
-  stopDealsCountdown();
-  if (typeof window === "undefined" || isBusinessUser.value) {
-    return;
-  }
-
-  dealsClockNow.value = Date.now();
-  dealsCountdownIntervalId = window.setInterval(() => {
-    dealsClockNow.value = Date.now();
-  }, 1000);
-}
-
-function stopDealsCountdown() {
-  if (!dealsCountdownIntervalId) {
-    return;
-  }
-
-  window.clearInterval(dealsCountdownIntervalId);
-  dealsCountdownIntervalId = 0;
-}
-
-function formatCountdownLabel(milliseconds) {
-  const remaining = Math.max(0, Math.floor(milliseconds / 1000));
-  const days = Math.floor(remaining / 86400);
-  const hours = Math.floor((remaining % 86400) / 3600);
-  const minutes = Math.floor((remaining % 3600) / 60);
-  const seconds = remaining % 60;
-  return `${days}d : ${String(hours).padStart(2, "0")}h : ${String(minutes).padStart(2, "0")}m : ${String(seconds).padStart(2, "0")}s`;
-}
-
-function renderCommerceIcon(icon) {
-  switch (icon) {
-    case "twitter":
-      return "M18.9 7.2c.7-.4 1.2-1 1.5-1.8-.6.4-1.4.7-2.1.8a3.5 3.5 0 0 0-6 3.2 9.9 9.9 0 0 1-7.2-3.6 3.5 3.5 0 0 0 1.1 4.7c-.6 0-1.1-.2-1.6-.4 0 1.7 1.2 3.1 2.8 3.4-.3.1-.7.1-1 .1-.2 0-.5 0-.7-.1.5 1.5 1.9 2.6 3.6 2.6A7.1 7.1 0 0 1 4 17.9a9.9 9.9 0 0 0 5.4 1.6c6.5 0 10.1-5.4 10.1-10.1v-.5c.7-.5 1.3-1.1 1.8-1.7-.7.3-1.4.5-2.1.6.7-.4 1.3-1 1.7-1.7-.7.4-1.5.7-2.3.9z";
-    case "facebook":
-      return "M13.5 21v-8h2.7l.4-3h-3.1V8.1c0-.9.3-1.6 1.7-1.6h1.5V3.8c-.3 0-1.2-.1-2.3-.1-2.3 0-3.8 1.4-3.8 4v2.3H8v3h2.6v8z";
-    case "pinterest":
-      return "M12.2 2C6.7 2 4 5.9 4 9.8c0 2.4.9 4.5 2.8 5.3.3.1.5 0 .6-.2.1-.2.2-.8.2-1-.1-.2-.6-.7-.6-1.7 0-2.2 1.7-4.2 4.4-4.2 2.4 0 3.7 1.5 3.7 3.4 0 2.5-1.1 4.7-2.8 4.7-.9 0-1.6-.8-1.4-1.8.3-1.2.8-2.5.8-3.3 0-.8-.4-1.4-1.3-1.4-1 0-1.8 1-1.8 2.4 0 .9.3 1.5.3 1.5l-1.2 5c-.4 1.7-.1 3.8-.1 4 .1.2.2.2.3.1.1-.2 1.2-1.5 1.6-3.6l.5-2c.2-.4.9-.7 1.6-.7 2.1 0 3.6-1.9 3.6-4.4 0-2.4-2-4.7-5.1-4.7z";
-    case "instagram":
-      return "M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4zm0 7.7a3 3 0 1 1 0-6.1 3 3 0 0 1 0 6.1zm5.9-7.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zM12 3.8c2.7 0 3 .1 4 .1 1 0 1.7.2 2.3.5.7.2 1.2.6 1.7 1.1.5.5.9 1 1.1 1.7.3.6.4 1.3.5 2.3.1 1 .1 1.3.1 4s-.1 3-.1 4c0 1-.2 1.7-.5 2.3-.2.7-.6 1.2-1.1 1.7-.5.5-1 .9-1.7 1.1-.6.3-1.3.4-2.3.5-1 .1-1.3.1-4 .1s-3-.1-4-.1c-1 0-1.7-.2-2.3-.5a4.7 4.7 0 0 1-1.7-1.1 4.7 4.7 0 0 1-1.1-1.7c-.3-.6-.4-1.3-.5-2.3-.1-1-.1-1.3-.1-4s.1-3 .1-4c0-1 .2-1.7.5-2.3.2-.7.6-1.2 1.1-1.7.5-.5 1-.9 1.7-1.1.6-.3 1.3-.4 2.3-.5 1-.1 1.3-.1 4-.1z";
-    case "cart":
-      return "M3 5h2.1l1.4 8.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L19 7H7.4M9 19a1.5 1.5 0 1 0 0 .1zm7 0a1.5 1.5 0 1 0 0 .1z";
-    case "heart":
-      return "m12 20.4-1.2-1C5.4 14.6 2 11.5 2 7.8A4.8 4.8 0 0 1 6.8 3 5.3 5.3 0 0 1 12 5.9 5.3 5.3 0 0 1 17.2 3 4.8 4.8 0 0 1 22 7.8c0 3.7-3.4 6.8-8.8 11.6z";
-    case "user":
-      return "M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4zm0 2.2c-3.6 0-6.5 2.4-7.3 5.8h14.6c-.8-3.4-3.7-5.8-7.3-5.8z";
-    case "box":
-      return "M4.8 8.1 12 4l7.2 4.1V16L12 20l-7.2-4ZM12 12l7.2-3.9M12 12 4.8 8.1M12 12v8";
-    case "return":
-      return "M7 7H3v4M3 11c1.2-3.4 4.1-5.5 7.8-5.5 4.8 0 8.7 3.9 8.7 8.7S15.6 23 10.8 23c-3.4 0-6.4-2-7.8-5.1";
-    case "card":
-      return "M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5Zm0 2.2h18M7 15h3";
-    case "headset":
-      return "M4 12a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-2v-6h4M4 13h4v6H6a2 2 0 0 1-2-2z";
-    default:
-      return "";
-  }
-}
-
 function handlePageSectionChange() {
   filters.category = "";
   filters.productType = "";
@@ -1765,128 +1564,110 @@ async function handleCart(productId) {
 </script>
 
 <template>
-  <section v-if="isBusinessUser" class="collection-page business-home-page" aria-label="Faqja kryesore e biznesit">
-    <section class="card business-home-hero">
-      <div class="business-home-branding">
-        <div class="business-home-logo-shell">
-          <img
-            v-if="businessProfile?.logoPath"
-            class="business-home-logo"
-            :src="businessProfile.logoPath"
-            :alt="businessDisplayName"
-            width="220"
-            height="220"
-          >
-          <span v-else class="business-home-logo-fallback">
-            {{ getBusinessInitials(businessDisplayName) }}
-          </span>
-        </div>
-
-        <div class="business-home-copy">
-          <p class="section-label">Business mode</p>
-          <h1>{{ businessDisplayName }}</h1>
-          <p class="section-text">{{ businessDescription }}</p>
-        </div>
-      </div>
-
-      <div class="business-home-actions">
-        <RouterLink class="nav-action nav-action-primary" to="/biznesi-juaj?view=add-product">
-          Shto artikull
-        </RouterLink>
-        <RouterLink class="nav-action nav-action-secondary" to="/biznesi-juaj">
-          Menaxho profilin
-        </RouterLink>
-        <RouterLink
-          v-if="businessPublicProfileUrl"
-          class="nav-action nav-action-secondary"
-          :to="businessPublicProfileUrl"
-        >
-          Profili publik
-        </RouterLink>
-      </div>
-    </section>
-
-    <div class="business-home-summary-grid">
-      <article class="card business-home-stat">
-        <span class="business-home-stat-label">Ndjekesit</span>
-        <strong>{{ businessFollowersCount }}</strong>
-        <p>Shiko si po rritet interesi per biznesin tend.</p>
-      </article>
-
-      <article class="card business-home-stat">
-        <span class="business-home-stat-label">Artikujt e tu</span>
-        <strong>{{ businessProductsCount }}</strong>
-        <p>Te gjitha produktet qe ke publikuar ose ruajtur ne panel.</p>
-      </article>
-
-      <article class="card business-home-stat">
-        <span class="business-home-stat-label">Porosite</span>
-        <strong>{{ businessOrdersCount }}</strong>
-        <p>Numri i porosive ku jane perfshire produktet e biznesit tend.</p>
-      </article>
-    </div>
-
-    <section class="card business-home-workspace" aria-label="Veprimet kryesore te biznesit">
-      <div class="business-home-workspace-head">
-        <div>
-          <p class="section-label">Workspace i biznesit</p>
-          <h2>Veprimet qe perdoren me shpesh</h2>
-          <p class="section-text">
-            Kalo direkt te shtimi i artikujve, porosite, mesazhet dhe profili publik pa humbur kohe ne navigim.
-          </p>
-        </div>
-      </div>
-
-      <div class="business-home-workspace-grid">
-        <RouterLink
-          v-for="item in businessWorkspaceActions"
-          :key="item.title"
-          class="business-home-workspace-card"
-          :to="item.to"
-        >
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.copy }}</span>
-        </RouterLink>
-      </div>
-    </section>
-
-    <section class="card business-home-contact">
-      <div>
-        <p class="section-label">Kontaktet</p>
-        <h2>Mesazhet dhe ndjekesit</h2>
-        <p class="section-text">
-          Ketu ke qasje te shpejte te inbox-it te mesazheve dhe profilit publik te biznesit.
-        </p>
-      </div>
-
-      <div class="business-home-contact-actions">
-        <RouterLink class="nav-action nav-action-secondary" to="/mesazhet">
-          Hape mesazhet
-        </RouterLink>
-        <RouterLink
-          v-if="businessPublicProfileUrl"
-          class="nav-action nav-action-primary"
-          :to="businessPublicProfileUrl"
-        >
-          Shiko ndjekesit
-        </RouterLink>
-      </div>
-    </section>
-
-    <div class="form-message" :class="businessUi.type" role="status" aria-live="polite">
+  <section
+    v-if="isBusinessUser"
+    class="market-page market-page--wide home-page"
+    aria-label="Faqja kryesore e biznesit"
+  >
+    <div
+      v-if="businessUi.message"
+      :class="['market-status', businessUi.type === 'error' ? 'market-status--error' : '']"
+      role="status"
+      aria-live="polite"
+    >
       {{ businessUi.message }}
     </div>
 
-    <section class="business-home-products" aria-label="Produktet e biznesit tend">
-      <header class="collection-page-header business-home-products-header">
-        <p class="section-label">Produktet e tua</p>
-        <h2>Lista e artikujve</h2>
-        <p>
-          Ne homepage te biznesit shfaqen vetem profili yt, produktet e tua dhe qasja direkte per shtim artikujsh.
-        </p>
-      </header>
+    <section class="market-card market-card--padded business-hero">
+      <div class="business-hero__main">
+        <div class="business-hero__identity">
+          <div class="business-hero__logo">
+            <img
+              v-if="businessProfile?.logoPath"
+              :src="businessProfile.logoPath"
+              :alt="businessDisplayName"
+              width="220"
+              height="220"
+            >
+            <span v-else class="business-hero__logo-mark">
+              {{ getBusinessInitials(businessDisplayName) }}
+            </span>
+          </div>
 
-      <section v-if="businessProducts.length > 0" class="pet-products-grid business-home-products-grid">
+          <div class="business-hero__summary">
+            <p class="business-hero__label">Business mode</p>
+            <h1>{{ businessDisplayName }}</h1>
+            <p>{{ businessDescription }}</p>
+          </div>
+        </div>
+
+        <div class="business-hero__actions">
+          <RouterLink class="market-button market-button--primary" to="/biznesi-juaj?view=add-product">
+            Shto artikull
+          </RouterLink>
+          <RouterLink class="market-button market-button--secondary" to="/biznesi-juaj">
+            Menaxho profilin
+          </RouterLink>
+          <RouterLink
+            v-if="businessPublicProfileUrl"
+            class="market-button market-button--secondary"
+            :to="businessPublicProfileUrl"
+          >
+            Profili publik
+          </RouterLink>
+        </div>
+      </div>
+
+      <div class="metric-grid">
+        <article class="metric-card">
+          <p class="metric-card__label">Ndjekesit</p>
+          <strong>{{ businessFollowersCount }}</strong>
+          <p>Shiko si po rritet interesi per biznesin tend.</p>
+        </article>
+
+        <article class="metric-card">
+          <p class="metric-card__label">Artikujt</p>
+          <strong>{{ businessProductsCount }}</strong>
+          <p>Te gjitha produktet qe ke publikuar ose ruajtur ne panel.</p>
+        </article>
+
+        <article class="metric-card">
+          <p class="metric-card__label">Porosite</p>
+          <strong>{{ businessOrdersCount }}</strong>
+          <p>Numri i porosive ku jane perfshire produktet e biznesit tend.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="market-card market-card--padded">
+      <MarketSectionTitle
+        eyebrow="Workspace"
+        title="Veprimet qe perdoren me shpesh"
+        copy="Kalo direkt te shtimi i artikujve, porosite, mesazhet dhe profili publik pa humbur kohe ne navigim."
+      />
+
+      <div class="metric-grid">
+        <RouterLink
+          v-for="item in businessWorkspaceActions"
+          :key="item.title"
+          class="metric-card"
+          :to="item.to"
+        >
+          <p class="metric-card__label">{{ item.title }}</p>
+          <strong>{{ item.title }}</strong>
+          <p>{{ item.copy }}</p>
+        </RouterLink>
+      </div>
+    </section>
+
+    <section class="market-card market-card--padded">
+      <MarketSectionTitle
+        eyebrow="Produktet e tua"
+        title="Lista e artikujve"
+        copy="Homepage e biznesit eshte thjeshtuar per te treguar profilin, veprimet kryesore dhe produktet qe po menaxhon."
+      />
+
+      <section v-if="businessProducts.length > 0" class="product-collection__grid" aria-label="Produktet e biznesit tend">
         <ProductCard
           v-for="product in businessProducts"
           :key="product.id"
@@ -1896,335 +1677,49 @@ async function handleCart(productId) {
         />
       </section>
 
-      <div v-else class="collection-empty-state business-home-empty-state">
-        Nuk ke artikuj ende. Shto produktin e pare dhe ai do te shfaqet ketu.
+      <div v-else class="market-empty">
+        <h3>Nuk ke artikuj ende</h3>
+        <p>Shto produktin e pare dhe ai do te shfaqet ketu me prezantim te paster dhe gati per blerje.</p>
       </div>
-    </section>
-
-    <section class="card business-home-bottom-cta">
-      <div>
-        <p class="section-label">Veprimi i shpejte</p>
-        <h2>Shto produkte te reja</h2>
-        <p class="section-text">
-          Kalo direkt te forma e artikullit dhe vazhdo me publikimin e produkteve te biznesit tend.
-        </p>
-      </div>
-
-      <RouterLink class="hero-cta" to="/biznesi-juaj?view=add-product">
-        Shto artikull
-      </RouterLink>
     </section>
   </section>
 
-  <section v-else class="collection-page home-marketplace-page commerce-home-page" aria-label="Faqja kryesore">
-    <section class="commerce-home-hero" aria-label="Hero i marketplace">
-      <article v-if="activeCommerceHeroProduct" class="commerce-home-hero-main">
-        <div class="commerce-home-hero-copy">
-          <span class="commerce-home-hero-kicker">THE BEST PLACE TO BUY</span>
-          <h1>{{ activeCommerceHeroProduct.title }}</h1>
-          <p>
-            {{ activeCommerceHeroProduct.description || "Oferta reale, stok aktiv dhe produkte qe po performojne me mire ne marketplace." }}
-          </p>
-          <RouterLink class="commerce-home-hero-cta" :to="getProductDetailUrl(activeCommerceHeroProduct.id, '/')">
-            SHOP NOW
-          </RouterLink>
-        </div>
-
-        <div class="commerce-home-hero-visual">
-          <img
-            class="commerce-home-hero-image"
-            :src="activeCommerceHeroProduct.imagePath"
-            :alt="activeCommerceHeroProduct.title"
-            width="760"
-            height="760"
-            loading="eager"
-            decoding="async"
-            fetchpriority="high"
-          >
-          <div class="commerce-home-hero-price">
-            {{ formatPrice(activeCommerceHeroProduct.price) }}
-          </div>
-        </div>
-
-        <div class="commerce-home-hero-overlay">
-          <span class="commerce-home-hero-dot-indicator"></span>
-        </div>
-        <div class="commerce-home-hero-dots" aria-label="Zgjedh slide">
-          <button
-            v-for="(product, index) in commerceHeroProducts"
-            :key="`${product.id}-${product.title}`"
-            class="commerce-home-hero-dot"
-            :class="{ 'is-active': index === commerceHeroIndex }"
-            type="button"
-            :aria-label="`Hap slide ${index + 1}`"
-            @click="goToCommerceHeroSlide(index)"
-          ></button>
-        </div>
-      </article>
-
-      <div v-if="commerceHeroSideCards.length > 0" class="commerce-home-hero-side">
-        <RouterLink
-            v-for="(product, index) in commerceHeroSideCards"
-            :key="product.id"
-            class="commerce-home-side-card"
-            :class="index === 0 ? 'is-dark' : 'is-light'"
-          :to="getProductDetailUrl(product.id, '/')"
-        >
-          <div class="commerce-home-side-copy">
-            <span>{{ index === 0 ? "Summer sales" : "Trending now" }}</span>
-            <strong>{{ product.title }}</strong>
-            <small>{{ formatPrice(product.price) }}</small>
-            <em>Shop now</em>
-          </div>
-          <img
-            :src="product.imagePath"
-            :alt="product.title"
-            width="360"
-            height="260"
-            loading="lazy"
-            decoding="async"
-          >
-        </RouterLink>
-      </div>
-    </section>
-
-    <section class="commerce-home-service-strip" aria-label="Sherbimet kryesore">
-      <article
-        v-for="item in commerceServiceCards"
-        :key="item.title"
-        class="commerce-home-service-card"
-      >
-        <span class="commerce-home-service-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path :d="renderCommerceIcon(item.icon)" />
-          </svg>
-        </span>
-        <div>
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.copy }}</span>
-        </div>
-      </article>
-    </section>
-
-    <section v-if="bestDealsProducts.length > 0" class="commerce-home-best-deals" aria-label="Best deals">
-      <header class="commerce-home-section-head">
-        <div class="commerce-home-section-title">
-          <h2>Best Deals</h2>
-          <div class="commerce-home-countdown">
-            <span>Deals ends in</span>
-            <strong>{{ dealsCountdownText }}</strong>
-          </div>
-        </div>
-        <RouterLink class="commerce-home-section-link" to="/kerko">
-          Browse All Product
-        </RouterLink>
-      </header>
-
-      <div class="commerce-home-best-grid">
-        <article
-          v-for="(product, index) in bestDealsProducts"
-          :key="`best-deal-${product.id}`"
-          class="commerce-home-best-card"
-          :class="{ 'is-featured': index === 0 }"
-        >
-          <RouterLink class="commerce-home-best-card-link" :to="getProductDetailUrl(product.id, '/')">
-            <span
-              v-if="getShowcaseBadge(product, index)"
-              class="commerce-home-best-badge"
-              :class="{ 'is-alert': getShowcaseBadgeTone(product) === 'alert' }"
-            >
-              {{ getShowcaseBadge(product, index) }}
-            </span>
-            <img
-              :src="product.imagePath"
-              :alt="product.title"
-              width="420"
-              height="420"
-              loading="lazy"
-              decoding="async"
-            >
-            <div class="commerce-home-best-copy">
-              <div v-if="index === 0" class="commerce-home-best-rating">
-                <span>★★★★★</span>
-                <small>({{ Number(product.reviewCount || 0) }})</small>
-              </div>
-              <strong>{{ product.title }}</strong>
-              <p v-if="index === 0">
-                {{ product.description || "Produkti me performancen me te mire nga Recommendation MVP." }}
-              </p>
-              <div class="commerce-home-best-price">
-                <span v-if="Number(product.compareAtPrice || product.originalPrice || 0) > Number(product.price || 0)">
-                  {{ formatPrice(product.compareAtPrice || product.originalPrice) }}
-                </span>
-                <strong>{{ formatPrice(product.price) }}</strong>
-              </div>
-            </div>
-          </RouterLink>
-
-          <div v-if="index === 0" class="commerce-home-best-actions">
-            <button
-              class="commerce-home-icon-action"
-              type="button"
-              :disabled="busyWishlistIds.includes(product.id)"
-              @click="handleWishlist(product.id)"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path :d="renderCommerceIcon('heart')" />
-              </svg>
-            </button>
-            <button
-              class="commerce-home-primary-action"
-              type="button"
-              :disabled="busyCartIds.includes(product.id)"
-              @click="handleCart(product.id)"
-            >
-              Add to cart
-            </button>
-            <button
-              class="commerce-home-icon-action"
-              type="button"
-              @click="handleCompare(product)"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6.9 8.7a5.1 5.1 0 0 1 8.7-1.5l1.3-1.3v4.2h-4.2l1.5-1.5a3 3 0 1 0 .9 2.1h2.1a5.1 5.1 0 1 1-10.3 0c0-.3 0-.7.1-1zm10.2 6.6A5.1 5.1 0 0 1 8.4 17L7.1 18.3v-4.2h4.2l-1.5 1.5a3 3 0 1 0-.9-2.1H6.8a5.1 5.1 0 1 1 10.3 0c0 .3 0 .7-.1 1z" />
-              </svg>
-            </button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section v-if="categoryShelfCards.length > 0" class="commerce-home-category-showcase" aria-label="Shop with categories">
-      <header class="commerce-home-category-head">
-        <h2>Shop with Categories</h2>
-      </header>
-
-      <div class="commerce-home-category-rail">
-        <span class="commerce-home-category-arrow" aria-hidden="true">‹</span>
-        <RouterLink
-          v-for="category in categoryShelfCards"
-          :key="category.value"
-          class="commerce-home-category-card"
-          :to="category.href || '/kerko'"
-        >
-          <img
-            :src="category.imagePath"
-            :alt="category.label"
-            width="220"
-            height="180"
-            loading="lazy"
-            decoding="async"
-          >
-          <strong>{{ category.label }}</strong>
-        </RouterLink>
-        <span class="commerce-home-category-arrow" aria-hidden="true">›</span>
-      </div>
-
-      <div class="commerce-home-featured-block">
-        <aside class="commerce-home-featured-banner">
-          <span>COMPUTER & ACCESSORIES</span>
-          <strong>{{ highestDiscountDisplay }} Discount</strong>
-          <p>For all electronics products dhe ofertat me te mira te dites.</p>
-          <RouterLink class="commerce-home-banner-cta" to="/kerko">
-            Shop now
-          </RouterLink>
-          <img
-            v-if="activeCommerceHeroProduct?.imagePath"
-            :src="activeCommerceHeroProduct.imagePath"
-            :alt="activeCommerceHeroProduct.title"
-            width="420"
-            height="620"
-            loading="lazy"
-            decoding="async"
-          >
-        </aside>
-
-        <div class="commerce-home-featured-products">
-          <header class="commerce-home-featured-head">
-            <h3>Featured Products</h3>
-            <nav class="commerce-home-featured-tabs" aria-label="Featured product tabs">
-              <RouterLink
-                v-for="tab in featuredProductTabs"
-                :key="tab.label"
-                :to="tab.to"
-                :class="{ 'is-accent': tab.isAccent }"
-              >
-                {{ tab.label }}
-              </RouterLink>
-            </nav>
-          </header>
-
-          <div class="commerce-home-featured-grid">
-            <article
-              v-for="product in featuredProductsShelf"
-              :key="`featured-${product.id}`"
-              class="commerce-home-featured-card"
-            >
-              <RouterLink class="commerce-home-featured-link" :to="getProductDetailUrl(product.id, '/')">
-                <span
-                  v-if="getShowcaseBadge(product)"
-                  class="commerce-home-featured-badge"
-                  :class="{ 'is-alert': getShowcaseBadgeTone(product) === 'alert' }"
-                >
-                  {{ getShowcaseBadge(product) }}
-                </span>
-                <img
-                  :src="product.imagePath"
-                  :alt="product.title"
-                  width="280"
-                  height="220"
-                  loading="lazy"
-                  decoding="async"
-                >
-                <div class="commerce-home-featured-rating">★★★★★ <small>({{ Number(product.reviewCount || 0) }})</small></div>
-                <strong>{{ product.title }}</strong>
-                <div class="commerce-home-featured-price">
-                  <span v-if="Number(product.compareAtPrice || product.originalPrice || 0) > Number(product.price || 0)">
-                    {{ formatPrice(product.compareAtPrice || product.originalPrice) }}
-                  </span>
-                  <strong>{{ formatPrice(product.price) }}</strong>
-                </div>
-              </RouterLink>
-            </article>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section
-      id="home-marketplace-catalog"
-      class="home-marketplace-section home-marketplace-catalog"
-      aria-label="Produktet"
+  <section v-else class="market-page market-page--wide home-page" aria-label="Faqja kryesore">
+    <div
+      v-if="ui.message"
+      :class="['market-status', ui.type === 'error' ? 'market-status--error' : ui.type === 'success' ? 'market-status--success' : '']"
+      role="status"
+      aria-live="polite"
     >
-      <RecommendationSections
-        v-if="visibleHomeRecommendationSections.length > 0"
-        :sections="visibleHomeRecommendationSections"
-        :wishlist-ids="wishlistIds"
-        :cart-ids="cartIds"
-        :busy-wishlist-ids="busyWishlistIds"
-        :busy-cart-ids="busyCartIds"
-        :compared-product-ids="comparedProductIds"
-        @wishlist="handleWishlist"
-        @cart="handleCart"
-        @compare="handleCompare"
-      />
+      {{ ui.message }}
+    </div>
 
-      <header class="home-marketplace-section-head home-marketplace-catalog-head">
-        <div>
-          <p class="section-label">PRODUKTE</p>
-        </div>
+    <SplitProductHero
+      v-if="heroLeadProduct && heroGridProducts.length"
+      :lead-product="heroLeadProduct"
+      :products="heroGridProducts"
+    />
+
+    <RecommendationSections
+      v-if="visibleHomeRecommendationSections.length > 0"
+      :sections="visibleHomeRecommendationSections"
+      :wishlist-ids="wishlistIds"
+      :cart-ids="cartIds"
+      :busy-wishlist-ids="busyWishlistIds"
+      :busy-cart-ids="busyCartIds"
+      :compared-product-ids="comparedProductIds"
+      @wishlist="handleWishlist"
+      @cart="handleCart"
+      @compare="handleCompare"
+    />
+
+    <section class="home-catalog" aria-label="Produktet">
+      <header class="home-catalog__header">
+        <h2 class="home-catalog__title">All product</h2>
       </header>
 
-      <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-        {{ ui.message }}
-      </div>
-
-      <section
-        v-if="filteredProducts.length > 0"
-        class="pet-products-grid home-all-products-grid"
-        aria-label="Te gjitha produktet"
-      >
-        <ProductCard
+      <section v-if="filteredProducts.length > 0" class="home-product-grid" aria-label="Te gjitha produktet">
+        <HomeProductCard
           v-for="product in filteredProducts"
           :key="product.id"
           :product="product"
@@ -2232,30 +1727,24 @@ async function handleCart(productId) {
           :is-in-cart="cartIds.includes(product.id)"
           :wishlist-busy="busyWishlistIds.includes(product.id)"
           :cart-busy="busyCartIds.includes(product.id)"
-          :is-compared="comparedProductIds.includes(product.id)"
           @wishlist="handleWishlist"
           @cart="handleCart"
-          @compare="handleCompare"
         />
       </section>
 
-      <div
-        v-if="products.length > 0 && hasMoreProducts"
-        class="collection-load-more"
-        :class="{ 'is-auto-loading': supportsAutoLoad }"
-      >
-        <div
-          v-if="supportsAutoLoad"
-          ref="loadMoreSentinel"
-          class="collection-load-more-sentinel"
-          aria-hidden="true"
-        ></div>
-        <p v-if="loadingMoreProducts" class="collection-load-more-copy">
-          Duke ngarkuar edhe 6 produkte...
+      <div v-else class="market-empty">
+        <h3>Nuk ka produkte publike ende</h3>
+        <p>Marketplace do të mbushet automatikisht sapo bizneset të publikojnë artikuj të rinj.</p>
+      </div>
+
+      <div v-if="products.length > 0 && hasMoreProducts" class="home-catalog__footer">
+        <div v-if="supportsAutoLoad" ref="loadMoreSentinel" aria-hidden="true"></div>
+        <p v-if="loadingMoreProducts" class="market-status market-status--compact">
+          Duke ngarkuar edhe produkte...
         </p>
         <button
           v-else-if="!supportsAutoLoad"
-          class="search-reset-button collection-load-more-button"
+          class="market-button market-button--secondary"
           type="button"
           :disabled="loadingMoreProducts"
           @click="loadMoreProducts"
@@ -2263,1198 +1752,114 @@ async function handleCart(productId) {
           {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
         </button>
       </div>
-
-      <div v-if="products.length === 0" class="collection-empty-state">
-        Nuk ka produkte publike ende.
-      </div>
     </section>
   </section>
 </template>
 
 <style scoped>
-.commerce-home-page {
-  display: grid;
-  gap: 28px;
+.home-page {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  padding: 24px clamp(20px, 5vw, 64px) 72px;
+  background: #fbfbfa;
 }
 
-.commerce-home-shell {
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-  border-radius: 18px;
+.home-catalog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.home-catalog__title {
+  margin: 0;
+  color: #111111;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.home-page > * + * {
+  margin-top: 48px;
+}
+
+.market-status {
+  margin-bottom: 24px;
+  padding: 12px 14px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
   background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+  color: #555555;
+  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.commerce-home-promo-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 28px;
-  background: #171a1f;
-  color: #f8fafc;
+.market-status--error {
+  border-color: #efc8c8;
+  background: #fff8f8;
+  color: #a13232;
 }
 
-.commerce-home-promo-copy {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
+.market-status--success {
+  border-color: #d6ddd6;
+  background: #fbfcfb;
+  color: #415c47;
 }
 
-.commerce-home-promo-copy strong {
-  font-size: clamp(1.15rem, 2vw, 1.85rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.commerce-home-promo-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: #f7c948;
-  color: #171717;
-  font-weight: 800;
-}
-
-.commerce-home-promo-cta,
-.commerce-home-hero-cta,
-.commerce-home-banner-cta,
-.commerce-home-primary-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 46px;
-  padding: 0 18px;
-  border-radius: 12px;
-  border: 0;
-  color: #171717;
-  background: #f7c948;
-  font-weight: 800;
-  text-decoration: none;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-}
-
-.commerce-home-promo-cta:hover,
-.commerce-home-hero-cta:hover,
-.commerce-home-banner-cta:hover,
-.commerce-home-primary-action:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 28px rgba(247, 201, 72, 0.24);
-}
-
-.commerce-home-info-bar,
-.commerce-home-header-bar {
+.home-product-grid {
   display: grid;
-  align-items: center;
-  gap: 18px;
-  padding: 12px 28px;
-  background: #f97316;
-  color: rgba(255, 255, 255, 0.94);
-}
-
-.commerce-home-info-bar {
-  grid-template-columns: minmax(0, 1fr) auto;
-  font-size: 0.88rem;
-  background: #ea6b0d;
-}
-
-.commerce-home-info-bar p {
-  margin: 0;
-}
-
-.commerce-home-info-socials {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-info-meta {
-  color: rgba(255, 255, 255, 0.82);
-  font-weight: 700;
-}
-
-.commerce-home-info-icon {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #fff;
-}
-
-.commerce-home-info-icon svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
-}
-
-.commerce-home-header-bar {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  padding-top: 22px;
-  padding-bottom: 22px;
-  background: #f97316;
-}
-
-.commerce-home-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  color: #fff;
-  text-decoration: none;
-}
-
-.commerce-home-brand img {
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
-}
-
-.commerce-home-brand strong {
-  display: block;
-  font-size: 1.75rem;
-  letter-spacing: -0.04em;
-}
-
-.commerce-home-search {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 0;
-  min-height: 58px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
-}
-
-.commerce-home-search-input,
-.commerce-home-search-visual,
-.commerce-home-search-submit {
-  height: 100%;
-  border: 0;
-  background: transparent;
-}
-
-.commerce-home-search-input {
-  width: 100%;
-  padding: 0 16px;
-  color: #0f172a;
-  font-size: 0.98rem;
-}
-
-.commerce-home-search-input:focus {
-  outline: none;
-}
-
-.commerce-home-search-visual,
-.commerce-home-search-submit {
-  display: inline-flex;
-  width: 54px;
-  align-items: center;
-  justify-content: center;
-  color: #64748b;
-  cursor: pointer;
-}
-
-.commerce-home-search-submit {
-  color: #f97316;
-}
-
-.commerce-home-search-visual svg,
-.commerce-home-search-submit svg,
-.commerce-home-header-action svg,
-.commerce-home-subnav-support svg,
-.commerce-home-service-icon svg,
-.commerce-home-icon-action svg {
-  width: 20px;
-  height: 20px;
-  fill: currentColor;
-}
-
-.commerce-home-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.commerce-home-header-action {
-  position: relative;
-  display: inline-flex;
-  width: 46px;
-  height: 46px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #fff;
-  text-decoration: none;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.commerce-home-header-badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: #f97316;
-  color: #fff;
-  font-size: 0.66rem;
-  font-weight: 800;
-  line-height: 18px;
-  text-align: center;
-}
-
-.commerce-home-subnav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 28px;
-  background: #fff;
-  border-top: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.commerce-home-subnav-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-subnav-select {
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 10px;
-  color: #111827;
-  background: #f8fafc;
-  font-weight: 700;
-}
-
-.commerce-home-subnav-links {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-subnav-links a,
-.commerce-home-section-link,
-.commerce-home-featured-tabs a {
-  color: #475569;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.commerce-home-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
-  gap: 18px;
-}
-
-.commerce-home-hero-main,
-.commerce-home-side-card,
-.commerce-home-best-deals,
-.commerce-home-category-showcase {
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.06);
-}
-
-.commerce-home-hero-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
-  align-items: center;
-  min-height: 430px;
-  padding: 38px 44px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #f8fafc;
-}
-
-.commerce-home-hero-copy {
-  display: grid;
-  gap: 14px;
-  max-width: 380px;
-}
-
-.commerce-home-hero-copy h1,
-.commerce-home-section-head h2,
-.commerce-home-category-head h2,
-.commerce-home-featured-head h3 {
-  margin: 0;
-  color: #111827;
-  letter-spacing: -0.04em;
-}
-
-.commerce-home-hero-copy h1 {
-  font-size: clamp(2.4rem, 4vw, 3.6rem);
-  line-height: 0.95;
-}
-
-.commerce-home-hero-copy p {
-  margin: 0;
-  color: #475569;
-  line-height: 1.55;
-  font-size: 1.05rem;
-}
-
-.commerce-home-hero-kicker {
-  display: inline-flex;
-  width: fit-content;
-  color: #0ea5e9;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  font-size: 0.86rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.commerce-home-hero-visual {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 320px;
-}
-
-.commerce-home-hero-image {
-  width: 100%;
-  max-width: 420px;
-  height: 320px;
-  object-fit: contain;
-  display: block;
-}
-
-.commerce-home-hero-price {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 94px;
-  height: 94px;
-  border-radius: 999px;
-  background: #22aaf5;
-  color: #fff;
-  font-size: 1.55rem;
-  font-weight: 800;
-  box-shadow: 0 18px 32px rgba(34, 170, 245, 0.22);
-}
-
-.commerce-home-hero-overlay {
-  position: absolute;
-  left: 44px;
-  bottom: 24px;
-}
-
-.commerce-home-hero-dot-indicator {
-  display: none;
-}
-
-.commerce-home-hero-dots {
-  position: absolute;
-  left: 44px;
-  bottom: 22px;
-  display: inline-flex;
-  gap: 8px;
-}
-
-.commerce-home-hero-dot {
-  width: 9px;
-  height: 9px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.45);
-  cursor: pointer;
-}
-
-.commerce-home-hero-dot.is-active {
-  background: #111827;
-}
-
-.commerce-home-hero-side {
-  display: grid;
-  gap: 18px;
-}
-
-.commerce-home-side-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px;
-  align-items: center;
-  gap: 14px;
-  min-height: 220px;
-  padding: 22px;
-  border-radius: 14px;
-  text-decoration: none;
-}
-
-.commerce-home-side-card.is-dark {
-  background: #1f2937;
-  color: #fff;
-}
-
-.commerce-home-side-card.is-light {
-  background: #f8fafc;
-  color: #0f172a;
-}
-
-.commerce-home-side-card img {
-  width: 100%;
-  height: 150px;
-  object-fit: contain;
-}
-
-.commerce-home-side-copy {
-  display: grid;
-  gap: 8px;
-}
-
-.commerce-home-side-copy span,
-.commerce-home-featured-banner span {
-  color: #f59e0b;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.commerce-home-side-copy strong {
-  font-size: 1.7rem;
-  line-height: 1.06;
-  letter-spacing: -0.04em;
-}
-
-.commerce-home-side-copy small {
-  color: inherit;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.commerce-home-side-copy em {
-  font-style: normal;
-  font-weight: 800;
-  color: #f97316;
-}
-
-.commerce-home-service-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.commerce-home-service-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
-  border-radius: 10px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.commerce-home-service-icon {
-  display: inline-flex;
-  width: 42px;
-  height: 42px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  color: #0f6aa3;
-  background: rgba(15, 106, 163, 0.08);
-}
-
-.commerce-home-service-card div {
-  display: grid;
-  gap: 4px;
-}
-
-.commerce-home-service-card strong {
-  color: #111827;
-  font-size: 0.84rem;
-  letter-spacing: 0.05em;
-}
-
-.commerce-home-service-card span {
-  color: #64748b;
-  font-size: 0.86rem;
-}
-
-.commerce-home-best-deals,
-.commerce-home-category-showcase {
-  display: grid;
-  gap: 20px;
-  padding: 24px;
-  border-radius: 12px;
-}
-
-.commerce-home-section-head,
-.commerce-home-category-head,
-.commerce-home-featured-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.commerce-home-section-title {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-countdown {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: #475569;
-  font-size: 0.88rem;
-}
-
-.commerce-home-countdown strong {
-  display: inline-flex;
-  min-height: 34px;
-  align-items: center;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: #fde68a;
-  color: #7c2d12;
-}
-
-.commerce-home-best-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0;
-  border-radius: 0;
-  overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.commerce-home-best-card {
-  position: relative;
-  background: #fff;
-  border-right: 1px solid rgba(15, 23, 42, 0.08);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.commerce-home-best-card.is-featured {
-  grid-row: span 2;
-}
-
-.commerce-home-best-card-link,
-.commerce-home-featured-link {
-  display: grid;
-  gap: 10px;
-  height: 100%;
-  padding: 18px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.commerce-home-best-card img,
-.commerce-home-featured-card img,
-.commerce-home-category-card img {
-  width: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-.commerce-home-best-card:not(.is-featured) img {
-  height: 140px;
-}
-
-.commerce-home-best-card.is-featured img {
-  height: 240px;
-}
-
-.commerce-home-best-badge,
-.commerce-home-featured-badge {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 24px;
-  padding: 0 9px;
-  align-items: center;
-  border-radius: 8px;
-  background: #fde68a;
-  color: #7c2d12;
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.commerce-home-best-badge.is-alert,
-.commerce-home-featured-badge.is-alert {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.commerce-home-best-copy,
-.commerce-home-featured-card strong {
-  display: grid;
-  gap: 8px;
-}
-
-.commerce-home-best-copy strong,
-.commerce-home-featured-card strong,
-.commerce-home-category-card strong {
-  color: #111827;
-  line-height: 1.35;
-}
-
-.commerce-home-best-copy p {
-  margin: 0;
-  color: #64748b;
-  line-height: 1.55;
-}
-
-.commerce-home-best-price,
-.commerce-home-featured-price {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-best-price span,
-.commerce-home-featured-price span {
-  color: #94a3b8;
-  text-decoration: line-through;
-}
-
-.commerce-home-best-price strong,
-.commerce-home-featured-price strong {
-  color: #0f6aa3;
-  font-size: 1rem;
-}
-
-.commerce-home-best-rating,
-.commerce-home-featured-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #f59e0b;
-  font-size: 0.84rem;
-}
-
-.commerce-home-best-rating small,
-.commerce-home-featured-rating small {
-  color: #94a3b8;
-}
-
-.commerce-home-best-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 18px 18px;
-}
-
-.commerce-home-icon-action {
-  display: inline-flex;
-  width: 42px;
-  height: 42px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  color: #334155;
-  background: #fff;
-  cursor: pointer;
-}
-
-.commerce-home-primary-action {
-  min-width: 140px;
-}
-
-.commerce-home-category-showcase {
-  gap: 26px;
-}
-
-.commerce-home-category-head {
-  justify-content: center;
-}
-
-.commerce-home-category-rail {
-  display: grid;
-  grid-template-columns: auto repeat(6, minmax(0, 1fr)) auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.commerce-home-category-arrow {
-  display: inline-flex;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #fff;
-  background: #f97316;
-  font-size: 1.6rem;
-  line-height: 1;
-}
-
-.commerce-home-category-card {
-  display: grid;
-  gap: 12px;
-  justify-items: center;
-  min-height: 170px;
-  padding: 18px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  color: #111827;
-  text-align: center;
-  text-decoration: none;
-  background: #fff;
-}
-
-.commerce-home-category-card img {
-  height: 92px;
-}
-
-.commerce-home-featured-block {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  column-gap: 20px;
+  row-gap: 42px;
   align-items: start;
 }
 
-.commerce-home-featured-banner {
-  position: relative;
-  display: grid;
-  gap: 10px;
-  min-height: 100%;
-  padding: 26px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fde68a, #f8cf4b);
+.home-product-grid > * {
+  width: min(100%, 190px);
+  justify-self: center;
 }
 
-.commerce-home-featured-banner strong {
-  color: #111827;
-  font-size: 2rem;
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.commerce-home-featured-banner p {
-  margin: 0;
-  color: rgba(17, 24, 39, 0.78);
-  line-height: 1.55;
-}
-
-.commerce-home-featured-banner img {
-  width: 100%;
-  margin-top: 10px;
-  border-radius: 18px;
-  object-fit: cover;
-}
-
-.commerce-home-featured-products {
-  display: grid;
-  gap: 16px;
-}
-
-.commerce-home-featured-tabs {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.commerce-home-featured-tabs a {
-  font-size: 0.88rem;
-}
-
-.commerce-home-featured-tabs a.is-accent {
-  color: #f97316;
-}
-
-.commerce-home-featured-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.commerce-home-featured-card {
-  position: relative;
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #fff;
-}
-
-.commerce-home-featured-card img {
-  height: 150px;
-}
-
-.commerce-home-featured-card strong {
-  font-size: 0.95rem;
-}
-
-.commerce-home-visual-input {
-  display: none;
-}
-
-.home-all-products-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-@media (max-width: 1200px) {
-  .home-all-products-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+@media (max-width: 720px) {
+  .home-page {
+    padding: 16px 16px 48px;
   }
-}
 
-@media (max-width: 900px) {
-  .home-all-products-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .home-page > * + * {
+    margin-top: 36px;
   }
 }
 
 @media (max-width: 1180px) {
-  .commerce-home-header-bar,
-  .commerce-home-hero,
-  .commerce-home-featured-block,
-  .commerce-home-category-rail,
-  .commerce-home-best-grid,
-  .commerce-home-featured-grid,
-  .commerce-home-service-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .commerce-home-search {
-    grid-template-columns: 1fr auto auto;
-  }
-
-  .commerce-home-category-rail {
-    display: flex;
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-
-  .commerce-home-category-arrow {
-    flex: 0 0 auto;
+  .home-product-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 760px) {
-  .commerce-home-page {
-    gap: 22px;
+@media (max-width: 880px) {
+  .home-product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 32px;
+  }
+}
+
+@media (max-width: 540px) {
+  .home-product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 14px;
+    row-gap: 26px;
   }
 
-  .commerce-home-promo-bar,
-  .commerce-home-info-bar,
-  .commerce-home-header-bar,
-  .commerce-home-subnav,
-  .commerce-home-best-deals,
-  .commerce-home-category-showcase {
-    padding-left: 16px;
-    padding-right: 16px;
+  .home-product-grid > * {
+    width: 100%;
   }
+}
 
-  .commerce-home-promo-bar,
-  .commerce-home-info-bar,
-  .commerce-home-subnav,
-  .commerce-home-section-head,
-  .commerce-home-featured-head {
-    grid-template-columns: 1fr;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .commerce-home-brand strong {
-    font-size: 1.35rem;
-  }
-
-  .commerce-home-search {
-    min-height: 52px;
-  }
-
-  .commerce-home-hero-main {
-    grid-template-columns: 1fr;
-    min-height: 360px;
-    padding: 24px 18px 42px;
-  }
-
-  .commerce-home-hero-copy h1 {
-    font-size: 1.65rem;
-  }
-
-  .commerce-home-hero-price {
-    width: 72px;
-    height: 72px;
-    font-size: 1.1rem;
-  }
-
-  .commerce-home-side-card {
-    grid-template-columns: 1fr;
-  }
-
-  .commerce-home-best-grid,
-  .commerce-home-featured-grid {
+@media (max-width: 400px) {
+  .home-product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .commerce-home-best-card.is-featured {
-    grid-column: 1 / -1;
-    grid-row: auto;
-  }
-
-  .commerce-home-best-card.is-featured img {
-    height: 180px;
-  }
-
-  .commerce-home-best-actions {
-    flex-wrap: wrap;
-  }
-
-  .commerce-home-category-card {
-    min-width: 150px;
-  }
-}
-
-.commerce-home-page {
-  gap: 20px;
-  background: #ffffff;
-}
-
-.commerce-home-hero {
-  gap: 16px;
-}
-
-.commerce-home-hero-main,
-.commerce-home-side-card,
-.commerce-home-best-deals,
-.commerce-home-category-showcase {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
-}
-
-.commerce-home-hero-main {
-  min-height: 408px;
-  padding: 30px 32px;
-  background:
-    radial-gradient(circle at top right, rgba(212, 160, 23, 0.1), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(180deg, #ffffff, #fffdf5);
-}
-
-.commerce-home-hero-copy {
-  gap: 12px;
-}
-
-.commerce-home-hero-copy h1 {
-  color: #111827;
-  font-size: clamp(2.1rem, 3vw, 3.15rem);
-}
-
-.commerce-home-hero-copy p {
-  color: #6b7280;
-  font-size: 0.98rem;
-}
-
-.commerce-home-hero-kicker {
-  color: #d4a017;
-}
-
-.commerce-home-hero-cta,
-.commerce-home-banner-cta,
-.commerce-home-primary-action {
-  min-height: 42px;
-  border-radius: 14px;
-  background: #d4a017;
-  color: #111827;
-  box-shadow: none;
-}
-
-.commerce-home-hero-price {
-  width: 88px;
-  height: 88px;
-  background: #fff7da;
-  color: #d4a017;
-  box-shadow: none;
-}
-
-.commerce-home-hero-dot.is-active {
-  background: #d4a017;
-}
-
-.commerce-home-side-card {
-  min-height: 198px;
-  padding: 20px;
-  border-radius: 22px;
-}
-
-.commerce-home-side-card.is-dark {
-  background:
-    radial-gradient(circle at top right, rgba(220, 38, 38, 0.08), rgba(255, 255, 255, 0) 36%),
-    linear-gradient(180deg, #ffffff, #fff7f7);
-  color: #111827;
-}
-
-.commerce-home-side-card.is-light {
-  background: linear-gradient(180deg, #ffffff, #fffdf5);
-}
-
-.commerce-home-side-copy span,
-.commerce-home-featured-banner span {
-  color: #dc2626;
-}
-
-.commerce-home-side-copy em {
-  color: #d4a017;
-}
-
-.commerce-home-side-copy strong {
-  color: #111827;
-  font-size: 1.5rem;
-}
-
-.commerce-home-side-copy small {
-  color: #6b7280;
-}
-
-.commerce-home-service-strip {
-  gap: 10px;
-}
-
-.commerce-home-service-card {
-  padding: 16px 18px;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-}
-
-.commerce-home-service-icon {
-  color: #d4a017;
-  background: #fff7da;
-}
-
-.commerce-home-best-deals,
-.commerce-home-category-showcase {
-  gap: 18px;
-  padding: 20px;
-}
-
-.commerce-home-countdown strong {
-  background: #fff7da;
-  color: #a16207;
-}
-
-.commerce-home-section-link,
-.commerce-home-featured-tabs a.is-accent {
-  color: #d4a017;
-}
-
-.commerce-home-best-grid {
-  border-color: rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
-}
-
-.commerce-home-best-card {
-  background: #ffffff;
-  border-right-color: rgba(15, 23, 42, 0.08);
-  border-bottom-color: rgba(15, 23, 42, 0.08);
-}
-
-.commerce-home-best-badge,
-.commerce-home-featured-badge {
-  background: #fff7da;
-  color: #a16207;
-}
-
-.commerce-home-best-badge.is-alert,
-.commerce-home-featured-badge.is-alert {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.commerce-home-best-price strong,
-.commerce-home-featured-price strong,
-.commerce-home-featured-rating,
-.commerce-home-best-rating {
-  color: #d4a017;
-}
-
-.commerce-home-icon-action {
-  border-color: rgba(15, 23, 42, 0.08);
-  color: #d4a017;
-  background: #fff8e7;
-}
-
-.commerce-home-category-arrow {
-  background: #d4a017;
-  color: #111827;
-}
-
-.commerce-home-category-card {
-  min-height: 162px;
-  border-radius: 20px;
-  background: #ffffff;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
-}
-
-.commerce-home-featured-block {
-  gap: 16px;
-}
-
-.commerce-home-featured-banner {
-  background:
-    radial-gradient(circle at top right, rgba(212, 160, 23, 0.14), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(180deg, #ffffff, #fffdf5);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-}
-
-.commerce-home-featured-banner strong {
-  color: #111827;
-}
-
-.commerce-home-featured-banner p {
-  color: #6b7280;
-}
-
-.commerce-home-featured-card {
-  border-radius: 20px;
-  border-color: rgba(15, 23, 42, 0.08);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
-}
-
-@media (max-width: 760px) {
-  .commerce-home-page {
-    gap: 16px;
-  }
-
-  .commerce-home-hero-main,
-  .commerce-home-best-deals,
-  .commerce-home-category-showcase {
-    padding: 18px;
-  }
-
-  .commerce-home-hero-main {
-    min-height: 348px;
-    padding-bottom: 34px;
-  }
-
-  .commerce-home-hero-price {
-    width: 70px;
-    height: 70px;
   }
 }
 </style>

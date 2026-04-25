@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
@@ -658,168 +658,207 @@ function buildBusinessShippingSummaryLine(label, fee, eta) {
 </script>
 
 <template>
-  <section class="business-public-page" aria-label="Profili publik i biznesit">
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
+  <section class="market-page market-page--wide business-profile-page" aria-label="Profili publik i biznesit">
+    <div
+      v-if="ui.message"
+      class="market-status"
+      :class="{
+        'market-status--error': ui.type === 'error',
+        'market-status--success': ui.type === 'success',
+      }"
+      role="status"
+      aria-live="polite"
+    >
       {{ ui.message }}
     </div>
 
-    <section v-if="business" class="card business-public-hero">
-      <div class="business-public-hero-layout">
-        <div class="business-public-branding">
-          <div class="business-public-logo-shell">
-            <img
-              v-if="business.logoPath"
-              class="business-public-logo"
-              :src="business.logoPath"
-              :alt="business.businessName"
-              width="240"
-              height="240"
-              loading="lazy"
-              decoding="async"
-            >
-            <span v-else class="business-public-logo-fallback">
-              {{ getBusinessInitials(business.businessName) }}
-            </span>
-          </div>
+    <section v-if="business" class="business-profile-page__shell">
+      <nav class="market-page__crumbs" aria-label="Breadcrumb">
+        <RouterLink to="/">Home</RouterLink>
+        <span aria-hidden="true">/</span>
+        <RouterLink to="/kerko">Marketplace</RouterLink>
+        <span aria-hidden="true">/</span>
+        <strong>{{ business.businessName }}</strong>
+      </nav>
 
-          <div class="business-public-copy">
-            <p class="section-label">Biznes partner</p>
-            <h1>{{ business.businessName }}</h1>
-            <p class="section-text">
-              {{ business.businessDescription || "Ky biznes ende nuk ka shtuar pershkrim." }}
-            </p>
-            <div class="product-detail-tags product-detail-tags-saved">
-              <span class="product-detail-tag">
-                {{ formatVerificationStatusLabel(business.verificationStatus) }}
-              </span>
-              <span class="product-detail-tag" v-if="Number(business.sellerReviewCount || 0) > 0">
-                {{ Number(business.sellerRating || 0).toFixed(1) }} / 5 • {{ business.sellerReviewCount }} review
+      <header class="market-card market-card--padded business-hero">
+        <div class="business-hero__main">
+          <div class="business-hero__identity">
+            <div class="business-hero__logo">
+              <img
+                v-if="business.logoPath"
+                :src="business.logoPath"
+                :alt="business.businessName"
+                width="240"
+                height="240"
+                loading="lazy"
+                decoding="async"
+              >
+              <span v-else class="business-hero__logo-mark">
+                {{ getBusinessInitials(business.businessName) }}
               </span>
             </div>
+
+            <div class="business-hero__summary">
+              <p class="business-hero__label">Marketplace seller</p>
+              <h1>{{ business.businessName }}</h1>
+              <p class="section-heading__copy">
+                {{ business.businessDescription || "Ky biznes ende nuk ka shtuar pershkrim." }}
+              </p>
+            </div>
+          </div>
+
+          <div class="business-hero__meta">
+            <span>{{ formatVerificationStatusLabel(business.verificationStatus) }}</span>
+            <span v-if="Number(business.sellerReviewCount || 0) > 0">
+              {{ Number(business.sellerRating || 0).toFixed(1) }} / 5 • {{ business.sellerReviewCount }} reviews
+            </span>
+            <span>{{ business.city || "Kosove" }}</span>
+            <span>{{ business.supportEmail || business.phoneNumber || "Marketplace support" }}</span>
           </div>
         </div>
 
-        <div class="business-public-actions">
+        <div class="business-hero__actions">
           <button
-            class="nav-action business-follow-button"
-            :class="business.isFollowed ? 'nav-action-secondary' : 'nav-action-primary'"
+            class="market-button market-button--primary"
             type="button"
             :disabled="!canFollow"
             @click="toggleFollow"
           >
-            {{ business.isFollowed ? "Following" : "Follow" }}
+            {{ business.isFollowed ? "Following" : "Follow store" }}
           </button>
 
           <button
-            class="nav-action nav-action-secondary business-message-button"
-            :class="{ 'is-disabled': !canUseMessageAction || openingChat }"
+            class="market-button market-button--secondary"
             type="button"
             :disabled="!canUseMessageAction || openingChat"
             @click="handleOpenChat"
           >
-            {{ openingChat ? "Duke hapur..." : messageActionLabel }}
+            {{ openingChat ? "Opening..." : messageActionLabel }}
           </button>
 
-          <button
-            class="nav-action nav-action-secondary business-message-button"
-            type="button"
-            @click="handleReportBusiness"
+          <a
+            v-if="business.websiteUrl"
+            class="market-button market-button--ghost"
+            :href="business.websiteUrl"
+            target="_blank"
+            rel="noreferrer"
           >
-            Raporto
+            Website
+          </a>
+
+          <button class="market-button market-button--ghost" type="button" @click="handleReportBusiness">
+            Report
           </button>
         </div>
+      </header>
 
-        <div class="business-public-stats">
-          <div class="summary-chip">
-            <span>Produktet publike</span>
-            <strong>{{ business.productsCount || 0 }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Followers</span>
-            <strong>{{ business.followersCount || 0 }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Qyteti</span>
-            <strong>{{ business.city || "-" }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Telefoni</span>
-            <strong>{{ business.phoneNumber || "-" }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Adresa</span>
-            <strong>{{ business.addressLine || "-" }}</strong>
-          </div>
-          <div class="summary-chip">
-            <span>Kontakti</span>
-            <strong>{{ business.supportEmail || business.phoneNumber || "Mesazho biznesin ne TREGIO" }}</strong>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="business" class="card business-public-contact-section">
-      <div class="collection-page-header business-public-products-header">
-        <p class="section-label">Kontakti dhe transporti</p>
-        <h2>Informata te biznesit</h2>
-        <p>Website, support, politika e kthimit dhe menyra e dergeses shfaqen qarte per bleresin.</p>
-      </div>
-
-      <div class="business-public-stats">
-        <div v-for="item in businessContactSummary" :key="`contact-${item.label}`" class="summary-chip">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-        </div>
-        <div v-for="item in businessShippingSummary" :key="`shipping-${item.label}`" class="summary-chip">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-        </div>
-      </div>
-    </section>
-
-    <div v-else class="business-public-empty-state">
-      <h1>Biznesi nuk u gjet.</h1>
-    </div>
-
-    <section class="business-public-products-section">
-      <div class="collection-page-header business-public-products-header">
-        <p class="section-label">Artikujt e biznesit</p>
-        <h2>Produktet publike</h2>
-        <p>Shfleto artikujt qe ky biznes i ka publikuar ne TREGIO.</p>
-      </div>
-
-      <section v-if="products.length > 0" class="pet-products-grid" aria-label="Produktet e biznesit">
-        <ProductCard
-          v-for="product in products"
-          :key="product.id"
-          :product="product"
-          :is-wishlisted="wishlistIds.includes(product.id)"
-          :is-in-cart="cartIds.includes(product.id)"
-          :is-compared="comparedProductIds.includes(product.id)"
-          @wishlist="handleWishlist"
-          @cart="handleCart"
-          @compare="handleCompare"
-        />
+      <section class="metric-grid">
+        <article class="metric-card">
+          <p class="metric-card__label">Public products</p>
+          <strong>{{ business.productsCount || 0 }}</strong>
+        </article>
+        <article class="metric-card">
+          <p class="metric-card__label">Followers</p>
+          <strong>{{ business.followersCount || 0 }}</strong>
+        </article>
+        <article class="metric-card">
+          <p class="metric-card__label">City</p>
+          <strong>{{ business.city || "-" }}</strong>
+        </article>
+        <article class="metric-card">
+          <p class="metric-card__label">Phone</p>
+          <strong>{{ business.phoneNumber || "-" }}</strong>
+        </article>
+        <article class="metric-card">
+          <p class="metric-card__label">Address</p>
+          <strong>{{ business.addressLine || "-" }}</strong>
+        </article>
+        <article class="metric-card">
+          <p class="metric-card__label">Support</p>
+          <strong>{{ business.supportEmail || business.phoneNumber || "Mesazho biznesin ne TREGIO" }}</strong>
+        </article>
       </section>
 
-      <div v-if="products.length > 0 && hasMoreProducts" class="collection-load-more" :class="{ 'is-auto-loading': supportsAutoLoad }">
-        <div
-          v-if="supportsAutoLoad"
-          ref="loadMoreSentinel"
-          class="collection-load-more-sentinel"
-          aria-hidden="true"
-        ></div>
-        <p v-if="loadingMoreProducts" class="collection-load-more-copy">
-          Duke ngarkuar edhe 6 produkte...
-        </p>
-        <button v-else-if="!supportsAutoLoad" class="search-reset-button collection-load-more-button" type="button" :disabled="loadingMoreProducts" @click="loadMoreProducts">
-          {{ loadingMoreProducts ? "Duke ngarkuar..." : "Shih me shume" }}
-        </button>
-      </div>
+      <section class="market-card market-card--padded">
+        <div class="market-page__header">
+          <div class="market-page__header-copy">
+            <p class="market-page__eyebrow">Store details</p>
+            <h2>Contact and delivery information</h2>
+            <p>
+              Website, support, return policy, and delivery methods are grouped in one clear section to improve trust before purchase.
+            </p>
+          </div>
+        </div>
 
-      <div v-else class="pets-empty-state">
-        Ky biznes ende nuk ka produkte publike.
-      </div>
+        <div class="business-contact-grid">
+          <div v-for="item in businessContactSummary" :key="`contact-${item.label}`">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+          <div v-for="item in businessShippingSummary" :key="`shipping-${item.label}`">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="market-card market-card--padded">
+        <div class="market-page__header">
+          <div class="market-page__header-copy">
+            <p class="market-page__eyebrow">Catalog</p>
+            <h2>Products from this seller</h2>
+            <p>Shfleto artikujt qe ky biznes i ka publikuar ne TREGIO.</p>
+          </div>
+        </div>
+
+        <div v-if="products.length > 0" class="product-collection__grid" aria-label="Produktet e biznesit">
+          <ProductCard
+            v-for="product in products"
+            :key="product.id"
+            :product="product"
+            :is-wishlisted="wishlistIds.includes(product.id)"
+            :is-in-cart="cartIds.includes(product.id)"
+            :is-compared="comparedProductIds.includes(product.id)"
+            @wishlist="handleWishlist"
+            @cart="handleCart"
+            @compare="handleCompare"
+          />
+        </div>
+
+        <div v-else class="market-empty">
+          <h3>No public products yet</h3>
+          <p>This seller has not published products to the marketplace yet.</p>
+        </div>
+
+        <div v-if="products.length > 0 && hasMoreProducts" class="business-profile__products-footer">
+          <div
+            v-if="supportsAutoLoad"
+            ref="loadMoreSentinel"
+            aria-hidden="true"
+          ></div>
+          <span v-if="loadingMoreProducts" class="section-heading__copy">Loading more products...</span>
+          <button
+            v-else-if="!supportsAutoLoad"
+            class="market-button market-button--secondary"
+            type="button"
+            :disabled="loadingMoreProducts"
+            @click="loadMoreProducts"
+          >
+            {{ loadingMoreProducts ? "Loading..." : "Show more" }}
+          </button>
+        </div>
+      </section>
     </section>
+
+    <div v-else class="market-empty">
+      <h2>Biznesi nuk u gjet</h2>
+      <p>This seller page may have been removed or is no longer public.</p>
+      <div class="market-empty__actions">
+        <RouterLink class="market-button market-button--secondary" to="/kerko">
+          Browse marketplace
+        </RouterLink>
+      </div>
+    </div>
   </section>
 </template>

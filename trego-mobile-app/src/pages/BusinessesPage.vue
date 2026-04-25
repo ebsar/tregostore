@@ -195,25 +195,25 @@ watch([query, selectedCategory], async () => {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page mobile-page--tabbed mobile-page--edge businesses-page">
-        <section class="businesses-top-shell surface-card">
-          <div class="businesses-search-shell">
+    <IonContent :fullscreen="true">
+      <div>
+        <section>
+          <div>
             <IonIcon :icon="storefrontOutline" />
             <input
               v-model="query"
-              class="businesses-search-input"
+             
               type="search"
               placeholder="Kerko biznesin"
             >
           </div>
 
-          <div class="chip-row businesses-filter-row">
+          <div>
             <button
               v-for="category in categories"
               :key="category"
-              class="chip businesses-filter-chip"
-              :class="{ 'is-active': selectedCategory === category }"
+             
+             
               type="button"
               @click="selectedCategory = category"
             >
@@ -222,11 +222,11 @@ watch([query, selectedCategory], async () => {
           </div>
         </section>
 
-        <section v-if="loading" class="stack-list">
+        <section v-if="loading">
           <BusinessCardSkeleton v-for="index in 4" :key="index" />
         </section>
 
-        <section v-else-if="visibleBusinesses.length" class="stack-list">
+        <section v-else-if="visibleBusinesses.length">
           <BusinessCardMobile
             v-for="business in visibleBusinesses"
             :key="business.id"
@@ -261,79 +261,3 @@ watch([query, selectedCategory], async () => {
   </IonPage>
 </template>
 
-<style scoped>
-.businesses-page {
-  gap: 14px;
-}
-
-.businesses-top-shell {
-  position: sticky;
-  top: calc(env(safe-area-inset-top, 0px) + 8px);
-  z-index: 6;
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-}
-
-.businesses-search-shell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 0 16px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
-    radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.18), transparent 30%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    0 14px 28px rgba(31, 41, 55, 0.08);
-}
-
-.businesses-search-shell ion-icon {
-  color: var(--trego-accent);
-  font-size: 1rem;
-}
-
-.businesses-search-input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--trego-dark);
-  font: inherit;
-  font-size: 0.98rem;
-  font-weight: 700;
-}
-
-.businesses-search-input::placeholder {
-  color: var(--trego-muted);
-}
-
-.businesses-filter-row {
-  padding-bottom: 2px;
-}
-
-.businesses-filter-chip.is-active {
-  background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.96), rgba(29, 78, 216, 0.9));
-  color: #fffdf9;
-  border-color: rgba(59, 130, 246, 0.42);
-  box-shadow: 0 14px 24px rgba(37, 99, 235, 0.16);
-}
-
-body[data-theme="dark"] .businesses-top-shell {
-  background: rgba(6, 12, 22, 0.82);
-}
-
-body[data-theme="dark"] .businesses-search-shell {
-  border-color: rgba(198, 214, 242, 0.14);
-  background: rgba(19, 27, 42, 0.78);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-body[data-theme="dark"] .businesses-search-input {
-  color: rgba(241, 245, 249, 0.92);
-}
-</style>

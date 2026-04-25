@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import {
   formatCategoryLabel,
@@ -25,6 +25,8 @@ const emit = defineEmits([
   "toggle-stock-public",
 ]);
 const route = useRoute();
+const cardRef = ref(null);
+const actionsOpen = ref(false);
 const detailUrl = computed(() => getProductDetailUrl(props.product.id, route.fullPath));
 
 const visibilityLabel = computed(() =>
@@ -80,21 +82,61 @@ const engagementItems = computed(() => ([
   { label: "Cart", value: formatCount(props.product.cartCount || 0) },
   { label: "Share", value: formatCount(props.product.shareCount || 0) },
 ]));
+
+onMounted(() => {
+  if (typeof window !== "undefined") {
+    window.addEventListener("pointerdown", handlePointerDownOutside);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("pointerdown", handlePointerDownOutside);
+  }
+});
+
+function handlePointerDownOutside(event) {
+  if (!actionsOpen.value) {
+    return;
+  }
+
+  if (cardRef.value?.contains?.(event.target)) {
+    return;
+  }
+
+  actionsOpen.value = false;
+}
+
+function toggleActions() {
+  actionsOpen.value = !actionsOpen.value;
+}
+
+function handleEdit() {
+  actionsOpen.value = false;
+  emit("edit", props.product);
+}
+
+function handleToggleVisibility() {
+  actionsOpen.value = false;
+  emit("toggle-visibility", props.product);
+}
+
+function handleToggleStockPublic() {
+  actionsOpen.value = false;
+  emit("toggle-stock-public", props.product);
+}
+
+function handleDelete() {
+  actionsOpen.value = false;
+  emit("delete", props.product);
+}
 </script>
 
 <template>
-  <article
-    class="admin-product-item"
-    :class="{
-      'is-hidden': !product.isPublic,
-      'is-out-of-stock': stockStateClass === 'is-out-of-stock',
-      'is-low-stock': stockStateClass === 'is-low-stock',
-    }"
-  >
-    <RouterLink class="admin-product-link" :to="detailUrl">
-      <div class="admin-product-thumb-wrap">
+  <article ref="cardRef" class="managed-product-card" :class="{ 'is-actions-open': actionsOpen }">
+    <RouterLink :to="detailUrl">
+      <div class="managed-product-card__media">
         <img
-          class="admin-product-thumb"
           :src="product.imagePath"
           :alt="product.title"
           width="640"
@@ -105,60 +147,70 @@ const engagementItems = computed(() => ([
       </div>
     </RouterLink>
 
-    <div class="admin-product-copy">
-      <div class="admin-product-head-meta">
-        <p class="admin-product-meta">{{ formatCategoryLabel(product.category) }}</p>
-        <p v-if="product.articleNumber" class="admin-product-article">Nr. {{ product.articleNumber }}</p>
+    <div class="managed-product-card__body">
+      <div class="managed-product-card__top">
+        <div>
+          <p class="managed-product-card__eyebrow">{{ formatCategoryLabel(product.category) }}</p>
+          <p v-if="product.articleNumber" class="managed-product-card__eyebrow">Nr. {{ product.articleNumber }}</p>
+        </div>
+        <div class="managed-product-card__top-actions">
+          <strong>{{ formatPrice(product.price) }}</strong>
+          <button
+            type="button"
+            class="managed-product-card__menu-toggle"
+            :aria-expanded="actionsOpen ? 'true' : 'false'"
+            aria-label="Open product actions"
+            @click.stop="toggleActions"
+          >
+            {{ actionsOpen ? "−" : "+" }}
+          </button>
+        </div>
       </div>
       <h3>
-        <RouterLink class="admin-product-title-link" :to="detailUrl">
+        <RouterLink :to="detailUrl">
           {{ product.title }}
         </RouterLink>
       </h3>
-      <p class="admin-product-stock-state" :class="stockStateClass">
+      <p class="managed-product-card__stock">
         {{ stockStateLabel }}
       </p>
-      <p>{{ product.description }}</p>
-      <div class="admin-product-metrics" aria-label="Statistikat e produktit">
+      <p class="managed-product-card__description">{{ product.description }}</p>
+      <div class="managed-product-card__metrics" aria-label="Statistikat e produktit">
         <span
           v-for="item in engagementItems"
           :key="`${product.id}-${item.label}`"
-          class="admin-product-metric"
+          class="managed-product-card__metric"
         >
           <small>{{ item.label }}</small>
           <strong>{{ item.value }}</strong>
         </span>
       </div>
-      <div class="product-detail-tags product-detail-tags-admin">
+      <div class="managed-product-card__details">
         <span
           v-for="detail in details"
           :key="detail"
-          class="product-detail-tag"
         >
           {{ detail }}
         </span>
       </div>
     </div>
 
-    <div class="admin-product-side">
-      <strong class="admin-product-price">{{ formatPrice(product.price) }}</strong>
-      <div class="admin-product-controls">
-        <button class="product-action-button admin-action-button" type="button" @click="$emit('edit', product)">
-          <span>Edito artikullin</span>
-        </button>
+    <div v-if="actionsOpen" class="managed-product-card__actions">
+      <button class="market-button market-button--primary" type="button" @click="handleEdit">
+        <span>Edit product</span>
+      </button>
 
-        <button class="product-action-button admin-action-button" type="button" @click="$emit('toggle-visibility', product)">
-          <span>{{ visibilityLabel }}</span>
-        </button>
+      <button class="market-button market-button--secondary" type="button" @click="handleToggleVisibility">
+        <span>{{ visibilityLabel }}</span>
+      </button>
 
-        <button class="product-action-button admin-action-button" type="button" @click="$emit('toggle-stock-public', product)">
-          <span>{{ stockLabel }}</span>
-        </button>
+      <button class="market-button market-button--ghost" type="button" @click="handleToggleStockPublic">
+        <span>{{ stockLabel }}</span>
+      </button>
 
-        <button class="product-action-button admin-action-button admin-action-danger" type="button" @click="$emit('delete', product)">
-          <span>Fshije produktin</span>
-        </button>
-      </div>
+      <button class="market-button market-button--ghost" type="button" @click="handleDelete">
+        <span>Delete product</span>
+      </button>
     </div>
   </article>
 </template>

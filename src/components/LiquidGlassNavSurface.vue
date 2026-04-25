@@ -321,11 +321,11 @@ const surfaceStyle = computed<Partial<CSSProperties>>(() => ({
 <template>
   <div
     ref="surfaceRef"
-    :class="['liquid-glass-nav-surface', className]"
-    :style="surfaceStyle"
+   
+   
   >
     <GlassFilter
-      :id="filterId"
+     
       :mode="mode"
       :displacementScale="displacementScale"
       :aberrationIntensity="aberrationIntensity"
@@ -335,170 +335,42 @@ const surfaceStyle = computed<Partial<CSSProperties>>(() => ({
     />
 
     <div
-      :class="`bg-black transition-all duration-150 ease-in-out pointer-events-none ${overLight ? 'opacity-20' : 'opacity-0'}`"
-      :style="{
-        position: 'absolute',
-        inset: '0',
-        borderRadius: `${cornerRadius}px`,
-      }"
+     
+     
     ></div>
 
     <div
-      :class="`bg-black transition-all duration-150 ease-in-out pointer-events-none mix-blend-overlay ${overLight ? 'opacity-100' : 'opacity-0'}`"
-      :style="{
-        position: 'absolute',
-        inset: '0',
-        borderRadius: `${cornerRadius}px`,
-      }"
+     
+     
     ></div>
 
     <div
-      class="liquid-glass-nav-surface-base"
+     
     >
       <span
-        class="glass__warp"
-        :style="{
-          ...backdropStyle,
-          position: 'absolute',
-          inset: '0',
-        }"
+       
+       
       ></span>
-      <span class="liquid-glass-nav-surface-fill"></span>
-      <span class="liquid-glass-nav-surface-specular"></span>
-      <span class="liquid-glass-nav-surface-depth"></span>
+      <span></span>
+      <span></span>
+      <span></span>
     </div>
 
     <span
-      class="liquid-glass-nav-surface-outline"
-      :style="{
-        position: 'absolute',
-        inset: '0',
-        background: borderGradient,
-      }"
+     
+     
     ></span>
 
     <span
-      class="liquid-glass-nav-surface-glint"
-      :style="{
-        position: 'absolute',
-        inset: '0',
-        background: borderGradientStrong,
-      }"
+     
+     
     ></span>
 
-    <span class="liquid-glass-nav-surface-iridescence"></span>
+    <span></span>
 
-    <div class="liquid-glass-nav-surface-content">
+    <div>
       <slot />
     </div>
   </div>
 </template>
 
-<style scoped>
-.liquid-glass-nav-surface {
-  position: relative;
-  display: block;
-  width: 100%;
-  isolation: isolate;
-  border-radius: var(--liquid-nav-radius);
-}
-
-.liquid-glass-nav-surface-base {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: var(--liquid-nav-shadow);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.05)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 46%, rgba(255, 255, 255, 0.07));
-}
-
-.glass__warp,
-.liquid-glass-nav-surface-fill,
-.liquid-glass-nav-surface-specular,
-.liquid-glass-nav-surface-depth,
-.liquid-glass-nav-surface-outline,
-.liquid-glass-nav-surface-glint,
-.liquid-glass-nav-surface-iridescence {
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.glass__warp {
-  opacity: 0.96;
-}
-
-.liquid-glass-nav-surface-fill {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(120% 88% at 50% 0%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06) 26%, rgba(255, 255, 255, 0) 56%),
-    radial-gradient(140% 120% at 50% 100%, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 64%);
-  mix-blend-mode: screen;
-  opacity: 0.7;
-}
-
-.liquid-glass-nav-surface-specular {
-  position: absolute;
-  inset: 1px 5% auto;
-  height: 22%;
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.22) 58%, rgba(255, 255, 255, 0) 100%);
-  opacity: var(--liquid-nav-specular-opacity);
-  filter: blur(0.4px);
-}
-
-.liquid-glass-nav-surface-depth {
-  position: absolute;
-  inset: 0;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.58),
-    inset 0 8px 16px rgba(255, 255, 255, 0.08),
-    inset 0 -10px 18px rgba(0, 0, 0, 0.12),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.liquid-glass-nav-surface-outline,
-.liquid-glass-nav-surface-glint {
-  padding: 1.35px;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
-
-.liquid-glass-nav-surface-outline {
-  mix-blend-mode: screen;
-  opacity: var(--liquid-nav-outline-opacity);
-  box-shadow:
-    0 0 0 0.5px rgba(255, 255, 255, 0.5) inset,
-    0 1px 3px rgba(255, 255, 255, 0.25) inset,
-    0 1px 4px rgba(0, 0, 0, 0.35);
-}
-
-.liquid-glass-nav-surface-glint {
-  mix-blend-mode: overlay;
-  opacity: 0.42;
-}
-
-.liquid-glass-nav-surface-iridescence {
-  position: absolute;
-  inset: auto 4% 0;
-  height: 26%;
-  border-radius: 999px;
-  background:
-    linear-gradient(90deg, rgba(92, 181, 255, 0.22), rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0) 72%, rgba(255, 140, 204, 0.22));
-  opacity: var(--liquid-nav-iridescence-opacity);
-  filter: blur(5px);
-}
-
-.liquid-glass-nav-surface-content {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  pointer-events: auto;
-}
-</style>

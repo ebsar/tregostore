@@ -189,8 +189,8 @@ async function handleReportUpdate(report: ReportItem, status: string) {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page">
+    <IonContent :fullscreen="true">
+      <div>
         <AppPageHeader
           kicker="Admin"
           title="Kontroll qendror per users, biznese dhe raportime."
@@ -203,7 +203,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           title="Kyçu si admin"
           copy="Paneli i administrimit shfaqet sapo te hysh me llogari admin."
         >
-          <IonButton class="cta-button" style="margin-top: 14px;" @click="router.push('/login?redirect=/admin/control')">
+          <IonButton @click="router.push('/login?redirect=/admin/control')">
             Login
           </IonButton>
         </EmptyStatePanel>
@@ -215,9 +215,9 @@ async function handleReportUpdate(report: ReportItem, status: string) {
         />
 
         <template v-else>
-          <section class="surface-card surface-card--strong section-card">
-            <div class="mini-stat-grid">
-              <article v-for="item in statCards" :key="item.label" class="mini-stat">
+          <section>
+            <div>
+              <article v-for="item in statCards" :key="item.label">
                 <IonIcon :icon="item.icon" />
                 <strong>{{ item.value }}</strong>
                 <span>{{ item.label }}</span>
@@ -225,50 +225,50 @@ async function handleReportUpdate(report: ReportItem, status: string) {
             </div>
           </section>
 
-          <section class="chip-row">
-            <button class="chip" :class="{ 'chip--active': activeSection === 'users' }" type="button" @click="activeSection = 'users'">Users</button>
-            <button class="chip" :class="{ 'chip--active': activeSection === 'businesses' }" type="button" @click="activeSection = 'businesses'">Biznese</button>
-            <button class="chip" :class="{ 'chip--active': activeSection === 'reports' }" type="button" @click="activeSection = 'reports'">Reports</button>
-            <button class="chip" :class="{ 'chip--active': activeSection === 'products' }" type="button" @click="activeSection = 'products'">Produkte</button>
+          <section>
+            <button type="button" @click="activeSection = 'users'">Users</button>
+            <button type="button" @click="activeSection = 'businesses'">Biznese</button>
+            <button type="button" @click="activeSection = 'reports'">Reports</button>
+            <button type="button" @click="activeSection = 'products'">Produkte</button>
           </section>
 
-          <p v-if="ui.message" class="checkout-message" :class="ui.type">{{ ui.message }}</p>
+          <p v-if="ui.message">{{ ui.message }}</p>
 
-          <section v-if="loading" class="surface-card empty-panel">
+          <section v-if="loading">
             <p>Po ngarkohet paneli admin...</p>
           </section>
 
           <template v-else-if="activeSection === 'users'">
-            <section class="stack-list">
-              <article v-for="user in users" :key="user.id" class="surface-card section-card stack-list">
-                <div class="section-head">
+            <section>
+              <article v-for="user in users" :key="user.id">
+                <div>
                   <div>
-                    <p class="section-kicker">User</p>
+                    <p>User</p>
                     <h2>{{ user.fullName || "Pa emer" }}</h2>
-                    <p class="section-copy">{{ user.email || "-" }}</p>
+                    <p>{{ user.email || "-" }}</p>
                   </div>
-                  <span class="meta-pill">{{ user.role || "client" }}</span>
+                  <span>{{ user.role || "client" }}</span>
                 </div>
 
-                <div class="checkout-grid">
-                  <label class="checkout-field">
+                <div>
+                  <label>
                     <span>Roli</span>
-                    <select v-model="draftForUser(user).role" class="mobile-select">
+                    <select v-model="draftForUser(user).role">
                       <option value="client">Client</option>
                       <option value="business">Business</option>
                       <option value="admin">Admin</option>
                     </select>
                   </label>
-                  <label class="checkout-field">
+                  <label>
                     <span>Fjalekalim i perkohshem</span>
-                    <input v-model="draftForUser(user).password" class="promo-input" type="text" placeholder="Ndrysho fjalekalimin" />
+                    <input v-model="draftForUser(user).password" type="text" placeholder="Ndrysho fjalekalimin" />
                   </label>
                 </div>
 
-                <div class="action-row">
-                  <IonButton class="ghost-button" @click="handleUpdateRole(user)">Ruaje rolin</IonButton>
-                  <IonButton class="ghost-button" @click="handleSetPassword(user)">Ruaje password</IonButton>
-                  <IonButton class="ghost-button danger-button" @click="handleDeleteUser(user)">
+                <div>
+                  <IonButton @click="handleUpdateRole(user)">Ruaje rolin</IonButton>
+                  <IonButton @click="handleSetPassword(user)">Ruaje password</IonButton>
+                  <IonButton @click="handleDeleteUser(user)">
                     <IonIcon slot="start" :icon="trashOutline" />
                     Fshije
                   </IonButton>
@@ -278,63 +278,63 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           </template>
 
           <template v-else-if="activeSection === 'businesses'">
-            <section class="surface-card section-card stack-list">
+            <section>
               <div>
-                <p class="section-kicker">Biznes i ri</p>
+                <p>Biznes i ri</p>
                 <h2>Krijo llogari biznesi</h2>
               </div>
 
-              <div class="checkout-grid">
-                <label class="checkout-field"><span>Pronari</span><input v-model="createBusinessForm.fullName" class="promo-input" type="text" placeholder="Emri dhe mbiemri" /></label>
-                <label class="checkout-field"><span>Email</span><input v-model="createBusinessForm.email" class="promo-input" type="email" placeholder="biznesi@email.com" /></label>
+              <div>
+                <label><span>Pronari</span><input v-model="createBusinessForm.fullName" type="text" placeholder="Emri dhe mbiemri" /></label>
+                <label><span>Email</span><input v-model="createBusinessForm.email" type="email" placeholder="biznesi@email.com" /></label>
               </div>
-              <div class="checkout-grid">
-                <label class="checkout-field"><span>Password</span><input v-model="createBusinessForm.password" class="promo-input" type="text" placeholder="Fjalekalimi" /></label>
-                <label class="checkout-field"><span>Biznesi</span><input v-model="createBusinessForm.businessName" class="promo-input" type="text" placeholder="Emri i biznesit" /></label>
+              <div>
+                <label><span>Password</span><input v-model="createBusinessForm.password" type="text" placeholder="Fjalekalimi" /></label>
+                <label><span>Biznesi</span><input v-model="createBusinessForm.businessName" type="text" placeholder="Emri i biznesit" /></label>
               </div>
-              <div class="checkout-grid">
-                <label class="checkout-field"><span>Nr. biznesit</span><input v-model="createBusinessForm.businessNumber" class="promo-input" type="text" placeholder="BR-..." /></label>
-                <label class="checkout-field"><span>Telefoni</span><input v-model="createBusinessForm.phoneNumber" class="promo-input" type="text" placeholder="+383..." /></label>
+              <div>
+                <label><span>Nr. biznesit</span><input v-model="createBusinessForm.businessNumber" type="text" placeholder="BR-..." /></label>
+                <label><span>Telefoni</span><input v-model="createBusinessForm.phoneNumber" type="text" placeholder="+383..." /></label>
               </div>
-              <div class="checkout-grid">
-                <label class="checkout-field"><span>Qyteti</span><input v-model="createBusinessForm.city" class="promo-input" type="text" placeholder="Prishtine" /></label>
-                <label class="checkout-field"><span>Adresa</span><input v-model="createBusinessForm.addressLine" class="promo-input" type="text" placeholder="Adresa e biznesit" /></label>
+              <div>
+                <label><span>Qyteti</span><input v-model="createBusinessForm.city" type="text" placeholder="Prishtine" /></label>
+                <label><span>Adresa</span><input v-model="createBusinessForm.addressLine" type="text" placeholder="Adresa e biznesit" /></label>
               </div>
-              <label class="checkout-field"><span>Pershkrimi</span><textarea v-model="createBusinessForm.businessDescription" class="mobile-textarea" rows="3" /></label>
+              <label><span>Pershkrimi</span><textarea v-model="createBusinessForm.businessDescription" rows="3" /></label>
 
-              <IonButton class="cta-button" @click="handleCreateBusiness">Krijo biznesin</IonButton>
+              <IonButton @click="handleCreateBusiness">Krijo biznesin</IonButton>
             </section>
 
-            <section class="stack-list">
-              <article v-for="business in businesses" :key="business.id" class="surface-card section-card stack-list">
-                <div class="section-head">
+            <section>
+              <article v-for="business in businesses" :key="business.id">
+                <div>
                   <div>
-                    <p class="section-kicker">Biznes</p>
+                    <p>Biznes</p>
                     <h2>{{ business.businessName || "Biznes pa emer" }}</h2>
-                    <p class="section-copy">{{ business.ownerName || "-" }} · {{ business.ownerEmail || "-" }}</p>
+                    <p>{{ business.ownerName || "-" }} · {{ business.ownerEmail || "-" }}</p>
                   </div>
-                  <span class="meta-pill">{{ business.verificationStatus || "locked" }}</span>
+                  <span>{{ business.verificationStatus || "locked" }}</span>
                 </div>
 
-                <div class="mini-stat-grid">
-                  <article class="mini-stat"><strong>{{ formatCount(business.productsCount || 0) }}</strong><span>produkte</span></article>
-                  <article class="mini-stat"><strong>{{ formatCount(business.ordersCount || 0) }}</strong><span>porosi</span></article>
-                  <article class="mini-stat"><strong>{{ business.profileEditAccessStatus || "locked" }}</strong><span>editim</span></article>
+                <div>
+                  <article><strong>{{ formatCount(business.productsCount || 0) }}</strong><span>produkte</span></article>
+                  <article><strong>{{ formatCount(business.ordersCount || 0) }}</strong><span>porosi</span></article>
+                  <article><strong>{{ business.profileEditAccessStatus || "locked" }}</strong><span>editim</span></article>
                 </div>
 
-                <div class="action-row">
-                  <IonButton class="ghost-button" @click="handleBusinessVerification(business, 'verified')">Verifiko</IonButton>
-                  <IonButton class="ghost-button" @click="handleBusinessVerification(business, 'rejected')">Refuzo</IonButton>
+                <div>
+                  <IonButton @click="handleBusinessVerification(business, 'verified')">Verifiko</IonButton>
+                  <IonButton @click="handleBusinessVerification(business, 'rejected')">Refuzo</IonButton>
                   <IonButton
                     v-if="business.profileEditAccessStatus === 'pending' || business.profileEditAccessStatus === 'locked'"
-                    class="ghost-button"
+                   
                     @click="handleBusinessEditAccess(business, 'approved')"
                   >
                     Lejo editim
                   </IonButton>
                   <IonButton
                     v-if="business.profileEditAccessStatus === 'approved'"
-                    class="ghost-button"
+                   
                     @click="handleBusinessEditAccess(business, 'locked')"
                   >
                     Mbylle editim
@@ -345,40 +345,40 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           </template>
 
           <template v-else-if="activeSection === 'reports'">
-            <section class="stack-list">
-              <article v-for="report in reports" :key="report.id" class="surface-card section-card stack-list">
-                <div class="section-head">
+            <section>
+              <article v-for="report in reports" :key="report.id">
+                <div>
                   <div>
-                    <p class="section-kicker">{{ report.targetType || "Report" }}</p>
+                    <p>{{ report.targetType || "Report" }}</p>
                     <h2>{{ report.targetLabel || "Objekt i raportuar" }}</h2>
-                    <p class="section-copy">{{ report.reason || "-" }}</p>
+                    <p>{{ report.reason || "-" }}</p>
                   </div>
-                  <span class="meta-pill">{{ report.status || "open" }}</span>
+                  <span>{{ report.status || "open" }}</span>
                 </div>
 
-                <p class="section-copy">{{ report.details || "Pa detaje shtese." }}</p>
-                <label class="checkout-field">
+                <p>{{ report.details || "Pa detaje shtese." }}</p>
+                <label>
                   <span>Shenimet e adminit</span>
-                  <textarea v-model="reportDrafts[Number(report.id)]" class="mobile-textarea" rows="3" />
+                  <textarea v-model="reportDrafts[Number(report.id)]" rows="3" />
                 </label>
-                <div class="action-row">
-                  <IonButton class="ghost-button" @click="handleReportUpdate(report, 'reviewing')">Reviewing</IonButton>
-                  <IonButton class="ghost-button" @click="handleReportUpdate(report, 'resolved')">Resolved</IonButton>
-                  <IonButton class="ghost-button" @click="handleReportUpdate(report, 'dismissed')">Dismiss</IonButton>
+                <div>
+                  <IonButton @click="handleReportUpdate(report, 'reviewing')">Reviewing</IonButton>
+                  <IonButton @click="handleReportUpdate(report, 'resolved')">Resolved</IonButton>
+                  <IonButton @click="handleReportUpdate(report, 'dismissed')">Dismiss</IonButton>
                 </div>
               </article>
             </section>
           </template>
 
           <template v-else>
-            <section class="stack-list">
-              <div class="section-head">
+            <section>
+              <div>
                 <div>
-                  <p class="section-kicker">Produktet</p>
+                  <p>Produktet</p>
                   <h2>Panorama e katalogut</h2>
                 </div>
               </div>
-              <div class="product-grid">
+              <div>
                 <ProductCardMobile
                   v-for="product in products.slice(0, 12)"
                   :key="product.id"
@@ -395,66 +395,3 @@ async function handleReportUpdate(report: ReportItem, status: string) {
   </IonPage>
 </template>
 
-<style scoped>
-.mini-stat ion-icon {
-  font-size: 1rem;
-  color: var(--trego-accent);
-}
-
-.mobile-select,
-.mobile-textarea {
-  width: 100%;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 18px;
-  background: var(--trego-input-bg);
-  color: var(--trego-dark);
-}
-
-.mobile-select {
-  min-height: 48px;
-  padding: 0 14px;
-}
-
-.mobile-textarea {
-  padding: 12px 14px;
-}
-
-.checkout-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.checkout-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkout-field span {
-  color: var(--trego-dark);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.danger-button {
-  --color: var(--trego-danger);
-}
-
-.chip--active {
-  background: rgba(255, 106, 43, 0.14);
-  border-color: rgba(255, 106, 43, 0.3);
-}
-
-@media (max-width: 420px) {
-  .checkout-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

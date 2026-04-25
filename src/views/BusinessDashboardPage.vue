@@ -1,7 +1,11 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import ProductVariantConfigurator from "../components/ProductVariantConfigurator.vue";
+import DashboardBarChart from "../components/dashboard/DashboardBarChart.vue";
+import DashboardDonutChart from "../components/dashboard/DashboardDonutChart.vue";
+import DashboardLineChart from "../components/dashboard/DashboardLineChart.vue";
+import DashboardShell from "../components/dashboard/DashboardShell.vue";
+import CompactProductConfigurator from "../components/CompactProductConfigurator.vue";
 import {
   commitBusinessCatalogImportPreview,
   createBusinessCatalogImportPreview,
@@ -24,7 +28,6 @@ import {
   PRODUCT_PAGE_SECTION_OPTIONS,
   PRODUCT_SECTION_OPTIONS,
   PRODUCT_TYPE_OPTIONS_BY_CATEGORY,
-  PRODUCT_WEIGHT_UNIT_OPTIONS,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
 import {
@@ -45,12 +48,13 @@ const businessProfile = ref(null);
 const analytics = ref(null);
 const promotions = ref([]);
 const products = ref([]);
-const productSearchQuery = ref("");
+const businessOrders = ref([]);
+const productSearchQuery = ref(readRouteSearchQuery(route.query.q));
 const logoFile = ref(null);
 const logoPreviewUrl = ref("");
-const selectedFiles = ref([]);
-const previewUrls = ref([]);
+const productMediaItems = ref([]);
 const editingProduct = ref(null);
+const productFormCollapsed = ref(false);
 const productTitleInput = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
@@ -160,7 +164,6 @@ const profileForm = reactive({
 const shippingForm = reactive(createDefaultShippingForm());
 
 const productForm = reactive(createEmptyProductFormState());
-const productFormStep = ref("details");
 const ui = reactive({
   accessNote: "Po kontrollohet aksesimi i biznesit...",
   profileMessage: "",
@@ -188,15 +191,11 @@ const importSummary = reactive({
 });
 
 const productPreviewItems = computed(() => {
-  if (previewUrls.value.length > 0) {
-    return previewUrls.value.map((path, index) => ({
-      path,
-      label: index === 0 ? "Cover" : `Foto ${index + 1}`,
-    }));
-  }
-  return productForm.imageGallery.map((path, index) => ({
-    path,
-    label: index === 0 ? "Cover aktual" : `Foto aktuale ${index + 1}`,
+  return productMediaItems.value.map((item, index) => ({
+    id: item.id,
+    kind: item.kind,
+    path: item.path,
+    label: index === 0 ? "Main image" : `Image ${index + 1}`,
   }));
 });
 const businessLogoPreview = computed(() => logoPreviewUrl.value || profileForm.businessLogoPath || "");
@@ -205,25 +204,55 @@ const productMediaCount = computed(() => productPreviewItems.value.length);
 const productStockTotal = computed(() =>
   productVariantEntries.value.reduce((total, entry) => total + Math.max(0, Number(entry.quantity || 0)), 0),
 );
-const productPriceValue = computed(() => Number(productForm.price || 0));
-const productCompareAtPriceValue = computed(() => Number(productForm.compareAtPrice || 0));
-const productDiscountPercent = computed(() => {
-  if (!Number.isFinite(productPriceValue.value) || !Number.isFinite(productCompareAtPriceValue.value) || productPriceValue.value <= 0) {
-    return 0;
+const productPreviewImage = computed(() => productPreviewItems.value[0]?.path || "");
+const productPreviewVariant = computed(() =>
+  productVariantEntries.value.find((entry) => Number(entry.quantity || 0) > 0)
+  || productVariantEntries.value[0]
+  || null,
+);
+const productPreviewPrice = computed(() => {
+  const variantPrice = Number(productPreviewVariant.value?.price || 0);
+  if (variantPrice > 0) {
+    return variantPrice;
   }
-  if (productCompareAtPriceValue.value <= productPriceValue.value) {
-    return 0;
-  }
-  return Math.max(0, Math.round(((productCompareAtPriceValue.value - productPriceValue.value) / productCompareAtPriceValue.value) * 100));
+  return Number(productForm.price || 0);
 });
+const productPreviewSummary = computed(() => {
+  const attributes = productPreviewVariant.value?.attributes && typeof productPreviewVariant.value.attributes === "object"
+    ? Object.entries(productPreviewVariant.value.attributes)
+      .filter(([, value]) => String(value || "").trim())
+      .map(([key, value]) => ({
+        key,
+        label: String(key || "")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replace(/[_-]+/g, " ")
+          .replace(/\b\w/g, (match) => match.toUpperCase())
+          .trim(),
+        value: String(value || "").trim(),
+      }))
+    : [];
+
+  return [
+    { label: "Category", value: formatCategoryLabel(productForm.category) || "Choose category" },
+    { label: "SKU", value: String(productForm.articleNumber || "").trim() || "Set article / SKU" },
+    { label: "Stock", value: formatStockQuantity(productStockTotal.value) || "0" },
+    {
+      label: "Variant",
+      value: String(productPreviewVariant.value?.label || "").trim() || "No variant configured",
+    },
+    ...attributes.slice(0, 4),
+  ];
+});
+const productPriceValue = computed(() => Number(productForm.price || 0));
 const productPricingReady = computed(() => {
   if (!Number.isFinite(productPriceValue.value) || productPriceValue.value <= 0) {
     return false;
   }
-  if (!productCompareAtPriceValue.value) {
+  const compareAtPriceValue = Number(productForm.compareAtPrice || 0);
+  if (!compareAtPriceValue) {
     return true;
   }
-  if (productCompareAtPriceValue.value <= productPriceValue.value) {
+  if (compareAtPriceValue <= productPriceValue.value) {
     return false;
   }
   if (!String(productForm.saleEndsAt || "").trim()) {
@@ -253,40 +282,6 @@ const productChecklist = computed(() => ([
     done: productMediaCount.value > 0,
   },
 ]));
-const productReadyToSave = computed(() => productChecklist.value.every((item) => item.done));
-const productFormSteps = computed(() => ([
-  {
-    id: "details",
-    label: "Detajet",
-    caption: "Titull, kategori, copy",
-    done: productChecklist.value.find((item) => item.key === "title")?.done,
-  },
-  {
-    id: "pricing",
-    label: "Cmimi",
-    caption: "Cmim dhe sale",
-    done: productChecklist.value.find((item) => item.key === "pricing")?.done,
-  },
-  {
-    id: "variants",
-    label: "Variantet",
-    caption: "Opsione dhe stok",
-    done: productChecklist.value.find((item) => item.key === "variants")?.done,
-  },
-  {
-    id: "media",
-    label: "Media",
-    caption: "Cover dhe galeri",
-    done: productChecklist.value.find((item) => item.key === "media")?.done,
-  },
-  {
-    id: "review",
-    label: "Preview",
-    caption: "Check final",
-    done: productReadyToSave.value,
-  },
-]));
-const productPreviewCover = computed(() => productPreviewItems.value[0]?.path || "");
 const filteredProducts = computed(() => {
   const normalizedQuery = String(productSearchQuery.value || "").trim().toLowerCase();
   let nextProducts = [...products.value];
@@ -413,11 +408,51 @@ const outOfStockProducts = computed(() =>
 );
 const stockAlertProducts = computed(() => [...outOfStockProducts.value, ...lowStockProducts.value].slice(0, 6));
 const stockAlertCount = computed(() => outOfStockProducts.value.length + lowStockProducts.value.length);
+const inventorySummaryCards = computed(() => ([
+  {
+    label: "All products",
+    value: formatCount(products.value.length),
+    meta: `${formatCount(products.value.filter((product) => Boolean(product.isPublic)).length)} active`,
+  },
+  {
+    label: "Low stock",
+    value: formatCount(lowStockProducts.value.length),
+    meta: `${STOCK_ALERT_THRESHOLD} units or fewer`,
+  },
+  {
+    label: "Out of stock",
+    value: formatCount(outOfStockProducts.value.length),
+    meta: "Needs restock",
+  },
+  {
+    label: "Hidden",
+    value: formatCount(products.value.filter((product) => !product.isPublic).length),
+    meta: "Not visible to users",
+  },
+]));
 const engagementSummaryItems = computed(() => ([
   { label: "Views", value: formatCount(analytics.value?.viewsCount || 0) },
   { label: "Wishlist", value: formatCount(analytics.value?.wishlistCount || 0) },
   { label: "Cart", value: formatCount(analytics.value?.cartCount || 0) },
   { label: "Share", value: formatCount(analytics.value?.shareCount || 0) },
+]));
+const businessOrderCounts = computed(() => ({
+  pending: businessOrders.value.filter((order) =>
+    ["pending_confirmation", "confirmed", "packed", "shipped", "partially_confirmed"]
+      .includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+  ).length,
+  completed: businessOrders.value.filter((order) =>
+    ["delivered", "returned"].includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+  ).length,
+}));
+const businessOrderSummary = computed(() => ([
+  { label: "Total orders", value: formatCount(businessOrders.value.length), meta: "Across your store" },
+  { label: "Need action", value: formatCount(businessOrderCounts.value.pending), meta: "Pending or in progress" },
+  { label: "Completed", value: formatCount(businessOrderCounts.value.completed), meta: "Delivered or returned" },
+]));
+const businessOrderBars = computed(() => ([
+  { label: "Need action", value: businessOrderCounts.value.pending },
+  { label: "Completed", value: businessOrderCounts.value.completed },
 ]));
 
 const promotionCategoryOptions = computed(() => {
@@ -457,26 +492,32 @@ const shouldShowProfileCard = computed(
 const dashboardSections = computed(() => ([
   {
     key: "analytics",
-    label: "Analytics",
-    navLabel: "Dashboard",
+    label: "Overview",
+    navLabel: "Overview",
     visible: true,
   },
   {
     key: "stock",
-    label: "Stoku",
+    label: "Stock",
     navLabel: "Stock",
     visible: canManageCatalog.value,
   },
   {
     key: "shipping",
-    label: "Transport",
+    label: "Shipping",
     navLabel: "Shipping",
     visible: canManageCatalog.value,
   },
   {
-    key: "add-product",
-    label: "Shto",
-    navLabel: "Add",
+    key: "products",
+    label: "Add product",
+    navLabel: "Add Product",
+    visible: canManageCatalog.value,
+  },
+  {
+    key: "inventory",
+    label: "Products",
+    navLabel: "Products",
     visible: canManageCatalog.value,
   },
   {
@@ -487,20 +528,20 @@ const dashboardSections = computed(() => ([
   },
   {
     key: "offers",
-    label: "Ofertat",
-    navLabel: "Offers",
+    label: "Discounts",
+    navLabel: "Discounts",
     visible: canManageCatalog.value,
   },
   {
-    key: "products",
-    label: "Produktet",
-    navLabel: "Products",
+    key: "payouts",
+    label: "Payouts",
+    navLabel: "Payouts",
     visible: canManageCatalog.value,
   },
   {
     key: "profile",
-    label: "Profili",
-    navLabel: "Settings",
+    label: "Store settings",
+    navLabel: "Store Settings",
     visible: shouldShowProfileCard.value,
   },
 ]).filter((section) => section.visible));
@@ -508,8 +549,33 @@ const activeSectionMeta = computed(() =>
   dashboardSections.value.find((section) => section.key === activeSection.value) || dashboardSections.value[0] || null,
 );
 const dashboardSidebarSections = computed(() => dashboardSections.value.filter((section) =>
-  ["analytics", "products", "stock", "import", "offers", "profile"].includes(section.key),
+  ["analytics", "products", "inventory", "stock", "import", "offers", "payouts", "profile"].includes(section.key),
 ));
+const businessShellNavItems = computed(() => {
+  const routeItems = [
+    { key: "analytics", label: "Overview", icon: "dashboard", to: "/biznesi-juaj?view=analytics", group: "Core" },
+    { key: "orders", label: "Orders", icon: "orders", to: "/porosite-e-biznesit", group: "Core" },
+    { key: "inventory", label: "Products", icon: "products", to: "/biznesi-juaj?view=inventory", badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
+    { key: "products", label: "Add Product", icon: "bag", to: "/biznesi-juaj?view=products", group: "Inventory" },
+    { key: "stock", label: "Stock", icon: "stock", to: "/biznesi-juaj?view=stock", badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
+    { key: "import", label: "Import", icon: "import", to: "/biznesi-juaj?view=import", group: "Inventory" },
+    { key: "offers", label: "Discounts", icon: "offers", to: "/biznesi-juaj?view=offers", group: "Growth" },
+    { key: "payouts", label: "Payouts", icon: "shipping", to: "/biznesi-juaj?view=payouts", group: "Growth" },
+    { key: "shipping", label: "Shipping", icon: "shipping", to: "/biznesi-juaj?view=shipping", group: "Store" },
+    { key: "profile", label: "Store Settings", icon: "settings", to: "/biznesi-juaj?view=profile", group: "Store" },
+    { key: "support", label: "Support", icon: "messages", to: "/mesazhet", group: "Store" },
+  ];
+
+  return routeItems.filter((item) => {
+    if (item.key === "orders" || item.key === "analytics") {
+      return true;
+    }
+    if (item.key === "profile") {
+      return shouldShowProfileCard.value;
+    }
+    return canManageCatalog.value;
+  });
+});
 const dashboardMetrics = computed(() => {
   if (!analytics.value) {
     return [];
@@ -547,13 +613,88 @@ const dashboardMetrics = computed(() => {
   ];
 });
 const dashboardQuickActions = computed(() => [
-  { key: "add-product", label: "Add Product", tone: "violet" },
-  { key: "import", label: "Import", tone: "mint" },
-  { key: "stock", label: "Manage Stock", tone: "amber" },
-  { key: "offers", label: "Discount", tone: "pink" },
+  { key: "products", label: "Add Product", tone: "violet" },
+  { key: "inventory", label: "Inventory", tone: "mint" },
+  { key: "import", label: "Import", tone: "amber" },
+  { key: "offers", label: "Discounts", tone: "pink" },
 ]);
+const businessNotificationCount = computed(() => stockAlertCount.value);
 const recentDashboardProducts = computed(() => products.value.slice(0, 4));
 const recentDiscounts = computed(() => promotions.value.slice(0, 3));
+const payoutRows = computed(() =>
+  businessOrders.value
+    .flatMap((order) =>
+      (Array.isArray(order?.items) ? order.items : []).map((item) => ({
+        orderId: Number(order.id || 0),
+        orderCreatedAt: String(order.createdAt || ""),
+        productTitle: String(item?.title || item?.productTitle || "Product").trim(),
+        variantLabel: String(item?.variantLabel || "").trim(),
+        payoutStatus: String(item?.payoutStatus || "pending").trim().toLowerCase(),
+        payoutDueAt: String(item?.payoutDueAt || "").trim(),
+        sellerEarningsAmount: Number(item?.sellerEarningsAmount || 0),
+        commissionAmount: Number(item?.commissionAmount || 0),
+        fulfillmentStatus: String(item?.fulfillmentStatus || "").trim().toLowerCase(),
+      })),
+    )
+    .sort((left, right) =>
+      new Date(String(right.orderCreatedAt || "").replace(" ", "T")).getTime()
+      - new Date(String(left.orderCreatedAt || "").replace(" ", "T")).getTime()
+    ),
+);
+const payoutSummaryCards = computed(() => {
+  const totals = payoutRows.value.reduce((accumulator, row) => {
+    const earnings = Number(row.sellerEarningsAmount || 0);
+    accumulator.total += earnings;
+    if (row.payoutStatus === "ready") {
+      accumulator.ready += earnings;
+    } else if (row.payoutStatus === "paid") {
+      accumulator.paid += earnings;
+    } else if (row.payoutStatus === "on_hold") {
+      accumulator.onHold += earnings;
+    } else {
+      accumulator.pending += earnings;
+    }
+    return accumulator;
+  }, {
+    total: 0,
+    ready: 0,
+    pending: 0,
+    paid: 0,
+    onHold: 0,
+  });
+
+  return [
+    { label: "Available balance", value: formatPrice(totals.ready), meta: "Ready for payout" },
+    { label: "Pending balance", value: formatPrice(totals.pending), meta: "Waiting for release" },
+    { label: "Paid balance", value: formatPrice(totals.paid), meta: "Already settled" },
+    { label: "On hold", value: formatPrice(totals.onHold), meta: "Returns or issues" },
+  ];
+});
+
+function formatPayoutStatusLabel(status) {
+  const labels = {
+    pending: "Pending",
+    ready: "Ready",
+    paid: "Paid",
+    on_hold: "On hold",
+  };
+
+  return labels[String(status || "").trim().toLowerCase()] || "Pending";
+}
+
+function getPayoutStatusClass(status) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (normalizedStatus === "paid") {
+    return "is-paid";
+  }
+  if (normalizedStatus === "ready") {
+    return "is-ready";
+  }
+  if (normalizedStatus === "on_hold") {
+    return "is-hold";
+  }
+  return "is-pending";
+}
 const dashboardDateRangeLabel = computed(() => {
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "short" });
@@ -606,6 +747,17 @@ const dashboardChartValues = computed(() => {
     return Math.round(normalized + ((index % 2 === 0 ? 1 : -1) * 35));
   });
 });
+const dashboardPerformanceBars = computed(() => ([
+  { label: "Views", value: Number(analytics.value?.viewsCount || 0) },
+  { label: "Wishlist", value: Number(analytics.value?.wishlistCount || 0) },
+  { label: "Cart", value: Number(analytics.value?.cartCount || 0) },
+  { label: "Units sold", value: Number(analytics.value?.unitsSold || 0) },
+]));
+const dashboardCatalogDistribution = computed(() => ([
+  { label: "Live", value: products.value.filter((product) => Boolean(product.isPublic)).length },
+  { label: "Low stock", value: lowStockProducts.value.length },
+  { label: "Out of stock", value: outOfStockProducts.value.length },
+]));
 const dashboardChartPoints = computed(() => {
   const values = dashboardChartValues.value;
   const width = 640;
@@ -657,11 +809,36 @@ function getStockAlertLabel(product) {
 }
 
 function handleDashboardQuickAction(actionKey) {
-  if (actionKey === "add-product") {
+  if (actionKey === "products") {
     openAddProductForm();
     return;
   }
   setActiveSection(actionKey);
+}
+
+function handleBusinessDashboardSearch() {
+  const query = String(productSearchQuery.value || "").trim();
+  productSearchQuery.value = query;
+  syncRouteSearchQuery(query);
+  if (canManageCatalog.value) {
+    setActiveSection("inventory");
+  }
+}
+
+function readRouteSearchQuery(value) {
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+async function syncRouteSearchQuery(query) {
+  const nextQuery = {
+    ...route.query,
+    q: query || undefined,
+  };
+
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  });
 }
 
 function setActiveSection(sectionKey) {
@@ -693,6 +870,7 @@ onMounted(async () => {
     await loadBusinessProfile();
     await Promise.all([
       loadBusinessAnalytics(),
+      loadBusinessOrders(),
       canManageCatalog.value ? loadProducts() : Promise.resolve(),
       canManageCatalog.value ? loadPromotions() : Promise.resolve(),
       canManageCatalog.value ? loadCatalogImportConfig() : Promise.resolve(),
@@ -720,8 +898,18 @@ watch(
 watch(
   () => route.query.view,
   async (view) => {
-    if (view === "add-product") {
+    if (view) {
       await handleRouteView();
+    }
+  },
+);
+
+watch(
+  () => route.query.q,
+  (query) => {
+    const nextQuery = readRouteSearchQuery(query);
+    if (nextQuery !== productSearchQuery.value) {
+      productSearchQuery.value = nextQuery;
     }
   },
 );
@@ -795,9 +983,75 @@ function revokeLogoPreview() {
   }
 }
 
+function createProductMediaId() {
+  return `product-media-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createProductMediaItem({ path = "", file = null, kind = "existing" } = {}) {
+  if (kind === "local" && file) {
+    const previewPath = URL.createObjectURL(file);
+    return {
+      id: createProductMediaId(),
+      kind,
+      file,
+      path: previewPath,
+    };
+  }
+
+  return {
+    id: createProductMediaId(),
+    kind: "existing",
+    file: null,
+    path: String(path || "").trim(),
+  };
+}
+
+function syncProductMediaItemsFromGallery(paths = []) {
+  revokePreviewUrls();
+  productMediaItems.value = paths
+    .map((path) => String(path || "").trim())
+    .filter(Boolean)
+    .map((path) => createProductMediaItem({ path, kind: "existing" }));
+}
+
 function revokePreviewUrls() {
-  previewUrls.value.forEach((url) => URL.revokeObjectURL(url));
-  previewUrls.value = [];
+  productMediaItems.value.forEach((item) => {
+    if (item.kind === "local" && item.path) {
+      URL.revokeObjectURL(item.path);
+    }
+  });
+}
+
+function appendProductMediaFiles(fileList = []) {
+  const nextFiles = Array.from(fileList || []).filter(Boolean);
+  if (!nextFiles.length) {
+    return;
+  }
+  productMediaItems.value = [
+    ...productMediaItems.value,
+    ...nextFiles.map((file) => createProductMediaItem({ file, kind: "local" })),
+  ];
+}
+
+function setPrimaryProductMedia(index) {
+  const normalizedIndex = Number(index);
+  if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0 || normalizedIndex >= productMediaItems.value.length) {
+    return;
+  }
+  const [selectedItem] = productMediaItems.value.splice(normalizedIndex, 1);
+  productMediaItems.value = [selectedItem, ...productMediaItems.value];
+}
+
+function removeProductMedia(index) {
+  const normalizedIndex = Number(index);
+  if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0 || normalizedIndex >= productMediaItems.value.length) {
+    return;
+  }
+  const [removedItem] = productMediaItems.value.splice(normalizedIndex, 1);
+  if (removedItem?.kind === "local" && removedItem.path) {
+    URL.revokeObjectURL(removedItem.path);
+  }
+  productMediaItems.value = [...productMediaItems.value];
 }
 
 async function loadBusinessProfile() {
@@ -814,6 +1068,16 @@ async function loadBusinessProfile() {
   if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
     showVerifiedProfileEditor.value = false;
   }
+}
+
+async function loadBusinessOrders() {
+  const { response, data } = await requestJson("/api/business/orders");
+  if (!response.ok || !data?.ok) {
+    businessOrders.value = [];
+    return;
+  }
+
+  businessOrders.value = Array.isArray(data.orders) ? data.orders : [];
 }
 
 async function requestVerificationReview() {
@@ -1069,40 +1333,48 @@ function resetPromotionForm() {
 
 function resetProductForm() {
   Object.assign(productForm, createEmptyProductFormState());
-  productFormStep.value = "details";
+  productFormCollapsed.value = false;
   editingProduct.value = null;
-  selectedFiles.value = [];
   revokePreviewUrls();
+  productMediaItems.value = [];
   ui.productMessage = "";
   ui.productTypeMessage = "";
 }
 
-function focusProductFormStep(stepId = "details") {
-  productFormStep.value = stepId;
-  const target = typeof document !== "undefined"
-    ? document.getElementById(`business-product-step-${stepId}`)
-    : null;
-  if (target) {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+function changeProductQuantity(delta) {
+  const currentQuantity = Math.max(0, Number.parseInt(String(productForm.simpleStockQuantity || "0"), 10) || 0);
+  productForm.simpleStockQuantity = String(Math.max(0, currentQuantity + delta));
+}
+
+function toggleProductFormCollapsed() {
+  productFormCollapsed.value = !productFormCollapsed.value;
 }
 
 async function handleRouteView() {
-  if (String(route.query.view || "").trim() !== "add-product") {
+  const requestedView = String(route.query.view || "").trim();
+  if (!requestedView) {
     return;
   }
 
-  if (!canManageCatalog.value) {
+  if (requestedView === "add-product") {
+    if (!canManageCatalog.value) {
+      return;
+    }
+
+    setActiveSection("products");
+    resetProductForm();
+    await nextTick();
+    window.setTimeout(() => {
+      productTitleInput.value?.focus?.();
+    }, 120);
     return;
   }
 
-  setActiveSection("add-product");
-  resetProductForm();
-  await nextTick();
-  window.setTimeout(() => {
-    focusProductFormStep("details");
-    productTitleInput.value?.focus?.();
-  }, 120);
+  if (!dashboardSections.value.some((section) => section.key === requestedView)) {
+    return;
+  }
+
+  setActiveSection(requestedView);
 }
 
 async function openAddProductForm() {
@@ -1110,34 +1382,38 @@ async function openAddProductForm() {
     return;
   }
 
-  setActiveSection("add-product");
+  setActiveSection("products");
   resetProductForm();
   await nextTick();
   window.setTimeout(() => {
-    focusProductFormStep("details");
+    productFormCollapsed.value = false;
     productTitleInput.value?.focus?.();
   }, 120);
 }
 
 function beginProductEdit(product) {
-  setActiveSection("add-product");
+  setActiveSection("products");
   editingProduct.value = product;
   hydrateProductFormFromProduct(productForm, {
     ...product,
     imageGallery: getProductImageGallery(product),
   });
-  selectedFiles.value = [];
-  revokePreviewUrls();
+  syncProductMediaItemsFromGallery(getProductImageGallery(product));
   syncProductFormCatalogState(productForm);
-  productFormStep.value = "details";
+  productFormCollapsed.value = false;
   ui.productMessage = `Po editon artikullin "${product.title}".`;
   ui.productTypeMessage = "success";
 }
 
 function handleFilesChange(event) {
-  revokePreviewUrls();
-  selectedFiles.value = Array.from(event.target.files || []);
-  previewUrls.value = selectedFiles.value.map((file) => URL.createObjectURL(file));
+  appendProductMediaFiles(event?.target?.files || []);
+  if (event?.target) {
+    event.target.value = "";
+  }
+}
+
+function handleDroppedFiles(event) {
+  appendProductMediaFiles(event?.dataTransfer?.files || []);
 }
 
 function formatImportFieldLabel(fieldName) {
@@ -1568,15 +1844,22 @@ async function suggestProductWithAi() {
   ui.productAiBusy = true;
 
   try {
+    const existingGallery = productMediaItems.value
+      .filter((item) => item.kind === "existing")
+      .map((item) => item.path)
+      .filter(Boolean);
+    const localFiles = productMediaItems.value
+      .filter((item) => item.kind === "local" && item.file)
+      .map((item) => item.file);
     const payload = new FormData();
     payload.append("title", productForm.title.trim());
     payload.append("description", productForm.description.trim());
     payload.append("pageSection", productForm.pageSection);
     payload.append("audience", productForm.audience);
     payload.append("productType", productForm.productType);
-    payload.append("imagePath", productForm.imageGallery[0] || "");
-    payload.append("imageGallery", JSON.stringify(productForm.imageGallery));
-    selectedFiles.value.forEach((file) => {
+    payload.append("imagePath", existingGallery[0] || "");
+    payload.append("imageGallery", JSON.stringify(existingGallery));
+    localFiles.forEach((file) => {
       payload.append("images", file);
     });
 
@@ -1614,6 +1897,36 @@ async function suggestProductWithAi() {
   }
 }
 
+async function resolveProductMediaGallery() {
+  const localMediaItems = productMediaItems.value.filter((item) => item.kind === "local" && item.file);
+  if (localMediaItems.length === 0) {
+    return {
+      ok: true,
+      imageGallery: productMediaItems.value.map((item) => item.path).filter(Boolean),
+    };
+  }
+
+  const uploadResult = await uploadImages(localMediaItems.map((item) => item.file));
+  if (!uploadResult.ok) {
+    return {
+      ok: false,
+      message: uploadResult.message,
+      imageGallery: [],
+    };
+  }
+
+  const uploadedPathById = new Map(
+    localMediaItems.map((item, index) => [item.id, String(uploadResult.paths[index] || "").trim()]),
+  );
+
+  return {
+    ok: true,
+    imageGallery: productMediaItems.value
+      .map((item) => item.kind === "local" ? uploadedPathById.get(item.id) || "" : item.path)
+      .filter(Boolean),
+  };
+}
+
 async function submitProduct() {
   ui.productMessage = "";
   await nextTick();
@@ -1625,22 +1938,19 @@ async function submitProduct() {
     return;
   }
 
-  if (!editingProduct.value && selectedFiles.value.length === 0) {
+  if (productMediaItems.value.length === 0) {
     ui.productMessage = "Zgjidh te pakten nje foto te produktit.";
     ui.productTypeMessage = "error";
     return;
   }
 
-  let imageGallery = [...productForm.imageGallery];
-  if (selectedFiles.value.length > 0) {
-    const uploadResult = await uploadImages(selectedFiles.value);
-    if (!uploadResult.ok) {
-      ui.productMessage = uploadResult.message;
-      ui.productTypeMessage = "error";
-      return;
-    }
-    imageGallery = uploadResult.paths;
+  const mediaResult = await resolveProductMediaGallery();
+  if (!mediaResult.ok) {
+    ui.productMessage = mediaResult.message;
+    ui.productTypeMessage = "error";
+    return;
   }
+  const imageGallery = mediaResult.imageGallery;
 
   const payload = {
     articleNumber: productForm.articleNumber.trim(),
@@ -1761,6 +2071,56 @@ async function handleDeleteProduct(product) {
   }
 }
 
+function createDuplicateArticleNumber(product) {
+  const baseValue = String(product?.articleNumber || product?.id || "sku").trim() || "sku";
+  const normalizedBase = `${baseValue}-copy`;
+  const existingValues = new Set(
+    products.value
+      .map((entry) => String(entry.articleNumber || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  let nextValue = normalizedBase;
+  let counter = 2;
+  while (existingValues.has(nextValue.toLowerCase())) {
+    nextValue = `${normalizedBase}-${counter}`;
+    counter += 1;
+  }
+  return nextValue;
+}
+
+async function handleDuplicateProduct(product) {
+  if (!canManageCatalog.value) {
+    ui.listMessage = "Katalogu eshte i ngrire deri ne verifikimin e biznesit.";
+    ui.listType = "error";
+    return;
+  }
+
+  const duplicatedPayload = {
+    ...buildProductUpdatePayload(product),
+    productId: undefined,
+    articleNumber: createDuplicateArticleNumber(product),
+    title: `${String(product.title || "").trim()} Copy`.trim(),
+  };
+
+  const { response, data } = await requestJson("/api/products", {
+    method: "POST",
+    body: JSON.stringify(duplicatedPayload),
+  });
+
+  if (!response.ok || !data?.ok) {
+    ui.listMessage = resolveApiMessage(data, "Produkti nuk u duplikua.");
+    ui.listType = "error";
+    return;
+  }
+
+  ui.listMessage = data.message || "Produkti u duplikua me sukses.";
+  ui.listType = "success";
+  await Promise.all([
+    loadProducts(),
+    loadBusinessAnalytics(),
+  ]);
+}
+
 async function handleToggleVisibility(product) {
   if (!canManageCatalog.value) {
     ui.listMessage = "Katalogu eshte i ngrire deri ne verifikimin e biznesit.";
@@ -1837,6 +2197,14 @@ function buildProductUpdatePayload(product, overrides = {}) {
     compareAtPrice: Number(product.compareAtPrice || 0),
     saleEndsAt: String(product.saleEndsAt || "").trim(),
     description: String(product.description || "").trim(),
+    brand: String(product.brand || "").trim(),
+    gtin: String(product.gtin || "").trim(),
+    mpn: String(product.mpn || "").trim(),
+    material: String(product.material || "").trim(),
+    weightValue: Number(product.weightValue || 0),
+    weightUnit: String(product.weightUnit || "kg").trim(),
+    metaTitle: String(product.metaTitle || "").trim(),
+    metaDescription: String(product.metaDescription || "").trim(),
     pageSection,
     audience,
     category: categoryValue,
@@ -1958,363 +2326,415 @@ async function applyBulkStockUpdate() {
 </script>
 
 <template>
-  <section class="business-dashboard-page" aria-label="Biznesi juaj">
+  <section class="market-page market-page--wide dashboard-page business-dashboard-page" aria-label="Biznesi juaj">
     <div
       v-if="!shouldShowProfileCard && ui.profileMessage"
-      class="form-message"
-      :class="ui.profileType"
+      class="market-status"
+      :class="{ 'market-status--error': ui.profileType === 'error', 'market-status--success': ui.profileType === 'success' }"
       role="status"
       aria-live="polite"
     >
       {{ ui.profileMessage }}
     </div>
 
-    <div class="business-dashboard-shell">
-      <aside class="card business-dashboard-sidebar" aria-label="Navigimi i dashboard-it">
-        <div class="business-dashboard-brand">
-          <div class="business-dashboard-brand-mark">T</div>
-          <div class="business-dashboard-brand-copy">
-            <strong>Tregio Pro</strong>
-            <span>Business</span>
+    <DashboardShell
+      :nav-items="businessShellNavItems"
+      :active-key="activeSection"
+      :brand-initial="dashboardAvatarLabel"
+      :brand-title="profileForm.businessName || businessProfile?.businessName || 'Tregio Pro'"
+      brand-subtitle="Business dashboard"
+      :brand-image-path="businessLogoPreview"
+      brand-fallback-icon="store"
+      :profile-image-path="businessLogoPreview"
+      profile-fallback-icon="store"
+      :profile-name="profileForm.businessName || businessProfile?.businessName || 'Tregio Pro'"
+      :profile-subtitle="isBusinessVerified ? 'Verified store' : 'Verification pending'"
+      :search-query="productSearchQuery"
+      search-placeholder="Search inventory"
+      :notification-count="businessNotificationCount"
+      @update:search-query="productSearchQuery = $event"
+      @submit-search="handleBusinessDashboardSearch"
+    >
+      <template #sidebar-footer>
+        <RouterLink to="/llogaria">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 8.2a3.8 3.8 0 1 1 0 7.6 3.8 3.8 0 0 1 0-7.6Zm8 4-1.7.8c-.1.4-.3.8-.5 1.2l.7 1.8-1.7 1.7-1.8-.7c-.4.2-.8.4-1.2.5L12 20l-2.4-.7c-.4-.1-.8-.3-1.2-.5l-1.8.7-1.7-1.7.7-1.8c-.2-.4-.4-.8-.5-1.2L4 12.2l.8-2.2c.1-.4.3-.8.5-1.2l-.7-1.8L6.3 5l1.8.7c.4-.2.8-.4 1.2-.5L12 4l2.4.7c.4.1.8.3 1.2.5l1.8-.7 1.7 1.7-.7 1.8c.2.4.4.8.5 1.2Z" />
+          </svg>
+          <span>Account</span>
+        </RouterLink>
+      </template>
+
+      <header class="dashboard-section dashboard-page__hero">
+          <div class="dashboard-section__head">
+            <div class="market-page__header-copy">
+              <p class="market-page__eyebrow">Business dashboard</p>
+              <h1>{{ profileForm.businessName || businessProfile?.businessName || "Your workspace" }}</h1>
+              <p>
+                Keep the overview simple: track sales, watch stock pressure, and jump into the tasks that move the business forward.
+              </p>
+            </div>
+
+            <div class="dashboard-inline-meta">
+              <span class="market-pill">{{ activeSectionMeta?.label || "Dashboard" }}</span>
+              <span class="market-pill">{{ dashboardDateRangeLabel }}</span>
+              <span class="market-pill market-pill--accent">{{ dashboardAvatarLabel }}</span>
+            </div>
           </div>
-        </div>
 
-        <div class="business-dashboard-side-menu" role="tablist" aria-label="Seksionet e dashboard-it">
-          <button
-            v-for="section in dashboardSidebarSections"
-            :key="section.key"
-            class="business-dashboard-side-button"
-            :class="{ 'is-active': activeSection === section.key }"
-            type="button"
-            role="tab"
-            :aria-selected="activeSection === section.key"
-            @click="setActiveSection(section.key)"
-          >
-            <span class="business-dashboard-side-icon"></span>
-            <span>{{ section.navLabel || section.label }}</span>
-          </button>
-        </div>
-      </aside>
-
-      <div class="business-dashboard-main">
-        <header class="card business-dashboard-toolbar">
-          <div class="business-dashboard-toolbar-tabs">
+          <div class="dashboard-shortcuts">
             <button
-              v-for="section in dashboardSections"
-              :key="`top-tab-${section.key}`"
-              class="business-dashboard-toolbar-tab"
-              :class="{ 'is-active': activeSection === section.key }"
+              v-for="action in dashboardQuickActions"
+              :key="action.key"
+              class="dashboard-shortcut"
               type="button"
-              @click="setActiveSection(section.key)"
+              @click="handleDashboardQuickAction(action.key)"
             >
-              {{ section.label }}
+              <strong>{{ action.label }}</strong>
+              <span>Open {{ action.label.toLowerCase() }}</span>
             </button>
           </div>
+      </header>
 
-          <div class="business-dashboard-toolbar-meta">
-            <button class="business-dashboard-toolbar-icon" type="button" aria-label="Njoftime">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 4a4 4 0 0 0-4 4v2.1c0 .6-.2 1.1-.5 1.6L6 14.5V16h12v-1.5l-1.5-2.8c-.3-.5-.5-1-.5-1.6V8a4 4 0 0 0-4-4Z"></path>
-                <path d="M10 18a2 2 0 0 0 4 0"></path>
-              </svg>
-            </button>
-            <div class="business-dashboard-toolbar-range">{{ dashboardDateRangeLabel }}</div>
-            <div class="business-dashboard-toolbar-avatar">{{ dashboardAvatarLabel }}</div>
-          </div>
-        </header>
+      <section
+        v-show="activeSection === 'analytics'"
+        aria-label="Analytics e biznesit"
+      >
+          <div v-if="analytics" class="dashboard-main">
+            <section class="dashboard-section-group">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Overview</p>
+                  <h2>Business overview</h2>
+                  <p class="dashboard-note">Sales, stock pressure, and the main actions stay together here.</p>
+                </div>
+              </div>
 
-        <section
-          v-show="activeSection === 'analytics'"
-          class="business-dashboard-overview"
-          aria-label="Analytics e biznesit"
-        >
-          <div v-if="analytics" class="business-dashboard-overview-grid-stack">
-            <div class="business-dashboard-metric-grid">
-              <article
-                v-for="metric in dashboardMetrics"
-                :key="metric.key"
-                class="card business-dashboard-metric-card"
-                :data-tone="metric.tone"
-              >
-                <div class="business-dashboard-metric-icon"></div>
-                <div class="business-dashboard-metric-copy">
-                  <span>{{ metric.label }}</span>
+              <div class="metric-grid">
+                <article v-for="metric in dashboardMetrics" :key="metric.key" class="metric-card">
+                  <p class="metric-card__label">{{ metric.label }}</p>
                   <strong>{{ metric.value }}</strong>
-                  <small>{{ metric.meta }}</small>
-                </div>
-              </article>
-            </div>
+                  <span class="section-heading__copy">{{ metric.meta }}</span>
+                </article>
+              </div>
 
-            <div class="business-dashboard-overview-grid">
-              <article class="card business-dashboard-chart-card">
-                <div class="business-dashboard-card-head">
+              <div class="market-grid market-grid--split">
+                <article class="dashboard-section dashboard-chart-card">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Sales overview</p>
+                      <h2>Last 7 days</h2>
+                    </div>
+                    <span class="market-pill">{{ activeSectionMeta?.label || "Dashboard" }}</span>
+                  </div>
+
+                  <DashboardLineChart :labels="dashboardChartLabels" :values="dashboardChartValues" />
+                </article>
+
+                <article class="dashboard-section">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Quick actions</p>
+                      <h2>Most used tasks</h2>
+                    </div>
+                  </div>
+
+                  <div class="dashboard-quick-grid">
+                    <button
+                      v-for="action in dashboardQuickActions"
+                      :key="`analytics-${action.key}`"
+                      class="market-button market-button--secondary"
+                      type="button"
+                      @click="handleDashboardQuickAction(action.key)"
+                    >
+                      {{ action.label }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="dashboard-section-group">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Orders</p>
+                  <h2>Order history metrics</h2>
+                  <p class="dashboard-note">Need-action and completed order signals are now visible in the dashboard tab.</p>
+                </div>
+                <RouterLink class="market-button market-button--ghost" to="/porosite-e-biznesit">
+                  View orders
+                </RouterLink>
+              </div>
+
+              <div class="metric-grid metric-grid--compact">
+                <article v-for="item in businessOrderSummary" :key="`business-order-${item.label}`" class="metric-card">
+                  <p class="metric-card__label">{{ item.label }}</p>
+                  <strong>{{ item.value }}</strong>
+                  <span class="section-heading__copy">{{ item.meta }}</span>
+                </article>
+              </div>
+
+              <section class="dashboard-section dashboard-chart-card">
+                <div class="dashboard-section__head">
                   <div>
-                    <h2>Sales Overview</h2>
-                    <span>{{ activeSectionMeta?.label || "Dashboard" }}</span>
-                  </div>
-                  <div class="business-dashboard-card-pill">Last 7 Days</div>
-                </div>
-
-                <div class="business-dashboard-chart-frame">
-                  <svg viewBox="0 0 640 220" class="business-dashboard-chart" role="img" aria-label="Grafiku i overview">
-                    <g class="business-dashboard-chart-grid">
-                      <line v-for="line in 5" :key="`chart-grid-${line}`" x1="18" :y1="line * 40" x2="622" :y2="line * 40"></line>
-                    </g>
-                    <path class="business-dashboard-chart-area" :d="dashboardChartAreaPath"></path>
-                    <path class="business-dashboard-chart-line" :d="dashboardChartLinePath"></path>
-                    <circle
-                      v-for="(point, index) in dashboardChartPoints"
-                      :key="`chart-point-${index}`"
-                      class="business-dashboard-chart-point"
-                      :cx="point.x"
-                      :cy="point.y"
-                      r="5"
-                    ></circle>
-                  </svg>
-
-                  <div class="business-dashboard-chart-labels">
-                    <span v-for="label in dashboardChartLabels" :key="`chart-label-${label}`">{{ label }}</span>
-                  </div>
-                </div>
-              </article>
-
-              <article class="card business-dashboard-actions-card">
-                <div class="business-dashboard-card-head">
-                  <div>
-                    <h2>Quick Actions</h2>
-                    <span>Fast access</span>
+                    <p class="market-page__eyebrow">Orders</p>
+                    <h2>Fulfillment focus</h2>
                   </div>
                 </div>
 
-                <div class="business-dashboard-actions-grid">
-                  <button
-                    v-for="action in dashboardQuickActions"
-                    :key="action.key"
-                    class="business-dashboard-action-card"
-                    :data-tone="action.tone"
-                    type="button"
-                    @click="handleDashboardQuickAction(action.key)"
-                  >
-                    <span class="business-dashboard-action-icon">{{ action.label.charAt(0) }}</span>
-                    <strong>{{ action.label }}</strong>
-                  </button>
-                </div>
-              </article>
-            </div>
+                <DashboardBarChart :items="businessOrderBars" />
+              </section>
+            </section>
 
-            <div class="business-dashboard-overview-grid business-dashboard-overview-grid--bottom">
-              <article class="card business-dashboard-list-card">
-                <div class="business-dashboard-card-head">
-                  <div>
-                    <h2>Recent Products</h2>
-                    <span>{{ products.length }} total</span>
+            <section class="dashboard-section-group">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Engagement</p>
+                  <h2>Traffic and customer signals</h2>
+                  <p class="dashboard-note">Views, saves, carts, and shares are grouped together for faster reading.</p>
+                </div>
+              </div>
+
+              <div class="metric-grid">
+                <article v-for="item in engagementSummaryItems" :key="`engagement-${item.label}`" class="metric-card">
+                  <p class="metric-card__label">{{ item.label }}</p>
+                  <strong>{{ item.value }}</strong>
+                </article>
+              </div>
+
+              <div class="dashboard-chart-grid">
+                <article class="dashboard-section dashboard-chart-card">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Performance</p>
+                      <h2>Traffic signals</h2>
+                    </div>
                   </div>
-                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('products')">View All</button>
-                </div>
 
-                <div v-if="recentDashboardProducts.length === 0" class="admin-empty-state">
-                  Ende nuk ka produkte.
+                  <DashboardBarChart :items="dashboardPerformanceBars" />
+                </article>
+
+                <article class="dashboard-section dashboard-chart-card">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Catalog mix</p>
+                      <h2>Inventory state</h2>
+                    </div>
+                  </div>
+
+                  <DashboardDonutChart :items="dashboardCatalogDistribution" />
+                </article>
+              </div>
+            </section>
+
+            <section class="dashboard-section-group">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Catalog</p>
+                  <h2>Products, stock, and offers</h2>
+                  <p class="dashboard-note">Catalog items that need action stay grouped in one place.</p>
                 </div>
-                <div v-else class="business-dashboard-list-stack">
-                  <article
-                    v-for="product in recentDashboardProducts"
-                    :key="`recent-dashboard-product-${product.id}`"
-                    class="business-dashboard-product-row"
-                  >
-                    <img :src="product.imagePath" :alt="product.title" loading="lazy" decoding="async">
-                    <div class="business-dashboard-product-copy">
+              </div>
+
+              <div class="dashboard-admin-grid">
+                <article class="market-card dashboard-section">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Catalog</p>
+                      <h2>Recent products</h2>
+                    </div>
+                    <button class="market-button market-button--ghost" type="button" @click="setActiveSection('inventory')">
+                      View all
+                    </button>
+                  </div>
+
+                  <div v-if="recentDashboardProducts.length === 0" class="market-empty">
+                    <h3>No products yet</h3>
+                    <p>Ende nuk ka produkte.</p>
+                  </div>
+                  <div v-else class="dashboard-simple-list">
+                    <article
+                      v-for="product in recentDashboardProducts"
+                      :key="`recent-dashboard-product-${product.id}`"
+                    >
                       <strong>{{ product.title }}</strong>
                       <span>{{ product.articleNumber || `#${product.id}` }}</span>
-                    </div>
-                    <div class="business-dashboard-row-meta">
-                      <span class="business-dashboard-row-status" :class="{ 'is-low': Number(product.stockQuantity || 0) <= STOCK_ALERT_THRESHOLD }">
-                        {{ Number(product.stockQuantity || 0) > STOCK_ALERT_THRESHOLD ? "In Stock" : "Low" }}
+                      <span>
+                        {{ Number(product.stockQuantity || 0) > STOCK_ALERT_THRESHOLD ? "In stock" : "Low stock" }} •
+                        {{ formatStockQuantity(product.stockQuantity) }}
                       </span>
-                      <strong>{{ formatStockQuantity(product.stockQuantity) }}</strong>
-                    </div>
-                  </article>
-                </div>
-              </article>
-
-              <article class="card business-dashboard-list-card">
-                <div class="business-dashboard-card-head">
-                  <div>
-                    <h2>Stock Alerts</h2>
-                    <span>{{ stockAlertCount }} items</span>
+                    </article>
                   </div>
-                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('stock')">View All</button>
-                </div>
+                </article>
 
-                <div v-if="stockAlertProducts.length === 0" class="admin-empty-state">
-                  Nuk ka alerte ne stok.
-                </div>
-                <div v-else class="business-dashboard-list-stack">
-                  <article
-                    v-for="product in stockAlertProducts.slice(0, 4)"
-                    :key="`overview-stock-alert-${product.id}`"
-                    class="business-dashboard-alert-row"
-                  >
-                    <span class="business-dashboard-alert-dot"></span>
-                    <div class="business-dashboard-alert-copy">
+                <article class="market-card dashboard-section">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Stock</p>
+                      <h2>Items that need attention</h2>
+                    </div>
+                    <button class="market-button market-button--ghost" type="button" @click="setActiveSection('stock')">
+                      View all
+                    </button>
+                  </div>
+
+                  <div v-if="stockAlertProducts.length === 0" class="market-empty">
+                    <h3>No stock alerts</h3>
+                    <p>Nuk ka alerte ne stok.</p>
+                  </div>
+                  <div v-else class="dashboard-simple-list">
+                    <article
+                      v-for="product in stockAlertProducts.slice(0, 4)"
+                      :key="`overview-stock-alert-${product.id}`"
+                    >
                       <strong>{{ product.title }}</strong>
                       <span>{{ formatCategoryLabel(product.category) }}</span>
-                    </div>
-                    <strong class="business-dashboard-alert-qty">{{ formatStockQuantity(product.stockQuantity) }}</strong>
-                  </article>
-                </div>
-              </article>
-
-              <article class="card business-dashboard-list-card">
-                <div class="business-dashboard-card-head">
-                  <div>
-                    <h2>Active Discounts</h2>
-                    <span>{{ promotions.length }} live</span>
+                      <span>{{ formatStockQuantity(product.stockQuantity) }}</span>
+                    </article>
                   </div>
-                  <button class="business-dashboard-link-button" type="button" @click="setActiveSection('offers')">View All</button>
-                </div>
+                </article>
 
-                <div v-if="recentDiscounts.length === 0" class="admin-empty-state">
-                  Nuk ka oferta aktive.
-                </div>
-                <div v-else class="business-dashboard-list-stack">
-                  <article
-                    v-for="promotion in recentDiscounts"
-                    :key="`overview-discount-${promotion.id}`"
-                    class="business-dashboard-discount-row"
-                  >
-                    <div class="business-dashboard-discount-copy">
-                      <span class="business-dashboard-discount-code">{{ promotion.code }}</span>
-                      <strong>{{ promotion.title || "Promotion" }}</strong>
-                      <small>{{ promotion.discountType === "percent" ? `${promotion.discountValue}% off` : formatPrice(promotion.discountValue) }}</small>
+                <article class="market-card dashboard-section">
+                  <div class="dashboard-section__head">
+                    <div>
+                      <p class="market-page__eyebrow">Offers</p>
+                      <h2>Active discounts</h2>
                     </div>
-                    <span class="business-dashboard-discount-status">{{ promotion.isActive ? "Active" : "Paused" }}</span>
-                  </article>
-                </div>
+                    <button class="market-button market-button--ghost" type="button" @click="setActiveSection('offers')">
+                      View all
+                    </button>
+                  </div>
 
-                <button class="business-dashboard-outline-action" type="button" @click="setActiveSection('offers')">
-                  Create Discount
-                </button>
-              </article>
-            </div>
+                  <div v-if="recentDiscounts.length === 0" class="market-empty">
+                    <h3>No active offers</h3>
+                    <p>Nuk ka oferta aktive.</p>
+                  </div>
+                  <div v-else class="dashboard-simple-list">
+                    <article
+                      v-for="promotion in recentDiscounts"
+                      :key="`overview-discount-${promotion.id}`"
+                    >
+                      <strong>{{ promotion.title || "Promotion" }}</strong>
+                      <span>{{ promotion.code }}</span>
+                      <span>{{ promotion.discountType === "percent" ? `${promotion.discountValue}% off` : formatPrice(promotion.discountValue) }}</span>
+                    </article>
+                  </div>
+                </article>
+              </div>
+            </section>
           </div>
-          <div v-else class="card business-dashboard-panel">
-            <div class="admin-empty-state">
-              Analytics nuk u ngarkuan ende.
-            </div>
+          <div v-else class="market-empty">
+            <h3>Analytics unavailable</h3>
+            <p>Analytics nuk u ngarkuan ende.</p>
           </div>
         </section>
 
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'stock'"
-      class="card business-stock-alerts-card business-dashboard-panel"
+      class="market-card dashboard-section"
       aria-label="Alertet e stokut"
     >
-      <div class="profile-card-header">
+      <div class="dashboard-section__head">
         <div>
-          <h2>Stoku</h2>
+          <p class="market-page__eyebrow">Stock</p>
+          <h2>Items at risk</h2>
         </div>
-        <div class="summary-chip">
-          <span>Ne risk</span>
-          <strong>{{ stockAlertCount }}</strong>
-        </div>
+        <span class="market-pill">{{ stockAlertCount }} at risk</span>
       </div>
 
-      <div v-if="stockAlertCount > 0" class="business-stock-alerts-grid">
+      <div v-if="stockAlertCount > 0" class="dashboard-simple-list">
         <article
           v-for="product in stockAlertProducts"
           :key="`stock-alert-${product.id}`"
-          class="business-stock-alert-card"
-          :class="{ 'is-out-of-stock': Number(product.stockQuantity || 0) <= 0 }"
         >
-          <div class="business-stock-alert-copy">
-            <p class="business-stock-alert-category">{{ formatCategoryLabel(product.category) }}</p>
-            <strong>{{ product.title }}</strong>
-            <p>{{ getStockAlertLabel(product) }}</p>
-          </div>
-          <button class="nav-action nav-action-secondary business-stock-alert-action" type="button" @click="beginProductEdit(product)">
-            Edito
+          <strong>{{ product.title }}</strong>
+          <span>{{ formatCategoryLabel(product.category) }}</span>
+          <span>{{ getStockAlertLabel(product) }}</span>
+          <button class="market-button market-button--ghost" type="button" @click="beginProductEdit(product)">
+            Edit
           </button>
         </article>
       </div>
-      <div v-else class="admin-empty-state">
-        Nuk ka produkte ne risk.
+      <div v-else class="market-empty">
+        <h3>No stock alerts</h3>
+        <p>Nuk ka produkte ne risk.</p>
       </div>
     </section>
 
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'shipping'"
-      class="card business-shipping-card business-dashboard-panel"
+      class="market-card dashboard-section"
       aria-label="Transporti i biznesit"
     >
-      <div class="profile-card-header">
+      <div class="dashboard-section__head">
         <div>
+          <p class="market-page__eyebrow">Shipping</p>
           <h2>Transport</h2>
         </div>
       </div>
 
-      <form class="auth-form" @submit.prevent="saveShippingSettings">
-        <div class="business-shipping-settings-grid">
-          <article class="business-shipping-method-card">
-            <div class="business-shipping-method-head">
+      <form @submit.prevent="saveShippingSettings">
+        <div>
+          <article>
+            <div>
               <div>
                 <strong>Dergese standard</strong>
               </div>
-              <label class="business-shipping-toggle">
+              <label>
                 <input v-model="shippingForm.standardEnabled" type="checkbox">
                 <span>Aktive</span>
               </label>
             </div>
-            <div class="field-row">
-              <label class="field">
+            <div>
+              <label>
                 <span>Kosto baze (€)</span>
                 <input v-model="shippingForm.standardFee" :disabled="!shippingForm.standardEnabled" type="number" min="0" step="0.10" placeholder="2.50">
               </label>
-              <label class="field">
+              <label>
                 <span>Koha e dorezimit</span>
                 <input v-model="shippingForm.standardEta" :disabled="!shippingForm.standardEnabled" type="text" placeholder="2-4 dite pune">
               </label>
             </div>
           </article>
 
-          <article class="business-shipping-method-card">
-            <div class="business-shipping-method-head">
+          <article>
+            <div>
               <div>
                 <strong>Dergese express</strong>
               </div>
-              <label class="business-shipping-toggle">
+              <label>
                 <input v-model="shippingForm.expressEnabled" type="checkbox">
                 <span>Aktive</span>
               </label>
             </div>
-            <div class="field-row">
-              <label class="field">
+            <div>
+              <label>
                 <span>Kosto baze (€)</span>
                 <input v-model="shippingForm.expressFee" :disabled="!shippingForm.expressEnabled" type="number" min="0" step="0.10" placeholder="4.90">
               </label>
-              <label class="field">
+              <label>
                 <span>Koha e dorezimit</span>
                 <input v-model="shippingForm.expressEta" :disabled="!shippingForm.expressEnabled" type="text" placeholder="1-2 dite pune">
               </label>
             </div>
           </article>
 
-          <article class="business-shipping-method-card">
-            <div class="business-shipping-method-head">
+          <article>
+            <div>
               <div>
                 <strong>Terheqje ne biznes</strong>
               </div>
-              <label class="business-shipping-toggle">
+              <label>
                 <input v-model="shippingForm.pickupEnabled" type="checkbox">
                 <span>Aktive</span>
               </label>
             </div>
-            <label class="field">
+            <label>
               <span>Koha e gatishmerise</span>
               <input v-model="shippingForm.pickupEta" :disabled="!shippingForm.pickupEnabled" type="text" placeholder="Gati per terheqje brenda 24 oresh">
             </label>
-            <label class="field">
+            <label>
               <span>Adresa e terheqjes</span>
               <input
                 v-model="shippingForm.pickupAddress"
@@ -2323,7 +2743,7 @@ async function applyBulkStockUpdate() {
                 placeholder="Shkruaje adresen ku merret porosia"
               >
             </label>
-            <label class="field">
+            <label>
               <span>Orari i terheqjes</span>
               <input
                 v-model="shippingForm.pickupHours"
@@ -2332,7 +2752,7 @@ async function applyBulkStockUpdate() {
                 placeholder="p.sh. Hene-Shtune, 09:00 - 18:00"
               >
             </label>
-            <label class="field">
+            <label>
               <span>Pickup map location</span>
               <input
                 v-model="shippingForm.pickupMapUrl"
@@ -2344,35 +2764,35 @@ async function applyBulkStockUpdate() {
           </article>
         </div>
 
-        <div class="field-row">
-          <label class="field">
+        <div>
+          <label>
             <span>Pragu per 50% zbritje transporti (€)</span>
             <input v-model="shippingForm.halfOffThreshold" type="number" min="0" step="0.10" placeholder="120">
           </label>
 
-          <label class="field">
+          <label>
             <span>Pragu per transport falas (€)</span>
             <input v-model="shippingForm.freeShippingThreshold" type="number" min="0" step="0.10" placeholder="180">
           </label>
         </div>
 
-        <div class="business-shipping-city-rates">
-          <div class="business-shipping-city-rates-head">
+        <div>
+          <div>
             <div>
               <strong>Tarifa sipas qytetit</strong>
             </div>
-            <button type="button" class="business-shipping-city-add" @click="addShippingCityRate">
+            <button type="button" @click="addShippingCityRate">
               Shto qytet
             </button>
           </div>
 
-          <div class="business-shipping-city-list">
+          <div>
             <div
               v-for="(cityRate, index) in shippingForm.cityRates"
               :key="`shipping-city-rate-${index}`"
-              class="business-shipping-city-row"
+             
             >
-              <label class="field">
+              <label>
                 <span>Qyteti</span>
                 <input
                   v-model="cityRate.city"
@@ -2381,7 +2801,7 @@ async function applyBulkStockUpdate() {
                 >
               </label>
 
-              <label class="field">
+              <label>
                 <span>Shtesa (€)</span>
                 <input
                   v-model="cityRate.surcharge"
@@ -2392,19 +2812,19 @@ async function applyBulkStockUpdate() {
                 >
               </label>
 
-              <button type="button" class="business-shipping-city-remove" @click="removeShippingCityRate(index)">
+              <button type="button" @click="removeShippingCityRate(index)">
                 Hiq
               </button>
             </div>
           </div>
         </div>
 
-        <div class="auth-form-actions">
+        <div>
           <button type="submit">Ruaj</button>
         </div>
       </form>
 
-      <div class="form-message" :class="ui.shippingType" role="status" aria-live="polite">
+      <div role="status" aria-live="polite">
         {{ ui.shippingMessage }}
       </div>
     </section>
@@ -2412,57 +2832,57 @@ async function applyBulkStockUpdate() {
     <section
       v-if="shouldShowProfileCard"
       v-show="activeSection === 'profile'"
-      class="card business-profile-card business-dashboard-panel"
+      class="market-card dashboard-section"
     >
         <h2>{{ businessProfile && isBusinessVerified ? "Edito biznesin" : "Regjistrimi i biznesit" }}</h2>
 
-        <form class="auth-form" @submit.prevent="saveBusinessProfile">
-          <label class="field">
+        <form @submit.prevent="saveBusinessProfile">
+          <label>
             <span>Emri i biznesit</span>
             <input v-model="profileForm.businessName" type="text" placeholder="p.sh. Agro Market Rinia" required>
           </label>
 
-          <label class="field">
+          <label>
             <span>Pershkrimi i biznesit</span>
             <textarea v-model="profileForm.businessDescription" rows="4" placeholder="Shkruaje pershkrimin e biznesit" required></textarea>
           </label>
 
-          <div class="field-row">
-            <label class="field">
+          <div>
+            <label>
               <span>Nr. i biznesit</span>
               <input v-model="profileForm.businessNumber" type="text" placeholder="p.sh. BR-204-55" required>
             </label>
 
-            <label class="field">
+            <label>
               <span>Numri i telefonit</span>
               <input v-model="profileForm.phoneNumber" type="text" placeholder="p.sh. +383 44 123 456" required>
             </label>
           </div>
 
-          <div class="field-row">
-            <label class="field">
+          <div>
+            <label>
               <span>Email per support</span>
               <input v-model="profileForm.supportEmail" type="email" placeholder="p.sh. support@biznesi.com">
             </label>
 
-            <label class="field">
+            <label>
               <span>Website</span>
               <input v-model="profileForm.websiteUrl" type="url" placeholder="p.sh. https://biznesi.com">
             </label>
           </div>
 
-          <div class="field-row">
-            <label class="field">
+          <div>
+            <label>
               <span>Orari i support-it</span>
               <input v-model="profileForm.supportHours" type="text" placeholder="p.sh. Hene - Shtune, 09:00 - 18:00">
             </label>
-            <label class="field">
+            <label>
               <span>Qyteti</span>
               <input v-model="profileForm.city" type="text" placeholder="p.sh. Prishtine" required>
             </label>
           </div>
 
-          <label class="field">
+          <label>
             <span>Politika e kthimit</span>
             <textarea
               v-model="profileForm.returnPolicySummary"
@@ -2471,37 +2891,37 @@ async function applyBulkStockUpdate() {
             ></textarea>
           </label>
 
-          <label class="field">
+          <label>
             <span>Adresa e biznesit</span>
             <input v-model="profileForm.addressLine" type="text" placeholder="Shkruaje adresen e biznesit" required>
           </label>
 
-          <label class="field">
+          <label>
             <span>Logo e biznesit (opsionale)</span>
             <input type="file" accept="image/*" @change="handleLogoChange">
           </label>
 
-          <p class="product-upload-help">
+          <p>
             Logo opsionale.
           </p>
 
-          <div class="product-upload-preview" aria-live="polite">
-            <div v-if="!businessLogoPreview" class="product-upload-empty">
+          <div aria-live="polite">
+            <div v-if="!businessLogoPreview">
               Nuk eshte zgjedhur asnje logo ende.
             </div>
-            <figure v-else class="product-upload-preview-item business-logo-preview-item">
-              <img class="product-upload-preview-image business-logo-preview-image" :src="businessLogoPreview" alt="Logo e biznesit">
-              <figcaption class="product-upload-preview-name">Logo e biznesit</figcaption>
+            <figure v-else>
+              <img :src="businessLogoPreview" alt="Logo e biznesit">
+              <figcaption>Logo e biznesit</figcaption>
             </figure>
           </div>
 
-          <div v-if="businessProfile" class="marketplace-status-card">
+          <div v-if="businessProfile">
             <div>
               <strong>{{ formatVerificationStatusLabel(businessProfile.verificationStatus) }}</strong>
             </div>
             <button
               v-if="['unverified', 'rejected'].includes(String(businessProfile.verificationStatus || ''))"
-              class="nav-action nav-action-secondary"
+             
               type="button"
               @click="requestVerificationReview"
             >
@@ -2509,369 +2929,260 @@ async function applyBulkStockUpdate() {
             </button>
           </div>
 
-          <div class="auth-form-actions">
+          <div>
             <button type="submit">Ruaj</button>
           </div>
         </form>
 
-        <div class="form-message" :class="ui.profileType" role="status" aria-live="polite">
+        <div role="status" aria-live="polite">
           {{ ui.profileMessage }}
         </div>
     </section>
 
     <section
       v-if="canManageCatalog"
-      v-show="activeSection === 'add-product'"
-      class="card admin-form-card product-builder-card business-dashboard-panel"
+      v-show="activeSection === 'products'"
+      class="market-card dashboard-section product-workspace"
     >
-        <div class="product-builder-head">
-          <div>
-            <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
-          </div>
-          <button class="button-secondary" type="button" @click="resetProductForm">Reset</button>
+      <div class="product-workspace__header">
+        <div>
+          <h2>{{ editingProduct ? "Edit product" : "Add product" }}</h2>
+          <p>{{ editingProduct ? "Update product details, media, and variants from one compact workspace." : "Create new products faster with compact inputs, live preview, and category-aware variants." }}</p>
         </div>
+        <div class="product-workspace__header-actions">
+          <button type="button" class="market-button market-button--ghost" @click="setActiveSection('inventory')">
+            Go to Inventory
+          </button>
+          <button type="button" class="market-button market-button--secondary" @click="resetProductForm">
+            {{ editingProduct ? "Cancel edit" : "Clear form" }}
+          </button>
+        </div>
+      </div>
 
-        <p v-if="editingProduct" class="admin-edit-state">
-          Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
-        </p>
+      <div
+        v-if="ui.productMessage"
+        class="product-workspace__feedback"
+        :class="{
+          'is-error': ui.productTypeMessage === 'error',
+          'is-success': ui.productTypeMessage === 'success',
+        }"
+        role="status"
+        aria-live="polite"
+      >
+        {{ ui.productMessage }}
+      </div>
 
-        <div class="product-builder-shell">
-          <form class="auth-form product-builder-form" @submit.prevent="submitProduct">
-            <div class="product-builder-steps" role="tablist" aria-label="Hapat e produktit">
-              <button
-                v-for="step in productFormSteps"
-                :key="step.id"
-                class="product-builder-step"
-                :class="{ 'is-active': productFormStep === step.id, 'is-done': step.done }"
-                type="button"
-                @click="focusProductFormStep(step.id)"
+      <div class="product-workspace__layout">
+        <form class="product-workspace__form" @submit.prevent="submitProduct">
+          <article class="product-form-card">
+            <div class="product-form-card__head">
+              <div>
+                <h3>Basic information</h3>
+                <p>Keep the essentials compact and aligned so you can add products faster.</p>
+              </div>
+            </div>
+
+            <div class="product-form-card__grid product-form-card__grid--basic">
+              <div class="product-form-card__field product-form-card__field--stock">
+                <span>Stock</span>
+                <div class="product-workspace__stepper">
+                  <button type="button" aria-label="Decrease quantity" @click="changeProductQuantity(-1)">-</button>
+                  <input
+                    v-model="productForm.simpleStockQuantity"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    aria-label="Product quantity"
+                  >
+                  <button type="button" aria-label="Increase quantity" @click="changeProductQuantity(1)">+</button>
+                </div>
+              </div>
+
+              <label class="product-form-card__field">
+                <span>Article / SKU</span>
+                <input
+                  v-model="productForm.articleNumber"
+                  type="text"
+                  inputmode="text"
+                  placeholder="SKU-10025"
+                >
+              </label>
+
+              <label class="product-form-card__field product-form-card__field--title">
+                <span>Product title</span>
+                <input
+                  ref="productTitleInput"
+                  v-model="productForm.title"
+                  type="text"
+                  placeholder="White cotton t-shirt"
+                  required
+                >
+              </label>
+
+              <label class="product-form-card__field">
+                <span>Price</span>
+                <div class="product-workspace__price-control">
+                  <input
+                    v-model="productForm.price"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="29.00"
+                    required
+                  >
+                  <span>EUR</span>
+                </div>
+              </label>
+
+              <label class="product-form-card__field product-form-card__field--wide">
+                <span>Short description</span>
+                <input
+                  v-model="productForm.metaDescription"
+                  type="text"
+                  maxlength="160"
+                  placeholder="Short preview line users see first"
+                >
+              </label>
+            </div>
+          </article>
+
+          <CompactProductConfigurator :form="productForm" />
+
+          <article class="product-form-card">
+            <div class="product-form-card__head">
+              <div>
+                <h3>Product images</h3>
+                <p>Drag files in, pick the main image, and remove extras without leaving the page.</p>
+              </div>
+            </div>
+
+            <label
+              class="product-media-dropzone"
+              @dragover.prevent
+              @drop.prevent="handleDroppedFiles"
+            >
+              <input
+                class="product-media-dropzone__input"
+                type="file"
+                accept="image/*"
+                multiple
+                :required="!editingProduct && productMediaCount === 0"
+                @change="handleFilesChange"
               >
-                <strong>{{ step.label }}</strong>
+              <strong>Drag & drop product images</strong>
+              <small>{{ productMediaCount > 0 ? `${productMediaCount} image${productMediaCount === 1 ? '' : 's'} ready` : "Upload cover and gallery images" }}</small>
+            </label>
+
+            <div v-if="productPreviewItems.length > 0" class="product-media-grid">
+              <article
+                v-for="(item, index) in productPreviewItems"
+                :key="item.id"
+                class="product-media-tile"
+                :class="{ 'is-primary': index === 0 }"
+              >
+                <div class="product-media-tile__frame">
+                  <img :src="item.path" :alt="item.label">
+                </div>
+                <div class="product-media-tile__meta">
+                  <strong>{{ index === 0 ? "Main image" : `Image ${index + 1}` }}</strong>
+                  <span>{{ item.kind === "local" ? "Ready to upload" : "Saved image" }}</span>
+                </div>
+                <div class="product-media-tile__actions">
+                  <button type="button" @click="setPrimaryProductMedia(index)">Set main</button>
+                  <button type="button" @click="removeProductMedia(index)">Remove</button>
+                </div>
+              </article>
+            </div>
+          </article>
+
+          <article class="product-form-card">
+            <div class="product-form-card__head">
+              <div>
+                <h3>Description</h3>
+                <p>Keep the preview short, then add the full product details below.</p>
+              </div>
+            </div>
+
+            <div class="product-form-card__grid">
+              <label class="product-form-card__field product-form-card__field--wide">
+                <span>Full description</span>
+                <textarea
+                  v-model="productForm.description"
+                  rows="5"
+                  placeholder="Write a clear product description, materials, sizing notes, or technical details."
+                  required
+                ></textarea>
+              </label>
+            </div>
+          </article>
+
+          <div class="product-workspace__footer">
+            <div class="product-workspace__checklist">
+              <span :class="{ 'is-ready': productChecklist[0]?.done }">Title ready</span>
+              <span :class="{ 'is-ready': productChecklist[1]?.done }">Price ready</span>
+              <span :class="{ 'is-ready': productChecklist[2]?.done }">Stock {{ formatStockQuantity(productStockTotal) }}</span>
+              <span :class="{ 'is-ready': productChecklist[3]?.done }">Images {{ productMediaCount }}</span>
+            </div>
+
+            <div class="product-workspace__footer-actions">
+              <button type="button" class="market-button market-button--secondary" @click="resetProductForm">
+                Clear
+              </button>
+              <button type="submit" class="market-button market-button--primary">
+                {{ editingProduct ? "Save changes" : "Save product" }}
               </button>
             </div>
+          </div>
+        </form>
 
-            <section
-              id="business-product-step-details"
-              class="product-builder-block"
-              :class="{ 'is-active': productFormStep === 'details' }"
-            >
-              <div class="product-builder-block-head">
-                <div>
-                  <h3>Emri, kodi dhe pershkrimi</h3>
-                </div>
-                <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
-                  {{ ui.productAiBusy ? "AI..." : "AI" }}
-                </button>
+        <aside class="product-preview-card">
+          <div class="product-preview-card__head">
+            <div>
+              <h3>Live preview</h3>
+              <p>See the most important listing details before you save.</p>
+            </div>
+          </div>
+
+          <div class="product-preview-card__media">
+            <img v-if="productPreviewImage" :src="productPreviewImage" :alt="productForm.title || 'Product preview image'">
+            <div v-else class="product-preview-card__media-empty">
+              Product image preview
+            </div>
+          </div>
+
+          <div class="product-preview-card__body">
+            <div class="product-preview-card__title-row">
+              <div>
+                <span class="product-preview-card__eyebrow">{{ formatCategoryLabel(productForm.category) || "Category" }}</span>
+                <h3>{{ productForm.title || "Product title" }}</h3>
               </div>
-
-              <div class="field-row">
-                <label class="field">
-                  <span>Numri i artikullit</span>
-                  <input
-                    v-model="productForm.articleNumber"
-                    type="text"
-                    inputmode="numeric"
-                    placeholder="p.sh. 10025"
-                  >
-                </label>
-
-              <label class="field">
-                <span>Titulli</span>
-                <input ref="productTitleInput" v-model="productForm.title" type="text" placeholder="p.sh. Produkt i ri" required>
-              </label>
+              <strong>{{ productPreviewPrice > 0 ? formatPrice(productPreviewPrice) : "Set price" }}</strong>
             </div>
 
-            <div class="field-row field-row-3">
-              <label class="field">
-                <span>Brand</span>
-                <input v-model="productForm.brand" type="text" placeholder="p.sh. Nike">
-              </label>
-              <label class="field">
-                <span>GTIN / Barcode</span>
-                <input v-model="productForm.gtin" type="text" inputmode="numeric" placeholder="p.sh. 0123456789012">
-              </label>
-              <label class="field">
-                <span>MPN</span>
-                <input v-model="productForm.mpn" type="text" placeholder="p.sh. NK-2026-RED">
-              </label>
+            <p class="product-preview-card__copy">
+              {{ productForm.metaDescription || productForm.description || "Your short product preview will appear here." }}
+            </p>
+
+            <div class="product-preview-card__facts">
+              <div
+                v-for="item in productPreviewSummary"
+                :key="`${item.label}-${item.value}`"
+                class="product-preview-card__fact"
+              >
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
             </div>
-
-            <div class="field-row field-row-3">
-              <label class="field">
-                <span>Materiali</span>
-                <input v-model="productForm.material" type="text" placeholder="p.sh. Lekure natyrale">
-              </label>
-              <label class="field">
-                <span>Pesha</span>
-                <input v-model="productForm.weightValue" type="number" min="0" step="0.01" placeholder="p.sh. 0.45">
-              </label>
-              <label class="field">
-                <span>Njesia e peshes</span>
-                <select v-model="productForm.weightUnit">
-                  <option
-                    v-for="option in PRODUCT_WEIGHT_UNIT_OPTIONS"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
-
-              <label class="field">
-                <span>Pershkrimi</span>
-                <textarea v-model="productForm.description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
-              </label>
-
-              <div class="field-row">
-                <label class="field">
-                  <span>SEO title</span>
-                  <input v-model="productForm.metaTitle" type="text" maxlength="160" placeholder="Titull me i shkurter per Google">
-                </label>
-                <label class="field">
-                  <span>SEO description</span>
-                  <textarea
-                    v-model="productForm.metaDescription"
-                    rows="3"
-                    maxlength="320"
-                    placeholder="Pershkrim i shkurter per rezultatet e kerkimit"
-                  ></textarea>
-                </label>
-              </div>
-
-              <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Tjetra</button>
-              </div>
-            </section>
-
-            <section
-              id="business-product-step-pricing"
-              class="product-builder-block"
-              :class="{ 'is-active': productFormStep === 'pricing' }"
-            >
-              <div class="product-builder-block-head">
-                <div>
-                  <h3>Regular price, sale dhe afati</h3>
-                </div>
-              </div>
-
-              <div class="field-row field-row-3">
-                <label class="field">
-                  <span>Cmimi aktual (€)</span>
-                  <input v-model="productForm.price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
-                </label>
-                <label class="field">
-                  <span>Cmimi para zbritjes</span>
-                  <input v-model="productForm.compareAtPrice" type="number" min="0" step="0.01" placeholder="p.sh. 18.99">
-                </label>
-                <label class="field">
-                  <span>Zbritja vlen deri</span>
-                  <input v-model="productForm.saleEndsAt" type="datetime-local">
-                </label>
-              </div>
-
-              <p class="product-builder-note" :class="{ 'is-warning': !productPricingReady && (productForm.price || productForm.compareAtPrice || productForm.saleEndsAt) }">
-                <template v-if="productDiscountPercent > 0">
-                  Produkti do te shfaqet me rreth {{ productDiscountPercent }}% zbritje.
-                </template>
-                <template v-else>
-                  Nese vendos cmim para zbritjes, ai duhet te jete me i madh se cmimi aktual.
-                </template>
-              </p>
-
-              <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('details')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Tjetra</button>
-              </div>
-            </section>
-
-            <section
-              id="business-product-step-variants"
-              class="product-builder-block"
-              :class="{ 'is-active': productFormStep === 'variants' }"
-            >
-              <div class="product-builder-block-head">
-                <div>
-                  <h3>Ngjyra, madhesia, tipi dhe stoku</h3>
-                  <p class="product-builder-note">Ruaj cmim ose foto specifike per variant.</p>
-                </div>
-                <div class="product-builder-inline-summary">
-                  <span class="summary-chip">
-                    <span>Variante</span>
-                    <strong>{{ productVariantEntries.length }}</strong>
-                  </span>
-                  <span class="summary-chip">
-                    <span>Stok total</span>
-                    <strong>{{ formatStockQuantity(productStockTotal) }}</strong>
-                  </span>
-                </div>
-              </div>
-
-              <ProductVariantConfigurator :form="productForm" />
-
-              <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('pricing')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Tjetra</button>
-              </div>
-            </section>
-
-            <section
-              id="business-product-step-media"
-              class="product-builder-block"
-              :class="{ 'is-active': productFormStep === 'media' }"
-            >
-              <div class="product-builder-block-head">
-                <div>
-                  <h3>Cover dhe galeria e produktit</h3>
-                </div>
-                <span class="summary-chip">
-                  <span>Foto</span>
-                  <strong>{{ productMediaCount }}</strong>
-                </span>
-              </div>
-
-              <label class="field">
-                <span>Upload photo</span>
-                <input type="file" accept="image/*" multiple :required="!editingProduct" @change="handleFilesChange">
-              </label>
-
-              <p class="product-upload-help">
-                Cover dhe foto shtese.
-              </p>
-
-              <div class="product-upload-preview" aria-live="polite">
-                <div v-if="productPreviewItems.length === 0" class="product-upload-empty">
-                  Asnje foto nuk eshte zgjedhur ende.
-                </div>
-                <figure
-                  v-for="(item, index) in productPreviewItems"
-                  v-else
-                  :key="`${item.path}-${index}`"
-                  class="product-upload-preview-item"
-                >
-                  <img class="product-upload-preview-image" :src="item.path" :alt="item.label">
-                  <figcaption class="product-upload-preview-name">{{ item.label }}</figcaption>
-                </figure>
-              </div>
-
-              <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('variants')">Kthehu</button>
-                <button class="button-secondary" type="button" @click="focusProductFormStep('review')">Tjetra</button>
-              </div>
-            </section>
-
-            <section
-              id="business-product-step-review"
-              class="product-builder-block"
-              :class="{ 'is-active': productFormStep === 'review' }"
-            >
-              <div class="product-builder-block-head">
-                <div>
-                  <h3>Kontroll final</h3>
-                </div>
-              </div>
-
-              <div class="product-builder-review-card">
-                <div class="product-builder-review-media">
-                  <img v-if="productPreviewCover" :src="productPreviewCover" :alt="productForm.title || 'Preview i produktit'">
-                  <div v-else class="product-builder-review-empty">Pa cover</div>
-                </div>
-                <div class="product-builder-review-copy">
-                  <h3>{{ productForm.title || "Titulli i produktit" }}</h3>
-                  <p>{{ productForm.description || "Pershkrimi do te shfaqet ketu sapo ta plotesosh." }}</p>
-                  <div class="product-builder-price-preview">
-                    <strong>{{ productPriceValue > 0 ? formatPrice(productPriceValue) : "Vendos cmimin" }}</strong>
-                    <span v-if="productCompareAtPriceValue > productPriceValue">{{ formatPrice(productCompareAtPriceValue) }}</span>
-                    <mark v-if="productDiscountPercent > 0">-{{ productDiscountPercent }}%</mark>
-                  </div>
-                  <div class="product-detail-tags product-detail-tags-admin">
-                    <span v-if="productForm.brand" class="product-detail-tag">Brand: {{ productForm.brand }}</span>
-                    <span v-if="productForm.material" class="product-detail-tag">Material: {{ productForm.material }}</span>
-                    <span
-                      v-if="productForm.weightValue"
-                      class="product-detail-tag"
-                    >
-                      Pesha: {{ productForm.weightValue }} {{ productForm.weightUnit }}
-                    </span>
-                    <span v-if="productForm.gtin" class="product-detail-tag">GTIN: {{ productForm.gtin }}</span>
-                  </div>
-                  <div class="product-builder-inline-summary">
-                    <span class="summary-chip">
-                      <span>Stok total</span>
-                      <strong>{{ formatStockQuantity(productStockTotal) }}</strong>
-                    </span>
-                    <span class="summary-chip">
-                      <span>Variante</span>
-                      <strong>{{ productVariantEntries.length || 1 }}</strong>
-                    </span>
-                    <span class="summary-chip">
-                      <span>Media</span>
-                      <strong>{{ productMediaCount }}</strong>
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <ul class="product-builder-checklist" aria-label="Kontrolli final i produktit">
-                <li
-                  v-for="item in productChecklist"
-                  :key="item.key"
-                  class="product-builder-checklist-item"
-                  :class="{ 'is-done': item.done }"
-                >
-                  <span class="product-builder-checklist-dot"></span>
-                  <strong>{{ item.label }}</strong>
-                  <small>{{ item.done ? "OK" : "Plotesoje para ruajtjes" }}</small>
-                </li>
-              </ul>
-
-              <div class="auth-form-actions">
-                <button class="button-secondary" type="button" @click="focusProductFormStep('media')">Kthehu</button>
-                <button type="submit">{{ editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin" }}</button>
-                <button v-if="editingProduct" class="button-secondary" type="button" @click="resetProductForm">Anulo editimin</button>
-              </div>
-            </section>
-          </form>
-
-          <aside class="product-builder-aside">
-            <article class="product-builder-aside-card">
-              <h3>{{ editingProduct ? "Artikull ne editim" : "Artikull i ri" }}</h3>
-              <div class="product-builder-aside-grid">
-                <div class="summary-chip">
-                  <span>Detajet</span>
-                  <strong>{{ productChecklist[0]?.done ? "Gati" : "Hape" }}</strong>
-                </div>
-                <div class="summary-chip">
-                  <span>Cmimi</span>
-                  <strong>{{ productChecklist[1]?.done ? "Gati" : "Kontrollo" }}</strong>
-                </div>
-                <div class="summary-chip">
-                  <span>Variantet</span>
-                  <strong>{{ productVariantEntries.length || 1 }}</strong>
-                </div>
-                <div class="summary-chip">
-                  <span>Media</span>
-                  <strong>{{ productMediaCount }}</strong>
-                </div>
-              </div>
-            </article>
-
-            <article class="product-builder-aside-card">
-              <h3>{{ productReadyToSave ? "Produkti duket gati" : "Mungojne disa hapa" }}</h3>
-            </article>
-          </aside>
-        </div>
-
-        <div class="form-message" :class="ui.productTypeMessage" role="status" aria-live="polite">
-          {{ ui.productMessage }}
-        </div>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <section
       v-if="businessProfile && !canManageCatalog"
       v-show="activeSection === 'profile'"
-      class="card business-dashboard-freeze-card business-dashboard-panel"
+      class="market-card dashboard-section"
       aria-label="Katalogu i ngrire"
     >
       <h2>Produktet hapen pasi admini ta verifikoje biznesin</h2>
@@ -2880,26 +3191,26 @@ async function applyBulkStockUpdate() {
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'import'"
-      class="card admin-list-card bulk-import-surface business-dashboard-panel"
+      class="market-card dashboard-section"
       aria-label="Flexible catalog import"
     >
-      <div class="admin-list-header">
+      <div>
         <div>
           <h2>Import</h2>
         </div>
       </div>
 
-      <div class="bulk-import-shell">
-        <article class="bulk-import-panel glass-strong">
-          <div class="bulk-import-section-head">
+      <div>
+        <article>
+          <div>
             <div>
               <h3>Source setup</h3>
             </div>
-            <span class="summary-chip">{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
+            <span>{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
           </div>
 
-          <div class="bulk-import-toolbar">
-            <label class="field">
+          <div>
+            <label>
               <span>Source type</span>
               <select v-model="importSourceType" @change="handleImportSourceTypeChange">
                 <option value="csv">CSV</option>
@@ -2909,7 +3220,7 @@ async function applyBulkStockUpdate() {
               </select>
             </label>
 
-            <label class="field">
+            <label>
               <span>Mapping profile</span>
               <select v-model.number="importSelectedProfileId">
                 <option :value="0">No saved profile</option>
@@ -2923,7 +3234,7 @@ async function applyBulkStockUpdate() {
               </select>
             </label>
 
-            <label class="field">
+            <label>
               <span>Saved source</span>
               <select v-model.number="importSelectedSourceId">
                 <option :value="0">No saved source</option>
@@ -2938,8 +3249,8 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-if="importSourceType === 'csv' || importSourceType === 'xlsx'" class="bulk-import-source-card">
-            <label class="bulk-import-dropzone">
+          <div v-if="importSourceType === 'csv' || importSourceType === 'xlsx'">
+            <label>
               <input
                 ref="importFileInput"
                 type="file"
@@ -2951,12 +3262,12 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-else-if="importSourceType === 'json'" class="bulk-import-source-card bulk-import-source-card--stack">
-            <label class="field">
+          <div v-else-if="importSourceType === 'json'">
+            <label>
               <span>Record path</span>
               <input v-model="importJsonRecordPath" type="text" placeholder="products.items" />
             </label>
-            <label class="field">
+            <label>
               <span>JSON payload</span>
               <textarea
                 v-model="importJsonPayload"
@@ -2966,13 +3277,13 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-else class="bulk-import-source-card bulk-import-source-card--stack">
-            <div class="bulk-import-toolbar">
-              <label class="field">
+          <div v-else>
+            <div>
+              <label>
                 <span>Source name</span>
                 <input v-model="importApiSource.sourceName" type="text" placeholder="Wholesale feed" />
               </label>
-              <label class="field">
+              <label>
                 <span>Method</span>
                 <select v-model="importApiSource.method">
                   <option value="GET">GET</option>
@@ -2980,69 +3291,69 @@ async function applyBulkStockUpdate() {
                   <option value="PUT">PUT</option>
                 </select>
               </label>
-              <label class="field">
+              <label>
                 <span>Record path</span>
                 <input v-model="importApiSource.recordPath" type="text" placeholder="data.products" />
               </label>
             </div>
 
-            <label class="field">
+            <label>
               <span>API URL</span>
               <input v-model="importApiSource.url" type="url" placeholder="https://supplier.example.com/feed.json" />
             </label>
 
-            <div class="bulk-import-toolbar">
-              <label class="field">
+            <div>
+              <label>
                 <span>Headers JSON</span>
                 <textarea v-model="importApiSource.headersText" rows="5" placeholder='{"Authorization":"Bearer token"}' />
               </label>
-              <label class="field">
+              <label>
                 <span>Body JSON</span>
                 <textarea v-model="importApiSource.bodyText" rows="5" placeholder='{"include":"products"}' />
               </label>
             </div>
 
-            <div class="bulk-import-toolbar">
-              <label class="field">
+            <div>
+              <label>
                 <span>Sync interval (minutes)</span>
                 <input v-model="importApiSource.syncIntervalMinutes" type="number" min="15" step="15" />
               </label>
-              <label class="field field-checkbox">
+              <label>
                 <span>Sync enabled</span>
                 <input v-model="importApiSource.syncEnabled" type="checkbox" />
               </label>
             </div>
           </div>
 
-          <div class="bulk-import-toolbar">
-            <label class="field">
+          <div>
+            <label>
               <span>Profile name</span>
               <input v-model="importProfileDraftName" type="text" placeholder="Boutique CSV profile" />
             </label>
-            <label class="field field-checkbox">
+            <label>
               <span>Save profile on preview</span>
               <input v-model="importSaveProfile" type="checkbox" />
             </label>
           </div>
 
-          <div class="auth-form-actions bulk-import-actions">
+          <div>
             <button type="button" :disabled="importIsPreviewLoading" @click="prepareImportPreview">
               {{ importIsPreviewLoading ? "..." : "Preview" }}
             </button>
             <button
-              class="button-secondary"
+             
               type="button"
               :disabled="!importPreviewHasChanges || importIsPreviewLoading"
               @click="loadImportJobPreview(importCurrentJob?.id)"
             >
               Refresh
             </button>
-            <button class="button-secondary" type="button" @click="saveCurrentImportProfile">
+            <button type="button" @click="saveCurrentImportProfile">
               Ruaj profil
             </button>
             <button
               v-if="importSourceType === 'api-json'"
-              class="button-secondary"
+             
               type="button"
               @click="saveCurrentImportSource"
             >
@@ -3050,70 +3361,70 @@ async function applyBulkStockUpdate() {
             </button>
             <button
               v-if="importSourceType === 'api-json'"
-              class="button-secondary"
+             
               type="button"
               :disabled="!importSelectedSourceId || importIsSyncLoading"
               @click="syncCurrentImportSource()"
             >
               {{ importIsSyncLoading ? "..." : "Sync" }}
             </button>
-            <button class="button-secondary" type="button" @click="downloadImportTemplate">
+            <button type="button" @click="downloadImportTemplate">
               Template
             </button>
           </div>
         </article>
 
-        <aside class="bulk-import-side">
-          <article class="bulk-import-panel glass-soft">
-            <div class="bulk-import-section-head">
+        <aside>
+          <article>
+            <div>
               <div>
                 <h3>Summary</h3>
               </div>
             </div>
 
-            <div class="bulk-import-summary-grid">
-              <div class="summary-chip glass-soft">
+            <div>
+              <div>
                 <span>Total rows</span>
                 <strong>{{ importSummary.totalRows }}</strong>
               </div>
-              <div class="summary-chip glass-soft">
+              <div>
                 <span>Valid rows</span>
                 <strong>{{ importSummary.validRows }}</strong>
               </div>
-              <div class="summary-chip glass-soft">
+              <div>
                 <span>Invalid rows</span>
                 <strong>{{ importSummary.invalidRows }}</strong>
               </div>
-              <div class="summary-chip glass-soft">
+              <div>
                 <span>Parent groups</span>
                 <strong>{{ importSummary.parentProducts }}</strong>
               </div>
-              <div class="summary-chip glass-soft">
+              <div>
                 <span>Warnings</span>
                 <strong>{{ importSummary.warningsCount }}</strong>
               </div>
-              <div class="summary-chip glass-soft">
+              <div>
                 <span>Hard errors</span>
                 <strong>{{ importSummary.hardErrorsCount }}</strong>
               </div>
             </div>
           </article>
 
-          <article class="bulk-import-panel glass-soft">
-            <div class="bulk-import-section-head">
+          <article>
+            <div>
               <div>
                 <h3>Recent jobs</h3>
               </div>
             </div>
 
-            <div v-if="importRecentJobs.length === 0" class="admin-empty-state">
+            <div v-if="importRecentJobs.length === 0">
               Ende nuk ka import jobs te ruajtur.
             </div>
-            <div v-else class="bulk-import-job-list">
+            <div v-else>
               <button
                 v-for="job in importRecentJobs.slice(0, 6)"
                 :key="`import-job-${job.id}`"
-                class="bulk-import-job-card"
+               
                 type="button"
                 @click="loadImportJobPreview(job.id)"
               >
@@ -3126,18 +3437,18 @@ async function applyBulkStockUpdate() {
         </aside>
       </div>
 
-      <article v-if="importDetectedHeaders.length > 0" class="bulk-import-panel bulk-import-mapping glass-strong">
-        <div class="bulk-import-section-head">
+      <article v-if="importDetectedHeaders.length > 0">
+        <div>
           <div>
             <h3>Field mapping</h3>
           </div>
         </div>
 
-        <div class="bulk-import-mapping-grid">
+        <div>
           <label
             v-for="fieldName in importFieldList"
             :key="`mapping-${fieldName}`"
-            class="field"
+           
           >
             <span>{{ formatImportFieldLabel(fieldName) }}</span>
             <select v-model="importMapping[fieldName]">
@@ -3154,34 +3465,34 @@ async function applyBulkStockUpdate() {
         </div>
       </article>
 
-      <div v-if="importSummary.warnings.length > 0" class="form-message error" role="status" aria-live="polite">
+      <div v-if="importSummary.warnings.length > 0" role="status" aria-live="polite">
         {{ importSummary.warnings.join(" ") }}
       </div>
 
-      <article class="bulk-import-shell bulk-import-shell--review">
-        <div class="bulk-import-panel glass-soft">
-          <div class="bulk-import-section-head">
+      <article>
+        <div>
+          <div>
             <div>
               <h3>Grouping preview</h3>
             </div>
           </div>
 
-          <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke pergatitur preview...</div>
-          <div v-else-if="importPreviewGroups.length === 0" class="admin-empty-state">
+          <div v-if="importIsPreviewLoading">Duke pergatitur preview...</div>
+          <div v-else-if="importPreviewGroups.length === 0">
             Krijo nje preview per te pare grouping-un e varianteve.
           </div>
-          <div v-else class="bulk-import-group-list">
+          <div v-else>
             <article
               v-for="group in importPreviewGroups.slice(0, 8)"
               :key="`import-group-${group.groupKey}`"
-              class="bulk-import-group-card"
+             
             >
-              <div class="bulk-import-group-head">
+              <div>
                 <div>
                   <h4>{{ group.parent?.title || "Untitled group" }}</h4>
                   <p>{{ group.parent?.canonicalCategory || "uncategorized" }} · {{ group.variants?.length || 0 }} variants</p>
                 </div>
-                <label class="field-checkbox bulk-import-check">
+                <label>
                   <span>Approve</span>
                   <input
                     type="checkbox"
@@ -3191,20 +3502,20 @@ async function applyBulkStockUpdate() {
                 </label>
               </div>
 
-              <div class="product-detail-tags product-detail-tags-admin">
-                <span class="product-detail-tag">Group key: {{ group.groupKey }}</span>
-                <span class="product-detail-tag">Price: {{ formatPrice(group.parent?.priceRange?.min || 0) }}</span>
-                <span class="product-detail-tag">Stock: {{ group.parent?.stock || 0 }}</span>
+              <div>
+                <span>Group key: {{ group.groupKey }}</span>
+                <span>Price: {{ formatPrice(group.parent?.priceRange?.min || 0) }}</span>
+                <span>Stock: {{ group.parent?.stock || 0 }}</span>
               </div>
 
-              <p v-if="group.warnings?.length" class="bulk-import-inline-warning">{{ group.warnings.join(" ") }}</p>
-              <p v-if="group.errors?.length" class="bulk-import-inline-error">{{ group.errors.join(" ") }}</p>
+              <p v-if="group.warnings?.length">{{ group.warnings.join(" ") }}</p>
+              <p v-if="group.errors?.length">{{ group.errors.join(" ") }}</p>
 
-              <div class="bulk-import-variant-list">
+              <div>
                 <div
                   v-for="variant in group.variants?.slice(0, 4)"
                   :key="`${group.groupKey}-${variant.key}`"
-                  class="bulk-import-variant-row"
+                 
                 >
                   <strong>{{ variant.label || variant.key }}</strong>
                   <span>{{ variant.sku || "No SKU" }}</span>
@@ -3215,33 +3526,30 @@ async function applyBulkStockUpdate() {
           </div>
         </div>
 
-        <div class="bulk-import-panel glass-soft">
-          <div class="bulk-import-section-head">
+        <div>
+          <div>
             <div>
               <h3>Row preview</h3>
             </div>
           </div>
 
-          <div v-if="importIsPreviewLoading" class="admin-empty-state">Duke pergatitur rreshtat...</div>
-          <div v-else-if="importPreviewRecords.length === 0" class="admin-empty-state">
+          <div v-if="importIsPreviewLoading">Duke pergatitur rreshtat...</div>
+          <div v-else-if="importPreviewRecords.length === 0">
             Ende nuk ka rreshta preview.
           </div>
-          <div v-else class="bulk-import-record-list">
+          <div v-else>
             <article
               v-for="record in importPreviewRecords.slice(0, 10)"
               :key="`import-record-${record.sourceRowId}`"
-              class="bulk-import-record-card"
-              :class="{
-                'is-error': record.errors?.length,
-                'is-skipped': importSkippedRowIds.includes(record.sourceRowId),
-              }"
+             
+             
             >
-              <div class="bulk-import-record-head">
+              <div>
                 <div>
                   <strong>#{{ record.sourceRowId }}</strong>
                   <span>{{ record.normalizedData?.title || record.mappedData?.title || "Untitled row" }}</span>
                 </div>
-                <label class="field-checkbox bulk-import-check">
+                <label>
                   <span>Skip</span>
                   <input
                     type="checkbox"
@@ -3251,14 +3559,14 @@ async function applyBulkStockUpdate() {
                 </label>
               </div>
 
-              <div class="product-detail-tags product-detail-tags-admin">
-                <span class="product-detail-tag">Category: {{ record.normalizedData?.category || "—" }}</span>
-                <span class="product-detail-tag">Group: {{ record.normalizedData?.groupKey || "—" }}</span>
-                <span class="product-detail-tag">Price: {{ formatPrice(record.normalizedData?.price || 0) }}</span>
-                <span class="product-detail-tag">Stock: {{ record.normalizedData?.stock || 0 }}</span>
+              <div>
+                <span>Category: {{ record.normalizedData?.category || "—" }}</span>
+                <span>Group: {{ record.normalizedData?.groupKey || "—" }}</span>
+                <span>Price: {{ formatPrice(record.normalizedData?.price || 0) }}</span>
+                <span>Stock: {{ record.normalizedData?.stock || 0 }}</span>
               </div>
 
-              <div class="bulk-import-record-grid">
+              <div>
                 <div>
                   <h5>Mapped</h5>
                   <p>{{ record.mappedData?.title || "—" }}</p>
@@ -3273,24 +3581,24 @@ async function applyBulkStockUpdate() {
                 </div>
               </div>
 
-              <p v-if="record.warnings?.length" class="bulk-import-inline-warning">{{ record.warnings.join(" ") }}</p>
-              <p v-if="record.errors?.length" class="bulk-import-inline-error">{{ record.errors.join(" ") }}</p>
+              <p v-if="record.warnings?.length">{{ record.warnings.join(" ") }}</p>
+              <p v-if="record.errors?.length">{{ record.errors.join(" ") }}</p>
             </article>
           </div>
         </div>
       </article>
 
-      <form class="auth-form" @submit.prevent="submitImportProducts">
-        <div class="auth-form-actions">
+      <form @submit.prevent="submitImportProducts">
+        <div>
           <button type="submit" :disabled="importIsCommitLoading || !importCurrentJob?.id">
             {{ importIsCommitLoading ? "..." : "Import" }}
           </button>
-          <button class="button-secondary" type="button" @click="clearImportSelection()">Reset</button>
-          <button class="button-secondary" type="button" @click="triggerImportPicker">File</button>
+          <button type="button" @click="clearImportSelection()">Reset</button>
+          <button type="button" @click="triggerImportPicker">File</button>
         </div>
       </form>
 
-      <div class="form-message" :class="ui.importType" role="status" aria-live="polite">
+      <div role="status" aria-live="polite">
         {{ ui.importMessage }}
       </div>
     </section>
@@ -3298,55 +3606,55 @@ async function applyBulkStockUpdate() {
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'offers'"
-      class="card admin-list-card business-dashboard-panel"
+      class="market-card dashboard-section"
       aria-label="Promocionet e biznesit"
     >
-      <div class="admin-list-header">
+      <div>
         <div>
-          <h2>Oferta</h2>
+          <h2>Discounts</h2>
         </div>
       </div>
 
-      <form class="auth-form" @submit.prevent="savePromotion">
-        <div class="field-row">
-          <label class="field">
+      <form @submit.prevent="savePromotion">
+        <div>
+          <label>
             <span>Kodi</span>
             <input v-model="promotionForm.code" type="text" placeholder="p.sh. TREGO10" required>
           </label>
-          <label class="field">
+          <label>
             <span>Lloji</span>
             <select v-model="promotionForm.discountType">
               <option value="percent">Perqindje</option>
               <option value="fixed">Vlere fikse</option>
             </select>
           </label>
-          <label class="field">
+          <label>
             <span>Vlera</span>
             <input v-model="promotionForm.discountValue" type="number" min="0.01" step="0.01" placeholder="10" required>
           </label>
         </div>
 
-        <div class="field-row">
-          <label class="field">
+        <div>
+          <label>
             <span>Titulli</span>
             <input v-model="promotionForm.title" type="text" placeholder="Oferta e javes">
           </label>
-          <label class="field">
+          <label>
             <span>Minimumi i shportes</span>
             <input v-model="promotionForm.minimumSubtotal" type="number" min="0" step="0.01" placeholder="0">
           </label>
-          <label class="field">
+          <label>
             <span>Limit total</span>
             <input v-model="promotionForm.usageLimit" type="number" min="0" step="1" placeholder="0 = pa limit">
           </label>
         </div>
 
-        <div class="field-row">
-          <label class="field">
+        <div>
+          <label>
             <span>Limit per user</span>
             <input v-model="promotionForm.perUserLimit" type="number" min="1" step="1" placeholder="1">
           </label>
-          <label class="field">
+          <label>
             <span>Seksioni</span>
             <select v-model="promotionForm.pageSection">
               <option value="">Te gjitha</option>
@@ -3359,7 +3667,7 @@ async function applyBulkStockUpdate() {
               </option>
             </select>
           </label>
-          <label class="field">
+          <label>
             <span>Kategoria</span>
             <select v-model="promotionForm.category">
               <option value="">Te gjitha</option>
@@ -3374,16 +3682,16 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <div class="field-row">
-          <label class="field">
+        <div>
+          <label>
             <span>Aktiv nga</span>
             <input v-model="promotionForm.startsAt" type="datetime-local">
           </label>
-          <label class="field">
+          <label>
             <span>Aktiv deri</span>
             <input v-model="promotionForm.endsAt" type="datetime-local">
           </label>
-          <label class="field">
+          <label>
             <span>Statusi</span>
             <select v-model="promotionForm.isActive">
               <option :value="true">Aktiv</option>
@@ -3392,23 +3700,23 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <label class="field">
+        <label>
           <span>Pershkrimi</span>
           <input v-model="promotionForm.description" type="text" placeholder="Pershkrim i shkurter per kete oferte">
         </label>
 
-        <div class="auth-form-actions">
+        <div>
           <button type="submit">Ruaj</button>
         </div>
       </form>
 
-      <div class="form-message" :class="ui.promotionType" role="status" aria-live="polite">
+      <div role="status" aria-live="polite">
         {{ ui.promotionMessage }}
       </div>
 
-      <div v-if="promotions.length > 0" class="notifications-list">
-        <article v-for="promotion in promotions" :key="promotion.id" class="card account-section notification-card">
-          <div class="notification-card-head">
+      <div v-if="promotions.length > 0">
+        <article v-for="promotion in promotions" :key="promotion.id">
+          <div>
             <div>
               <h2>{{ promotion.title || "Promocion" }}</h2>
             </div>
@@ -3416,31 +3724,31 @@ async function applyBulkStockUpdate() {
               {{ promotion.discountType === "percent" ? `${promotion.discountValue}%` : formatPrice(promotion.discountValue) }}
             </strong>
           </div>
-          <div class="order-item-marketplace-meta">
-            <span class="summary-chip">
+          <div>
+            <span>
               <span>Statusi</span>
               <strong>{{ promotion.isActive ? "Aktiv" : "Pauzuar" }}</strong>
             </span>
-            <span class="summary-chip">
+            <span>
               <span>Perdorime</span>
               <strong>{{ promotion.usageLimit || "Pa limit" }}</strong>
             </span>
-            <span class="summary-chip">
+            <span>
               <span>Per user</span>
               <strong>{{ promotion.perUserLimit || 1 }}</strong>
             </span>
           </div>
-          <div class="order-item-marketplace-meta">
-            <span v-if="promotion.pageSection" class="section-text">
+          <div>
+            <span v-if="promotion.pageSection">
               Seksioni: <strong>{{ formatPromotionSectionLabel(promotion.pageSection) }}</strong>
             </span>
-            <span v-if="promotion.category" class="section-text">
+            <span v-if="promotion.category">
               Kategoria: <strong>{{ formatCategoryLabel(promotion.category) }}</strong>
             </span>
-            <span v-if="promotion.startsAt" class="section-text">
+            <span v-if="promotion.startsAt">
               Nga: <strong>{{ formatDateLabel(promotion.startsAt) }}</strong>
             </span>
-            <span v-if="promotion.endsAt" class="section-text">
+            <span v-if="promotion.endsAt">
               Deri: <strong>{{ formatDateLabel(promotion.endsAt) }}</strong>
             </span>
           </div>
@@ -3450,103 +3758,183 @@ async function applyBulkStockUpdate() {
 
     <section
       v-if="canManageCatalog"
-      v-show="activeSection === 'products'"
-      class="card admin-list-card products-management-surface business-dashboard-panel"
+      v-show="activeSection === 'payouts'"
+      class="market-card dashboard-section payout-workspace"
+      aria-label="Payoutet e biznesit"
     >
-      <div class="admin-list-header">
+      <div class="inventory-workspace__header">
         <div>
-          <h2>Produktet</h2>
-        </div>
-        <div class="auth-form-actions">
-          <button type="button" @click="openAddProductForm">Shto</button>
-          <button class="button-secondary" type="button" @click="triggerImportPicker">Import</button>
+          <h2>Payouts</h2>
+          <p>Review available balance, pending settlement, and payout history derived from your fulfilled order items.</p>
         </div>
       </div>
 
-      <div class="products-controls glass-strong">
-        <label class="admin-compact-search" aria-label="Kerko produktin e biznesit">
-          <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <div class="inventory-summary-grid">
+        <article v-for="item in payoutSummaryCards" :key="item.label" class="inventory-summary-card">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <small>{{ item.meta }}</small>
+        </article>
+      </div>
+
+      <div v-if="payoutRows.length === 0" class="market-empty">
+        <h3>No payout activity yet</h3>
+        <p>Payout rows will appear here once your store has order items with settlement data.</p>
+      </div>
+
+      <article v-else class="inventory-table-wrap payout-table-wrap">
+        <table class="inventory-table payout-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Order</th>
+              <th>Product</th>
+              <th>Status</th>
+              <th>Vendor earnings</th>
+              <th>Commission</th>
+              <th>Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in payoutRows" :key="`payout-row-${row.orderId}-${row.productTitle}-${row.variantLabel}`">
+              <td>{{ formatDateLabel(row.orderCreatedAt) }}</td>
+              <td>#{{ row.orderId }}</td>
+              <td>
+                <div class="payout-table__product">
+                  <strong>{{ row.productTitle }}</strong>
+                  <span v-if="row.variantLabel">{{ row.variantLabel }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="inventory-status-pill payout-status-pill" :class="getPayoutStatusClass(row.payoutStatus)">
+                  {{ formatPayoutStatusLabel(row.payoutStatus) }}
+                </span>
+              </td>
+              <td><strong>{{ formatPrice(row.sellerEarningsAmount || 0) }}</strong></td>
+              <td>{{ formatPrice(row.commissionAmount || 0) }}</td>
+              <td>{{ row.payoutDueAt ? formatDateLabel(row.payoutDueAt) : "TBD" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+    </section>
+
+    <section
+      v-if="canManageCatalog"
+      v-show="activeSection === 'inventory'"
+      class="market-card dashboard-section inventory-workspace"
+    >
+      <div class="inventory-workspace__header">
+        <div>
+          <h2>Inventory</h2>
+          <p>Review stock, search products, and manage edit or delete actions without mixing them into the add-product flow.</p>
+        </div>
+        <div class="inventory-workspace__header-actions">
+          <button type="button" class="market-button market-button--secondary" @click="triggerImportPicker">Import</button>
+          <button type="button" class="market-button market-button--primary" @click="openAddProductForm">Add product</button>
+        </div>
+      </div>
+
+      <div class="inventory-summary-grid">
+        <article v-for="item in inventorySummaryCards" :key="item.label" class="inventory-summary-card">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <small>{{ item.meta }}</small>
+        </article>
+      </div>
+
+      <div class="inventory-toolbar">
+        <label class="inventory-toolbar__search" aria-label="Search inventory">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="7"></circle>
             <path d="m20 20-3.5-3.5"></path>
           </svg>
           <input
             v-model="productSearchQuery"
             type="search"
-            placeholder="Kerko produkt me numer, emer, kategori..."
+            placeholder="Search by title, SKU, category..."
           >
         </label>
-        <label class="field">
-          <span>Kategoria</span>
+        <label class="inventory-toolbar__filter">
+          <span>Category</span>
           <select v-model="productCategoryFilter">
-            <option value="">Te gjitha</option>
+            <option value="">All categories</option>
             <option v-for="option in productCategoryOptions" :key="`filter-category-${option.value}`" :value="option.value">
               {{ option.label }}
             </option>
           </select>
         </label>
-        <label class="field">
-          <span>Stoku</span>
+        <label class="inventory-toolbar__filter">
+          <span>Stock</span>
           <select v-model="productStockFilter">
-            <option value="all">Te gjitha</option>
-            <option value="in-stock">Ne stok</option>
-            <option value="low-stock">Stok i ulet</option>
-            <option value="out-of-stock">Pa stok</option>
+            <option value="all">All stock states</option>
+            <option value="in-stock">In stock</option>
+            <option value="low-stock">Low stock</option>
+            <option value="out-of-stock">Out of stock</option>
           </select>
         </label>
-        <label class="field">
+        <label class="inventory-toolbar__filter">
+          <span>Status</span>
+          <select v-model="productStatusFilter">
+            <option value="all">All statuses</option>
+            <option value="public">Active</option>
+            <option value="hidden">Inactive</option>
+          </select>
+        </label>
+        <label class="inventory-toolbar__filter">
           <span>Sort</span>
           <select v-model="productSort">
-            <option value="updated-desc">Me te rejat</option>
-            <option value="title-asc">Titulli A-Z</option>
-            <option value="title-desc">Titulli Z-A</option>
-            <option value="price-asc">Cmimi ne rritje</option>
-            <option value="price-desc">Cmimi ne ulje</option>
-            <option value="stock-asc">Stoku ne rritje</option>
-            <option value="stock-desc">Stoku ne ulje</option>
+            <option value="updated-desc">Newest first</option>
+            <option value="title-asc">Title A-Z</option>
+            <option value="title-desc">Title Z-A</option>
+            <option value="price-asc">Price low-high</option>
+            <option value="price-desc">Price high-low</option>
+            <option value="stock-asc">Stock low-high</option>
+            <option value="stock-desc">Stock high-low</option>
           </select>
         </label>
       </div>
 
-      <div v-if="hasSelectedProducts" class="products-bulk-actions glass-medium">
-        <div class="products-bulk-actions-grid">
-          <button class="button-secondary" type="button" @click="applyBulkVisibility(true)">Aktivo</button>
-          <button class="button-secondary" type="button" @click="applyBulkVisibility(false)">Caktivizo</button>
-          <label class="field">
-            <span>Kategori</span>
+      <div v-if="hasSelectedProducts" class="inventory-bulk-bar">
+        <div class="inventory-bulk-bar__actions">
+          <button type="button" @click="applyBulkVisibility(true)">Activate</button>
+          <button type="button" @click="applyBulkVisibility(false)">Deactivate</button>
+          <label>
+            <span>Category</span>
             <select v-model="bulkCategoryValue">
-              <option value="">Zgjidh kategorine</option>
+              <option value="">Select category</option>
               <option v-for="option in productCategoryOptions" :key="`bulk-category-${option.value}`" :value="option.value">
                 {{ option.label }}
               </option>
             </select>
           </label>
-          <button class="button-secondary" type="button" :disabled="!bulkCategoryValue" @click="applyBulkCategory">Ruaj</button>
-          <label class="field">
-            <span>Stok</span>
+          <button type="button" :disabled="!bulkCategoryValue" @click="applyBulkCategory">Save category</button>
+          <label>
+            <span>Stock</span>
             <input v-model="bulkStockValue" type="number" min="0" step="1" placeholder="0">
           </label>
-          <button class="button-secondary" type="button" :disabled="bulkStockValue === ''" @click="applyBulkStockUpdate">Ruaj</button>
-          <button class="button-danger" type="button" @click="applyBulkDelete">Fshi</button>
-          <button class="button-secondary" type="button" @click="clearSelectedProducts">Pastro</button>
+          <button type="button" :disabled="bulkStockValue === ''" @click="applyBulkStockUpdate">Save stock</button>
+          <button type="button" @click="applyBulkDelete">Delete selected</button>
+          <button type="button" @click="clearSelectedProducts">Clear</button>
         </div>
       </div>
 
-      <div class="form-message" :class="ui.listType" role="status" aria-live="polite">
+      <div class="inventory-feedback" role="status" aria-live="polite">
         {{ ui.listMessage }}
       </div>
 
-      <div class="admin-products-list admin-products-list-scroll is-row-view">
-        <div v-if="products.length === 0" class="admin-empty-state">
-          Ende nuk ke artikuj. Shto nje produkt ose importo nje skedar.
+      <div class="inventory-content">
+        <div v-if="products.length === 0">
+          You do not have products yet. Add your first product or import a catalog.
         </div>
 
-        <div v-else-if="filteredProducts.length === 0" class="admin-empty-state">
-          Nuk u gjet asnje produkt per kete kerkim.
+        <div v-else-if="filteredProducts.length === 0">
+          No products matched the current search and filters.
         </div>
 
         <template v-else>
-          <article class="products-table-shell">
-            <table class="products-table">
+          <article class="inventory-table-wrap">
+            <table class="inventory-table">
               <thead>
                 <tr>
                   <th>
@@ -3556,13 +3944,13 @@ async function applyBulkStockUpdate() {
                       @change="toggleSelectAllVisibleProducts"
                     >
                   </th>
-                  <th>Produkti</th>
-                  <th>Cmimi</th>
-                  <th>Stoku</th>
-                  <th>Kategoria</th>
-                  <th>Statusi</th>
-                  <th>Insights</th>
-                  <th>Aksione</th>
+                  <th>Product</th>
+                  <th>SKU</th>
+                  <th>Category</th>
+                  <th>Total stock</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -3574,1740 +3962,89 @@ async function applyBulkStockUpdate() {
                       @change="toggleProductSelection(product.id)"
                     >
                   </td>
-                  <td class="products-table-product">
-                    <img :src="product.imagePath" :alt="product.title" loading="lazy" decoding="async">
-                    <div>
+                  <td class="inventory-table__product-cell">
+                    <div class="inventory-table__image">
+                      <img :src="getProductImageGallery(product)[0] || product.imagePath" :alt="product.title" loading="lazy" decoding="async">
+                    </div>
+                    <div class="inventory-table__title">
                       <strong>{{ product.title }}</strong>
                       <p>{{ product.description }}</p>
                     </div>
                   </td>
-                  <td><strong>{{ formatPrice(product.price) }}</strong></td>
-                  <td>{{ formatStockQuantity(product.stockQuantity) }}</td>
+                  <td>{{ product.articleNumber || `#${product.id}` }}</td>
                   <td>{{ formatCategoryLabel(product.category) }}</td>
-                  <td>
-                    <span class="summary-chip">
-                      <strong>{{ product.isPublic ? "Publik" : "I fshehur" }}</strong>
-                    </span>
+                  <td class="inventory-table__stock">
+                    <strong>{{ formatStockQuantity(product.stockQuantity) }}</strong>
+                    <small>{{ getStockAlertLabel(product) }}</small>
                   </td>
+                  <td><strong>{{ formatPrice(product.price) }}</strong></td>
                   <td>
-                    <div class="products-row-metrics" aria-label="Statistikat e produktit">
-                      <span class="products-row-metric">
-                        <small>Views</small>
-                        <strong>{{ formatCount(product.viewsCount || 0) }}</strong>
+                    <div class="inventory-status-stack">
+                      <span class="inventory-status-pill" :class="{ 'is-live': product.isPublic }">
+                        {{ product.isPublic ? "Active" : "Inactive" }}
                       </span>
-                      <span class="products-row-metric">
-                        <small>Wishlist</small>
-                        <strong>{{ formatCount(product.wishlistCount || 0) }}</strong>
-                      </span>
-                      <span class="products-row-metric">
-                        <small>Cart</small>
-                        <strong>{{ formatCount(product.cartCount || 0) }}</strong>
-                      </span>
-                      <span class="products-row-metric">
-                        <small>Share</small>
-                        <strong>{{ formatCount(product.shareCount || 0) }}</strong>
+                      <span
+                        class="inventory-status-pill"
+                        :class="{
+                          'is-danger': Number(product.stockQuantity || 0) <= 0,
+                          'is-warning': Number(product.stockQuantity || 0) > 0 && Number(product.stockQuantity || 0) <= STOCK_ALERT_THRESHOLD,
+                        }"
+                      >
+                        {{ Number(product.stockQuantity || 0) <= 0 ? "Out of stock" : (Number(product.stockQuantity || 0) <= STOCK_ALERT_THRESHOLD ? "Low stock" : "Healthy") }}
                       </span>
                     </div>
                   </td>
-                  <td>
-                    <div class="products-row-actions">
-                      <button class="button-secondary" type="button" @click="beginProductEdit(product)">Edito</button>
-                      <button class="button-secondary" type="button" @click="handleToggleVisibility(product)">
-                        {{ product.isPublic ? "Fsheh" : "Publiko" }}
+                  <td class="inventory-table__actions">
+                    <div class="inventory-actions">
+                      <button type="button" @click="beginProductEdit(product)">Edit</button>
+                      <button type="button" @click="handleDuplicateProduct(product)">Duplicate</button>
+                      <button type="button" @click="handleToggleVisibility(product)">
+                        {{ product.isPublic ? "Hide" : "Publish" }}
                       </button>
+                      <button type="button" class="is-danger" @click="handleDeleteProduct(product)">Delete</button>
                     </div>
                   </td>
                 </tr>
               </tbody>
             </table>
           </article>
+
+          <div class="inventory-mobile-list">
+            <article
+              v-for="product in filteredProducts"
+              :key="`mobile-inventory-${product.id}`"
+              class="inventory-mobile-card"
+            >
+              <div class="inventory-mobile-card__top">
+                <div class="inventory-mobile-card__image">
+                  <img :src="getProductImageGallery(product)[0] || product.imagePath" :alt="product.title" loading="lazy" decoding="async">
+                </div>
+                <div class="inventory-mobile-card__content">
+                  <strong>{{ product.title }}</strong>
+                  <span>{{ product.articleNumber || `#${product.id}` }}</span>
+                  <small>{{ formatCategoryLabel(product.category) }}</small>
+                </div>
+                <strong>{{ formatPrice(product.price) }}</strong>
+              </div>
+
+              <div class="inventory-mobile-card__meta">
+                <span>{{ getStockAlertLabel(product) }}</span>
+                <span>{{ product.isPublic ? "Active" : "Inactive" }}</span>
+              </div>
+
+              <div class="inventory-actions">
+                <button type="button" @click="beginProductEdit(product)">Edit</button>
+                <button type="button" @click="handleDuplicateProduct(product)">Duplicate</button>
+                <button type="button" @click="handleToggleVisibility(product)">
+                  {{ product.isPublic ? "Hide" : "Publish" }}
+                </button>
+                <button type="button" class="is-danger" @click="handleDeleteProduct(product)">Delete</button>
+              </div>
+            </article>
+          </div>
         </template>
       </div>
     </section>
-      </div>
-    </div>
+    </DashboardShell>
   </section>
 </template>
-
-<style scoped>
-:global(body[data-page="business-dashboard"] .page-main-admin) {
-  padding: calc(var(--page-nav-clearance) + 12px) 0 20px;
-  background: #ffffff;
-}
-
-:global(body[data-page="business-dashboard"]) {
-  background: #ffffff;
-}
-
-.business-dashboard-page {
-  --dashboard-gap: 8px;
-  --dashboard-gap-tight: 6px;
-  --dashboard-radius: 14px;
-  --dashboard-radius-lg: 18px;
-  --dashboard-pad: 10px;
-  --dashboard-pad-tight: 8px;
-  width: 100%;
-  margin: 0 auto;
-  display: grid;
-  gap: var(--dashboard-gap);
-  align-content: start;
-  grid-auto-rows: min-content;
-}
-
-.business-dashboard-page > .admin-list-card,
-.business-dashboard-sidebar,
-.business-dashboard-tab-shell,
-.business-dashboard-panel,
-.business-dashboard-workspace-card,
-.business-stock-alerts-card,
-.business-shipping-card,
-.business-profile-card,
-.product-builder-card,
-.business-dashboard-freeze-card {
-  padding: var(--dashboard-pad);
-  border-radius: var(--dashboard-radius-lg);
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
-}
-
-.business-dashboard-tab-shell {
-  padding: 6px;
-}
-
-.business-dashboard-shell {
-  display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-}
-
-.business-dashboard-sidebar {
-  padding: 12px 10px;
-  align-self: start;
-  min-height: calc(100vh - var(--page-nav-clearance) - 40px);
-  display: grid;
-  gap: 18px;
-  align-content: start;
-}
-
-.business-dashboard-main {
-  min-width: 0;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.business-dashboard-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 4px;
-}
-
-.business-dashboard-brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(180deg, #7968ff 0%, #6558ea 100%);
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.business-dashboard-brand-copy {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.business-dashboard-brand-copy strong {
-  font-size: 1.02rem;
-  color: #1f2937;
-}
-
-.business-dashboard-brand-copy span {
-  font-size: 0.72rem;
-  color: #94a3b8;
-}
-
-.business-dashboard-side-menu {
-  display: grid;
-  gap: 4px;
-}
-
-.business-dashboard-side-button {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #64748b;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  text-align: left;
-}
-
-.business-dashboard-side-button.is-active {
-  background: #f3f0ff;
-  color: #6d5df6;
-  border-color: rgba(109, 93, 246, 0.08);
-}
-
-.business-dashboard-side-icon {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.45);
-  flex: 0 0 auto;
-}
-
-.business-dashboard-side-button.is-active .business-dashboard-side-icon {
-  background: #6d5df6;
-}
-
-.business-dashboard-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-}
-
-.business-dashboard-toolbar-tabs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.business-dashboard-toolbar-tab {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid #ececf3;
-  background: #ffffff;
-  color: #6b7280;
-  font-size: 0.82rem;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
-}
-
-.business-dashboard-toolbar-tab.is-active {
-  background: linear-gradient(180deg, #6f62f6 0%, #6356e8 100%);
-  border-color: transparent;
-  color: #ffffff;
-  box-shadow: 0 10px 20px rgba(99, 86, 232, 0.18);
-}
-
-.business-dashboard-toolbar-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.business-dashboard-toolbar-icon,
-.business-dashboard-toolbar-range,
-.business-dashboard-toolbar-avatar {
-  border: 1px solid #ececf3;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
-}
-
-.business-dashboard-toolbar-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
-  cursor: pointer;
-}
-
-.business-dashboard-toolbar-icon svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-
-.business-dashboard-toolbar-range {
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  color: #6b7280;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.business-dashboard-toolbar-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  color: #8b83d9;
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.business-dashboard-overview {
-  display: grid;
-  gap: 10px;
-}
-
-.business-dashboard-overview-grid-stack {
-  display: grid;
-  gap: 10px;
-}
-
-.business-dashboard-metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.business-dashboard-metric-card {
-  padding: 14px;
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-}
-
-.business-dashboard-metric-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  background: #f3f0ff;
-}
-
-.business-dashboard-metric-card[data-tone="mint"] .business-dashboard-metric-icon {
-  background: #e9fbf1;
-}
-
-.business-dashboard-metric-card[data-tone="amber"] .business-dashboard-metric-icon {
-  background: #fff4db;
-}
-
-.business-dashboard-metric-card[data-tone="blue"] .business-dashboard-metric-icon {
-  background: #eaf4ff;
-}
-
-.business-dashboard-metric-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.business-dashboard-metric-copy span {
-  font-size: 0.76rem;
-  color: #8b93a7;
-  font-weight: 600;
-}
-
-.business-dashboard-metric-copy strong {
-  font-size: 1.45rem;
-  line-height: 1;
-  color: #1f2937;
-}
-
-.business-dashboard-metric-copy small {
-  font-size: 0.74rem;
-  color: #6dba8b;
-  font-weight: 600;
-}
-
-.business-dashboard-overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(260px, 0.86fr);
-  gap: 10px;
-}
-
-.business-dashboard-overview-grid--bottom {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.business-dashboard-chart-card,
-.business-dashboard-actions-card,
-.business-dashboard-list-card {
-  padding: 14px;
-  display: grid;
-  gap: 12px;
-}
-
-.business-dashboard-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.business-dashboard-card-head h2 {
-  margin: 0;
-  font-size: 1rem;
-  color: #1f2937;
-}
-
-.business-dashboard-card-head span {
-  font-size: 0.74rem;
-  color: #9aa3b5;
-}
-
-.business-dashboard-card-pill {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 10px;
-  border: 1px solid #ececf3;
-  display: inline-flex;
-  align-items: center;
-  color: #6b7280;
-  font-size: 0.76rem;
-  font-weight: 600;
-}
-
-.business-dashboard-chart-frame {
-  display: grid;
-  gap: 8px;
-}
-
-.business-dashboard-chart {
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-
-.business-dashboard-chart-grid line {
-  stroke: #edf0f7;
-  stroke-width: 1;
-  stroke-dasharray: 4 6;
-}
-
-.business-dashboard-chart-area {
-  fill: rgba(111, 98, 246, 0.1);
-}
-
-.business-dashboard-chart-line {
-  fill: none;
-  stroke: #6f62f6;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.business-dashboard-chart-point {
-  fill: #6f62f6;
-  stroke: #ffffff;
-  stroke-width: 3;
-}
-
-.business-dashboard-chart-labels {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.business-dashboard-chart-labels span {
-  text-align: center;
-  font-size: 0.72rem;
-  color: #9aa3b5;
-}
-
-.business-dashboard-actions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.business-dashboard-action-card {
-  min-height: 86px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid #eff1f7;
-  background: #ffffff;
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  text-align: left;
-  color: #374151;
-  cursor: pointer;
-}
-
-.business-dashboard-action-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: #f3f0ff;
-  color: #6f62f6;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.business-dashboard-action-card[data-tone="mint"] .business-dashboard-action-icon {
-  background: #e9fbf1;
-  color: #20a464;
-}
-
-.business-dashboard-action-card[data-tone="amber"] .business-dashboard-action-icon {
-  background: #fff4db;
-  color: #e99527;
-}
-
-.business-dashboard-action-card[data-tone="pink"] .business-dashboard-action-icon {
-  background: #ffe9f5;
-  color: #eb5ea8;
-}
-
-.business-dashboard-action-card strong {
-  font-size: 0.86rem;
-  line-height: 1.2;
-}
-
-.business-dashboard-list-stack {
-  display: grid;
-  gap: 10px;
-}
-
-.business-dashboard-product-row,
-.business-dashboard-alert-row,
-.business-dashboard-discount-row {
-  display: grid;
-  align-items: center;
-  gap: 10px;
-}
-
-.business-dashboard-product-row {
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-}
-
-.business-dashboard-product-row img {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  object-fit: cover;
-  background: #f8fafc;
-}
-
-.business-dashboard-product-copy,
-.business-dashboard-alert-copy,
-.business-dashboard-discount-copy {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.business-dashboard-product-copy strong,
-.business-dashboard-alert-copy strong,
-.business-dashboard-discount-copy strong {
-  font-size: 0.86rem;
-  line-height: 1.2;
-  color: #1f2937;
-}
-
-.business-dashboard-product-copy span,
-.business-dashboard-alert-copy span,
-.business-dashboard-discount-copy small {
-  font-size: 0.72rem;
-  color: #98a2b3;
-}
-
-.business-dashboard-row-meta {
-  display: grid;
-  justify-items: end;
-  gap: 4px;
-}
-
-.business-dashboard-row-meta strong {
-  font-size: 0.82rem;
-  color: #1f2937;
-}
-
-.business-dashboard-row-status {
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  background: #ebfbf2;
-  color: #2aa76a;
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.business-dashboard-row-status.is-low {
-  background: #fff4db;
-  color: #e99527;
-}
-
-.business-dashboard-alert-row {
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-}
-
-.business-dashboard-alert-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #ef4444;
-}
-
-.business-dashboard-alert-qty {
-  font-size: 0.8rem;
-  color: #ef4444;
-}
-
-.business-dashboard-discount-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f3f8;
-}
-
-.business-dashboard-discount-row:last-child {
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.business-dashboard-discount-code {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  width: fit-content;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #ffe9f5;
-  color: #eb5ea8;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.business-dashboard-discount-status {
-  font-size: 0.72rem;
-  color: #20a464;
-  font-weight: 700;
-}
-
-.business-dashboard-outline-action,
-.business-dashboard-link-button {
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid #dcd8ff;
-  background: #ffffff;
-  color: #6f62f6;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.76rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.business-dashboard-link-button {
-  min-height: auto;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-
-.business-dashboard-tab-list {
-  display: grid;
-  gap: 4px;
-}
-
-.business-dashboard-tab-button {
-  width: 100%;
-  min-height: 30px;
-  padding: 0 9px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: #f7f8fb;
-  color: #475569;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  text-align: left;
-  font-size: 0.74rem;
-  font-weight: 600;
-}
-
-.business-dashboard-tab-button.is-active {
-  background: #ffffff;
-  color: #111827;
-  border-color: rgba(255, 106, 43, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(255, 106, 43, 0.12);
-}
-
-.business-dashboard-panel {
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.admin-products-header,
-.admin-list-header,
-.profile-card-header,
-.product-builder-head,
-.product-builder-block-head,
-.bulk-import-section-head {
-  gap: 6px;
-}
-
-.admin-products-header {
-  align-items: center;
-  margin-bottom: 0;
-}
-
-.admin-products-header h1 {
-  font-size: clamp(1.12rem, 1.55vw, 1.5rem);
-  line-height: 1.05;
-  margin: 0;
-}
-
-.business-dashboard-page h2 {
-  margin: 0;
-  font-size: 0.98rem;
-  line-height: 1.1;
-}
-
-.business-dashboard-page h3 {
-  margin: 0;
-  font-size: 0.86rem;
-  line-height: 1.15;
-}
-
-.admin-compact-copy,
-.section-text,
-.product-builder-note,
-.product-upload-help {
-  font-size: 0.72rem;
-  line-height: 1.28;
-}
-
-.admin-compact-copy,
-.section-text,
-.product-upload-help,
-.product-builder-note {
-  margin: 0;
-}
-
-.business-dashboard-header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: nowrap;
-  gap: 5px;
-}
-
-.business-dashboard-header-meta {
-  min-width: 0;
-}
-
-.business-dashboard-header-chip {
-  min-width: 64px;
-}
-
-.business-dashboard-edit-access {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  max-width: none;
-}
-
-.business-dashboard-icon-button {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 9px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.business-dashboard-icon-button svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-
-.business-dashboard-page :deep(.section-label) {
-  display: none;
-}
-
-.business-dashboard-page :deep(.summary-chip),
-.business-dashboard-page .summary-chip {
-  min-width: 0;
-  padding: 5px 7px;
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: none;
-}
-
-.business-dashboard-page :deep(.summary-chip span),
-.business-dashboard-page .summary-chip span {
-  margin-bottom: 2px;
-  font-size: 0.61rem;
-  letter-spacing: 0.08em;
-}
-
-.business-dashboard-page :deep(.summary-chip strong),
-.business-dashboard-page .summary-chip strong {
-  font-size: 0.82rem;
-}
-
-.business-dashboard-analytics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  gap: 6px;
-  margin: 0;
-}
-
-.business-dashboard-workspace-card {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-}
-
-.business-dashboard-workspace-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
-  gap: 4px;
-}
-
-.business-dashboard-workspace-action,
-.business-dashboard-next-card {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  background: #ffffff;
-  color: inherit;
-  text-align: center;
-  box-shadow: none;
-}
-
-.business-dashboard-workspace-action strong,
-.business-dashboard-next-card strong {
-  color: #1f2937;
-  font-size: 0.72rem;
-  line-height: 1;
-}
-
-.business-dashboard-workspace-action:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
-}
-
-.business-dashboard-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-}
-
-.business-dashboard-layout--single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.business-shipping-card {
-  margin: 0;
-}
-
-.business-shipping-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.business-shipping-method-card {
-  padding: 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.business-shipping-method-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.business-shipping-method-head strong {
-  display: block;
-  color: #2d4334;
-  font-size: 0.84rem;
-}
-
-.business-shipping-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #5c7061;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.business-shipping-toggle input {
-  accent-color: #4f7c63;
-}
-
-.business-shipping-city-rates {
-  display: grid;
-  gap: 5px;
-  margin-top: 4px;
-  padding: 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.business-shipping-city-rates-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.business-shipping-city-rates-head strong {
-  display: block;
-  color: #2d4334;
-  font-size: 0.82rem;
-}
-
-.business-shipping-city-list {
-  display: grid;
-  gap: 6px;
-}
-
-.business-shipping-city-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(100px, 0.7fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.business-shipping-city-add,
-.business-shipping-city-remove,
-.business-stock-alert-action {
-  min-height: 28px;
-  padding: 0 8px;
-  border-radius: 9px;
-  font-size: 0.72rem;
-}
-
-.marketplace-status-card {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-}
-
-.admin-edit-state {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 10px;
-  line-height: 1.2;
-  font-size: 0.74rem;
-}
-
-.field-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.field-row-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.business-dashboard-page :deep(.field) {
-  margin: 0;
-}
-
-.business-dashboard-page :deep(.field span) {
-  font-size: 0.68rem;
-  margin-bottom: 2px;
-}
-
-.business-dashboard-page :deep(.field input),
-.business-dashboard-page :deep(.field select),
-.business-dashboard-page :deep(.field textarea) {
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: 0.78rem;
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-}
-
-.business-dashboard-page :deep(.field textarea) {
-  min-height: 64px;
-  resize: vertical;
-}
-
-.business-dashboard-page :deep(.auth-form) {
-  gap: 5px;
-  margin-top: 6px;
-}
-
-.business-dashboard-page :deep(.auth-form-actions) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.business-dashboard-page :deep(.auth-form-actions > button),
-.business-dashboard-page :deep(.button-secondary),
-.business-dashboard-page :deep(.button-danger),
-.business-dashboard-page .nav-action,
-.business-dashboard-page .products-row-actions button {
-  width: auto;
-  min-height: 28px;
-  padding: 0 8px;
-  border-radius: 9px;
-  font-size: 0.72rem;
-}
-
-.product-builder-card {
-  display: grid;
-  gap: 6px;
-}
-
-.product-builder-head,
-.product-builder-block-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.product-builder-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 2.35fr) minmax(176px, 0.62fr);
-  gap: 6px;
-  align-items: start;
-}
-
-.product-builder-form,
-.product-builder-aside {
-  display: grid;
-  gap: 5px;
-}
-
-.product-builder-steps {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 3px;
-}
-
-.product-builder-step {
-  display: grid;
-  gap: 1px;
-  padding: 6px 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  color: inherit;
-  text-align: left;
-  box-shadow: none;
-}
-
-.product-builder-step strong {
-  font-size: 0.72rem;
-}
-
-.product-builder-step span,
-.product-builder-step small {
-  display: none;
-}
-
-.product-builder-step.is-active {
-  border-color: rgba(255, 106, 43, 0.4);
-  box-shadow: none;
-}
-
-.product-builder-step.is-done small {
-  color: #ff6a2b;
-}
-
-.product-builder-block,
-.product-builder-aside-card {
-  display: grid;
-  gap: 5px;
-  padding: 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.product-builder-block.is-active {
-  border-color: rgba(255, 106, 43, 0.22);
-}
-
-.product-builder-inline-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.product-builder-note.is-warning {
-  color: #b45309;
-}
-
-.product-builder-review-card {
-  display: grid;
-  grid-template-columns: minmax(112px, 148px) minmax(0, 1fr);
-  gap: 8px;
-  align-items: stretch;
-}
-
-.product-builder-review-media {
-  min-height: 118px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.product-builder-review-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.product-builder-review-empty {
-  width: 100%;
-  height: 100%;
-  min-height: 118px;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
-  font-weight: 700;
-}
-
-.product-builder-review-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.product-builder-review-copy h3,
-.product-builder-aside-card h3 {
-  margin: 0;
-  color: #1f2937;
-}
-
-.product-builder-review-copy p,
-.product-builder-aside-copy {
-  margin: 0;
-}
-
-.product-builder-price-preview {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.product-builder-price-preview strong {
-  font-size: 0.9rem;
-  color: #1f2937;
-}
-
-.product-builder-price-preview span {
-  color: #6b7280;
-  text-decoration: line-through;
-}
-
-.product-builder-price-preview mark {
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: rgba(255, 106, 43, 0.14);
-  color: #c2410c;
-}
-
-.product-builder-checklist {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.product-builder-checklist-item {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 7px;
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-}
-
-.product-builder-checklist-item strong {
-  color: #1f2937;
-  font-size: 0.8rem;
-}
-
-.product-builder-checklist-item small {
-  color: #6b7280;
-  font-size: 0.7rem;
-}
-
-.product-builder-checklist-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: rgba(47, 52, 70, 0.18);
-}
-
-.product-builder-checklist-item.is-done .product-builder-checklist-dot {
-  background: #ff6a2b;
-}
-
-.product-builder-aside-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.business-dashboard-page :deep(.product-upload-preview) {
-  gap: 6px;
-}
-
-.business-dashboard-page :deep(.product-upload-preview-item) {
-  padding: 5px;
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-}
-
-.business-dashboard-page :deep(.product-upload-preview-image) {
-  border-radius: 8px;
-}
-
-.business-dashboard-page :deep(.product-upload-empty) {
-  min-height: 78px;
-  padding: 10px;
-  border-radius: 9px;
-  font-size: 0.72rem;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-}
-
-.bulk-import-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(230px, 0.72fr);
-  gap: 6px;
-  align-items: start;
-}
-
-.bulk-import-shell--review {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  margin-top: 0;
-}
-
-.bulk-import-panel {
-  display: grid;
-  gap: 5px;
-  padding: 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.bulk-import-side,
-.bulk-import-source-card,
-.bulk-import-job-list,
-.bulk-import-group-list,
-.bulk-import-record-list,
-.bulk-import-variant-list {
-  display: grid;
-  gap: 6px;
-}
-
-.bulk-import-source-card--stack {
-  gap: 6px;
-}
-
-.bulk-import-toolbar {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.bulk-import-toolbar .field textarea,
-.bulk-import-source-card textarea {
-  min-height: 72px;
-}
-
-.field-checkbox {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-}
-
-.field-checkbox input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
-
-.bulk-import-actions {
-  flex-wrap: wrap;
-}
-
-.bulk-import-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.bulk-import-job-card,
-.bulk-import-group-card,
-.bulk-import-record-card {
-  display: grid;
-  gap: 5px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  text-align: left;
-  color: inherit;
-}
-
-.bulk-import-job-card strong,
-.bulk-import-group-card h4,
-.bulk-import-record-head strong {
-  color: #111827;
-}
-
-.bulk-import-job-card span,
-.bulk-import-group-head p,
-.bulk-import-record-head span,
-.bulk-import-record-grid p,
-.bulk-import-variant-row span {
-  color: #64748b;
-}
-
-.bulk-import-group-head,
-.bulk-import-record-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.bulk-import-group-head h4,
-.bulk-import-record-grid h5 {
-  margin: 0;
-}
-
-.bulk-import-group-head p,
-.bulk-import-record-grid p {
-  margin: 0;
-}
-
-.bulk-import-check {
-  justify-items: end;
-}
-
-.bulk-import-mapping-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.bulk-import-variant-row,
-.bulk-import-record-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.bulk-import-record-card.is-error {
-  border-color: rgba(220, 38, 38, 0.24);
-  background: rgba(254, 242, 242, 0.92);
-}
-
-.bulk-import-record-card.is-skipped {
-  opacity: 0.72;
-}
-
-.bulk-import-inline-warning,
-.bulk-import-inline-error {
-  margin: 0;
-  font-size: 0.72rem;
-  line-height: 1.32;
-}
-
-.bulk-import-inline-warning {
-  color: #b45309;
-}
-
-.bulk-import-inline-error {
-  color: #b91c1c;
-}
-
-.bulk-import-section-head p {
-  margin: 0;
-}
-
-.notifications-list {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-}
-
-.business-stock-alerts-card {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-}
-
-.business-stock-alerts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 5px;
-}
-
-.business-stock-alert-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px;
-  align-items: center;
-  padding: 6px 7px;
-  border-radius: 9px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-}
-
-.business-stock-alert-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.business-stock-alert-copy strong {
-  color: #2f3a4d;
-  font-size: 0.82rem;
-}
-
-.business-stock-alert-copy p {
-  margin: 0;
-  color: #6c7285;
-  font-size: 0.72rem;
-  line-height: 1.25;
-}
-
-.business-stock-alert-category {
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.business-stock-alerts-note {
-  margin: 0;
-  color: #6b5d76;
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
-.products-management-surface {
-  gap: 6px;
-}
-
-.products-controls {
-  grid-template-columns: minmax(220px, 1.65fr) repeat(3, minmax(94px, 0.72fr));
-  gap: 4px;
-  align-items: end;
-  padding: 4px 5px;
-  border-radius: 9px;
-  margin-bottom: 4px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: none;
-}
-
-.products-controls .field,
-.products-bulk-actions-grid .field {
-  margin: 0;
-}
-
-.products-controls .admin-compact-search {
-  margin: 0;
-}
-
-.products-bulk-actions {
-  margin: 0;
-  padding: 4px 5px;
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: none;
-}
-
-.products-bulk-actions p {
-  margin: 0 0 3px;
-  font-size: 0.72rem;
-}
-
-.products-bulk-actions-grid {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(8, minmax(72px, 1fr));
-  align-items: end;
-}
-
-.products-table-shell {
-  border-radius: 9px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: none;
-}
-
-.products-table th,
-.products-table td {
-  padding: 5px 4px;
-  font-size: 0.72rem;
-}
-
-.products-table-product {
-  min-width: 172px;
-}
-
-.products-table-product img {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-}
-
-.products-table-product p {
-  margin: 1px 0 0;
-  font-size: 0.62rem;
-  line-height: 1.1;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.products-row-actions {
-  display: inline-flex;
-  gap: 3px;
-}
-
-.products-row-metrics {
-  min-width: 98px;
-  gap: 3px;
-}
-
-.products-row-metric {
-  padding: 3px 4px;
-  border-radius: 7px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-}
-
-.products-row-metric small {
-  font-size: 0.5rem;
-}
-
-.products-row-metric strong {
-  font-size: 0.64rem;
-}
-
-@media (max-width: 1240px) {
-  .business-dashboard-shell {
-    grid-template-columns: 150px minmax(0, 1fr);
-  }
-
-  .business-dashboard-metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .business-dashboard-overview-grid,
-  .business-dashboard-overview-grid--bottom {
-    grid-template-columns: 1fr;
-  }
-
-  .business-dashboard-layout,
-  .bulk-import-shell,
-  .bulk-import-shell--review,
-  .product-builder-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .products-controls {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .products-bulk-actions-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .business-dashboard-header-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 980px) {
-  .business-dashboard-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .business-dashboard-sidebar {
-    padding: 10px;
-    min-height: auto;
-  }
-
-  .business-dashboard-side-menu {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    display: grid;
-  }
-
-  .business-dashboard-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .business-dashboard-toolbar-meta {
-    justify-content: space-between;
-  }
-
-  .business-dashboard-toolbar-tabs {
-    width: 100%;
-  }
-
-  .business-dashboard-analytics-grid,
-  .business-shipping-settings-grid,
-  .bulk-import-toolbar,
-  .bulk-import-summary-grid,
-  .bulk-import-mapping-grid,
-  .bulk-import-variant-row,
-  .bulk-import-record-grid,
-  .product-builder-aside-grid,
-  .field-row-3,
-  .product-builder-steps,
-  .products-controls,
-  .products-bulk-actions-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .business-dashboard-page {
-    width: min(100%, calc(100vw - 16px));
-    gap: 8px;
-  }
-
-  .business-dashboard-metric-grid,
-  .business-dashboard-actions-grid,
-  .business-dashboard-side-menu {
-    grid-template-columns: 1fr;
-  }
-
-  .admin-products-header,
-  .admin-list-header,
-  .profile-card-header,
-  .product-builder-head,
-  .product-builder-block-head,
-  .bulk-import-section-head,
-  .field-row,
-  .field-row-3,
-  .business-dashboard-workspace-grid,
-  .business-stock-alerts-grid,
-  .business-shipping-settings-grid,
-  .product-builder-steps,
-  .product-builder-review-card,
-  .bulk-import-toolbar,
-  .bulk-import-summary-grid,
-  .bulk-import-mapping-grid,
-  .bulk-import-variant-row,
-  .bulk-import-record-grid,
-  .products-controls,
-  .products-bulk-actions-grid {
-    grid-template-columns: 1fr;
-    display: grid;
-  }
-
-  .business-dashboard-header-actions,
-  .business-dashboard-edit-access {
-    width: 100%;
-    align-items: flex-start;
-  }
-
-  .business-dashboard-edit-access {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .business-dashboard-analytics-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .business-dashboard-toolbar-range,
-  .business-dashboard-toolbar-avatar,
-  .business-dashboard-toolbar-icon,
-  .business-dashboard-toolbar-tab {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .business-dashboard-product-row,
-  .business-dashboard-alert-row,
-  .business-dashboard-discount-row {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .business-dashboard-row-meta {
-    justify-items: start;
-  }
-
-  .marketplace-status-card,
-  .business-stock-alert-card,
-  .business-shipping-city-row {
-    grid-template-columns: 1fr;
-    display: grid;
-  }
-
-  .business-shipping-city-rates-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .products-row-actions {
-    flex-wrap: wrap;
-  }
-}
-</style>

@@ -55,94 +55,90 @@ function buildSpecs(product) {
 </script>
 
 <template>
-  <section class="collection-page product-compare-page" aria-label="Krahasimi i produkteve">
-    <header class="collection-page-header product-compare-header">
-      <p class="section-label">Krahasim</p>
+  <section aria-label="Krahasimi i produkteve">
+    <header>
+      <p>Krahasim</p>
       <h1>Krahaso produktet</h1>
       <p>
         Shiko produktet krah per krah, me stok, cmim, rating dhe detaje te tjera qe te ndihmojne te zgjedhesh me shpejt.
       </p>
     </header>
 
-    <div v-if="compareCount > 0" class="product-compare-toolbar">
-      <div class="summary-chip">
+    <div v-if="compareCount > 0">
+      <div>
         <span>Ne krahasim</span>
         <strong>{{ compareCount }}</strong>
       </div>
-      <div class="summary-chip">
+      <div>
         <span>Ne stok</span>
         <strong>{{ availableCount }}</strong>
       </div>
-      <div class="summary-chip">
+      <div>
         <span>Pa stok</span>
         <strong>{{ unavailableCount }}</strong>
       </div>
-      <button class="search-reset-button product-compare-clear" type="button" @click="handleClear">
+      <button type="button" @click="handleClear">
         Pastro krahasimin
       </button>
     </div>
 
-    <div v-if="compareCount === 0" class="collection-empty-state product-compare-empty">
+    <div v-if="compareCount === 0">
       <h2>Nuk ke zgjedhur ende produkte per krahasim.</h2>
       <p>Shto te pakten dy produkte nga kartat ose faqja e produktit dhe krahasoji ketu.</p>
-      <RouterLink class="nav-action nav-action-primary" to="/kerko">
+      <RouterLink to="/kerko">
         Shiko katalogun
       </RouterLink>
     </div>
 
-    <section v-else class="product-compare-grid" aria-label="Krahasimi i detajuar">
+    <section v-else aria-label="Krahasimi i detajuar">
       <article
         v-for="product in compareItems"
         :key="product.id"
-        class="card product-compare-card"
-        :class="{
-          'is-cheapest': Number(product.id) === Number(cheapestProductId),
-          'is-priciest': Number(product.id) === Number(priciestProductId),
-          'is-out-of-stock': !hasProductAvailableStock(product),
-        }"
+       
+       
       >
-        <div class="product-compare-media">
-          <RouterLink class="product-compare-image-link" :to="getProductDetailUrl(product.id)">
-            <img class="product-compare-image" :src="product.imagePath" :alt="product.title" width="640" height="640" loading="lazy" decoding="async">
+        <div>
+          <RouterLink :to="getProductDetailUrl(product.id)">
+            <img :src="product.imagePath" :alt="product.title" width="640" height="640" loading="lazy" decoding="async">
           </RouterLink>
-          <button class="product-compare-remove" type="button" @click="handleRemove(product)">
+          <button type="button" @click="handleRemove(product)">
             Hiqe
           </button>
         </div>
 
-        <div class="product-compare-copy">
-          <p class="section-label">{{ formatCategoryLabel(product.category) }}</p>
+        <div>
+          <p>{{ formatCategoryLabel(product.category) }}</p>
           <h2>{{ product.title }}</h2>
-          <p class="product-compare-business">{{ product.businessName || "Biznesi" }}</p>
+          <p>{{ product.businessName || "Biznesi" }}</p>
 
-          <div class="product-compare-price-row">
+          <div>
             <strong>{{ formatPrice(product.price) }}</strong>
-            <span v-if="Number(product.compareAtPrice || 0) > Number(product.price || 0)" class="product-compare-compare-at">
+            <span v-if="Number(product.compareAtPrice || 0) > Number(product.price || 0)">
               {{ formatPrice(product.compareAtPrice) }}
             </span>
           </div>
 
-          <div class="product-compare-badges">
-            <span class="product-compare-badge" :class="{ 'is-out-of-stock': !hasProductAvailableStock(product) }">
+          <div>
+            <span>
               {{ hasProductAvailableStock(product) ? formatStockQuantity(product.stockQuantity) : "Nuk ka ne stok" }}
             </span>
-            <span class="product-compare-badge">
+            <span>
               {{ Number(product.averageRating || 0) > 0 ? `${Number(product.averageRating || 0).toFixed(1)} / 5` : "Pa vleresime" }}
             </span>
-            <span class="product-compare-badge">
+            <span>
               {{ Number(product.buyersCount || 0) }} blerje
             </span>
           </div>
 
-          <dl class="product-compare-specs">
-            <div v-for="spec in buildSpecs(product)" :key="`${product.id}-${spec.label}`" class="product-compare-spec">
+          <dl>
+            <div v-for="spec in buildSpecs(product)" :key="`${product.id}-${spec.label}`">
               <dt>{{ spec.label }}</dt>
               <dd>{{ spec.value }}</dd>
             </div>
           </dl>
 
-          <div class="product-compare-actions">
-            <RouterLink class="nav-action nav-action-secondary" :to="getProductDetailUrl(product.id)">
+          <div>
+            <RouterLink :to="getProductDetailUrl(product.id)">
               Hape produktin
             </RouterLink>
           </div>

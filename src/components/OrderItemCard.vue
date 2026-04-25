@@ -20,10 +20,9 @@ defineProps({
 
 <template>
   <article class="order-item-card">
-    <div class="order-item-image-shell">
+    <div class="order-item-card__media">
       <img
         v-if="item.imagePath"
-        class="order-item-image"
         :src="item.imagePath"
         :alt="item.title || 'Produkt'"
         width="320"
@@ -31,32 +30,32 @@ defineProps({
         loading="lazy"
         decoding="async"
       >
-      <div v-else class="order-item-image-fallback">
+      <div v-else class="order-item-card__placeholder">
         {{ (item.title || "P").charAt(0).toUpperCase() }}
       </div>
     </div>
 
-    <div class="order-item-copy">
-      <p class="order-item-label">{{ formatCategoryLabel(item.category) }}</p>
+    <div class="order-item-card__body">
+      <p>{{ formatCategoryLabel(item.category) }}</p>
       <h3>{{ item.title || "Produkt" }}</h3>
-      <p v-if="item.description" class="order-item-description">{{ item.description }}</p>
-      <p v-if="showBusinessName && item.businessName" class="order-item-business">
+      <p v-if="item.description">{{ item.description }}</p>
+      <p v-if="showBusinessName && item.businessName">
         Biznesi: <strong>{{ item.businessName }}</strong>
       </p>
-      <div class="product-detail-tags product-detail-tags-saved">
-        <span v-if="item.productType" class="product-detail-tag">
+      <div class="order-item-card__tags">
+        <span v-if="item.productType">
           {{ formatProductTypeLabel(item.productType) }}
         </span>
-        <span v-if="item.size" class="product-detail-tag">
+        <span v-if="item.size">
           Madhesia: {{ item.size }}
         </span>
-        <span v-if="item.color" class="product-detail-tag">
+        <span v-if="item.color">
           Ngjyra: {{ formatProductColorLabel(item.color) }}
         </span>
       </div>
     </div>
 
-    <div class="order-item-pricing">
+    <div class="order-item-card__summary">
       <span>{{ formatPrice(item.unitPrice || 0) }}</span>
       <strong>Sasia: {{ Math.max(1, Number(item.quantity) || 1) }}</strong>
       <strong>{{ formatPrice(item.totalPrice || 0) }}</strong>

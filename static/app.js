@@ -7950,7 +7950,8 @@ function renderPetProductCard(product, state = {}) {
 
 function renderHomePromoSlide(slide) {
   return `
-    <article class="home-promo-slide" style="background-image: linear-gradient(135deg, rgba(8, 20, 12, 0.18), rgba(8, 20, 12, 0.62)), url('${escapeAttribute(slide.imagePath)}');">
+    <article class="home-promo-slide">
+      <img src="${escapeAttribute(slide.imagePath)}" alt="${escapeAttribute(slide.title)}">
       <div class="home-promo-copy">
         <span class="home-promo-badge">${escapeHtml(slide.badge)}</span>
         <h2>${escapeHtml(slide.title)}</h2>

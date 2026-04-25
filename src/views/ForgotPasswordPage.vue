@@ -1,6 +1,9 @@
 <script setup>
 import { onBeforeUnmount, reactive } from "vue";
 import { useRouter } from "vue-router";
+import AuthField from "../components/auth/AuthField.vue";
+import AuthPrimaryButton from "../components/auth/AuthPrimaryButton.vue";
+import AuthShell from "../components/auth/AuthShell.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { markRouteReady } from "../stores/app-state";
 
@@ -65,36 +68,35 @@ async function submitForm() {
 </script>
 
 <template>
-  <section class="card auth-card">
-    <p class="section-label">Forgot Password</p>
-    <h1>Me dergo kodin per ndryshim te fjalekalimit</h1>
-    <p class="section-text">
-      Shkruaje email-in e llogarise. Kjo faqe sherben si hapi i pare per dergimin e kodit te ndryshimit te fjalekalimit.
-    </p>
-
+  <AuthShell
+    title="Forgot your password?"
+    description="Enter your email and we'll send you a reset link."
+    :message="ui.message"
+    :message-type="ui.type"
+  >
     <form class="auth-form" @submit.prevent="submitForm">
-      <label class="field">
-        <span>Email</span>
-        <input
-          v-model="form.email"
-          name="email"
-          type="email"
-          placeholder="p.sh. emri@email.com"
-          required
-        >
-      </label>
+      <AuthField
+        id="forgot-email"
+        v-model="form.email"
+        label="Email"
+        name="email"
+        type="email"
+        autocomplete="email"
+        inputmode="email"
+        required
+      />
 
-      <button id="forgot-password-submit-button" type="submit" :disabled="ui.loading">
-        {{ ui.loading ? "Duke derguar..." : "Me dergo kodin per ndryshim te fjalekalimit" }}
-      </button>
+      <AuthPrimaryButton :loading="ui.loading" loading-label="Sending reset link...">
+        Send reset link
+      </AuthPrimaryButton>
     </form>
 
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-      {{ ui.message }}
-    </div>
-    <p class="form-footer">
-      U kujtove per fjalekalimin?
-      <RouterLink class="inline-link" to="/login">Kthehu te Login</RouterLink>
-    </p>
-  </section>
+    <template #footer>
+      <p class="auth-helper">
+        <RouterLink class="auth-link" to="/login">
+          Back to sign in
+        </RouterLink>
+      </p>
+    </template>
+  </AuthShell>
 </template>

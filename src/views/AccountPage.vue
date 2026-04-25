@@ -1,16 +1,25 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
+import DashboardBarChart from "../components/dashboard/DashboardBarChart.vue";
+import DashboardDonutChart from "../components/dashboard/DashboardDonutChart.vue";
+import DashboardShell from "../components/dashboard/DashboardShell.vue";
+import ProductCard from "../components/ProductCard.vue";
 import { fetchHomeRecommendations, requestJson, resolveApiMessage } from "../lib/api";
 import { getAccountDashboardMenuItems } from "../lib/account-navigation";
-import { formatDateLabel, formatPrice, getBusinessInitials, getProductDetailUrl, normalizeAddress } from "../lib/shop";
+import { formatCount, formatDateLabel, formatPrice, getBusinessInitials, getProductDetailUrl, normalizeAddress } from "../lib/shop";
 import { appState, ensureSessionLoaded, logoutUser, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const orders = ref([]);
 const savedAddress = ref(null);
 const recommendationSections = ref([]);
+const adminOrders = ref([]);
+const adminProducts = ref([]);
+const adminUsers = ref([]);
+const adminReports = ref([]);
 const dashboardProductPage = ref(0);
+const accountSearchQuery = ref("");
 const ui = reactive({
   message: "",
   type: "",
@@ -19,8 +28,66 @@ const ui = reactive({
 const isClientUser = computed(() =>
   Boolean(appState.user) && !["admin", "business"].includes(String(appState.user?.role || "").trim().toLowerCase()),
 );
+const isAdminUser = computed(() => normalizedRole.value === "admin");
+const isBusinessUser = computed(() => normalizedRole.value === "business");
+const normalizedRole = computed(() => String(appState.user?.role || "client").trim().toLowerCase());
 
 const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, "dashboard"));
+const accountShellNavItems = computed(() =>
+  dashboardMenuItems.value.map((item) => ({
+    key: item.key,
+    label: item.label,
+    icon: item.icon,
+    to: item.href,
+    group: item.group,
+    badge: item.badge,
+  })),
+);
+const dashboardRoleLabel = computed(() => {
+  if (normalizedRole.value === "admin") {
+    return "Admin workspace";
+  }
+  if (normalizedRole.value === "business") {
+    return "Business workspace";
+  }
+  return "Customer account";
+});
+const dashboardIntroCopy = computed(() => {
+  if (normalizedRole.value === "admin") {
+    return "Use this space to jump into product moderation, order oversight, and marketplace management without hunting through multiple pages.";
+  }
+  if (normalizedRole.value === "business") {
+    return "This account page stays lightweight and points you straight into your business tools, orders, and storefront settings.";
+  }
+  return "Track orders, manage addresses, and get back to the products and stores that matter most without extra steps.";
+});
+const dashboardQuickActions = computed(() => {
+  const preferredKeys = normalizedRole.value === "admin"
+    ? ["products", "inventory", "orders", "businesses"]
+    : normalizedRole.value === "business"
+      ? ["products", "inventory", "orders", "settings"]
+      : ["orders", "payments", "wishlist", "support"];
+
+  return preferredKeys
+    .map((key) => dashboardMenuItems.value.find((item) => item.key === key))
+    .filter(Boolean)
+    .slice(0, 4);
+});
+const dashboardNotificationCount = computed(() =>
+  isAdminUser.value
+    ? adminReports.value.filter((report) =>
+      !["resolved", "dismissed"].includes(String(report.status || "").trim().toLowerCase()),
+    ).length
+    : orders.value.filter((order) =>
+      [
+        "pending_confirmation",
+        "confirmed",
+        "packed",
+        "shipped",
+        "partially_confirmed",
+      ].includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+    ).length,
+);
 
 const greetingName = computed(() => {
   const fullName = String(appState.user?.fullName || appState.user?.businessName || "User").trim();
@@ -30,6 +97,20 @@ const greetingName = computed(() => {
 const userAvatarLabel = computed(() =>
   getBusinessInitials(appState.user?.fullName || appState.user?.businessName || "Tregio"),
 );
+const dashboardIdentityImage = computed(() => {
+  if (normalizedRole.value === "business") {
+    return String(appState.user?.businessLogoPath || "").trim();
+  }
+
+  return String(appState.user?.profileImagePath || "").trim();
+});
+const dashboardIdentityIcon = computed(() => {
+  if (normalizedRole.value === "business") {
+    return "store";
+  }
+
+  return normalizedRole.value === "admin" ? "users" : "user";
+});
 
 const accountLocationLabel = computed(() => {
   const city = String(savedAddress.value?.city || "").trim();
@@ -77,6 +158,134 @@ const dashboardSummary = computed(() => {
     },
   ];
 });
+
+const adminBusinessCount = computed(() =>
+  adminUsers.value.filter((user) => String(user.role || "").trim().toLowerCase() === "business").length,
+);
+
+const adminOpenReportsCount = computed(() =>
+  adminReports.value.filter((report) =>
+    !["resolved", "dismissed"].includes(String(report.status || "").trim().toLowerCase()),
+  ).length,
+);
+
+const adminPublicProductsCount = computed(() =>
+  adminProducts.value.filter((product) => Boolean(product.isPublic)).length,
+);
+
+const adminInStockProductsCount = computed(() =>
+  adminProducts.value.filter((product) => Number(product.stockQuantity || 0) > 0).length,
+);
+
+const adminOverviewSummary = computed(() => ([
+  {
+    label: "Products",
+    value: formatCount(adminProducts.value.length),
+    meta: `${formatCount(adminPublicProductsCount.value)} public`,
+  },
+  {
+    label: "Orders",
+    value: formatCount(adminOrders.value.length),
+    meta: "Across the marketplace",
+  },
+  {
+    label: "Businesses",
+    value: formatCount(adminBusinessCount.value),
+    meta: `${formatCount(adminUsers.value.length)} total users`,
+  },
+  {
+    label: "Open reports",
+    value: formatCount(adminOpenReportsCount.value),
+    meta: `${formatCount(adminReports.value.length)} total reports`,
+  },
+]));
+
+const adminOrderSummary = computed(() => {
+  const pending = adminOrderCounts.value.pending;
+  const completed = adminOrderCounts.value.completed;
+  const issues = adminOrderCounts.value.issues;
+
+  return [
+    { label: "Total orders", value: formatCount(adminOrders.value.length), meta: "All marketplace orders" },
+    { label: "In progress", value: formatCount(pending), meta: "Need active monitoring" },
+    { label: "Completed", value: formatCount(completed), meta: "Delivered or returned" },
+    { label: "Issues", value: formatCount(issues), meta: "Canceled, failed, or refunded" },
+  ];
+});
+
+const adminOrderCounts = computed(() => ({
+  pending: adminOrders.value.filter((order) =>
+    ["pending_confirmation", "confirmed", "packed", "shipped", "partially_confirmed"]
+      .includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+  ).length,
+  completed: adminOrders.value.filter((order) =>
+    ["delivered", "returned"].includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+  ).length,
+  issues: adminOrders.value.filter((order) =>
+    ["canceled", "cancelled", "failed", "refunded"].includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
+  ).length,
+}));
+
+const adminProductSummary = computed(() => ([
+  { label: "Total products", value: formatCount(adminProducts.value.length), meta: "Across all vendors" },
+  { label: "Public", value: formatCount(adminPublicProductsCount.value), meta: "Visible in marketplace" },
+  { label: "In stock", value: formatCount(adminInStockProductsCount.value), meta: "Available now" },
+  {
+    label: "Hidden",
+    value: formatCount(Math.max(0, adminProducts.value.length - adminPublicProductsCount.value)),
+    meta: "Not publicly visible",
+  },
+]));
+
+const adminEngagementSummary = computed(() => {
+  const totals = adminProducts.value.reduce((accumulator, product) => {
+    accumulator.viewsCount += Number(product.viewsCount || 0);
+    accumulator.wishlistCount += Number(product.wishlistCount || 0);
+    accumulator.cartCount += Number(product.cartCount || 0);
+    accumulator.shareCount += Number(product.shareCount || 0);
+    return accumulator;
+  }, {
+    viewsCount: 0,
+    wishlistCount: 0,
+    cartCount: 0,
+    shareCount: 0,
+  });
+
+  return [
+    { label: "Views", value: formatCount(totals.viewsCount), meta: "Product detail traffic" },
+    { label: "Wishlist", value: formatCount(totals.wishlistCount), meta: "Saved by users" },
+    { label: "Cart", value: formatCount(totals.cartCount), meta: "Added to cart" },
+    { label: "Share", value: formatCount(totals.shareCount), meta: "Shared externally" },
+  ];
+});
+
+const adminPlatformMixBars = computed(() => ([
+  { label: "Products", value: adminProducts.value.length },
+  { label: "Orders", value: adminOrders.value.length },
+  { label: "Users", value: adminUsers.value.length },
+  { label: "Reports", value: adminReports.value.length },
+]));
+
+const adminOrderStatusBars = computed(() => [
+  { label: "In progress", value: adminOrderCounts.value.pending },
+  { label: "Completed", value: adminOrderCounts.value.completed },
+  { label: "Issues", value: adminOrderCounts.value.issues },
+]);
+
+const adminRoleDistribution = computed(() => ([
+  {
+    label: "Customers",
+    value: adminUsers.value.filter((user) => {
+      const role = String(user.role || "").trim().toLowerCase();
+      return role === "client" || role === "user";
+    }).length,
+  },
+  { label: "Businesses", value: adminBusinessCount.value },
+  {
+    label: "Admins",
+    value: adminUsers.value.filter((user) => String(user.role || "").trim().toLowerCase() === "admin").length,
+  },
+]));
 
 const sortedOrders = computed(() =>
   [...orders.value].sort((left, right) => {
@@ -177,6 +386,8 @@ onMounted(async () => {
     if (isClientUser.value) {
       requests.push(loadOrders());
       requests.push(loadDashboardRecommendations());
+    } else if (isAdminUser.value) {
+      requests.push(loadAdminDashboardData());
     }
     await Promise.all(requests);
   } finally {
@@ -213,6 +424,71 @@ async function loadDashboardRecommendations() {
   recommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
 }
 
+async function loadAdminDashboardData() {
+  await Promise.all([
+    loadAdminOrders(),
+    loadAdminProducts(),
+    loadAdminUsers(),
+    loadAdminReports(),
+  ]);
+}
+
+async function loadAdminOrders() {
+  const { response, data } = await requestJson("/api/admin/orders");
+  if (!response.ok || !data?.ok) {
+    adminOrders.value = [];
+    if (!ui.message) {
+      ui.message = resolveApiMessage(data, "Admin orders could not be loaded.");
+      ui.type = "error";
+    }
+    return;
+  }
+
+  adminOrders.value = Array.isArray(data.orders) ? data.orders : [];
+}
+
+async function loadAdminProducts() {
+  const { response, data } = await requestJson("/api/admin/products");
+  if (!response.ok || !data?.ok) {
+    adminProducts.value = [];
+    if (!ui.message) {
+      ui.message = resolveApiMessage(data, "Admin products could not be loaded.");
+      ui.type = "error";
+    }
+    return;
+  }
+
+  adminProducts.value = Array.isArray(data.products) ? data.products : [];
+}
+
+async function loadAdminUsers() {
+  const { response, data } = await requestJson("/api/admin/users");
+  if (!response.ok || !data?.ok) {
+    adminUsers.value = [];
+    if (!ui.message) {
+      ui.message = resolveApiMessage(data, "Admin users could not be loaded.");
+      ui.type = "error";
+    }
+    return;
+  }
+
+  adminUsers.value = Array.isArray(data.users) ? data.users : [];
+}
+
+async function loadAdminReports() {
+  const { response, data } = await requestJson("/api/admin/reports");
+  if (!response.ok || !data?.ok) {
+    adminReports.value = [];
+    if (!ui.message) {
+      ui.message = resolveApiMessage(data, "Admin reports could not be loaded.");
+      ui.type = "error";
+    }
+    return;
+  }
+
+  adminReports.value = Array.isArray(data.reports) ? data.reports : [];
+}
+
 async function handleLogout() {
   ui.message = "";
   const { response, data } = await logoutUser();
@@ -223,6 +499,14 @@ async function handleLogout() {
   }
 
   router.push("/");
+}
+
+async function handleAccountDashboardSearch() {
+  const query = String(accountSearchQuery.value || "").trim();
+  await router.push({
+    path: "/kerko",
+    query: query ? { q: query } : {},
+  });
 }
 
 function renderDashboardIcon(icon) {
@@ -353,791 +637,350 @@ function goToNextDashboardProductPage() {
 </script>
 
 <template>
-  <section class="account-page account-dashboard-page" aria-label="Llogaria ime">
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
+  <section class="market-page market-page--wide dashboard-page" aria-label="Llogaria ime">
+    <div
+      v-if="ui.message"
+      class="market-status"
+      :class="{ 'market-status--error': ui.type === 'error', 'market-status--success': ui.type === 'success' }"
+      role="status"
+      aria-live="polite"
+    >
       {{ ui.message }}
     </div>
 
-    <div v-if="appState.user" class="account-dashboard-layout">
-      <aside class="account-dashboard-sidebar">
-        <div class="account-dashboard-sidebar-card">
+    <DashboardShell
+      v-if="appState.user"
+      :nav-items="accountShellNavItems"
+      active-key="dashboard"
+      :brand-initial="userAvatarLabel"
+      :brand-title="appState.user.fullName || appState.user.businessName || 'Tregio User'"
+      :brand-subtitle="dashboardRoleLabel"
+      :brand-image-path="dashboardIdentityImage"
+      :brand-fallback-icon="dashboardIdentityIcon"
+      :profile-image-path="dashboardIdentityImage"
+      :profile-fallback-icon="dashboardIdentityIcon"
+      :profile-name="appState.user.fullName || appState.user.businessName || 'Tregio User'"
+      :profile-subtitle="accountLocationLabel"
+      :notification-count="dashboardNotificationCount"
+      :search-query="accountSearchQuery"
+      search-placeholder="Search marketplace"
+      @update:search-query="accountSearchQuery = $event"
+      @submit-search="handleAccountDashboardSearch"
+    >
+      <template #sidebar-footer>
+        <button type="button" @click="handleLogout">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5h4v14h-4M10 8l4 4-4 4M14 12H4" />
+          </svg>
+          <span>Log out</span>
+        </button>
+      </template>
+
+      <header class="dashboard-section dashboard-page__hero">
+        <div class="dashboard-section__head">
+          <div class="market-page__header-copy">
+            <p class="market-page__eyebrow">{{ dashboardRoleLabel }}</p>
+            <h1>Hello, {{ greetingName }}</h1>
+            <p>{{ dashboardIntroCopy }}</p>
+          </div>
+          <span class="dashboard-badge dashboard-badge--success">{{ accountLocationLabel }}</span>
+        </div>
+
+        <div class="dashboard-shortcuts">
           <RouterLink
-            v-for="item in dashboardMenuItems"
-            :key="`${item.href}-${item.label}`"
-            class="account-dashboard-nav-link"
-            :class="{ 'is-active': item.active }"
+            v-for="item in dashboardQuickActions"
+            :key="`shortcut-${item.key}`"
+            class="dashboard-shortcut"
             :to="item.href"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path :d="renderDashboardIcon(item.icon)" />
-            </svg>
-            <span>{{ item.label }}</span>
+            <strong>{{ item.label }}</strong>
+            <span>Open {{ item.label.toLowerCase() }}</span>
           </RouterLink>
-
-          <button class="account-dashboard-nav-link account-dashboard-nav-button" type="button" @click="handleLogout">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15 5h4v14h-4M10 8l4 4-4 4M14 12H4" />
-            </svg>
-            <span>Log-out</span>
-          </button>
         </div>
-      </aside>
+      </header>
 
-      <div class="account-dashboard-main">
-        <header class="account-dashboard-header">
-          <div>
-            <h1>Hello, {{ greetingName }}</h1>
-            <p>
-              From your account dashboard. you can easily check &amp; view your
-              <RouterLink to="/porosite">Recent Orders</RouterLink>, manage your
-              <RouterLink to="/adresat">Shipping and Billing Addresses</RouterLink>
-              and edit your
-              <RouterLink to="/ndrysho-fjalekalimin">Password</RouterLink> and
-              <RouterLink to="/te-dhenat-personale">Account Details</RouterLink>.
-            </p>
-          </div>
-        </header>
-
-        <div class="account-dashboard-content">
-          <div class="account-dashboard-cards">
-            <section class="account-dashboard-card">
-              <div class="account-dashboard-card-head">
-                <h2>ACCOUNT INFO</h2>
-              </div>
-
-              <div class="account-dashboard-profile">
-                <div class="account-dashboard-avatar" aria-hidden="true">
-                  {{ userAvatarLabel }}
-                </div>
-                <div class="account-dashboard-profile-copy">
-                  <strong>{{ appState.user.fullName || appState.user.businessName || "Tregio User" }}</strong>
-                  <span>{{ accountLocationLabel }}</span>
-                </div>
-              </div>
-
-              <div class="account-dashboard-lines">
-                <p><span>Email:</span> {{ appState.user.email || "-" }}</p>
-                <p><span>Phone:</span> {{ savedAddress?.phoneNumber || appState.user.phoneNumber || "-" }}</p>
-                <p><span>Joined:</span> {{ formatDateLabel(appState.user.createdAt || "") || "-" }}</p>
-              </div>
-
-              <RouterLink class="account-dashboard-action" to="/te-dhenat-personale">
-                EDIT ACCOUNT
-              </RouterLink>
-            </section>
-
-            <section class="account-dashboard-card">
-              <div class="account-dashboard-card-head">
-                <h2>BILLING ADDRESS</h2>
-              </div>
-
-              <div class="account-dashboard-address">
-                <strong>{{ appState.user.fullName || appState.user.businessName || "Tregio User" }}</strong>
-                <p
-                  v-for="line in primaryAddressLines"
-                  :key="line"
-                >
-                  {{ line }}
-                </p>
-              </div>
-
-              <RouterLink class="account-dashboard-action" to="/adresat">
-                EDIT ADDRESS
-              </RouterLink>
-            </section>
-          </div>
-
-          <aside class="account-dashboard-stats">
-            <article
-              v-for="stat in dashboardSummary"
-              :key="stat.label"
-              class="account-dashboard-stat"
-              :class="`is-${stat.tone}`"
-            >
-              <span class="account-dashboard-stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path :d="renderDashboardIcon(stat.icon)" />
-                </svg>
-              </span>
-              <div class="account-dashboard-stat-copy">
-                <strong>{{ stat.value }}</strong>
-                <span>{{ stat.label }}</span>
-              </div>
-            </article>
-          </aside>
-        </div>
-
-        <section v-if="isClientUser" class="account-dashboard-panel">
-          <header class="account-dashboard-panel-head">
-            <h2>RECENT ORDER</h2>
-            <RouterLink to="/porosite">View All</RouterLink>
-          </header>
-
-          <div v-if="recentOrders.length > 0" class="account-dashboard-orders-table">
-            <div class="account-dashboard-orders-table-head">
-              <span>ORDER ID</span>
-              <span>STATUS</span>
-              <span>DATE</span>
-              <span>TOTAL</span>
-              <span>ACTION</span>
+      <template v-if="isAdminUser">
+        <section class="dashboard-section-group">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Overview</p>
+              <h2>Marketplace dashboard</h2>
+              <p class="dashboard-note">Keep admin signal grouped by category so products, orders, and moderation stay easier to scan.</p>
             </div>
-
-            <article
-              v-for="order in recentOrders"
-              :key="order.id"
-              class="account-dashboard-orders-row"
-            >
-              <strong>#{{ order.id }}</strong>
-              <span
-                class="account-dashboard-order-status"
-                :class="dashboardOrderStatusClass(order)"
-              >
-                {{ formatDashboardOrderStatus(order) }}
-              </span>
-              <span>{{ formatDashboardOrderDate(order.createdAt || order.created_at) }}</span>
-              <span>{{ formatDashboardOrderTotal(order) }}</span>
-              <RouterLink to="/porosite">View Details</RouterLink>
-            </article>
           </div>
 
-          <p v-else class="account-dashboard-empty-state">
-            Nuk ka ende porosi të fundit për t’u shfaqur.
-          </p>
+          <div class="metric-grid">
+            <article v-for="item in adminOverviewSummary" :key="`admin-overview-${item.label}`" class="metric-card">
+              <p class="metric-card__label">{{ item.label }}</p>
+              <strong>{{ item.value }}</strong>
+              <span class="section-heading__copy">{{ item.meta }}</span>
+            </article>
+          </div>
         </section>
 
-        <section v-if="isClientUser" class="account-dashboard-panel">
-          <header class="account-dashboard-panel-head">
-            <h2>{{ dashboardProductTitle }}</h2>
-            <RouterLink to="/kerko">View All</RouterLink>
-          </header>
-
-          <div v-if="dashboardProductRail.length > 0" class="account-dashboard-product-strip">
-            <RouterLink
-              v-for="product in dashboardProductRail"
-              :key="`${dashboardProductTitle}-${product.id}-${product.title}`"
-              class="account-dashboard-product-card"
-              :to="productCardHref(product)"
-            >
-              <div class="account-dashboard-product-media">
-                <img
-                  :src="product.imagePath"
-                  :alt="product.title"
-                  width="320"
-                  height="320"
-                  loading="lazy"
-                  decoding="async"
-                >
-              </div>
-              <div class="account-dashboard-product-meta">
-                <div class="account-dashboard-product-rating">
-                  <span class="account-dashboard-product-stars" aria-hidden="true">
-                    <svg
-                      v-for="index in 5"
-                      :key="`${product.id}-star-${index}`"
-                      viewBox="0 0 24 24"
-                      :class="{ 'is-filled': index <= productFilledStars(product) }"
-                    >
-                      <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z" />
-                    </svg>
-                  </span>
-                  <small v-if="productReviewCount(product) > 0">({{ productReviewCount(product) }})</small>
-                </div>
-                <h3>{{ product.title }}</h3>
-                <p v-if="product.businessName" class="account-dashboard-product-business">
-                  {{ product.businessName }}
-                </p>
-                <strong>{{ formatPrice(product.price || 0) }}</strong>
-              </div>
+        <section class="dashboard-section-group">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Orders</p>
+              <h2>Order history metrics</h2>
+              <p class="dashboard-note">Live order flow and exceptions are now surfaced here instead of being buried inside the orders page.</p>
+            </div>
+            <RouterLink class="market-button market-button--ghost" to="/admin-porosite">
+              View orders
             </RouterLink>
           </div>
 
-          <div v-if="dashboardProductPageCount > 1" class="account-dashboard-strip-controls">
-            <button type="button" aria-label="Kthehu mbrapa" @click="goToPreviousDashboardProductPage">
-              ←
-            </button>
-            <div class="account-dashboard-strip-dots" aria-hidden="true">
-              <span
-                v-for="page in dashboardProductPageCount"
-                :key="`dashboard-products-${page}`"
-                :class="{ 'is-active': page - 1 === activeDashboardProductPage }"
-              ></span>
-            </div>
-            <button type="button" aria-label="Shko përpara" @click="goToNextDashboardProductPage">
-              →
-            </button>
+          <div class="metric-grid">
+            <article v-for="item in adminOrderSummary" :key="`admin-orders-${item.label}`" class="metric-card">
+              <p class="metric-card__label">{{ item.label }}</p>
+              <strong>{{ item.value }}</strong>
+              <span class="section-heading__copy">{{ item.meta }}</span>
+            </article>
           </div>
 
-          <p v-else-if="dashboardProductSource.length === 0" class="account-dashboard-empty-state">
-            Nuk ka ende produkte për këtë seksion.
-          </p>
+          <div class="dashboard-chart-grid">
+            <section class="dashboard-section dashboard-chart-card">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Orders</p>
+                  <h2>Status mix</h2>
+                </div>
+              </div>
+
+              <DashboardBarChart :items="adminOrderStatusBars" />
+            </section>
+
+            <section class="dashboard-section dashboard-chart-card">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Users</p>
+                  <h2>Role distribution</h2>
+                </div>
+              </div>
+
+              <DashboardDonutChart :items="adminRoleDistribution" />
+            </section>
+          </div>
+        </section>
+
+        <section class="dashboard-section-group">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Products</p>
+              <h2>Catalog metrics</h2>
+              <p class="dashboard-note">Product counts and engagement are grouped together so the product page can stay focused on management actions.</p>
+            </div>
+            <RouterLink class="market-button market-button--ghost" to="/admin-products/inventory">
+              View inventory
+            </RouterLink>
+          </div>
+
+          <div class="metric-grid">
+            <article v-for="item in adminProductSummary" :key="`admin-products-${item.label}`" class="metric-card">
+              <p class="metric-card__label">{{ item.label }}</p>
+              <strong>{{ item.value }}</strong>
+              <span class="section-heading__copy">{{ item.meta }}</span>
+            </article>
+          </div>
+
+          <div class="metric-grid">
+            <article v-for="item in adminEngagementSummary" :key="`admin-engagement-${item.label}`" class="metric-card">
+              <p class="metric-card__label">{{ item.label }}</p>
+              <strong>{{ item.value }}</strong>
+              <span class="section-heading__copy">{{ item.meta }}</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-section-group">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Users & Moderation</p>
+              <h2>Operational mix</h2>
+              <p class="dashboard-note">Platform counts and moderation load stay in one place for quicker admin decisions.</p>
+            </div>
+            <RouterLink class="market-button market-button--ghost" to="/bizneset-e-regjistruara">
+              View businesses
+            </RouterLink>
+          </div>
+
+          <div class="dashboard-chart-grid">
+            <section class="dashboard-section dashboard-chart-card">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Marketplace</p>
+                  <h2>Operational mix</h2>
+                </div>
+              </div>
+
+              <DashboardBarChart :items="adminPlatformMixBars" />
+            </section>
+
+            <section class="dashboard-section">
+              <div class="dashboard-section__head">
+                <div>
+                  <p class="market-page__eyebrow">Moderation</p>
+                  <h2>Need attention</h2>
+                </div>
+              </div>
+
+              <div class="metric-grid metric-grid--compact">
+                <article class="metric-card">
+                  <p class="metric-card__label">Total users</p>
+                  <strong>{{ formatCount(adminUsers.length) }}</strong>
+                  <span class="section-heading__copy">All registered accounts</span>
+                </article>
+                <article class="metric-card">
+                  <p class="metric-card__label">Businesses</p>
+                  <strong>{{ formatCount(adminBusinessCount) }}</strong>
+                  <span class="section-heading__copy">Vendor accounts</span>
+                </article>
+                <article class="metric-card">
+                  <p class="metric-card__label">Open reports</p>
+                  <strong>{{ formatCount(adminOpenReportsCount) }}</strong>
+                  <span class="section-heading__copy">Need review</span>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+      </template>
+
+      <section v-if="isClientUser && dashboardSummary.length > 0" class="metric-grid">
+        <article v-for="stat in dashboardSummary" :key="stat.label" class="metric-card">
+          <p class="metric-card__label">{{ stat.label }}</p>
+          <strong>{{ stat.value }}</strong>
+          <span>{{ stat.tone === 'mint' ? 'Updated from your order history' : 'Based on your recent account activity' }}</span>
+        </article>
+      </section>
+
+      <div class="market-grid--split">
+        <section class="dashboard-section">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Account</p>
+              <h2>Profile details</h2>
+            </div>
+            <RouterLink class="market-button market-button--ghost" to="/te-dhenat-personale">
+              Edit account
+            </RouterLink>
+          </div>
+
+          <div class="dashboard-shortcut">
+            <strong>{{ appState.user.fullName || appState.user.businessName || "Tregio User" }}</strong>
+            <span>{{ appState.user.email || "-" }}</span>
+            <span>Phone: {{ savedAddress?.phoneNumber || appState.user.phoneNumber || "-" }}</span>
+            <span>Joined: {{ formatDateLabel(appState.user.createdAt || "") || "-" }}</span>
+          </div>
+        </section>
+
+        <section class="dashboard-section">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Addresses</p>
+              <h2>Primary address</h2>
+            </div>
+            <RouterLink class="market-button market-button--ghost" to="/adresat">
+              Manage addresses
+            </RouterLink>
+          </div>
+
+          <div class="dashboard-shortcut">
+            <strong>{{ appState.user.fullName || appState.user.businessName || "Tregio User" }}</strong>
+            <span v-for="line in primaryAddressLines" :key="line">{{ line }}</span>
+          </div>
         </section>
       </div>
+
+      <section v-if="isClientUser" class="table-card">
+        <div class="dashboard-section__head">
+          <div>
+            <p class="market-page__eyebrow">Orders</p>
+            <h2>Recent orders</h2>
+          </div>
+          <RouterLink class="market-button market-button--ghost" to="/porosite">
+            View all
+          </RouterLink>
+        </div>
+
+        <table v-if="recentOrders.length > 0" class="dashboard-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="order in recentOrders" :key="order.id">
+              <td>#{{ order.id }}</td>
+              <td>
+                <span
+                  class="dashboard-badge"
+                  :class="formatDashboardOrderStatus(order) === 'IN PROGRESS' ? 'dashboard-badge--warning' : 'dashboard-badge--success'"
+                >
+                  {{ formatDashboardOrderStatus(order) }}
+                </span>
+              </td>
+              <td>{{ formatDashboardOrderDate(order.createdAt || order.created_at) }}</td>
+              <td>{{ formatDashboardOrderTotal(order) }}</td>
+              <td>
+                <RouterLink class="market-button market-button--ghost" to="/porosite">
+                  View
+                </RouterLink>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-else class="market-empty">
+          <h3>No recent orders</h3>
+          <p>Nuk ka ende porosi të fundit për t’u shfaqur.</p>
+        </div>
+      </section>
+
+      <section v-if="isClientUser" class="dashboard-section">
+        <div class="dashboard-section__head">
+          <div>
+            <p class="market-page__eyebrow">Wishlist</p>
+            <h2>{{ dashboardProductTitle }}</h2>
+          </div>
+          <RouterLink class="market-button market-button--ghost" to="/wishlist">
+            View wishlist
+          </RouterLink>
+        </div>
+
+        <div v-if="dashboardProductRail.length > 0" class="product-collection__grid">
+          <ProductCard
+            v-for="product in dashboardProductRail"
+            :key="`${dashboardProductTitle}-${product.id}-${product.title}`"
+            :product="product"
+            :show-overlay-actions="false"
+          />
+        </div>
+
+        <div v-if="dashboardProductPageCount > 1" class="dashboard-inline-meta">
+          <button class="market-button market-button--ghost" type="button" aria-label="Kthehu mbrapa" @click="goToPreviousDashboardProductPage">
+            Prev
+          </button>
+          <span class="section-heading__copy">Page {{ activeDashboardProductPage + 1 }} of {{ dashboardProductPageCount }}</span>
+          <button class="market-button market-button--ghost" type="button" aria-label="Shko përpara" @click="goToNextDashboardProductPage">
+            Next
+          </button>
+        </div>
+
+        <div v-else-if="dashboardProductSource.length === 0" class="market-empty">
+          <h3>No products yet</h3>
+          <p>Nuk ka ende produkte për këtë seksion.</p>
+        </div>
+      </section>
+    </DashboardShell>
+
+    <div v-else class="market-empty">
+      <h2>Account unavailable</h2>
+      <p>We could not load the dashboard for this session.</p>
     </div>
   </section>
 </template>
-
-<style scoped>
-.account-dashboard-page {
-  width: min(1300px, calc(100vw - 48px));
-  margin: 0 auto;
-  padding: 0;
-}
-
-.account-dashboard-layout {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 38px;
-  align-items: start;
-}
-
-.account-dashboard-sidebar-card {
-  display: grid;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.account-dashboard-nav-link,
-.account-dashboard-nav-button {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 54px;
-  padding: 0 22px;
-  border: 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  background: #fff;
-  color: #5b6775;
-  text-decoration: none;
-  font-size: 1rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.account-dashboard-nav-link svg,
-.account-dashboard-nav-button svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.account-dashboard-nav-link.is-active {
-  background: #ff7f32;
-  color: #fff;
-  font-weight: 700;
-}
-
-.account-dashboard-nav-button {
-  border-bottom: 0;
-}
-
-.account-dashboard-main {
-  display: grid;
-  gap: 24px;
-}
-
-.account-dashboard-header h1 {
-  margin: 0;
-  color: #111827;
-  font-size: clamp(2rem, 3vw, 2.7rem);
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.account-dashboard-header p {
-  max-width: 760px;
-  margin: 14px 0 0;
-  color: #4b5563;
-  font-size: 1.05rem;
-  line-height: 1.7;
-}
-
-.account-dashboard-header a {
-  color: #2496f3;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.account-dashboard-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 310px;
-  gap: 24px;
-  align-items: start;
-}
-
-.account-dashboard-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.account-dashboard-card {
-  display: grid;
-  gap: 24px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.account-dashboard-card-head {
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.account-dashboard-card-head h2 {
-  margin: 0;
-  color: #111827;
-  font-size: 1.05rem;
-  letter-spacing: -0.02em;
-}
-
-.account-dashboard-profile,
-.account-dashboard-lines,
-.account-dashboard-address {
-  padding: 0 24px;
-}
-
-.account-dashboard-profile {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.account-dashboard-avatar {
-  display: inline-flex;
-  width: 52px;
-  height: 52px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #ffb37c, #ff7f32);
-  color: #fff;
-  font-weight: 800;
-}
-
-.account-dashboard-profile-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.account-dashboard-profile-copy strong {
-  color: #111827;
-  font-size: 1.1rem;
-}
-
-.account-dashboard-profile-copy span {
-  color: #6b7280;
-}
-
-.account-dashboard-lines,
-.account-dashboard-address {
-  display: grid;
-  gap: 10px;
-}
-
-.account-dashboard-lines p,
-.account-dashboard-address p {
-  margin: 0;
-  color: #4b5563;
-  line-height: 1.5;
-}
-
-.account-dashboard-lines span {
-  color: #111827;
-  font-weight: 600;
-}
-
-.account-dashboard-address strong {
-  color: #111827;
-  font-size: 1.05rem;
-}
-
-.account-dashboard-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: fit-content;
-  min-height: 46px;
-  margin: 0 24px 24px;
-  padding: 0 22px;
-  border: 1px solid rgba(36, 150, 243, 0.28);
-  background: #fff;
-  color: #2496f3;
-  text-decoration: none;
-  font-weight: 800;
-}
-
-.account-dashboard-stats {
-  display: grid;
-  gap: 24px;
-}
-
-.account-dashboard-panel {
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.account-dashboard-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.account-dashboard-panel-head h2 {
-  margin: 0;
-  color: #202939;
-  font-size: 1.05rem;
-  letter-spacing: -0.02em;
-}
-
-.account-dashboard-panel-head a {
-  color: #ff7f32;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.account-dashboard-orders-table {
-  display: grid;
-}
-
-.account-dashboard-orders-table-head,
-.account-dashboard-orders-row {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr 1.15fr 1.2fr 0.85fr;
-  gap: 18px;
-  align-items: center;
-  padding: 18px 24px;
-}
-
-.account-dashboard-orders-table-head {
-  background: #f8fafc;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  color: #5b6775;
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.account-dashboard-orders-row {
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-  color: #4b5563;
-}
-
-.account-dashboard-orders-row:last-child {
-  border-bottom: 0;
-}
-
-.account-dashboard-orders-row strong {
-  color: #111827;
-  font-size: 1.02rem;
-}
-
-.account-dashboard-orders-row a {
-  color: #2496f3;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.account-dashboard-order-status {
-  font-weight: 800;
-}
-
-.account-dashboard-order-status.is-progress {
-  color: #ff7f32;
-}
-
-.account-dashboard-order-status.is-completed {
-  color: #1fad37;
-}
-
-.account-dashboard-order-status.is-canceled {
-  color: #ef4444;
-}
-
-.account-dashboard-product-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.account-dashboard-product-card {
-  display: grid;
-  gap: 18px;
-  min-height: 360px;
-  padding: 24px 22px 28px;
-  border-right: 1px solid rgba(15, 23, 42, 0.08);
-  color: inherit;
-  text-decoration: none;
-}
-
-.account-dashboard-product-card:last-child {
-  border-right: 0;
-}
-
-.account-dashboard-product-media {
-  display: grid;
-  place-items: center;
-  min-height: 180px;
-}
-
-.account-dashboard-product-media img {
-  width: min(170px, 100%);
-  height: 170px;
-  object-fit: contain;
-}
-
-.account-dashboard-product-meta {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.account-dashboard-product-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #6b7280;
-}
-
-.account-dashboard-product-stars {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.account-dashboard-product-stars svg {
-  width: 16px;
-  height: 16px;
-  fill: #d5dbe3;
-}
-
-.account-dashboard-product-stars svg.is-filled {
-  fill: #ff8a1f;
-}
-
-.account-dashboard-product-meta h3 {
-  margin: 0;
-  color: #202939;
-  font-size: 1.05rem;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.account-dashboard-product-business {
-  margin: 0;
-  color: #6b7280;
-  font-size: 0.95rem;
-}
-
-.account-dashboard-product-meta strong {
-  color: #1d8eff;
-  font-size: 1.7rem;
-  line-height: 1;
-}
-
-.account-dashboard-strip-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 10px 24px 26px;
-}
-
-.account-dashboard-strip-controls button {
-  display: inline-flex;
-  width: 48px;
-  height: 48px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 127, 50, 0.7);
-  border-radius: 999px;
-  background: #fff;
-  color: #ff7f32;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
-.account-dashboard-strip-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.account-dashboard-strip-dots span {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: #f3d5c2;
-}
-
-.account-dashboard-strip-dots span.is-active {
-  background: #ff7f32;
-}
-
-.account-dashboard-empty-state {
-  margin: 0;
-  padding: 26px 24px 30px;
-  color: #6b7280;
-}
-
-.account-dashboard-stat {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 112px;
-  padding: 24px;
-  border-radius: 8px;
-}
-
-.account-dashboard-stat.is-sky {
-  background: #e7f4ff;
-}
-
-.account-dashboard-stat.is-peach {
-  background: #fff1e7;
-}
-
-.account-dashboard-stat.is-mint {
-  background: #edf8ea;
-}
-
-.account-dashboard-stat-icon {
-  display: inline-flex;
-  width: 54px;
-  height: 54px;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.88);
-}
-
-.account-dashboard-stat-icon svg {
-  width: 28px;
-  height: 28px;
-  fill: none;
-  stroke: #2496f3;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.account-dashboard-stat.is-peach .account-dashboard-stat-icon svg {
-  stroke: #ff7f32;
-}
-
-.account-dashboard-stat.is-mint .account-dashboard-stat-icon svg {
-  stroke: #4aa75f;
-}
-
-.account-dashboard-stat-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.account-dashboard-stat-copy strong {
-  color: #111827;
-  font-size: 2rem;
-  line-height: 1;
-}
-
-.account-dashboard-stat-copy span {
-  color: #4b5563;
-  font-size: 1.05rem;
-}
-
-@media (max-width: 1080px) {
-  .account-dashboard-layout,
-  .account-dashboard-content,
-  .account-dashboard-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .account-dashboard-orders-table-head,
-  .account-dashboard-orders-row {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .account-dashboard-product-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .account-dashboard-product-card:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .account-dashboard-sidebar {
-    order: 2;
-  }
-}
-
-@media (max-width: 720px) {
-  .account-dashboard-page {
-    width: min(100vw - 24px, 1300px);
-    padding-top: 0;
-  }
-
-  .account-dashboard-nav-link,
-  .account-dashboard-nav-button {
-    min-height: 50px;
-    padding-inline: 16px;
-    font-size: 0.95rem;
-  }
-
-  .account-dashboard-card-head,
-  .account-dashboard-profile,
-  .account-dashboard-lines,
-  .account-dashboard-address {
-    padding-inline: 16px;
-  }
-
-  .account-dashboard-action {
-    margin-inline: 16px;
-  }
-
-  .account-dashboard-panel-head,
-  .account-dashboard-orders-table-head,
-  .account-dashboard-orders-row,
-  .account-dashboard-strip-controls {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .account-dashboard-orders-table-head {
-    display: none;
-  }
-
-  .account-dashboard-orders-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-  }
-
-  .account-dashboard-orders-row a {
-    margin-top: 4px;
-  }
-
-  .account-dashboard-product-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .account-dashboard-product-card {
-    min-height: auto;
-    border-right: 0;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  }
-
-  .account-dashboard-product-card:last-child {
-    border-bottom: 0;
-  }
-}
-</style>

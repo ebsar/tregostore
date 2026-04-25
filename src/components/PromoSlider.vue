@@ -110,28 +110,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="home-promotions" aria-label="Reklamat kryesore">
-    <div class="home-promo-slider">
+  <section aria-label="Reklamat kryesore">
+    <div>
       <div
-        class="home-promo-viewport"
+       
         @touchstart.passive="handleTouchStart"
         @touchmove.passive="handleTouchMove"
         @touchend.passive="handleTouchEnd"
         @touchcancel.passive="resetTouchState"
       >
         <div
-          id="home-promo-track"
-          class="home-promo-track"
-          :style="{ transform: `translateX(-${currentIndex * 100}%)` }"
+         
+         
+         
         >
           <article
             v-for="(slide, index) in slides"
             :key="slide.title"
-            class="home-promo-slide home-promo-slide--tall"
-            :class="{ 'home-promo-slide--image-only': slide.hideCopy }"
+           
+           
           >
             <img
-              class="home-promo-image"
+             
               :src="slide.imagePath"
               :alt="slide.title"
               width="885"
@@ -142,15 +142,15 @@ onBeforeUnmount(() => {
             >
             <RouterLink
               v-if="slide.hideCopy && slide.ctaHref"
-              class="home-promo-slide-link"
+             
               :to="slide.ctaHref"
               :aria-label="slide.title"
             />
-            <div v-if="!slide.hideCopy" class="home-promo-copy">
-              <span class="home-promo-badge">{{ slide.badge }}</span>
+            <div v-if="!slide.hideCopy">
+              <span>{{ slide.badge }}</span>
               <h2>{{ slide.title }}</h2>
               <p>{{ slide.description }}</p>
-              <RouterLink class="hero-cta home-promo-cta" :to="slide.ctaHref">
+              <RouterLink :to="slide.ctaHref">
                 {{ slide.ctaLabel }}
               </RouterLink>
             </div>
@@ -158,13 +158,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="home-promo-controls">
-        <div id="home-promo-dots" class="home-promo-dots" aria-label="Zgjedh slide">
+      <div>
+        <div aria-label="Zgjedh slide">
           <button
             v-for="(slide, index) in slides"
             :key="slide.title"
-            class="home-promo-dot"
-            :class="{ active: index === currentIndex }"
+           
+           
             type="button"
             :aria-label="`Hap slide ${index + 1}: ${slide.title}`"
             @click="goToSlide(index)"

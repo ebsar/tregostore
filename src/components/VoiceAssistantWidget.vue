@@ -12,11 +12,24 @@ const route = useRoute();
 const widgetElement = ref(null);
 const statusMessage = ref("");
 const isScriptReady = ref(false);
+let widgetWarmupTimeoutId = 0;
 
 const publicKey = String(import.meta.env.VITE_VAPI_PUBLIC_KEY || "").trim();
 const assistantId = String(import.meta.env.VITE_VAPI_ASSISTANT_ID || "").trim();
 const assistantLabel = String(import.meta.env.VITE_VAPI_ASSISTANT_LABEL || "Asistenti zanor TREGIO").trim();
 const isConfigured = computed(() => Boolean(publicKey && assistantId));
+const shouldRenderWidget = computed(() =>
+  isConfigured.value
+  && ![
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/verifiko-email",
+    "/ndrysho-fjalekalimin",
+    "/adresa-e-porosise",
+    "/menyra-e-pageses",
+  ].includes(route.path),
+);
 
 const assistantOverrides = computed(() =>
   JSON.stringify({
@@ -112,7 +125,7 @@ function detachWidgetEvents() {
 }
 
 async function initializeWidget() {
-  if (!isConfigured.value) {
+  if (!shouldRenderWidget.value) {
     return;
   }
 
@@ -141,20 +154,39 @@ watch(
 );
 
 onMounted(async () => {
-  await initializeWidget();
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const runWarmup = () => {
+    void initializeWidget();
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(runWarmup, { timeout: 1600 });
+    return;
+  }
+
+  widgetWarmupTimeoutId = window.setTimeout(runWarmup, 1200);
 });
 
 onBeforeUnmount(() => {
   detachWidgetEvents();
   window.clearTimeout(showStatus.timeoutId);
+  if (widgetWarmupTimeoutId) {
+    window.clearTimeout(widgetWarmupTimeoutId);
+    widgetWarmupTimeoutId = 0;
+  }
 });
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="isConfigured && isScriptReady" class="voice-assistant-shell" aria-live="polite">
-      <div v-if="statusMessage" class="voice-assistant-status">
+    <div v-if="shouldRenderWidget && isScriptReady" aria-live="polite">
+      <div v-if="statusMessage" class="market-voice-status">
+        <div class="market-status market-status--error">
         {{ statusMessage }}
+        </div>
       </div>
 
       <vapi-widget

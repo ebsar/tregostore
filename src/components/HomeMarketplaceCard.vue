@@ -100,10 +100,10 @@ function handleAddToCart() {
 </script>
 
 <template>
-  <article class="marketplace-card" :class="[{ 'is-compact': compact }, `tone-${badgeTone}`]">
-    <RouterLink class="marketplace-card-media" :to="detailUrl" :aria-label="`Hape produktin ${product.title}`">
+  <article>
+    <RouterLink :to="detailUrl" :aria-label="`Hape produktin ${product.title}`">
       <img
-        class="marketplace-card-image"
+       
         :src="product.imagePath"
         :alt="product.title"
         width="720"
@@ -111,37 +111,37 @@ function handleAddToCart() {
         loading="lazy"
         decoding="async"
       >
-      <span v-if="badgeLabel" class="marketplace-card-badge">{{ badgeLabel }}</span>
+      <span v-if="badgeLabel">{{ badgeLabel }}</span>
     </RouterLink>
 
-    <div class="marketplace-card-body">
-      <div class="marketplace-card-meta">
+    <div>
+      <div>
         <span>{{ categoryLabel }}</span>
       </div>
 
-      <h3 class="marketplace-card-title">
+      <h3>
         <RouterLink :to="detailUrl">{{ product.title }}</RouterLink>
       </h3>
 
-      <p v-if="showBusiness && businessName" class="marketplace-card-business-name">
+      <p v-if="showBusiness && businessName">
         {{ businessName }}
       </p>
 
-      <div class="marketplace-card-pricing">
+      <div>
         <strong>{{ formatPrice(currentPrice) }}</strong>
-        <div class="marketplace-card-price-copy">
-          <span v-if="compareAtPrice" class="marketplace-card-price-old">{{ formatPrice(compareAtPrice) }}</span>
-          <span v-if="discountPercent > 0" class="marketplace-card-discount">{{ discountPercent }}% ulje</span>
+        <div>
+          <span v-if="compareAtPrice">{{ formatPrice(compareAtPrice) }}</span>
+          <span v-if="discountPercent > 0">{{ discountPercent }}% ulje</span>
         </div>
       </div>
 
-      <div class="marketplace-card-rating">
-        <div class="marketplace-card-stars" :aria-label="ratingAverage > 0 ? `Vleresimi ${ratingAverage.toFixed(1)}` : 'Pa vleresime'">
+      <div>
+        <div :aria-label="ratingAverage > 0 ? `Vleresimi ${ratingAverage.toFixed(1)}` : 'Pa vleresime'">
           <svg
             v-for="index in 5"
             :key="index"
-            class="marketplace-card-star"
-            :class="{ 'is-filled': index <= filledStars }"
+           
+           
             viewBox="0 0 24 24"
             aria-hidden="true"
           >
@@ -151,9 +151,9 @@ function handleAddToCart() {
         <span>{{ reviewCount > 0 ? `${ratingAverage.toFixed(1)} · ${reviewCount} vleresime` : "Pa vleresime" }}</span>
       </div>
 
-      <div class="marketplace-card-actions">
-        <RouterLink class="marketplace-card-link" :to="detailUrl">Shiko</RouterLink>
-        <button class="marketplace-card-button" type="button" :disabled="cartBusy" @click="handleAddToCart">
+      <div>
+        <RouterLink :to="detailUrl">Shiko</RouterLink>
+        <button type="button" :disabled="cartBusy" @click="handleAddToCart">
           Shto ne shporte
         </button>
       </div>
@@ -161,264 +161,3 @@ function handleAddToCart() {
   </article>
 </template>
 
-<style scoped>
-.marketplace-card {
-  display: grid;
-  gap: 10px;
-  height: 100%;
-  padding: 12px;
-  border-radius: 24px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.08), transparent 34%);
-  border: 1px solid rgba(255, 255, 255, 0.56);
-  box-shadow:
-    0 12px 24px rgba(31, 41, 55, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.84);
-}
-
-.marketplace-card.is-compact {
-  gap: 8px;
-  padding: 10px;
-  border-radius: 20px;
-}
-
-.marketplace-card-media {
-  position: relative;
-  display: block;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.94));
-  box-shadow: 0 12px 22px rgba(31, 41, 55, 0.09);
-}
-
-.marketplace-card.is-compact .marketplace-card-media {
-  border-radius: 18px;
-}
-
-.marketplace-card-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.marketplace-card-badge {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 11px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  color: var(--text);
-  background: var(--glass-strong-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08);
-}
-
-.tone-alert .marketplace-card-badge {
-  color: #b54141;
-  border-color: rgba(181, 71, 92, 0.24);
-  background: rgba(181, 71, 92, 0.12);
-}
-
-.tone-premium .marketplace-card-badge {
-  color: var(--accent-dark);
-  border-color: rgba(47, 52, 70, 0.16);
-  background: rgba(47, 52, 70, 0.1);
-}
-
-.marketplace-card-body {
-  display: grid;
-  gap: 7px;
-}
-
-.marketplace-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  color: var(--muted);
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.marketplace-card-meta span:last-child {
-  color: var(--muted);
-}
-
-.marketplace-card-title {
-  margin: 0;
-  font-size: 1rem;
-  line-height: 1.26;
-  letter-spacing: -0.02em;
-}
-
-.marketplace-card-title a {
-  color: var(--text);
-  text-decoration: none;
-}
-
-.marketplace-card-business-name {
-  margin: -2px 0 0;
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.35;
-  font-weight: 600;
-}
-
-.marketplace-card-pricing {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.marketplace-card-pricing strong {
-  color: var(--accent);
-  font-size: 1.16rem;
-  letter-spacing: -0.03em;
-}
-
-.marketplace-card-price-copy {
-  display: grid;
-  justify-items: end;
-  gap: 3px;
-}
-
-.marketplace-card-price-old {
-  color: var(--muted);
-  font-size: 0.76rem;
-  text-decoration: line-through;
-}
-
-.marketplace-card-discount {
-  color: #b84d4d;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.marketplace-card-rating {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.marketplace-card-stars {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.marketplace-card-star {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: rgba(143, 133, 124, 0.42);
-  stroke-width: 1.8;
-}
-
-.marketplace-card-star.is-filled {
-  fill: #d8aa58;
-  stroke: #d8aa58;
-}
-
-.marketplace-card-actions {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
-  margin-top: auto;
-}
-
-.marketplace-card-link,
-.marketplace-card-button {
-  min-height: 42px;
-  border-radius: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.marketplace-card-link {
-  padding: 0 14px;
-  color: var(--text);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.12));
-  border: 1px solid rgba(255, 255, 255, 0.56);
-}
-
-.marketplace-card-button {
-  border: 1px solid transparent;
-  color: #fff;
-  cursor: pointer;
-  background: linear-gradient(180deg, var(--accent-cta), var(--accent-cta-strong));
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
-}
-
-.marketplace-card-button:disabled {
-  cursor: wait;
-  opacity: 0.7;
-}
-
-.marketplace-card.is-compact .marketplace-card-title {
-  font-size: 0.9rem;
-}
-
-.marketplace-card.is-compact .marketplace-card-pricing strong {
-  font-size: 1.02rem;
-}
-
-.marketplace-card.is-compact .marketplace-card-actions {
-  grid-template-columns: 1fr;
-}
-
-@media (max-width: 640px) {
-  .marketplace-card {
-    gap: 12px;
-    padding: 12px;
-    border-radius: 22px;
-  }
-
-  .marketplace-card-media {
-    border-radius: 18px;
-  }
-
-  .marketplace-card-badge {
-    top: 10px;
-    left: 10px;
-    min-height: 24px;
-    padding: 0 10px;
-    font-size: 0.62rem;
-  }
-
-  .marketplace-card-title {
-    font-size: 0.92rem;
-  }
-
-  .marketplace-card-pricing strong {
-    font-size: 1.02rem;
-  }
-
-  .marketplace-card-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .marketplace-card-link,
-  .marketplace-card-button {
-    min-height: 40px;
-  }
-}
-</style>

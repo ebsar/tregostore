@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import ProductCard from "../components/ProductCard.vue";
 import { fetchProtectedCollection, requestJson, resolveApiMessage, searchProductsByImage } from "../lib/api";
 import { deriveSectionFromCategory } from "../lib/product-catalog";
 import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRecentSearch } from "../lib/search-history";
@@ -268,19 +269,6 @@ const priceSliderValues = computed(() => {
     maxValue: Number.isFinite(maxPrice) ? maxPrice : max,
   };
 });
-const priceTrackStyle = computed(() => {
-  const { min, max } = priceSliderBounds.value;
-  const { minValue, maxValue } = priceSliderValues.value;
-  const span = Math.max(1, max - min);
-  const start = Math.max(0, Math.min(100, ((minValue - min) / span) * 100));
-  const end = Math.max(start, Math.min(100, ((maxValue - min) / span) * 100));
-
-  return {
-    "--track-start": `${start}%`,
-    "--track-end": `${end}%`,
-  };
-});
-
 const filteredProducts = computed(() => {
   const nextProducts = [...products.value];
   if (!visualSearchActive.value) {
@@ -1382,154 +1370,246 @@ function handleCompare(product) {
 </script>
 
 <template>
-  <section class="search-reference-page" aria-label="Kerko produkte">
-    <div class="search-reference-breadcrumb">
-      <RouterLink class="search-breadcrumb-link" to="/">Home</RouterLink>
-      <span class="search-breadcrumb-separator">›</span>
-      <span class="search-breadcrumb-link">Shop</span>
-      <span class="search-breadcrumb-separator">›</span>
-      <span class="search-breadcrumb-link">Shop Grid</span>
-      <span class="search-breadcrumb-separator">›</span>
-      <strong class="search-breadcrumb-current">{{ breadcrumbTail }}</strong>
-    </div>
+  <section class="market-page market-page--wide search-page" aria-label="Kerko produkte">
+    <nav class="market-page__crumbs" aria-label="Breadcrumb">
+      <RouterLink to="/">Home</RouterLink>
+      <span aria-hidden="true">/</span>
+      <span>Shop</span>
+      <span aria-hidden="true">/</span>
+      <strong>{{ breadcrumbTail }}</strong>
+    </nav>
 
-    <div class="search-reference-shell">
-      <aside class="search-reference-sidebar" :class="{ 'is-open': filtersVisible }" aria-label="Filtro produktet">
-        <div class="search-sidebar-mobile-head">
-          <strong>Filters</strong>
-          <button class="search-sidebar-close" type="button" @click="filtersVisible = false">Close</button>
+    <div class="search-page__shell">
+      <header class="market-card market-card--padded search-hero">
+        <p class="search-hero__label">Marketplace search</p>
+        <div class="market-page__header">
+          <div class="market-page__header-copy">
+            <h1>{{ searchTitle }}</h1>
+            <p class="search-hero__copy">{{ searchIntro }}</p>
+          </div>
+          <div class="market-status market-status--compact">
+            <span>{{ formattedResultsCount }} active results</span>
+          </div>
         </div>
 
-        <section class="search-filter-block">
-          <h2 class="search-filter-block-title">CATEGORY</h2>
-          <div class="search-filter-list">
-            <button
-              v-for="option in sidebarCategoryOptions"
-              :key="`${option.kind}-${option.value || 'all'}`"
-              class="search-filter-radio"
-              :class="{ 'is-active': activeSidebarCategoryValue === option.value }"
-              type="button"
-              @click="handleSidebarCategorySelect(option)"
-            >
-              <span class="search-filter-radio-mark"></span>
-              <span>{{ option.label }}</span>
+        <form class="search-hero__form" role="search" @submit.prevent="submitSearch">
+          <input
+            v-model="draftQuery"
+            name="q"
+            type="search"
+            placeholder="Search products, brands, categories, or describe what you need"
+            autocomplete="off"
+          >
+          <button
+            class="market-button market-button--secondary"
+            type="button"
+            :disabled="visualSearchBusy"
+            @click="openVisualSearchPicker"
+          >
+            {{ visualSearchBusy ? "Scanning..." : "Visual search" }}
+          </button>
+          <button class="market-button market-button--primary" type="submit" aria-label="Search products">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 21l-4.35-4.35"></path>
+              <circle cx="11" cy="11" r="6.5"></circle>
+            </svg>
+          </button>
+        </form>
+
+        <div class="search-hero__suggestions" aria-label="Quick search suggestions">
+          <button
+            v-for="suggestion in SEARCH_PROMPT_SUGGESTIONS"
+            :key="suggestion"
+            type="button"
+            @click="applyRecentSearch(suggestion)"
+          >
+            {{ suggestion }}
+          </button>
+        </div>
+      </header>
+
+      <div
+        v-if="ui.message"
+        class="market-status"
+        :class="{
+          'market-status--error': ui.type === 'error',
+          'market-status--success': ui.type === 'success',
+        }"
+        role="status"
+        aria-live="polite"
+      >
+        {{ ui.message }}
+      </div>
+
+      <section
+        v-if="visualSearchFileName"
+        class="market-card market-card--padded search-visual"
+        aria-label="Kerkimi me foto"
+      >
+        <img v-if="visualSearchPreviewUrl" :src="visualSearchPreviewUrl" :alt="visualSearchFileName">
+        <div>
+          <p class="market-page__eyebrow">Visual search</p>
+          <h2>{{ visualSearchFileName }}</h2>
+          <p class="section-heading__copy">
+            We matched the uploaded image against live marketplace inventory and kept the same refinement tools.
+          </p>
+        </div>
+        <button class="market-button market-button--ghost" type="button" @click="clearVisualSearchAndReload">
+          Clear
+        </button>
+      </section>
+
+      <section
+        v-if="recentSearches.length > 0"
+        class="market-card market-card--padded search-history"
+        aria-label="Recent searches"
+      >
+        <div class="search-sidebar__header">
+          <div>
+            <p class="search-sidebar__label">Recent</p>
+            <strong>Continue where you left off</strong>
+          </div>
+          <button class="market-button market-button--ghost" type="button" @click="clearSearchHistory">
+            Clear history
+          </button>
+        </div>
+
+        <div class="search-history__list">
+          <div v-for="term in recentSearches" :key="term" class="search-history__item">
+            <button type="button" @click="applyRecentSearch(term)">
+              {{ term }}
+            </button>
+            <button class="market-icon-button" type="button" :aria-label="`Remove ${term}`" @click="removeRecentSearchEntry(term)">
+              x
             </button>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="search-filter-block">
-          <h2 class="search-filter-block-title">PRICE RANGE</h2>
-          <div class="search-price-track" :style="priceTrackStyle">
-            <span class="search-price-track-base" aria-hidden="true"></span>
-            <span class="search-price-track-fill" aria-hidden="true"></span>
-            <span class="search-price-track-thumb search-price-track-thumb--start" aria-hidden="true"></span>
-            <span class="search-price-track-thumb search-price-track-thumb--end" aria-hidden="true"></span>
-            <input
-              class="search-price-range search-price-range--start"
-              type="range"
-              :min="priceSliderBounds.min"
-              :max="priceSliderValues.maxValue"
-              :value="priceSliderValues.minValue"
-              step="1"
-              aria-label="Minimum price"
-              @input="handlePriceSliderInput('min', $event)"
-              @change="applyPriceInputs"
-            >
-            <input
-              class="search-price-range search-price-range--end"
-              type="range"
-              :min="priceSliderValues.minValue"
-              :max="priceSliderBounds.max"
-              :value="priceSliderValues.maxValue"
-              step="1"
-              aria-label="Maximum price"
-              @input="handlePriceSliderInput('max', $event)"
-              @change="applyPriceInputs"
-            >
-          </div>
-
-          <div class="search-price-inputs">
-            <input
-              v-model="minPriceInput"
-              class="search-price-input"
-              type="text"
-              inputmode="decimal"
-              placeholder="Min price"
-              @blur="applyPriceInputs"
-              @keyup.enter="applyPriceInputs"
-            >
-            <input
-              v-model="maxPriceInput"
-              class="search-price-input"
-              type="text"
-              inputmode="decimal"
-              placeholder="Max price"
-              @blur="applyPriceInputs"
-              @keyup.enter="applyPriceInputs"
-            >
-          </div>
-
-          <div class="search-filter-list search-filter-list--spacious">
-            <button
-              class="search-filter-radio"
-              :class="{ 'is-active': selectedPriceRange === '' && !minPriceInput && !maxPriceInput }"
-              type="button"
-              @click="setPriceRange('')"
-            >
-              <span class="search-filter-radio-mark"></span>
-              <span>All Price</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === 'under-20' }" type="button" @click="setPriceRange('under-20')">
-              <span class="search-filter-radio-mark"></span>
-              <span>Under $20</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === '25-100' }" type="button" @click="setPriceRange('25-100')">
-              <span class="search-filter-radio-mark"></span>
-              <span>$25 to $100</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === '100-300' }" type="button" @click="setPriceRange('100-300')">
-              <span class="search-filter-radio-mark"></span>
-              <span>$100 to $300</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === '300-500' }" type="button" @click="setPriceRange('300-500')">
-              <span class="search-filter-radio-mark"></span>
-              <span>$300 to $500</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === '500-1000' }" type="button" @click="setPriceRange('500-1000')">
-              <span class="search-filter-radio-mark"></span>
-              <span>$500 to $1,000</span>
-            </button>
-            <button class="search-filter-radio" :class="{ 'is-active': selectedPriceRange === '1000-10000' }" type="button" @click="setPriceRange('1000-10000')">
-              <span class="search-filter-radio-mark"></span>
-              <span>$1,000 to $10,000</span>
-            </button>
-          </div>
-        </section>
-
-        <section v-if="popularBrandOptions.length > 0" class="search-filter-block">
-          <h2 class="search-filter-block-title">POPULAR BRANDS</h2>
-          <div class="search-brand-grid">
-            <button
-              v-for="brand in popularBrandOptions"
-              :key="brand.label"
-              class="search-brand-option"
-              :class="{ 'is-active': selectedBrands.includes(brand.label) }"
-              type="button"
-              @click="toggleBrandFilter(brand.label)"
-            >
-              <span class="search-brand-check"></span>
-              <span>{{ brand.label }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section
-          v-if="shouldShowProductTypeFilter || availableSizeOptions.length > 0 || availableColorOptions.length > 0"
-          class="search-filter-block"
+      <div class="search-page__layout">
+        <aside
+          class="market-card search-sidebar"
+          :class="{ 'is-hidden-mobile': !filtersVisible }"
+          aria-label="Filtro produktet"
         >
-          <h2 class="search-filter-block-title">MORE FILTERS</h2>
-          <div class="search-advanced-filters">
-            <label v-if="shouldShowProductTypeFilter" class="search-select-field">
+          <div class="search-sidebar__header">
+            <div>
+              <p class="search-sidebar__label">Filters</p>
+              <strong>Refine your results</strong>
+            </div>
+            <button class="market-button market-button--ghost" type="button" @click="filtersVisible = false">
+              Close
+            </button>
+          </div>
+
+          <section class="search-sidebar__section">
+            <p class="search-sidebar__label">Category</p>
+            <div class="search-sidebar__options">
+              <button
+                v-for="option in sidebarCategoryOptions"
+                :key="`${option.kind}-${option.value || 'all'}`"
+                type="button"
+                :aria-pressed="activeSidebarCategoryValue === option.value || (!activeSidebarCategoryValue && !option.value)"
+                @click="handleSidebarCategorySelect(option)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </section>
+
+          <section class="search-sidebar__section">
+            <p class="search-sidebar__label">Price range</p>
+            <div class="search-price">
+              <div class="search-price__sliders">
+                <input
+                  type="range"
+                  :min="priceSliderBounds.min"
+                  :max="priceSliderValues.maxValue"
+                  :value="priceSliderValues.minValue"
+                  step="1"
+                  aria-label="Minimum price"
+                  @input="handlePriceSliderInput('min', $event)"
+                  @change="applyPriceInputs"
+                >
+                <input
+                  type="range"
+                  :min="priceSliderValues.minValue"
+                  :max="priceSliderBounds.max"
+                  :value="priceSliderValues.maxValue"
+                  step="1"
+                  aria-label="Maximum price"
+                  @input="handlePriceSliderInput('max', $event)"
+                  @change="applyPriceInputs"
+                >
+              </div>
+
+              <div class="search-price__inputs">
+                <input
+                  v-model="minPriceInput"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="Min price"
+                  @blur="applyPriceInputs"
+                  @keyup.enter="applyPriceInputs"
+                >
+                <input
+                  v-model="maxPriceInput"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="Max price"
+                  @blur="applyPriceInputs"
+                  @keyup.enter="applyPriceInputs"
+                >
+              </div>
+
+              <div class="search-sidebar__options">
+                <button type="button" :aria-pressed="selectedPriceRange === ''" @click="setPriceRange('')">
+                  All price
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === 'under-20'" @click="setPriceRange('under-20')">
+                  Under $20
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === '25-100'" @click="setPriceRange('25-100')">
+                  $25 to $100
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === '100-300'" @click="setPriceRange('100-300')">
+                  $100 to $300
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === '300-500'" @click="setPriceRange('300-500')">
+                  $300 to $500
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === '500-1000'" @click="setPriceRange('500-1000')">
+                  $500 to $1,000
+                </button>
+                <button type="button" :aria-pressed="selectedPriceRange === '1000-10000'" @click="setPriceRange('1000-10000')">
+                  $1,000+
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="popularBrandOptions.length > 0" class="search-sidebar__section">
+            <p class="search-sidebar__label">Popular brands</p>
+            <div class="search-sidebar__options">
+              <button
+                v-for="brand in popularBrandOptions"
+                :key="brand.label"
+                type="button"
+                :aria-pressed="selectedBrands.includes(brand.label)"
+                @click="toggleBrandFilter(brand.label)"
+              >
+                {{ brand.label }} ({{ brand.count }})
+              </button>
+            </div>
+          </section>
+
+          <section
+            v-if="shouldShowProductTypeFilter || availableSizeOptions.length > 0 || availableColorOptions.length > 0"
+            class="search-sidebar__section"
+          >
+            <p class="search-sidebar__label">More filters</p>
+
+            <label v-if="shouldShowProductTypeFilter">
               <span>Product type</span>
               <select v-model="filters.productType" @change="handleProductTypeChange">
                 <option value="">All types</option>
@@ -1543,7 +1623,7 @@ function handleCompare(product) {
               </select>
             </label>
 
-            <label v-if="availableSizeOptions.length > 0" class="search-select-field">
+            <label v-if="availableSizeOptions.length > 0">
               <span>Size</span>
               <select v-model="filters.size" @change="handleCatalogFilterChange">
                 <option value="">All sizes</option>
@@ -1553,7 +1633,7 @@ function handleCompare(product) {
               </select>
             </label>
 
-            <label v-if="availableColorOptions.length > 0" class="search-select-field">
+            <label v-if="availableColorOptions.length > 0">
               <span>Color</span>
               <select v-model="filters.color" @change="handleCatalogFilterChange">
                 <option value="">All colors</option>
@@ -1562,1079 +1642,146 @@ function handleCompare(product) {
                 </option>
               </select>
             </label>
-          </div>
-        </section>
+          </section>
 
-        <div class="search-sidebar-actions">
-          <button class="search-sidebar-action search-sidebar-action--ghost" type="button" @click="clearClientFilters">
-            Clear Price & Brand
-          </button>
-          <button class="search-sidebar-action" type="button" @click="resetFilters">
-            Reset All
-          </button>
-        </div>
-      </aside>
-
-      <div class="search-reference-content">
-        <div class="search-toolbar-row">
-          <button
-            class="search-mobile-filter-toggle"
-            type="button"
-            :aria-expanded="filtersVisible ? 'true' : 'false'"
-            @click="toggleFiltersPanel"
-          >
-            Filters
-          </button>
-
-          <form class="search-toolbar-search" role="search" @submit.prevent="submitSearch">
-            <input
-              v-model="draftQuery"
-              class="search-toolbar-input"
-              name="q"
-              type="search"
-              placeholder="Search for anything..."
-              autocomplete="off"
-            >
-            <button class="search-toolbar-submit" type="submit" aria-label="Search products">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M21 21l-4.35-4.35"></path>
-                <circle cx="11" cy="11" r="6.5"></circle>
-              </svg>
+          <div class="search-sidebar__footer">
+            <button class="market-button market-button--secondary" type="button" @click="clearClientFilters">
+              Clear price and brand
             </button>
-          </form>
+            <button class="market-button market-button--ghost" type="button" @click="resetFilters">
+              Reset all filters
+            </button>
+          </div>
+        </aside>
 
-          <label class="search-sort-control">
-            <span>Sort by:</span>
-            <select v-model="filters.sort">
-              <option value="popular">Most Popular</option>
-              <option value="rating">Top Rated</option>
-              <option value="newest">Newest</option>
-              <option value="price-asc">Price Low to High</option>
-              <option value="price-desc">Price High to Low</option>
-            </select>
-          </label>
-        </div>
+        <div class="search-results">
+          <section class="market-card market-card--padded search-toolbar">
+            <div>
+              <p class="market-page__eyebrow">Results</p>
+              <strong>{{ activeQuery || breadcrumbTail }}</strong>
+              <p class="section-heading__copy">{{ resultsLabel }}</p>
+            </div>
 
-        <div class="search-meta-row">
-          <div class="search-meta-filters">
-            <span class="search-meta-label">Active Filters:</span>
-            <div v-if="activeFilterChips.length > 0" class="search-chip-list">
+            <div class="search-toolbar">
+              <button
+                class="market-button market-button--secondary"
+                type="button"
+                :aria-expanded="filtersVisible ? 'true' : 'false'"
+                @click="toggleFiltersPanel"
+              >
+                Filters
+              </button>
+
+              <label>
+                <span>Sort by</span>
+                <select v-model="filters.sort">
+                  <option value="popular">Most popular</option>
+                  <option value="rating">Top rated</option>
+                  <option value="newest">Newest</option>
+                  <option value="price-asc">Price low to high</option>
+                  <option value="price-desc">Price high to low</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section v-if="activeFilterChips.length > 0" class="market-card market-card--padded">
+            <div class="search-sidebar__header">
+              <div>
+                <p class="search-sidebar__label">Active filters</p>
+                <strong>{{ activeFilterChips.length }} refinements applied</strong>
+              </div>
+              <button class="market-button market-button--ghost" type="button" @click="resetFilters">
+                Clear all
+              </button>
+            </div>
+
+            <div class="search-page__chips">
               <button
                 v-for="chip in activeFilterChips"
                 :key="chip.key"
-                class="search-chip"
                 type="button"
                 @click="removeFilterChip(chip)"
               >
-                <span>{{ chip.label }}</span>
-                <span class="search-chip-x">×</span>
+                {{ chip.label }} x
               </button>
             </div>
-            <span v-else class="search-meta-empty">All Products</span>
-          </div>
-          <p class="search-results-count">{{ formattedResultsCount }} Results found.</p>
-        </div>
+          </section>
 
-        <div v-if="visualSearchFileName" class="search-visual-banner" aria-label="Kerkimi me foto">
-          <div class="search-visual-banner-copy">
-            <strong>Visual search active</strong>
-            <span>{{ visualSearchFileName }}</span>
-          </div>
-          <button class="search-visual-banner-action" type="button" @click="clearVisualSearchAndReload">
-            Clear
-          </button>
-        </div>
+          <section v-if="paginatedProducts.length > 0" class="search-results__grid" aria-label="Rezultatet e kerkimit">
+            <ProductCard
+              v-for="product in paginatedProducts"
+              :key="product.id"
+              :product="product"
+              :is-wishlisted="wishlistIds.includes(product.id)"
+              :is-in-cart="cartIds.includes(product.id)"
+              :wishlist-busy="busyWishlistIds.includes(product.id)"
+              :cart-busy="busyCartIds.includes(product.id)"
+              :is-compared="isComparedProduct(product)"
+              @wishlist="handleWishlist"
+              @cart="handleCart"
+              @compare="handleCompare"
+            />
+          </section>
 
-        <div v-if="ui.message" class="form-message" :class="ui.type" role="status" aria-live="polite">
-          {{ ui.message }}
-        </div>
-
-        <section v-if="paginatedProducts.length > 0" class="search-reference-grid" aria-label="Rezultatet e kerkimit">
-          <article
-            v-for="product in paginatedProducts"
-            :key="product.id"
-            class="search-grid-card"
-          >
-            <RouterLink class="search-grid-card-media" :to="getProductDetailUrl(product.id, route.fullPath)">
-              <img
-                class="search-grid-card-image"
-                :src="product.imagePath"
-                :alt="product.title"
-                width="240"
-                height="240"
-                loading="lazy"
-                decoding="async"
-              >
-            </RouterLink>
-
-            <div class="search-grid-card-copy">
-              <div class="search-grid-card-rating" :aria-label="`Vleresimi ${getProductRatingSummary(product)}`">
-                <div class="search-grid-card-stars">
-                  <svg
-                    v-for="index in 5"
-                    :key="`grid-star-${product.id}-${index}`"
-                    class="search-grid-card-star"
-                    :class="{ 'is-filled': index <= getProductFilledStars(product) }"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
-                  </svg>
-                </div>
-                <span class="search-grid-card-review-count">({{ getProductReviewCount(product) }})</span>
-              </div>
-
-              <h3 class="search-grid-card-title">
-                <RouterLink class="search-grid-card-title-link" :to="getProductDetailUrl(product.id, route.fullPath)">
-                  {{ product.title }}
-                </RouterLink>
-              </h3>
-
-              <p class="search-grid-card-business">{{ getProductBrandLabel(product) }}</p>
-
-              <div class="search-grid-card-price-row">
-                <strong class="search-grid-card-price">{{ formatPrice(product.price || 0) }}</strong>
-                <span
-                  v-if="Number(product.compareAtPrice || product.originalPrice || 0) > Number(product.price || 0)"
-                  class="search-grid-card-price-old"
-                >
-                  {{ formatPrice(product.compareAtPrice || product.originalPrice || 0) }}
-                </span>
-              </div>
+          <div v-else class="market-empty">
+            <h2>No matching products</h2>
+            <p>
+              {{
+                visualSearchActive
+                  ? "No close visual matches were found for the uploaded image."
+                  : "We could not find products for this search yet."
+              }}
+            </p>
+            <div class="market-empty__actions">
+              <button class="market-button market-button--secondary" type="button" @click="resetFilters">
+                Reset filters
+              </button>
+              <button class="market-button market-button--ghost" type="button" @click="openVisualSearchPicker">
+                Try visual search
+              </button>
             </div>
-          </article>
-        </section>
+          </div>
 
-        <div v-else class="collection-empty-state">
-          {{ visualSearchActive ? "Nuk u gjet asnje produkt i ngjashem sipas fotos." : "Nuk u gjet asnje produkt per kete kerkim." }}
+          <nav v-if="totalGridPageCount > 1" class="search-results__pager" aria-label="Pagination">
+            <button
+              class="market-button market-button--ghost"
+              type="button"
+              :disabled="currentGridPage === 1"
+              @click="goToPreviousGridPage"
+            >
+              Prev
+            </button>
+            <button
+              v-for="page in visibleGridPages"
+              :key="page"
+              class="market-button market-button--secondary"
+              :aria-current="page === currentGridPage ? 'page' : undefined"
+              type="button"
+              @click="goToGridPage(page)"
+            >
+              {{ String(page).padStart(2, "0") }}
+            </button>
+            <button
+              class="market-button market-button--ghost"
+              type="button"
+              :disabled="currentGridPage === totalGridPageCount"
+              @click="goToNextGridPage"
+            >
+              Next
+            </button>
+          </nav>
         </div>
-
-        <nav v-if="totalGridPageCount > 1" class="search-pagination" aria-label="Pagination">
-          <button
-            class="search-pagination-arrow"
-            type="button"
-            :disabled="currentGridPage === 1"
-            @click="goToPreviousGridPage"
-          >
-            ←
-          </button>
-          <button
-            v-for="page in visibleGridPages"
-            :key="page"
-            class="search-pagination-page"
-            :class="{ 'is-active': page === currentGridPage }"
-            type="button"
-            @click="goToGridPage(page)"
-          >
-            {{ String(page).padStart(2, "0") }}
-          </button>
-          <button
-            class="search-pagination-arrow"
-            type="button"
-            :disabled="currentGridPage === totalGridPageCount"
-            @click="goToNextGridPage"
-          >
-            →
-          </button>
-        </nav>
       </div>
-    </div>
 
-    <input
-      ref="visualSearchInputElement"
-      class="sr-only"
-      type="file"
-      accept="image/*"
-      capture="environment"
-      @change="handleVisualSearchSelection"
-    >
+      <input
+        ref="visualSearchInputElement"
+        class="visually-hidden"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        @change="handleVisualSearchSelection"
+      >
+    </div>
   </section>
 </template>
-
-<style scoped>
-.search-reference-page {
-  display: grid;
-  gap: 24px;
-  padding: 0 0 32px;
-  color: #191c1f;
-}
-
-.search-reference-breadcrumb {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 0 24px;
-  border-top: 1px solid #eaedf0;
-  border-bottom: 1px solid #eaedf0;
-  background: #f2f4f5;
-  font-size: 0.84rem;
-}
-
-.search-breadcrumb-link {
-  color: #5f6c72;
-  text-decoration: none;
-}
-
-.search-breadcrumb-current {
-  color: #2da5f3;
-  font-weight: 700;
-}
-
-.search-breadcrumb-separator {
-  color: #9aa5ad;
-}
-
-.search-reference-shell {
-  display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-  gap: 28px;
-  align-items: start;
-}
-
-.search-reference-sidebar {
-  display: grid;
-  gap: 18px;
-}
-
-.search-sidebar-mobile-head {
-  display: none;
-}
-
-.search-filter-block {
-  display: grid;
-  gap: 14px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #e4e7e9;
-}
-
-.search-filter-block-title {
-  margin: 0;
-  color: #191c1f;
-  font-size: 0.92rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.search-filter-list {
-  display: grid;
-  gap: 10px;
-}
-
-.search-filter-list--spacious {
-  gap: 9px;
-}
-
-.search-filter-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #5f6c72;
-  font-size: 0.87rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.search-filter-radio-mark {
-  width: 15px;
-  height: 15px;
-  border: 1px solid #c9cfd2;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: inset 0 0 0 3px #fff;
-  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-}
-
-.search-filter-radio.is-active {
-  color: #191c1f;
-  font-weight: 600;
-}
-
-.search-filter-radio.is-active .search-filter-radio-mark {
-  border-color: #fa8232;
-  background: #fa8232;
-  box-shadow: inset 0 0 0 3px #fff;
-}
-
-.search-price-track {
-  position: relative;
-  height: 22px;
-}
-
-.search-price-track-base,
-.search-price-track-fill {
-  position: absolute;
-  top: 50%;
-  height: 4px;
-  border-radius: 999px;
-  transform: translateY(-50%);
-}
-
-.search-price-track-base {
-  inset-inline: 0;
-  background: #e4e7e9;
-}
-
-.search-price-track-fill {
-  left: var(--track-start);
-  right: calc(100% - var(--track-end));
-  background: #fa8232;
-}
-
-.search-price-track-thumb {
-  position: absolute;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: #fa8232;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 3px #fff;
-}
-
-.search-price-track-thumb--start {
-  left: var(--track-start);
-}
-
-.search-price-track-thumb--end {
-  left: var(--track-end);
-}
-
-.search-price-range {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  margin: 0;
-  background: transparent;
-  pointer-events: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.search-price-range::-webkit-slider-runnable-track {
-  height: 22px;
-  background: transparent;
-}
-
-.search-price-range::-webkit-slider-thumb {
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.search-price-range::-moz-range-track {
-  height: 22px;
-  background: transparent;
-}
-
-.search-price-range::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.search-price-inputs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.search-price-input,
-.search-select-field select,
-.search-sort-control select,
-.search-toolbar-input {
-  width: 100%;
-  min-height: 42px;
-  border: 1px solid #e4e7e9;
-  border-radius: 2px;
-  background: #fff;
-  color: #475156;
-  font: inherit;
-}
-
-.search-price-input {
-  padding: 0 12px;
-  font-size: 0.85rem;
-}
-
-.search-brand-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-}
-
-.search-brand-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #5f6c72;
-  font-size: 0.84rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.search-brand-check {
-  width: 14px;
-  height: 14px;
-  border: 1px solid #ced4d7;
-  border-radius: 3px;
-  background: #fff;
-}
-
-.search-brand-option.is-active {
-  color: #191c1f;
-  font-weight: 600;
-}
-
-.search-brand-option.is-active .search-brand-check {
-  border-color: #fa8232;
-  background: #fa8232;
-  box-shadow: inset 0 0 0 2px #fff;
-}
-
-.search-advanced-filters {
-  display: grid;
-  gap: 12px;
-}
-
-.search-select-field {
-  display: grid;
-  gap: 8px;
-  color: #5f6c72;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.search-select-field select,
-.search-sort-control select {
-  padding: 0 12px;
-}
-
-.search-sidebar-actions {
-  display: grid;
-  gap: 10px;
-}
-
-.search-sidebar-action {
-  min-height: 40px;
-  border: 1px solid #fa8232;
-  background: #fa8232;
-  color: #fff;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.search-sidebar-action--ghost {
-  background: #fff;
-  color: #fa8232;
-}
-
-.search-reference-content {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-
-.search-toolbar-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-}
-
-.search-toolbar-search {
-  position: relative;
-}
-
-.search-toolbar-input {
-  padding: 0 48px 0 16px;
-  font-size: 0.9rem;
-}
-
-.search-toolbar-submit {
-  position: absolute;
-  top: 50%;
-  right: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #5f6c72;
-  transform: translateY(-50%);
-  cursor: pointer;
-}
-
-.search-toolbar-submit svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.search-sort-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  color: #5f6c72;
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.search-sort-control select {
-  min-width: 176px;
-}
-
-.search-mobile-filter-toggle {
-  display: none;
-}
-
-.search-meta-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  min-height: 48px;
-  padding: 0 16px;
-  background: #f2f4f5;
-  border: 1px solid #e4e7e9;
-}
-
-.search-meta-filters {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.search-meta-label,
-.search-meta-empty,
-.search-results-count {
-  color: #5f6c72;
-  font-size: 0.82rem;
-}
-
-.search-results-count {
-  margin: 0;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.search-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.search-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid #e4e7e9;
-  background: #fff;
-  color: #475156;
-  font-size: 0.76rem;
-  cursor: pointer;
-}
-
-.search-chip-x {
-  color: #77878f;
-  font-size: 0.92rem;
-  line-height: 1;
-}
-
-.search-visual-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  border: 1px solid #e4e7e9;
-  background: #fff8f2;
-}
-
-.search-visual-banner-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.search-visual-banner-copy strong {
-  color: #191c1f;
-  font-size: 0.88rem;
-}
-
-.search-visual-banner-copy span {
-  color: #5f6c72;
-  font-size: 0.8rem;
-}
-
-.search-visual-banner-action {
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid #fa8232;
-  background: #fff;
-  color: #fa8232;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.search-reference-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.search-grid-card {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px 14px 14px;
-  border: 1px solid #e4e7e9;
-  background: #fff;
-}
-
-.search-grid-card-media {
-  display: grid;
-  place-items: center;
-  min-height: 190px;
-  padding: 10px;
-  text-decoration: none;
-}
-
-.search-grid-card-image {
-  width: 100%;
-  height: 100%;
-  max-height: 170px;
-  object-fit: contain;
-}
-
-.search-grid-card-copy {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.search-grid-card-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #77878f;
-  font-size: 0.76rem;
-}
-
-.search-grid-card-stars {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-}
-
-.search-grid-card-star {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: #fa8232;
-  stroke-width: 1.8;
-}
-
-.search-grid-card-star.is-filled {
-  fill: #fa8232;
-}
-
-.search-grid-card-review-count {
-  color: #adb7bc;
-}
-
-.search-grid-card-title {
-  margin: 0;
-  font-size: 0.92rem;
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.search-grid-card-title-link {
-  color: #191c1f;
-  text-decoration: none;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.search-grid-card-business {
-  margin: 0;
-  color: #77878f;
-  font-size: 0.78rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.search-grid-card-price-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.search-grid-card-price {
-  color: #2da5f3;
-  font-size: 0.94rem;
-  font-weight: 700;
-}
-
-.search-grid-card-price-old {
-  color: #adb7bc;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-decoration: line-through;
-}
-
-.search-pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding-top: 8px;
-}
-
-.search-pagination-arrow,
-.search-pagination-page {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  border: 1px solid #e4e7e9;
-  background: #fff;
-  color: #5f6c72;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.search-pagination-arrow {
-  border-color: #fa8232;
-  color: #fa8232;
-}
-
-.search-pagination-page.is-active {
-  border-color: #fa8232;
-  background: #fa8232;
-  color: #fff;
-}
-
-.search-pagination-arrow:disabled,
-.search-pagination-page:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-@media (max-width: 1100px) {
-  .search-reference-shell {
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: 22px;
-  }
-
-  .search-reference-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 900px) {
-  .search-reference-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .search-reference-sidebar {
-    display: none;
-    padding: 18px;
-    border: 1px solid #e4e7e9;
-    background: #fff;
-  }
-
-  .search-reference-sidebar.is-open {
-    display: grid;
-  }
-
-  .search-sidebar-mobile-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .search-sidebar-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 32px;
-    padding: 0 10px;
-    border: 1px solid #fa8232;
-    background: #fff;
-    color: #fa8232;
-    font-size: 0.76rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .search-toolbar-row {
-    grid-template-columns: 1fr;
-  }
-
-  .search-mobile-filter-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    width: fit-content;
-    padding: 0 16px;
-    border: 1px solid #e4e7e9;
-    background: #fff;
-    color: #191c1f;
-    font-size: 0.82rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .search-sort-control {
-    justify-content: space-between;
-  }
-
-  .search-reference-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .search-meta-row {
-    grid-template-columns: 1fr;
-    padding: 12px 14px;
-  }
-
-  .search-meta-filters {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 560px) {
-  .search-reference-breadcrumb {
-    padding: 14px 16px;
-  }
-
-  .search-reference-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .search-grid-card {
-    padding-inline: 12px;
-  }
-
-  .search-grid-card-media {
-    min-height: 180px;
-  }
-
-  .search-brand-grid,
-  .search-price-inputs {
-    grid-template-columns: 1fr;
-  }
-
-  .search-visual-banner {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
-
-.search-reference-page {
-  gap: 18px;
-  padding-bottom: 18px;
-  background: #ffffff;
-}
-
-.search-reference-breadcrumb {
-  min-height: 58px;
-  padding: 0 22px;
-  border-top: 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-}
-
-.search-breadcrumb-current {
-  color: #d4a017;
-}
-
-.search-reference-shell {
-  gap: 20px;
-}
-
-.search-reference-sidebar {
-  position: sticky;
-  top: calc(var(--page-nav-clearance) + 8px);
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
-}
-
-.search-filter-block {
-  gap: 12px;
-  padding-bottom: 16px;
-  border-bottom-color: rgba(15, 23, 42, 0.08);
-}
-
-.search-filter-block-title {
-  color: #4b5563;
-  font-size: 0.76rem;
-  letter-spacing: 0.12em;
-}
-
-.search-filter-radio.is-active {
-  color: #111827;
-}
-
-.search-filter-radio.is-active .search-filter-radio-mark {
-  border-color: #d4a017;
-  background: #d4a017;
-}
-
-.search-price-track-base {
-  background: #e5e7eb;
-}
-
-.search-price-track-fill,
-.search-price-track-thumb {
-  background: #d4a017;
-}
-
-.search-price-input,
-.search-select-field select,
-.search-sort-control select,
-.search-toolbar-input {
-  min-height: 44px;
-  border-color: rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  background: #f8f9ff;
-}
-
-.search-brand-option.is-active .search-brand-check {
-  border-color: #d4a017;
-  background: #d4a017;
-}
-
-.search-sidebar-action {
-  min-height: 38px;
-  border-radius: 12px;
-  border-color: #d4a017;
-  background: #d4a017;
-  color: #111827;
-}
-
-.search-sidebar-action--ghost {
-  background: #fff8e7;
-  color: #d4a017;
-}
-
-.search-reference-content {
-  gap: 14px;
-}
-
-.search-meta-row,
-.search-visual-banner {
-  border-color: rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  background: #ffffff;
-}
-
-.search-chip {
-  border-color: rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
-  background: #f8f9ff;
-}
-
-.search-grid-card {
-  gap: 10px;
-  padding: 14px;
-  border-color: rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
-}
-
-.search-grid-card-media {
-  min-height: 176px;
-  border-radius: 18px;
-  background: #f8f9ff;
-}
-
-.search-grid-card-title-link:hover {
-  color: #d4a017;
-}
-
-.search-grid-card-price {
-  color: #d4a017;
-}
-
-.search-grid-card-star {
-  stroke: #d4a017;
-}
-
-.search-grid-card-star.is-filled {
-  fill: #d4a017;
-}
-
-.search-pagination-arrow,
-.search-pagination-page {
-  border-color: rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  color: #6b7280;
-}
-
-.search-pagination-arrow,
-.search-pagination-page.is-active {
-  border-color: #d4a017;
-}
-
-.search-pagination-arrow {
-  color: #d4a017;
-}
-
-.search-pagination-page.is-active {
-  background: #d4a017;
-  color: #111827;
-}
-
-@media (max-width: 900px) {
-  .search-reference-sidebar {
-    position: static;
-    padding: 16px;
-    border-radius: 20px;
-  }
-}
-</style>

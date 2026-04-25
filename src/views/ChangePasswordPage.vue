@@ -1,6 +1,11 @@
 <script setup>
 import { computed, onMounted, reactive } from "vue";
+import { RouterLink } from "vue-router";
 import { useRoute, useRouter } from "vue-router";
+import AuthField from "../components/auth/AuthField.vue";
+import AuthPrimaryButton from "../components/auth/AuthPrimaryButton.vue";
+import AuthSecondaryButton from "../components/auth/AuthSecondaryButton.vue";
+import AuthShell from "../components/auth/AuthShell.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
@@ -25,8 +30,6 @@ const ui = reactive({
 const resetMode = computed(
   () => String(route.query.mode || "").trim().toLowerCase() === "reset",
 );
-
-const labelText = computed(() => (resetMode.value ? "Rikthimi i qasjes" : "Siguria"));
 const titleText = computed(() =>
   resetMode.value
     ? "Shkruaje kodin dhe fjalekalimin e ri"
@@ -130,94 +133,96 @@ async function resendCode() {
 </script>
 
 <template>
-  <section class="account-page change-password-page" aria-label="Ndryshimi i fjalekalimit">
-    <section class="card account-section change-password-card">
-      <p class="section-label">{{ labelText }}</p>
-      <h3>{{ titleText }}</h3>
-      <p class="section-text">{{ leadText }}</p>
+  <AuthShell
+    :title="titleText"
+    :description="leadText"
+    :message="ui.message"
+    :message-type="ui.type"
+  >
+    <form class="auth-form" @submit.prevent="submitForm">
+      <AuthField
+        v-if="resetMode"
+        id="change-password-email"
+        v-model="form.email"
+        label="Email"
+        name="email"
+        type="email"
+        autocomplete="email"
+        placeholder="name@email.com"
+        required
+      />
 
-      <form class="auth-form" @submit.prevent="submitForm">
-        <label v-if="resetMode" class="field">
-          <span>Email</span>
-          <input
-            v-model="form.email"
-            name="email"
-            type="email"
-            placeholder="p.sh. emri@email.com"
-            autocomplete="email"
-            required
-          >
-        </label>
+      <AuthField
+        v-if="resetMode"
+        id="change-password-code"
+        v-model="form.code"
+        label="Reset code"
+        name="code"
+        type="text"
+        inputmode="numeric"
+        maxlength="6"
+        placeholder="123456"
+        required
+      />
 
-        <label v-if="resetMode" class="field">
-          <span>Kodi i ndryshimit</span>
-          <input
-            v-model="form.code"
-            name="code"
-            type="text"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="p.sh. 123456"
-            required
-          >
-        </label>
+      <AuthField
+        v-if="!resetMode"
+        id="change-password-current"
+        v-model="form.currentPassword"
+        label="Current password"
+        name="currentPassword"
+        type="password"
+        placeholder="Enter your current password"
+        required
+      />
 
-        <label v-if="!resetMode" class="field">
-          <span>Fjalekalimi aktual</span>
-          <input
-            v-model="form.currentPassword"
-            name="currentPassword"
-            type="password"
-            placeholder="Shkruaje fjalekalimin aktual"
-            required
-          >
-        </label>
+      <AuthField
+        id="change-password-new"
+        v-model="form.newPassword"
+        label="New password"
+        name="newPassword"
+        type="password"
+        autocomplete="new-password"
+        placeholder="Enter a new password"
+        required
+      />
 
-        <label class="field">
-          <span>Fjalekalimi i ri</span>
-          <input
-            v-model="form.newPassword"
-            name="newPassword"
-            type="password"
-            placeholder="Shkruaje fjalekalimin e ri"
-            autocomplete="new-password"
-            required
-          >
-        </label>
+      <AuthField
+        id="change-password-confirm"
+        v-model="form.confirmPassword"
+        label="Confirm new password"
+        name="confirmPassword"
+        type="password"
+        autocomplete="new-password"
+        placeholder="Repeat the new password"
+        required
+      />
 
-        <label class="field">
-          <span>Konfirmo fjalekalimin e ri</span>
-          <input
-            v-model="form.confirmPassword"
-            name="confirmPassword"
-            type="password"
-            placeholder="Perserite fjalekalimin e ri"
-            autocomplete="new-password"
-            required
-          >
-        </label>
+      <div class="auth-inline-actions">
+        <AuthPrimaryButton
+          :loading="ui.loading"
+          :loading-label="resetMode ? 'Verifying code...' : 'Saving password...'"
+        >
+          {{ resetMode ? "Change password" : "Save new password" }}
+        </AuthPrimaryButton>
 
-        <div class="auth-form-actions">
-          <button id="change-password-submit" type="submit" :disabled="ui.loading">
-            {{ ui.loading ? (resetMode ? "Duke verifikuar kodin..." : "Duke ruajtur...") : (resetMode ? "Ndryshoje fjalekalimin" : "Ruaje fjalekalimin e ri") }}
-          </button>
-
-          <button
-            v-if="resetMode"
-            id="change-password-resend-button"
-            class="button-secondary"
-            type="button"
-            :disabled="ui.resendLoading"
-            @click="resendCode"
-          >
-            {{ ui.resendLoading ? "Duke derguar..." : "Dergoje kodin perseri" }}
-          </button>
-        </div>
-      </form>
-
-      <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-        {{ ui.message }}
+        <AuthSecondaryButton
+          v-if="resetMode"
+          :loading="ui.resendLoading"
+          loading-label="Sending..."
+          @click="resendCode"
+        >
+          Resend code
+        </AuthSecondaryButton>
       </div>
-    </section>
-  </section>
+    </form>
+
+    <template #footer>
+      <p class="auth-helper">
+        <RouterLink class="auth-link" :to="resetMode ? '/login' : '/te-dhenat-personale'">
+          {{ resetMode ? "Back to sign in" : "Back to settings" }}
+        </RouterLink>
+      </p>
+    </template>
+  </AuthShell>
 </template>

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
+import AccountUtilityShell from "../components/account/AccountUtilityShell.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   formatDateLabel,
@@ -70,86 +71,108 @@ async function updateReturnStatus(request, status) {
 </script>
 
 <template>
-  <section class="account-page orders-page" aria-label="Refund / Returne">
-    <header class="account-header profile-page-header">
-      <div>
-        <p class="section-label">Marketplace</p>
-        <h1>Refund / Returne</h1>
-        <p class="section-text">
-          Ketu i sheh te gjitha kerkesat e tua per kthim dhe statusin e shqyrtimit te tyre.
-        </p>
-      </div>
-    </header>
-
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-      {{ ui.message }}
-    </div>
-
-    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
-      <h2>Per te pare refund / returne duhet te kyçesh.</h2>
-      <p>Krijo llogari ose hyni ne llogarine tende per te ndjekur kthimet, refund-et dhe shqyrtimin e tyre.</p>
-      <div class="collection-guest-gate-actions">
-        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Frefund-returne">
-          Login
-        </RouterLink>
-        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Frefund-returne">
-          Sign Up
-        </RouterLink>
-      </div>
-    </section>
-
-    <div v-else-if="requests.length === 0" class="card account-section orders-empty-card">
-      <h2>Ende nuk ke asnje kerkese per kthim.</h2>
-    </div>
-
-    <div v-else class="orders-list">
-      <article
-        v-for="request in requests"
-        :key="request.id"
-        class="card order-card return-request-card"
-      >
-        <div class="order-card-top">
-          <div>
-            <p class="section-label">Kerkesa #{{ request.id }}</p>
-            <h2>{{ formatReturnRequestStatusLabel(request.status) }}</h2>
-            <div v-if="isAutomaticRefundRequest(request)" class="order-status-badges">
-              <span class="order-status-badge is-returned">Refund automatik</span>
-            </div>
-          </div>
-          <div class="order-card-meta">
-            <span>{{ request.productTitle || "Produkt" }}</span>
-            <strong>{{ formatDateLabel(request.createdAt) }}</strong>
-          </div>
+  <AccountUtilityShell
+    v-if="!ui.guest"
+    active-key="returns"
+    eyebrow="Marketplace support"
+    title="Refunds & returns"
+    description="Review return requests, keep track of automated refunds, and update the request status when your role allows it."
+    :status-message="ui.message"
+    :status-type="ui.type"
+    :notification-count="requests.length"
+    search-placeholder="Search returns, products, orders"
+  >
+    <section class="account-card">
+      <div class="account-card__header">
+        <div>
+          <h2>Request history</h2>
+          <p>Every refund and return request stays here with its status, reason, and resolution notes.</p>
         </div>
+      </div>
 
-        <div class="order-card-body">
-          <div class="order-item-shell">
-            <div class="summary-chip">
-              <span>Arsyeja</span>
-              <strong>{{ request.reason || "-" }}</strong>
+      <div v-if="requests.length === 0" class="market-empty">
+        <h2>No return requests yet</h2>
+        <p>When you request a refund or return, the full history will appear here.</p>
+      </div>
+
+      <div v-else class="returns-list">
+        <article
+          v-for="request in requests"
+          :key="request.id"
+          class="returns-card"
+        >
+          <div class="returns-card__header">
+            <div>
+              <h2>{{ request.productTitle || "Product" }}</h2>
+              <p>Request #{{ request.id }}</p>
             </div>
-            <div class="summary-chip" v-if="request.details">
-              <span>Detajet</span>
-              <strong>{{ request.details }}</strong>
+
+            <div class="returns-card__meta">
+              <span class="dashboard-badge" :class="{
+                'dashboard-badge--success': ['approved', 'received', 'refunded'].includes(String(request.status || '').trim().toLowerCase()),
+                'dashboard-badge--warning': ['pending', 'requested'].includes(String(request.status || '').trim().toLowerCase()),
+                'dashboard-badge--error': ['rejected'].includes(String(request.status || '').trim().toLowerCase()),
+              }">
+                {{ formatReturnRequestStatusLabel(request.status) }}
+              </span>
+              <strong>{{ formatDateLabel(request.createdAt) }}</strong>
+              <span v-if="isAutomaticRefundRequest(request)">Automatic refund</span>
             </div>
-            <div class="summary-chip" v-if="request.resolutionNotes">
-              <span>Vendimi</span>
-              <strong>{{ request.resolutionNotes }}</strong>
+          </div>
+
+          <div class="returns-card__body">
+            <div class="account-key-value">
+              <strong>Reason</strong>
+              <span>{{ request.reason || "-" }}</span>
             </div>
-            <div v-if="getAutomaticRefundNotice(request)" class="order-refund-notice">
-              <strong>Refund automatik</strong>
+
+            <div v-if="request.details" class="account-key-value">
+              <strong>Details</strong>
+              <span>{{ request.details }}</span>
+            </div>
+
+            <div v-if="request.resolutionNotes" class="account-key-value">
+              <strong>Resolution</strong>
+              <span>{{ request.resolutionNotes }}</span>
+            </div>
+
+            <div v-if="getAutomaticRefundNotice(request)" class="account-key-value">
+              <strong>Automatic refund note</strong>
               <span>{{ getAutomaticRefundNotice(request) }}</span>
             </div>
           </div>
 
-          <div v-if="canManageReturns" class="auth-form-actions">
-            <button class="button-secondary" type="button" @click="updateReturnStatus(request, 'approved')">Aprovo</button>
-            <button class="button-secondary" type="button" @click="updateReturnStatus(request, 'received')">Pranuar</button>
-            <button type="button" @click="updateReturnStatus(request, 'refunded')">Rimburso</button>
-            <button class="button-secondary" type="button" @click="updateReturnStatus(request, 'rejected')">Refuzo</button>
+          <div v-if="canManageReturns" class="returns-card__actions">
+            <button class="market-button market-button--secondary" type="button" @click="updateReturnStatus(request, 'approved')">
+              Approve
+            </button>
+            <button class="market-button market-button--secondary" type="button" @click="updateReturnStatus(request, 'received')">
+              Received
+            </button>
+            <button class="market-button market-button--primary" type="button" @click="updateReturnStatus(request, 'refunded')">
+              Refund
+            </button>
+            <button class="market-button market-button--secondary" type="button" @click="updateReturnStatus(request, 'rejected')">
+              Reject
+            </button>
           </div>
-        </div>
-      </article>
+        </article>
+      </div>
+    </section>
+  </AccountUtilityShell>
+
+  <section v-else class="market-page market-page--wide dashboard-page" aria-label="Refund / Returne">
+    <div class="market-empty account-gate">
+      <h2>Sign in to track refunds and returns</h2>
+      <p>Create an account or log in to follow each return request and refund review from one page.</p>
+      <div class="account-gate__actions">
+        <RouterLink class="market-button market-button--primary" to="/login?redirect=%2Frefund-returne">
+          Login
+        </RouterLink>
+        <RouterLink class="market-button market-button--secondary" to="/signup?redirect=%2Frefund-returne">
+          Sign up
+        </RouterLink>
+      </div>
     </div>
   </section>
 </template>

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import ProductCard from "../components/ProductCard.vue";
 import {
   fetchProductRecommendations,
   fetchProtectedCollection,
@@ -1170,6 +1171,10 @@ function handleCompareProduct() {
   }
 
   toggleComparedProduct(currentProduct.value);
+}
+
+function isComparedItem(productId) {
+  return compareState.items.some((item) => Number(item.id || item.productId || 0) === Number(productId || 0));
 }
 
 function chooseColor(colorValue) {
@@ -2601,37 +2606,41 @@ function getReviewAvatarStyle(name) {
 </script>
 
 <template>
-  <section class="product-detail-page pdp-page" aria-label="Product details">
-    <div v-if="ui.message" class="form-message" :class="ui.type" role="status" aria-live="polite">
+  <section class="market-page market-page--wide product-detail-page" aria-label="Product details">
+    <div
+      v-if="ui.message"
+      class="market-status"
+      :class="{
+        'market-status--error': ui.type === 'error',
+        'market-status--success': ui.type === 'success',
+      }"
+      role="status"
+      aria-live="polite"
+    >
       {{ ui.message }}
     </div>
 
-    <section v-if="currentProduct" class="product-detail-container pdp-container">
-      <nav class="product-breadcrumbs pdp-breadcrumbs" aria-label="Breadcrumb">
-        <div class="pdp-breadcrumb-track">
+    <section v-if="currentProduct" class="pdp-shell">
+      <div class="market-page__header">
+        <nav class="market-page__crumbs" aria-label="Breadcrumb">
           <template v-for="(item, index) in breadcrumbItems" :key="`${item.label}-${index}`">
-            <RouterLink
-              v-if="item.to && index < breadcrumbItems.length - 1"
-              class="product-breadcrumb-link"
-              :to="item.to"
-            >
+            <RouterLink v-if="item.to && index < breadcrumbItems.length - 1" :to="item.to">
               {{ item.label }}
             </RouterLink>
-            <span v-else class="product-breadcrumb-current">{{ item.label }}</span>
-            <span v-if="index < breadcrumbItems.length - 1" class="product-breadcrumb-separator" aria-hidden="true">/</span>
+            <span v-else>{{ item.label }}</span>
+            <span v-if="index < breadcrumbItems.length - 1" aria-hidden="true">/</span>
           </template>
-        </div>
+        </nav>
 
-        <RouterLink class="pdp-back-link" :to="backTarget">
+        <RouterLink class="market-button market-button--ghost" :to="backTarget">
           Back to products
         </RouterLink>
-      </nav>
+      </div>
 
-      <article class="product-detail-card pdp-hero" :aria-label="currentProduct.title">
+      <article class="pdp-layout" :aria-label="currentProduct.title">
         <div class="pdp-gallery">
-          <div class="pdp-gallery-stage">
+          <div class="market-card pdp-gallery__frame">
             <img
-              class="pdp-gallery-image"
               :src="currentImagePath"
               :alt="currentProduct.title"
               width="1200"
@@ -2641,27 +2650,27 @@ function getReviewAvatarStyle(name) {
             >
           </div>
 
-          <div v-if="imageGallery.length > 1" class="pdp-gallery-rail" aria-label="Product gallery">
-            <button class="pdp-gallery-arrow" type="button" @click="previousImage">
+          <div v-if="imageGallery.length > 1" class="pdp-gallery__thumbs" aria-label="Product gallery">
+            <button class="market-icon-button" type="button" aria-label="Previous image" @click="previousImage">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M14.5 6.5 9 12l5.5 5.5"></path>
               </svg>
             </button>
 
-            <div class="pdp-gallery-thumbnails">
+            <div class="pdp-gallery__thumb-rail">
               <button
                 v-for="(imagePath, index) in imageGallery"
                 :key="`${imagePath}-${index}`"
-                class="pdp-gallery-thumb"
-                :class="{ active: index === currentImageIndex }"
+                class="pdp-gallery__thumb"
                 type="button"
+                :aria-pressed="index === currentImageIndex"
                 @click="setCurrentImage(index)"
               >
                 <img :src="imagePath" :alt="`${currentProduct.title} ${index + 1}`" loading="lazy" decoding="async">
               </button>
             </div>
 
-            <button class="pdp-gallery-arrow" type="button" @click="nextImage">
+            <button class="market-icon-button" type="button" aria-label="Next image" @click="nextImage">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9.5 6.5 15 12l-5.5 5.5"></path>
               </svg>
@@ -2669,364 +2678,285 @@ function getReviewAvatarStyle(name) {
           </div>
         </div>
 
-        <div class="pdp-info">
-          <div class="pdp-rating-row">
-            <div class="pdp-stars" :aria-label="averageRating > 0 ? `Rating ${averageRating.toFixed(1)}` : 'No rating yet'">
+        <aside class="market-card pdp-summary">
+          <span class="pdp-summary__label">Verified marketplace listing</span>
+          <h1 class="pdp-summary__title">{{ currentProduct.title }}</h1>
+          <p class="pdp-summary__copy">{{ shortDescription }}</p>
+
+          <div class="pdp-summary__rating">
+            <div class="product-card__stars" :aria-label="averageRating > 0 ? `Rating ${averageRating.toFixed(1)}` : 'No rating yet'">
               <svg
                 v-for="index in 5"
                 :key="`hero-star-${index}`"
-                class="pdp-star"
-                :class="{ 'is-filled': index <= filledStars }"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
               >
                 <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
               </svg>
             </div>
-            <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "0.0" }} Star Rating</strong>
-            <span>({{ reviewCount > 0 ? formatCount(reviewCount) : 0 }} user feedback)</span>
+            <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "0.0" }}</strong>
+            <span>{{ reviewCount > 0 ? `${formatCount(reviewCount)} reviews` : "No reviews yet" }}</span>
+            <span>{{ buyersCount > 0 ? `${formatCount(buyersCount)} buyers` : "Fresh listing" }}</span>
           </div>
 
-          <div class="pdp-headline">
-            <h1>{{ currentProduct.title }}</h1>
-            <p v-if="businessName" class="pdp-business-posted">
-              Posted by <strong>{{ businessName }}</strong>
-            </p>
+          <div class="pdp-summary__price">
+            <strong>{{ formatPrice(currentProduct.price) }}</strong>
+            <span v-if="compareAtPrice">{{ formatPrice(compareAtPrice) }}</span>
+            <span v-if="discountPercent > 0">{{ discountPercent }}% off</span>
           </div>
 
           <div class="pdp-meta-grid">
-            <div class="pdp-meta-column">
-              <p><span>Sku:</span> <strong>{{ productSku }}</strong></p>
-              <p><span>Brand:</span> <strong>{{ productBrand }}</strong></p>
-              <p><span>Business:</span> <strong>{{ businessName || "Verified seller" }}</strong></p>
+            <div>
+              <span>Sku</span>
+              <strong>{{ productSku }}</strong>
             </div>
-            <div class="pdp-meta-column">
-              <p><span>Availability:</span> <strong :class="['pdp-stock-copy', { 'is-live': isProductAvailable }]">{{ productAvailabilityLabel }}</strong></p>
-              <p><span>Category:</span> <strong>{{ formatCategoryLabel(currentProduct.category) }}</strong></p>
-              <p><span>Type:</span> <strong>{{ optionTypeLabel }}</strong></p>
+            <div>
+              <span>Brand</span>
+              <strong>{{ productBrand }}</strong>
+            </div>
+            <div>
+              <span>Seller</span>
+              <strong>{{ businessName || "Verified seller" }}</strong>
+            </div>
+            <div>
+              <span>Availability</span>
+              <strong>{{ productAvailabilityLabel }}</strong>
             </div>
           </div>
 
-          <div class="pdp-price-row">
-            <div class="pdp-price-stack">
-              <strong class="pdp-price-current">{{ formatPrice(currentProduct.price) }}</strong>
-              <span v-if="compareAtPrice" class="pdp-price-old">{{ formatPrice(compareAtPrice) }}</span>
-            </div>
-            <span v-if="discountPercent > 0" class="pdp-offer-badge">{{ discountPercent }}% OFF</span>
+          <div class="pdp-detail-pills">
+            <span v-for="detail in details" :key="detail">{{ detail }}</span>
           </div>
 
-          <div class="product-detail-tags pdp-tags">
-            <span v-for="detail in details" :key="detail" class="product-detail-tag pdp-tag">
-              {{ detail }}
-            </span>
-          </div>
-
-          <div class="pdp-options-grid">
-            <section class="pdp-option-card">
-              <p class="pdp-option-label">Color</p>
-              <div v-if="colorOptions.length > 0" class="pdp-color-swatches">
+          <div class="pdp-option-stack">
+            <section class="pdp-option-group">
+              <p class="search-sidebar__label">Color</p>
+              <div v-if="colorOptions.length > 0" class="pdp-option-grid">
                 <button
                   v-for="option in colorOptions"
                   :key="option.value"
-                  class="pdp-color-swatch"
-                  :class="{ active: selectedColor === option.value, 'is-unavailable': !option.inStock }"
                   type="button"
-                  :style="getColorSwatchStyle(option.value)"
+                  :aria-pressed="selectedColor === option.value"
                   :disabled="!option.inStock"
-                  :title="option.label"
                   @click="chooseColor(option.value)"
                 >
-                  <span class="sr-only">{{ option.label }}</span>
+                  {{ option.label }}
                 </button>
               </div>
-              <div v-else class="pdp-static-field">
+              <p v-else class="section-heading__copy">
                 {{ currentProduct.color ? formatProductColorLabel(currentProduct.color) : "Standard" }}
-              </div>
+              </p>
             </section>
 
-            <section class="pdp-option-card">
-              <p class="pdp-option-label">Size</p>
-              <label v-if="sizeOptions.length > 0" class="pdp-select-shell">
-                <select v-model="selectedSize" @change="clearInvalidVariantSelections('size')">
-                  <option value="">Select size</option>
-                  <option
-                    v-for="option in sizeOptions"
-                    :key="option.value"
-                    :value="option.value"
-                    :disabled="!option.inStock"
-                  >
-                    {{ option.value }}{{ option.inStock ? "" : " - unavailable" }}
-                  </option>
-                </select>
-              </label>
-              <div v-else class="pdp-static-field">
-                {{ currentProduct.size || "Standard fit" }}
-              </div>
-            </section>
-
-            <section class="pdp-option-card">
-              <p class="pdp-option-label">Product type</p>
-              <div class="pdp-static-field">
-                {{ optionTypeLabel }}
-              </div>
-            </section>
-
-            <section
-              v-for="group in variantAttributeGroups"
-              :key="group.key"
-              class="pdp-option-card"
-            >
-              <p class="pdp-option-label">{{ group.label }}</p>
-              <label class="pdp-select-shell">
-                <select
-                  :value="selectedVariantAttributes[group.key] || ''"
-                  @change="chooseVariantAttribute(group.key, $event.target.value)"
+            <section class="pdp-option-group">
+              <p class="search-sidebar__label">Size</p>
+              <div v-if="sizeOptions.length > 0" class="pdp-option-grid">
+                <button
+                  v-for="option in sizeOptions"
+                  :key="option.value"
+                  type="button"
+                  :aria-pressed="selectedSize === option.value"
+                  :disabled="!option.inStock"
+                  @click="chooseSize(option.value)"
                 >
-                  <option value="">{{ `Select ${group.label.toLowerCase()}` }}</option>
-                  <option
-                    v-for="option in group.options"
-                    :key="`${group.key}-${option.value}`"
-                    :value="option.value"
-                    :disabled="!option.inStock"
-                  >
-                    {{ option.value }}{{ option.inStock ? "" : " - unavailable" }}
-                  </option>
-                </select>
-              </label>
+                  {{ option.value }}
+                </button>
+              </div>
+              <p v-else class="section-heading__copy">{{ currentProduct.size || "Standard fit" }}</p>
             </section>
 
-            <section class="pdp-option-card">
-              <p class="pdp-option-label">Package</p>
-              <div class="pdp-static-field">
-                {{ packageAmountLabel }}
+            <section v-for="group in variantAttributeGroups" :key="group.key" class="pdp-option-group">
+              <p class="search-sidebar__label">{{ group.label }}</p>
+              <div class="pdp-option-grid">
+                <button
+                  v-for="option in group.options"
+                  :key="`${group.key}-${option.value}`"
+                  type="button"
+                  :aria-pressed="selectedVariantAttributes[group.key] === option.value"
+                  :disabled="!option.inStock"
+                  @click="chooseVariantAttribute(group.key, option.value)"
+                >
+                  {{ option.value }}
+                </button>
               </div>
+            </section>
+
+            <section class="pdp-option-group">
+              <p class="search-sidebar__label">Product type</p>
+              <p class="section-heading__copy">{{ optionTypeLabel }}</p>
+            </section>
+
+            <section class="pdp-option-group">
+              <p class="search-sidebar__label">Package</p>
+              <p class="section-heading__copy">{{ packageAmountLabel }}</p>
             </section>
           </div>
 
-          <div class="pdp-buy-row">
-            <div class="pdp-quantity-box">
+          <div class="pdp-summary__actions">
+            <div class="pdp-quantity" aria-label="Quantity selector">
               <button type="button" :disabled="selectedQuantity <= 1" @click="decrementQuantity">-</button>
               <span>{{ selectedQuantity }}</span>
               <button type="button" :disabled="selectedQuantity >= quantityMax" @click="incrementQuantity">+</button>
             </div>
 
-            <button
-              class="pdp-primary-button"
-              :class="{ active: cartIds.includes(currentProduct.id) }"
-              type="button"
-              :disabled="!isProductAvailable"
-              @click="handleCart"
-            >
-              Add to cart
+            <button class="market-button market-button--primary" type="button" :disabled="!isProductAvailable" @click="handleCart">
+              {{ currentProduct.requiresVariantSelection && !selectedVariant ? "Select options" : "Add to cart" }}
             </button>
 
-            <button
-              class="pdp-secondary-button"
-              type="button"
-              :disabled="!isProductAvailable"
-              @click="handleBuyNow"
-            >
+            <button class="market-button market-button--secondary" type="button" :disabled="!isProductAvailable" @click="handleBuyNow">
               Buy now
             </button>
+
+            <RouterLink
+              v-if="currentProduct.businessProfileId"
+              class="market-button market-button--ghost"
+              :to="getBusinessProfileUrl(currentProduct.businessProfileId)"
+            >
+              Visit store
+            </RouterLink>
           </div>
 
-          <div class="pdp-utility-row">
-            <button
-              class="pdp-utility-action"
-              :class="{ active: wishlistIds.includes(currentProduct.id) }"
-              type="button"
-              @click="handleWishlist"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 20.4 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8l.3.3.3-.3a4.8 4.8 0 1 1 6.8 6.8Z"></path>
-              </svg>
-              <span>Add to Wishlist</span>
+          <div class="pdp-summary__actions">
+            <button class="market-button market-button--ghost" type="button" @click="handleWishlist">
+              {{ wishlistIds.includes(currentProduct.id) ? "Saved" : "Save" }}
             </button>
-
-            <button
-              class="pdp-utility-action"
-              :class="{ active: isCompared }"
-              type="button"
-              @click="handleCompareProduct"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4.5" y="5.5" width="6.5" height="13" rx="1.8"></rect>
-                <rect x="13" y="7.5" width="6.5" height="11" rx="1.8"></rect>
-              </svg>
-              <span>Add to Compare</span>
+            <button class="market-button market-button--ghost" type="button" @click="handleCompareProduct">
+              {{ isCompared ? "Compared" : "Compare" }}
             </button>
-
-            <button class="pdp-utility-action" type="button" @click="handleShareProduct">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="18" cy="5" r="2.2"></circle>
-                <circle cx="6" cy="12" r="2.2"></circle>
-                <circle cx="18" cy="19" r="2.2"></circle>
-                <path d="M8 11.2 15.9 6.7"></path>
-                <path d="m8 12.8 7.9 4.5"></path>
-              </svg>
-              <span>Share product</span>
+            <button class="market-button market-button--ghost" type="button" @click="handleShareProduct">
+              Share
             </button>
-
-            <button class="pdp-utility-action pdp-utility-action--ghost" type="button" @click="handleReportProduct">
+            <button class="market-button market-button--ghost" type="button" @click="handleReportProduct">
               Report
             </button>
           </div>
 
-          <div class="pdp-checkout-card">
-            <p class="pdp-checkout-title">100% Guarantee Safe Checkout</p>
-            <div class="pdp-checkout-badges">
-              <span v-for="badge in safeCheckoutBadges" :key="badge" class="pdp-checkout-badge">{{ badge }}</span>
-            </div>
+          <div class="pdp-trust">
+            <article v-for="highlight in trustHighlights.slice(0, 4)" :key="highlight.title">
+              <strong>{{ highlight.title }}</strong>
+              <span>{{ highlight.description }}</span>
+            </article>
           </div>
-
-          <div v-if="canSeeProductEngagement" class="product-detail-engagement-row pdp-engagement-row" aria-label="Product engagement">
-            <span
-              v-for="item in publicEngagementItems"
-              :key="`${currentProduct.id}-${item.label}`"
-              class="product-detail-engagement-chip pdp-engagement-chip"
-            >
-              <small>{{ item.label }}</small>
-              <strong>{{ item.value }}</strong>
-            </span>
-          </div>
-        </div>
+        </aside>
       </article>
 
-      <section class="pdp-detail-tabs">
-        <div class="pdp-tab-bar" role="tablist" aria-label="Product information tabs">
-          <button
-            v-for="tab in detailTabs"
-            :key="tab.key"
-            class="pdp-tab-button"
-            :class="{ active: activeDetailTab === tab.key }"
-            type="button"
-            role="tab"
-            :aria-selected="activeDetailTab === tab.key"
-            @click="activeDetailTab = tab.key"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-
-        <div v-if="activeDetailTab === 'description'" class="pdp-tab-panel pdp-description-panel" role="tabpanel">
-          <div class="pdp-description-copy">
-            <h2>Description</h2>
-            <p v-for="paragraph in descriptionParagraphs" :key="paragraph">
-              {{ paragraph }}
-            </p>
+      <section class="pdp-content-grid">
+        <div class="market-card pdp-description">
+          <div class="pdp-tabs" role="tablist" aria-label="Product information tabs">
+            <button
+              v-for="tab in detailTabs"
+              :key="tab.key"
+              type="button"
+              role="tab"
+              :aria-selected="activeDetailTab === tab.key"
+              :aria-pressed="activeDetailTab === tab.key"
+              @click="activeDetailTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
           </div>
 
-          <section class="pdp-side-card">
-            <h3>Feature</h3>
-            <ul class="pdp-bullet-list">
-              <li v-for="highlight in trustHighlights" :key="highlight.title">
-                <strong>{{ highlight.title }}</strong>
-                <span>{{ highlight.description }}</span>
-              </li>
-            </ul>
-          </section>
+          <div v-if="activeDetailTab === 'description'" class="pdp-description__body" role="tabpanel">
+            <div>
+              <h2>Description</h2>
+              <p v-for="paragraph in descriptionParagraphs" :key="paragraph">
+                {{ paragraph }}
+              </p>
+            </div>
 
-          <section class="pdp-side-card">
-            <h3>Shipping Information</h3>
-            <ul class="pdp-side-list">
-              <li v-for="item in shippingInformation" :key="item.label">
-                <strong>{{ item.label }}:</strong>
-                <span>{{ item.value }}</span>
-              </li>
-            </ul>
-          </section>
-        </div>
+            <div>
+              <h3>Highlights</h3>
+              <ul>
+                <li v-for="bullet in productHighlightBullets" :key="bullet">{{ bullet }}</li>
+              </ul>
+            </div>
 
-        <div v-else-if="activeDetailTab === 'additional'" class="pdp-tab-panel pdp-additional-panel" role="tabpanel">
-          <section class="pdp-info-group pdp-additional-overview">
-            <h3>Overview</h3>
-            <div class="pdp-additional-overview-grid">
-              <div v-for="item in additionalOverviewItems" :key="`overview-${item.label}`" class="pdp-additional-overview-row">
-                <span>{{ item.label }}:</span>
-                <strong>{{ item.value }}</strong>
+            <div>
+              <h3>Shipping information</h3>
+              <ul>
+                <li v-for="item in shippingInformation" :key="item.label">
+                  <strong>{{ item.label }}:</strong> {{ item.value }}
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div v-else-if="activeDetailTab === 'additional'" class="pdp-description__body" role="tabpanel">
+            <div>
+              <h2>Overview</h2>
+              <div class="metric-grid">
+                <article v-for="item in additionalOverviewItems" :key="`overview-${item.label}`" class="metric-card">
+                  <p class="metric-card__label">{{ item.label }}</p>
+                  <strong>{{ item.value }}</strong>
+                </article>
               </div>
             </div>
-          </section>
 
-          <section class="pdp-info-group pdp-additional-middle">
-            <article v-for="section in additionalDetailSections" :key="section.title" class="pdp-additional-detail-block">
+            <article v-for="section in additionalDetailSections" :key="section.title">
               <h3>{{ section.title }}</h3>
-              <p v-if="section.text" class="pdp-info-paragraph">
-                {{ section.text }}
-              </p>
-              <p v-for="line in section.lines" :key="`${section.title}-${line}`" class="pdp-additional-detail-line">
-                {{ line }}
-              </p>
+              <p v-if="section.text">{{ section.text }}</p>
+              <p v-for="line in section.lines" :key="`${section.title}-${line}`">{{ line }}</p>
             </article>
-          </section>
 
-          <section class="pdp-info-group pdp-additional-highlights">
-            <h3>Highlights:</h3>
-            <ul class="pdp-bullet-list pdp-bullet-list--compact pdp-additional-highlights-list">
-              <li v-for="bullet in additionalHighlights" :key="bullet">
-                <span>{{ bullet }}</span>
-              </li>
-            </ul>
-          </section>
-        </div>
-
-        <div v-else-if="activeDetailTab === 'specification'" class="pdp-tab-panel pdp-specification-panel" role="tabpanel">
-          <div class="pdp-spec-columns">
-            <div v-for="(column, columnIndex) in specificationColumns" :key="`spec-column-${columnIndex}`" class="pdp-spec-column">
-              <section v-for="group in column" :key="group.title" class="pdp-spec-group">
-                <h3>{{ group.title }}</h3>
-                <div class="pdp-spec-grid">
-                  <div v-for="item in group.items" :key="`${group.title}-${item.label}`" class="pdp-spec-row">
-                    <span>{{ item.label }}</span>
-                    <strong>{{ item.value }}</strong>
-                  </div>
-                </div>
-              </section>
+            <div>
+              <h3>Highlights</h3>
+              <ul>
+                <li v-for="bullet in additionalHighlights" :key="bullet">{{ bullet }}</li>
+              </ul>
             </div>
           </div>
-        </div>
 
-        <div v-else class="pdp-tab-panel pdp-reviews-panel" role="tabpanel">
-          <div class="pdp-review-summary-layout">
-            <aside class="pdp-review-score-card">
-              <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "0.0" }}</strong>
-              <div class="pdp-stars pdp-stars--summary" :aria-label="averageRating > 0 ? `Rating ${averageRating.toFixed(1)}` : 'No rating yet'">
-                <svg
-                  v-for="index in 5"
-                  :key="`summary-star-${index}`"
-                  class="pdp-star"
-                  :class="{ 'is-filled': index <= filledStars }"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
-                </svg>
+          <div v-else-if="activeDetailTab === 'specification'" class="pdp-specs" role="tabpanel">
+            <div class="pdp-spec-columns">
+              <div v-for="(column, columnIndex) in specificationColumns" :key="`spec-column-${columnIndex}`">
+                <section v-for="group in column" :key="group.title" class="pdp-spec-group">
+                  <h3>{{ group.title }}</h3>
+                  <div class="pdp-spec-group__items">
+                    <div v-for="item in group.items" :key="`${group.title}-${item.label}`" class="pdp-spec-group__item">
+                      <span>{{ item.label }}</span>
+                      <strong>{{ item.value }}</strong>
+                    </div>
+                  </div>
+                </section>
               </div>
-              <span>Customer Rating ({{ reviewCount > 0 ? formatCount(reviewCount) : 0 }})</span>
-            </aside>
+            </div>
+          </div>
 
-            <div class="pdp-review-bars">
-              <div v-for="entry in reviewBreakdown" :key="entry.star" class="pdp-review-bar-row">
-                <div class="pdp-review-bar-label">
-                  <span>{{ entry.star }}</span>
-                  <svg class="pdp-review-bar-star" viewBox="0 0 24 24" aria-hidden="true">
+          <div v-else class="pdp-reviews" role="tabpanel">
+            <div class="pdp-review-summary">
+              <aside class="market-card market-card--padded">
+                <strong>{{ averageRating > 0 ? averageRating.toFixed(1) : "0.0" }}</strong>
+                <div class="product-card__stars" :aria-label="averageRating > 0 ? `Rating ${averageRating.toFixed(1)}` : 'No rating yet'">
+                  <svg
+                    v-for="index in 5"
+                    :key="`summary-star-${index}`"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
                     <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
                   </svg>
                 </div>
-                <div class="pdp-review-bar-track">
-                  <span class="pdp-review-bar-fill" :style="{ width: `${entry.percentage}%` }"></span>
+                <span>{{ reviewCount > 0 ? `${formatCount(reviewCount)} customer ratings` : "No customer ratings yet" }}</span>
+              </aside>
+
+              <div class="pdp-review-bars">
+                <div v-for="entry in reviewBreakdown" :key="entry.star" class="pdp-review-bar">
+                  <span>{{ entry.star }} star</span>
+                  <meter :value="entry.percentage" min="0" max="100">{{ entry.percentage }}</meter>
+                  <span>{{ entry.count }}</span>
                 </div>
-                <span class="pdp-review-bar-value">{{ entry.percentage }}% ({{ entry.count }})</span>
               </div>
             </div>
-          </div>
 
-          <div class="pdp-feedback-block">
-            <div class="pdp-feedback-head">
-              <h3>Customer Feedback</h3>
+            <div class="pdp-review-header">
+              <div>
+                <h3>Customer feedback</h3>
+                <p class="section-heading__copy">Reviews help buyers evaluate quality, delivery, and seller reliability.</p>
+              </div>
+
               <button
                 v-if="canSubmitReview"
-                class="pdp-review-toggle"
+                class="market-button market-button--secondary"
                 type="button"
                 @click="showReviewComposer = !showReviewComposer"
               >
@@ -3034,1528 +2964,142 @@ function getReviewAvatarStyle(name) {
               </button>
             </div>
 
-            <form
-              v-if="canSubmitReview && showReviewComposer"
-              class="pdp-review-form"
-              @submit.prevent="handleSubmitReview"
-            >
-              <label class="field">
-                <span>Rating</span>
-                <select v-model.number="reviewForm.rating">
-                  <option v-for="star in 5" :key="star" :value="star">{{ star }} stars</option>
-                </select>
-              </label>
+            <form v-if="canSubmitReview && showReviewComposer" class="pdp-review-form" @submit.prevent="handleSubmitReview">
+              <div class="pdp-review-form__row">
+                <label>
+                  <span>Rating</span>
+                  <select v-model.number="reviewForm.rating">
+                    <option v-for="star in 5" :key="star" :value="star">{{ star }} stars</option>
+                  </select>
+                </label>
 
-              <label class="field">
-                <span>Title</span>
-                <input v-model="reviewForm.title" type="text" placeholder="How was the product?">
-              </label>
+                <label>
+                  <span>Title</span>
+                  <input v-model="reviewForm.title" type="text" placeholder="How was the product?">
+                </label>
+              </div>
 
-              <label class="field field--full">
+              <label>
                 <span>Your feedback</span>
-                <textarea v-model="reviewForm.body" rows="4" placeholder="Share delivery, quality and overall experience."></textarea>
+                <textarea
+                  v-model="reviewForm.body"
+                  rows="4"
+                  placeholder="Share delivery, quality, and overall experience."
+                ></textarea>
               </label>
 
-              <button type="submit" :disabled="reviewBusy">
-                {{ reviewBusy ? "Saving..." : "Submit review" }}
-              </button>
+              <div class="market-empty__actions">
+                <button class="market-button market-button--primary" type="submit" :disabled="reviewBusy">
+                  {{ reviewBusy ? "Saving..." : "Submit review" }}
+                </button>
+              </div>
             </form>
 
-            <div v-else-if="!canSubmitReview" class="product-review-empty-note pdp-review-note">
+            <div v-else-if="!canSubmitReview" class="market-status market-status--compact">
               Only customers with a completed order can publish a review.
             </div>
 
-            <div v-if="productReviews.length > 0" class="product-reviews-list pdp-review-list">
-              <article v-for="review in productReviews" :key="review.id" class="product-review-item pdp-review-item">
-                <div class="pdp-review-person">
-                  <div class="pdp-review-avatar" :style="getReviewAvatarStyle(review.authorName)">
-                    {{ getReviewInitials(review.authorName) }}
+            <div v-if="productReviews.length > 0" class="pdp-review-list">
+              <article v-for="review in productReviews" :key="review.id" class="pdp-review-item">
+                <div class="pdp-review-header">
+                  <div class="search-toolbar">
+                    <div class="pdp-review-avatar">
+                      {{ getReviewInitials(review.authorName) }}
+                    </div>
+
+                    <div>
+                      <strong>{{ review.authorName }}</strong>
+                      <p class="section-heading__copy">{{ formatRelativeReviewTime(review.createdAt) }}</p>
+                    </div>
                   </div>
 
-                  <div class="pdp-review-meta">
-                    <div class="pdp-review-author-line">
-                      <strong>{{ review.authorName }}</strong>
-                      <span>{{ formatRelativeReviewTime(review.createdAt) }}</span>
-                    </div>
-
-                    <div class="pdp-stars pdp-stars--review" :aria-label="`Rating ${review.rating}`">
-                      <svg
-                        v-for="index in 5"
-                        :key="`review-star-${review.id}-${index}`"
-                        class="pdp-star"
-                        :class="{ 'is-filled': index <= Math.round(Number(review.rating || 0)) }"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
-                      </svg>
-                    </div>
+                  <div class="product-card__stars" :aria-label="`Rating ${review.rating}`">
+                  <svg
+                    v-for="index in 5"
+                    :key="`review-star-${review.id}-${index}`"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3.8 14.6 9l5.7.8-4.1 4 1 5.7-5.2-2.7-5.2 2.7 1-5.7-4.1-4 5.7-.8Z"></path>
+                  </svg>
                   </div>
                 </div>
 
-                <p class="pdp-review-copy">{{ review.body || review.title || "Customer feedback submitted for this product." }}</p>
+                <p>{{ review.body || review.title || "Customer feedback submitted for this product." }}</p>
               </article>
             </div>
 
-            <div v-else class="product-review-empty-note pdp-review-note">
-              No review has been posted for this product yet.
+            <div v-else class="market-empty">
+              <h3>No reviews yet</h3>
+              <p>This product is ready for its first customer review.</p>
             </div>
           </div>
         </div>
+
+        <aside class="market-card pdp-support">
+          <p class="pdp-summary__label">Seller and fulfillment</p>
+          <h2>{{ businessName || "Verified seller" }}</h2>
+          <div class="pdp-support__list">
+            <p><strong>Published:</strong> {{ publishedDateLabel }}</p>
+            <p><strong>Support:</strong> {{ sellerSupportEmail || "Available through order support" }}</p>
+            <p><strong>Hours:</strong> {{ sellerSupportHours || "Seller confirmation required" }}</p>
+            <p><strong>Website:</strong> {{ sellerWebsiteUrl || "Managed inside the marketplace" }}</p>
+            <p><strong>Returns:</strong> {{ sellerReturnPolicySummary || "Handled through order history and support." }}</p>
+            <p><strong>Stock:</strong> {{ selectedVariantStock > 0 ? `${selectedVariantStock} units ready` : outOfStockMessage }}</p>
+          </div>
+
+          <div class="pdp-detail-pills">
+            <span v-for="badge in safeCheckoutBadges" :key="badge">{{ badge }}</span>
+          </div>
+
+          <div v-if="canSeeProductEngagement" class="metric-grid" aria-label="Product engagement">
+            <article v-for="item in publicEngagementItems" :key="`${currentProduct.id}-${item.label}`" class="metric-card">
+              <p class="metric-card__label">{{ item.label }}</p>
+              <strong>{{ item.value }}</strong>
+            </article>
+          </div>
+        </aside>
       </section>
 
-      <section v-if="recommendationDisplayColumns.length > 0" class="pdp-related-board" aria-label="Recommended products">
-        <div class="pdp-related-columns">
-          <article v-for="column in recommendationDisplayColumns" :key="column.key" class="pdp-related-column">
-            <header class="pdp-related-head">
-              <h3>{{ column.displayTitle }}</h3>
-            </header>
-
-            <div class="pdp-related-stack">
-              <article v-for="product in column.products" :key="`${column.key}-${product.id}`" class="pdp-mini-card">
-                <RouterLink class="pdp-mini-card-media" :to="getProductDetailUrl(product.id, route.fullPath)">
-                  <img
-                    :src="product.imagePath"
-                    :alt="product.title"
-                    width="320"
-                    height="320"
-                    loading="lazy"
-                    decoding="async"
-                  >
-                </RouterLink>
-
-                <div class="pdp-mini-card-copy">
-                  <RouterLink class="pdp-mini-card-title" :to="getProductDetailUrl(product.id, route.fullPath)">
-                    {{ product.title }}
-                  </RouterLink>
-                  <p class="pdp-mini-card-business">{{ getProductBusinessName(product) }}</p>
-                  <strong class="pdp-mini-card-price">{{ formatPrice(product.price) }}</strong>
-                </div>
-              </article>
+      <section v-if="recommendationDisplayColumns.length > 0" class="pdp-recommendations" aria-label="Recommended products">
+        <article
+          v-for="column in recommendationDisplayColumns"
+          :key="column.key"
+          class="market-card market-card--padded"
+        >
+          <div class="search-sidebar__header">
+            <div>
+              <p class="pdp-summary__label">Recommended</p>
+              <h2>{{ column.displayTitle }}</h2>
             </div>
-          </article>
-        </div>
+            <span class="section-heading__copy">{{ column.products.length }} curated picks</span>
+          </div>
+
+          <div class="pdp-recommendations__grid">
+            <ProductCard
+              v-for="product in column.products"
+              :key="`${column.key}-${product.id}`"
+              :product="product"
+              :is-wishlisted="wishlistIds.includes(product.id)"
+              :is-in-cart="cartIds.includes(product.id)"
+              :is-compared="isComparedItem(product.id)"
+              @wishlist="handleRecommendationWishlist"
+              @cart="handleRecommendationCart"
+              @compare="toggleComparedProduct"
+            />
+          </div>
+        </article>
       </section>
     </section>
 
-    <div v-else class="pets-empty-state">
-      Produkti nuk u gjet.
+    <div v-else class="market-empty">
+      <h2>Product not found</h2>
+      <p>This listing may have been removed or is no longer available.</p>
+      <div class="market-empty__actions">
+        <RouterLink class="market-button market-button--secondary" to="/kerko">
+          Browse products
+        </RouterLink>
+      </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.pdp-page {
-  gap: 28px;
-  padding-bottom: 24px;
-}
-
-.pdp-container {
-  gap: 28px;
-}
-
-.pdp-breadcrumbs {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 24px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
-  background: #f8fafc;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
-}
-
-.pdp-breadcrumb-track {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.pdp-back-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  color: #0f172a;
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-decoration: none;
-  background: #ffffff;
-}
-
-.pdp-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(0, 1.08fr);
-  gap: 42px;
-  padding: 34px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 28px;
-  background: #ffffff;
-  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.08);
-}
-
-.pdp-gallery,
-.pdp-info {
-  min-width: 0;
-}
-
-.pdp-gallery {
-  display: grid;
-  gap: 20px;
-}
-
-.pdp-gallery-stage {
-  display: grid;
-  place-items: center;
-  min-height: 520px;
-  padding: 28px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: #ffffff;
-}
-
-.pdp-gallery-image {
-  width: 100%;
-  max-width: 560px;
-  max-height: 460px;
-  object-fit: contain;
-  display: block;
-}
-
-.pdp-gallery-rail {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-}
-
-.pdp-gallery-thumbnails {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
-  gap: 12px;
-}
-
-.pdp-gallery-thumb {
-  display: grid;
-  place-items: center;
-  min-height: 86px;
-  padding: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 14px;
-  background: #ffffff;
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.pdp-gallery-thumb.active {
-  border-color: #ff8a34;
-  box-shadow: 0 0 0 3px rgba(255, 138, 52, 0.12);
-}
-
-.pdp-gallery-thumb:hover,
-.pdp-gallery-arrow:hover,
-.pdp-mini-icon:hover,
-.pdp-mini-add:hover,
-.pdp-utility-action:hover,
-.pdp-primary-button:hover,
-.pdp-secondary-button:hover,
-.pdp-back-link:hover {
-  transform: translateY(-1px);
-}
-
-.pdp-gallery-thumb img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
-  display: block;
-}
-
-.pdp-gallery-arrow {
-  width: 52px;
-  height: 52px;
-  border: 0;
-  border-radius: 999px;
-  color: #ffffff;
-  background: linear-gradient(180deg, #ff9f47, #ff7a1c);
-  box-shadow: 0 14px 28px rgba(255, 138, 52, 0.25);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.pdp-gallery-arrow svg,
-.pdp-utility-action svg,
-.pdp-mini-icon svg,
-.pdp-star,
-.pdp-review-bar-star {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.pdp-info {
-  display: grid;
-  align-content: start;
-  gap: 22px;
-}
-
-.pdp-rating-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  color: #475569;
-  font-size: 0.95rem;
-}
-
-.pdp-rating-row strong {
-  color: #1e293b;
-  font-weight: 700;
-}
-
-.pdp-stars {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #ff8a34;
-}
-
-.pdp-stars--summary {
-  justify-content: center;
-}
-
-.pdp-stars--mini .pdp-star {
-  width: 13px;
-  height: 13px;
-}
-
-.pdp-star {
-  color: rgba(255, 138, 52, 0.28);
-}
-
-.pdp-star.is-filled,
-.pdp-review-bar-star {
-  fill: currentColor;
-  color: #ff8a34;
-}
-
-.pdp-headline {
-  display: grid;
-  gap: 10px;
-}
-
-.pdp-headline h1 {
-  margin: 0;
-  color: #1f2937;
-  font-size: clamp(2rem, 3vw, 2.9rem);
-  line-height: 1.18;
-}
-
-.pdp-business-posted {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.98rem;
-}
-
-.pdp-business-posted strong {
-  color: #111827;
-}
-
-.pdp-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.pdp-meta-column {
-  display: grid;
-  gap: 10px;
-}
-
-.pdp-meta-column p {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  color: #64748b;
-  font-size: 0.96rem;
-}
-
-.pdp-meta-column strong {
-  color: #111827;
-  font-weight: 700;
-}
-
-.pdp-stock-copy.is-live {
-  color: #16a34a;
-}
-
-.pdp-price-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-}
-
-.pdp-price-stack {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.pdp-price-current {
-  color: #0ea5e9;
-  font-size: clamp(2rem, 3vw, 2.8rem);
-  font-weight: 800;
-  line-height: 1;
-}
-
-.pdp-price-old {
-  color: #94a3b8;
-  font-size: 1.15rem;
-  font-weight: 700;
-  text-decoration: line-through;
-}
-
-.pdp-offer-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 8px;
-  color: #7c5b00;
-  font-size: 0.92rem;
-  font-weight: 800;
-  background: #ffe168;
-}
-
-.pdp-tags {
-  gap: 8px;
-}
-
-.pdp-tag {
-  border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #f8fafc;
-}
-
-.pdp-options-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.pdp-option-card {
-  display: grid;
-  gap: 12px;
-}
-
-.pdp-option-label {
-  margin: 0;
-  color: #334155;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.pdp-color-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.pdp-color-swatch {
-  position: relative;
-  width: 38px;
-  height: 38px;
-  border: 2px solid rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
-  background: var(--swatch-color, #d1d5db);
-  box-shadow: inset 0 1px 4px rgba(255, 255, 255, 0.46);
-}
-
-.pdp-color-swatch.active {
-  border-color: #ff8a34;
-  box-shadow: 0 0 0 4px rgba(255, 138, 52, 0.16);
-}
-
-.pdp-color-swatch.is-unavailable {
-  opacity: 0.35;
-}
-
-.pdp-select-shell,
-.pdp-static-field {
-  display: flex;
-  align-items: center;
-  min-height: 50px;
-  padding: 0 16px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 12px;
-  background: #ffffff;
-}
-
-.pdp-select-shell select {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: #0f172a;
-  font-size: 0.98rem;
-  outline: 0;
-}
-
-.pdp-static-field {
-  color: #111827;
-  font-size: 0.98rem;
-  font-weight: 600;
-}
-
-.pdp-buy-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-}
-
-.pdp-quantity-box {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 128px;
-  min-height: 56px;
-  padding: 0 10px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 12px;
-  background: #ffffff;
-}
-
-.pdp-quantity-box button {
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 10px;
-  color: #475569;
-  font-size: 1.5rem;
-  background: transparent;
-}
-
-.pdp-quantity-box span {
-  min-width: 24px;
-  text-align: center;
-  color: #0f172a;
-  font-size: 1.05rem;
-  font-weight: 800;
-}
-
-.pdp-primary-button,
-.pdp-secondary-button,
-.pdp-mini-add {
-  min-height: 56px;
-  padding: 0 24px;
-  border-radius: 12px;
-  font-size: 0.98rem;
-  font-weight: 800;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.pdp-primary-button {
-  border: 0;
-  color: #ffffff;
-  background: linear-gradient(180deg, #ff9c43, #ff7d1d);
-  box-shadow: 0 16px 32px rgba(255, 138, 52, 0.22);
-}
-
-.pdp-primary-button.active {
-  background: linear-gradient(180deg, #f97316, #ea580c);
-}
-
-.pdp-secondary-button {
-  border: 1px solid #ff8a34;
-  color: #ff8a34;
-  background: #ffffff;
-}
-
-.pdp-utility-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px 22px;
-  padding-bottom: 6px;
-}
-
-.pdp-utility-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  color: #475569;
-  font-size: 0.95rem;
-  font-weight: 600;
-  background: transparent;
-  transition: transform 0.2s ease, color 0.2s ease;
-}
-
-.pdp-utility-action.active {
-  color: #f43f5e;
-}
-
-.pdp-utility-action--ghost {
-  margin-left: auto;
-}
-
-.pdp-checkout-card {
-  display: grid;
-  gap: 14px;
-  padding: 18px 20px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  background: #ffffff;
-}
-
-.pdp-checkout-title {
-  margin: 0;
-  color: #334155;
-  font-size: 0.98rem;
-  font-weight: 700;
-}
-
-.pdp-checkout-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.pdp-checkout-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: #334155;
-  font-size: 0.82rem;
-  font-weight: 700;
-  background: #eff6ff;
-}
-
-.pdp-engagement-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.pdp-engagement-chip {
-  border-radius: 16px;
-  background: #f8fafc;
-  box-shadow: none;
-}
-
-.pdp-detail-tabs {
-  display: grid;
-  gap: 0;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: #ffffff;
-  overflow: hidden;
-  box-shadow: 0 26px 54px rgba(15, 23, 42, 0.06);
-}
-
-.pdp-tab-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 0 18px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-}
-
-.pdp-tab-button {
-  position: relative;
-  min-height: 70px;
-  padding: 0 18px;
-  border: 0;
-  color: #64748b;
-  font-size: 1rem;
-  font-weight: 700;
-  background: transparent;
-}
-
-.pdp-tab-button.active {
-  color: #111827;
-}
-
-.pdp-tab-button.active::after {
-  content: "";
-  position: absolute;
-  inset: auto 16px 0;
-  height: 3px;
-  border-radius: 999px;
-  background: #ff8a34;
-}
-
-.pdp-tab-panel {
-  display: grid;
-  gap: 28px;
-  padding: 34px;
-}
-
-.pdp-description-panel {
-  grid-template-columns: minmax(0, 1.42fr) minmax(260px, 0.78fr) minmax(260px, 0.78fr);
-  align-items: start;
-}
-
-.pdp-description-copy,
-.pdp-side-card,
-.pdp-info-group,
-.pdp-spec-group,
-.pdp-review-score-card,
-.pdp-review-bars,
-.pdp-mini-card-copy {
-  display: grid;
-  gap: 16px;
-}
-
-.pdp-description-copy h2,
-.pdp-info-group h3,
-.pdp-spec-group h3,
-.pdp-side-card h3 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 1.45rem;
-}
-
-.pdp-description-copy p,
-.pdp-info-paragraph {
-  margin: 0;
-  color: #475569;
-  font-size: 1rem;
-  line-height: 1.8;
-}
-
-.pdp-side-card {
-  padding-left: 28px;
-  border-left: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.pdp-bullet-list,
-.pdp-side-list {
-  display: grid;
-  gap: 14px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.pdp-bullet-list li,
-.pdp-side-list li {
-  display: grid;
-  gap: 4px;
-  color: #475569;
-  font-size: 0.94rem;
-  line-height: 1.6;
-}
-
-.pdp-bullet-list li {
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: start;
-}
-
-.pdp-bullet-list li::before {
-  content: "";
-  width: 18px;
-  height: 18px;
-  margin-top: 3px;
-  border-radius: 999px;
-  background: radial-gradient(circle at 30% 30%, #ffbf80, #ff8a34 62%, #ff6a00 100%);
-  box-shadow: 0 6px 14px rgba(255, 138, 52, 0.18);
-}
-
-.pdp-bullet-list li strong,
-.pdp-side-list li strong {
-  color: #111827;
-  font-weight: 700;
-}
-
-.pdp-bullet-list li > strong,
-.pdp-bullet-list li > span {
-  grid-column: 2;
-}
-
-.pdp-bullet-list--compact li {
-  grid-template-columns: 1fr;
-}
-
-.pdp-bullet-list--compact li::before {
-  display: none;
-}
-
-.pdp-bullet-list--compact li > strong,
-.pdp-bullet-list--compact li > span {
-  grid-column: auto;
-}
-
-.pdp-additional-panel,
-.pdp-specification-panel {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
-}
-
-.pdp-additional-panel {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.82fr) minmax(0, 0.92fr);
-  gap: 36px;
-}
-
-.pdp-specification-panel {
-  grid-template-columns: 1fr;
-  gap: 0;
-}
-
-.pdp-spec-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 28px;
-}
-
-.pdp-spec-column + .pdp-spec-column {
-  padding-left: 28px;
-  border-left: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.pdp-info-group,
-.pdp-spec-group {
-  align-content: start;
-}
-
-.pdp-additional-middle,
-.pdp-additional-highlights {
-  padding-left: 28px;
-  border-left: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.pdp-additional-overview-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.pdp-additional-overview-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.pdp-additional-overview-row span {
-  color: #111827;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.pdp-additional-overview-row strong {
-  color: #64748b;
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.55;
-}
-
-.pdp-additional-middle {
-  display: grid;
-  gap: 22px;
-}
-
-.pdp-additional-detail-block {
-  display: grid;
-  gap: 10px;
-}
-
-.pdp-additional-detail-block h3,
-.pdp-additional-highlights h3 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 1.2rem;
-  font-weight: 800;
-}
-
-.pdp-additional-detail-line {
-  margin: 0;
-  color: #475569;
-  font-size: 0.95rem;
-  line-height: 1.65;
-}
-
-.pdp-additional-highlights-list {
-  gap: 12px;
-}
-
-.pdp-additional-highlights-list li {
-  display: list-item;
-  color: #475569;
-  font-size: 0.95rem;
-  line-height: 1.7;
-  list-style: disc;
-  margin-left: 18px;
-}
-
-.pdp-additional-highlights-list li::before {
-  display: none;
-}
-
-.pdp-info-pairs,
-.pdp-spec-grid {
-  display: grid;
-  gap: 14px;
-}
-
-.pdp-spec-column {
-  display: grid;
-  gap: 22px;
-}
-
-.pdp-spec-group {
-  padding-bottom: 18px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.pdp-spec-group:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.pdp-info-pair,
-.pdp-spec-row {
-  display: grid;
-  gap: 5px;
-}
-
-.pdp-info-pair span,
-.pdp-spec-row span {
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-.pdp-info-pair strong,
-.pdp-spec-row strong {
-  color: #111827;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.pdp-spec-group h3 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 1.05rem;
-  font-weight: 800;
-}
-
-.pdp-spec-grid {
-  gap: 10px;
-}
-
-.pdp-spec-row {
-  grid-template-columns: minmax(150px, 0.88fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.pdp-spec-row span {
-  color: #111827;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.pdp-spec-row strong {
-  color: #64748b;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.55;
-}
-
-.pdp-reviews-panel {
-  gap: 28px;
-}
-
-.pdp-review-summary-layout {
-  display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.pdp-review-score-card {
-  place-items: center;
-  align-content: center;
-  min-height: 170px;
-  padding: 20px 16px;
-  border-radius: 0;
-  background: #fff7cf;
-  text-align: center;
-}
-
-.pdp-review-score-card strong {
-  color: #1f2937;
-  font-size: 3rem;
-  line-height: 1;
-}
-
-.pdp-review-score-card span {
-  color: #334155;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.pdp-review-bars {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  padding-top: 10px;
-}
-
-.pdp-review-bar-row {
-  display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) 112px;
-  gap: 12px;
-  align-items: center;
-  color: #475569;
-  font-size: 0.88rem;
-}
-
-.pdp-review-bar-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: #ff8a34;
-  font-weight: 700;
-}
-
-.pdp-review-bar-track {
-  position: relative;
-  height: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #e2e8f0;
-}
-
-.pdp-review-bar-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #ffad60, #ff7a1c);
-}
-
-.pdp-review-bar-value {
-  color: #64748b;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.pdp-feedback-block {
-  display: grid;
-  gap: 18px;
-}
-
-.pdp-feedback-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.pdp-feedback-head h3 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.pdp-review-toggle {
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 138, 52, 0.22);
-  border-radius: 999px;
-  color: #ff8a34;
-  font-size: 0.84rem;
-  font-weight: 800;
-  background: #fff7ed;
-}
-
-.pdp-review-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 24px;
-  border-radius: 20px;
-  background: #f8fafc;
-}
-
-.pdp-review-form .field {
-  display: grid;
-  gap: 8px;
-}
-
-.pdp-review-form .field--full {
-  grid-column: 1 / -1;
-}
-
-.pdp-review-form span {
-  color: #334155;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.pdp-review-form input,
-.pdp-review-form select,
-.pdp-review-form textarea {
-  width: 100%;
-  min-height: 48px;
-  padding: 12px 14px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 12px;
-  color: #111827;
-  background: #ffffff;
-  resize: vertical;
-  outline: none;
-}
-
-.pdp-review-form button {
-  width: fit-content;
-  min-height: 52px;
-  padding: 0 24px;
-  border: 0;
-  border-radius: 12px;
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-weight: 800;
-  background: linear-gradient(180deg, #ff9c43, #ff7d1d);
-}
-
-.pdp-review-list {
-  gap: 0;
-}
-
-.pdp-review-item {
-  gap: 10px;
-  padding: 16px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: transparent;
-}
-
-.pdp-review-item:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.pdp-review-person {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.pdp-review-meta {
-  display: grid;
-  gap: 6px;
-}
-
-.pdp-review-author-line {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.pdp-review-author-line strong {
-  color: #111827;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.pdp-review-author-line span {
-  color: #64748b;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.pdp-review-avatar {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  color: #ffffff;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.pdp-stars--review .pdp-star {
-  width: 14px;
-  height: 14px;
-}
-
-.pdp-review-copy {
-  margin: 0;
-  padding-left: 50px;
-  color: #475569;
-  font-size: 0.9rem;
-  line-height: 1.7;
-}
-
-.pdp-review-note {
-  margin: 0;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: #f8fafc;
-}
-
-.pdp-related-board {
-  display: grid;
-  gap: 18px;
-  margin-top: 4px;
-}
-
-.pdp-related-columns {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.pdp-related-column {
-  display: grid;
-  gap: 18px;
-}
-
-.pdp-related-head h3 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 1.14rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.pdp-related-stack {
-  display: grid;
-  gap: 14px;
-}
-
-.pdp-mini-card {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 14px;
-  padding: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.pdp-mini-card-media {
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: #ffffff;
-  overflow: hidden;
-}
-
-.pdp-mini-card-media img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
-  display: block;
-}
-
-.pdp-mini-card-business {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.pdp-mini-card-title {
-  color: #111827;
-  font-size: 0.95rem;
-  font-weight: 700;
-  line-height: 1.4;
-  text-decoration: none;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.pdp-mini-card-price {
-  color: #1d9bf0;
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-@media (max-width: 1160px) {
-  .pdp-hero {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-side-card {
-    padding-top: 16px;
-    padding-left: 0;
-    border-top: 1px solid rgba(15, 23, 42, 0.08);
-    border-left: 0;
-  }
-
-  .pdp-description-panel,
-  .pdp-additional-panel,
-  .pdp-related-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .pdp-additional-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-spec-columns {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-spec-column + .pdp-spec-column {
-    padding-top: 16px;
-    padding-left: 0;
-    border-top: 1px solid rgba(15, 23, 42, 0.08);
-    border-left: 0;
-  }
-
-  .pdp-additional-middle,
-  .pdp-additional-highlights {
-    padding-top: 16px;
-    padding-left: 0;
-    border-top: 1px solid rgba(15, 23, 42, 0.08);
-    border-left: 0;
-  }
-}
-
-@media (max-width: 820px) {
-  .pdp-page {
-    width: min(100%, calc(100% - 20px));
-    gap: 22px;
-  }
-
-  .pdp-breadcrumbs,
-  .pdp-hero,
-  .pdp-tab-panel {
-    padding: 20px;
-  }
-
-  .pdp-breadcrumbs {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .pdp-meta-grid,
-  .pdp-options-grid,
-  .pdp-review-summary-layout,
-  .pdp-review-form {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-buy-row {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-quantity-box,
-  .pdp-primary-button,
-  .pdp-secondary-button {
-    width: 100%;
-  }
-
-  .pdp-engagement-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .pdp-gallery-stage {
-    min-height: 320px;
-    padding: 20px;
-  }
-
-  .pdp-gallery-rail {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-gallery-arrow {
-    display: none;
-  }
-
-  .pdp-tab-bar {
-    justify-content: flex-start;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .pdp-tab-bar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .pdp-tab-button {
-    min-height: 58px;
-    white-space: nowrap;
-  }
-
-  .pdp-additional-panel,
-  .pdp-related-columns {
-    grid-template-columns: 1fr;
-  }
-
-  .pdp-additional-overview-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .pdp-spec-row {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-
-  .pdp-mini-card {
-    grid-template-columns: 82px minmax(0, 1fr);
-  }
-}
-
-.pdp-page {
-  gap: 22px;
-  padding-bottom: 12px;
-}
-
-.pdp-breadcrumbs {
-  padding: 16px 20px;
-  border-radius: 24px;
-  border-color: rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
-}
-
-.pdp-back-link {
-  border-color: rgba(15, 23, 42, 0.08);
-  color: #d4a017;
-  background: #fff8e7;
-}
-
-.pdp-hero {
-  gap: 32px;
-  padding: 28px;
-  border-color: rgba(15, 23, 42, 0.08);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.05);
-}
-
-.pdp-gallery-stage {
-  background: linear-gradient(180deg, #ffffff, #fafaff);
-}
-
-.pdp-gallery-thumb.active {
-  border-color: #d4a017;
-  box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.16);
-}
-
-.pdp-gallery-arrow {
-  background: #d4a017;
-  color: #111827;
-  box-shadow: none;
-}
-
-.pdp-rating-row,
-.pdp-business-posted,
-.pdp-meta-column p,
-.pdp-description-copy p,
-.pdp-info-paragraph,
-.pdp-side-list li,
-.pdp-bullet-list li,
-.pdp-additional-detail-line,
-.pdp-additional-highlights-list li,
-.pdp-review-copy,
-.pdp-review-bar-value {
-  color: #6b7280;
-}
-
-.pdp-price-current {
-  color: #d4a017;
-}
-
-.pdp-offer-badge {
-  color: #dc2626;
-  background: #fef2f2;
-}
-
-.pdp-tag,
-.pdp-checkout-card {
-  background: #ffffff;
-}
-
-.pdp-color-swatch.active {
-  border-color: #d4a017;
-  box-shadow: 0 0 0 4px rgba(212, 160, 23, 0.16);
-}
-
-.pdp-primary-button,
-.pdp-review-form button {
-  background: #d4a017;
-  color: #111827;
-  box-shadow: none;
-}
-
-.pdp-primary-button.active {
-  background: #b48712;
-  color: #111827;
-}
-
-.pdp-secondary-button,
-.pdp-review-toggle {
-  border-color: rgba(212, 160, 23, 0.24);
-  color: #d4a017;
-  background: #fff8e7;
-}
-
-.pdp-utility-action.active,
-.pdp-checkout-badge,
-.pdp-mini-card-price {
-  color: #d4a017;
-}
-
-.pdp-tab-button.active::after,
-.pdp-review-bar-fill {
-  background: #d4a017;
-}
-
-.pdp-review-score-card {
-  background: #fff7da;
-}
-
-.pdp-review-score-card span,
-.pdp-review-score-card strong,
-.pdp-feedback-head h3,
-.pdp-description-copy h2,
-.pdp-info-group h3,
-.pdp-spec-group h3,
-.pdp-side-card h3,
-.pdp-headline h1,
-.pdp-mini-card-title {
-  color: #111827;
-}
-
-.pdp-related-board,
-.pdp-detail-tabs {
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
-}
-
-.pdp-mini-card {
-  border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
-}
-
-@media (max-width: 820px) {
-  .pdp-breadcrumbs,
-  .pdp-hero,
-  .pdp-tab-panel {
-    padding: 18px;
-  }
-}
-</style>

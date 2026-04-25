@@ -141,7 +141,7 @@ function getColorSwatchStyle(colorValue) {
 </script>
 
 <template>
-  <label class="field">
+  <label>
     <span>Kategoria e faqes</span>
     <select v-model="form.pageSection" required @change="handleSectionChange">
       <option
@@ -154,7 +154,7 @@ function getColorSwatchStyle(colorValue) {
     </select>
   </label>
 
-  <label v-if="audienceOptions.length > 0" class="field">
+  <label v-if="audienceOptions.length > 0">
     <span>Nenkategoria</span>
     <select v-model="form.audience" required @change="handleSectionChange">
       <option
@@ -167,7 +167,7 @@ function getColorSwatchStyle(colorValue) {
     </select>
   </label>
 
-  <label class="field">
+  <label>
     <span>Lloji i produktit</span>
     <select v-model="form.productType" required>
       <option
@@ -180,8 +180,8 @@ function getColorSwatchStyle(colorValue) {
     </select>
   </label>
 
-  <div v-if="packageAmountSection" class="field-row">
-    <label class="field">
+  <div v-if="packageAmountSection">
+    <label>
       <span>Sasia e produktit</span>
       <input
         v-model="form.packageAmountValue"
@@ -192,7 +192,7 @@ function getColorSwatchStyle(colorValue) {
       >
     </label>
 
-    <label class="field">
+    <label>
       <span>Njesia</span>
       <select v-model="form.packageAmountUnit">
         <option
@@ -206,27 +206,27 @@ function getColorSwatchStyle(colorValue) {
     </label>
   </div>
 
-  <div v-if="colorInventorySection" class="field">
+  <div v-if="colorInventorySection">
     <span>Ngjyrat ne dispozicion</span>
-    <div class="product-color-selector-grid">
+    <div>
       <label
         v-for="option in PRODUCT_REQUIRED_COLOR_OPTIONS"
         :key="option.value"
-        class="product-color-selector-chip"
-        :class="{ 'is-selected': form.selectedColors.includes(option.value) }"
+       
+       
       >
         <input
-          class="product-color-selector-input"
+         
           type="checkbox"
           :checked="form.selectedColors.includes(option.value)"
           @change="toggleColor(option.value, $event)"
         >
         <span
-          class="product-color-selector-swatch"
-          :style="getColorSwatchStyle(option.value)"
+         
+         
           aria-hidden="true"
         ></span>
-        <span class="product-color-selector-copy">
+        <span>
           <strong>{{ option.label }}</strong>
           <small>{{ form.selectedColors.includes(option.value) ? "E zgjedhur" : "Kliko per zgjedhje" }}</small>
         </span>
@@ -234,24 +234,24 @@ function getColorSwatchStyle(colorValue) {
     </div>
   </div>
 
-  <div v-if="clothingSection && form.clothingColorVariants.length > 0" class="product-variant-editor">
+  <div v-if="clothingSection && form.clothingColorVariants.length > 0">
     <div
       v-for="colorVariant in form.clothingColorVariants"
       :key="colorVariant.color"
-      class="product-variant-color-card"
+     
     >
-      <p class="product-variant-color-title">{{ PRODUCT_COLOR_LABELS[colorVariant.color] || colorVariant.color }}</p>
-      <div class="product-variant-size-grid">
+      <p>{{ PRODUCT_COLOR_LABELS[colorVariant.color] || colorVariant.color }}</p>
+      <div>
         <label
           v-for="sizeEntry in colorVariant.sizeEntries"
           :key="`${colorVariant.color}-${sizeEntry.size}`"
-          class="product-variant-size-row"
+         
         >
-          <span class="product-variant-size-check">
+          <span>
             <input v-model="sizeEntry.enabled" type="checkbox">
             <strong>{{ sizeEntry.size }}</strong>
           </span>
-          <div class="field-row">
+          <div>
             <input
               v-model="sizeEntry.quantity"
               type="number"
@@ -282,15 +282,15 @@ function getColorSwatchStyle(colorValue) {
 
   <div
     v-else-if="colorInventorySection && form.colorStockVariants.length > 0"
-    class="product-variant-editor product-variant-editor-compact"
+   
   >
     <label
       v-for="colorEntry in form.colorStockVariants"
       :key="colorEntry.color"
-      class="product-variant-color-row"
+     
     >
       <strong>{{ PRODUCT_COLOR_LABELS[colorEntry.color] || colorEntry.color }}</strong>
-      <div class="field-row">
+      <div>
         <input v-model="colorEntry.quantity" type="number" min="0" step="1" placeholder="Stok">
         <input v-model="colorEntry.price" type="number" min="0" step="0.01" placeholder="Cmimi">
         <input v-model="colorEntry.imagePath" type="text" placeholder="Foto e variantit">
@@ -300,7 +300,7 @@ function getColorSwatchStyle(colorValue) {
 
   <label
     v-if="!clothingSection && (!colorInventorySection || form.colorStockVariants.length === 0)"
-    class="field"
+   
   >
     <span>Sasia ne stok</span>
     <input v-model="form.simpleStockQuantity" type="number" min="0" step="1" required>

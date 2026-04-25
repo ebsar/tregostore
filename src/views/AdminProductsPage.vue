@@ -1,32 +1,37 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
-import AdminUserCard from "../components/AdminUserCard.vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import CompactProductConfigurator from "../components/CompactProductConfigurator.vue";
+import DashboardShell from "../components/dashboard/DashboardShell.vue";
 import ManagedProductCard from "../components/ManagedProductCard.vue";
-import ProductVariantConfigurator from "../components/ProductVariantConfigurator.vue";
 import { requestJson, requestProductAIDraft, resolveApiMessage, uploadImages } from "../lib/api";
+import { getAdminDashboardNavItems } from "../lib/dashboard-ui";
 import {
   buildVariantInventoryFromForm,
   createEmptyProductFormState,
   hydrateProductFormFromProduct,
   syncProductFormCatalogState,
 } from "../lib/product-catalog";
-import { formatCount, formatDateLabel, formatRoleLabel, getProductImageGallery } from "../lib/shop";
+import { formatCount, formatPrice, formatRoleLabel, getBusinessInitials, getProductImageGallery } from "../lib/shop";
 import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
+const route = useRoute();
+const ADMIN_ADD_PRODUCT_PATH = "/admin-products";
+const ADMIN_INVENTORY_PATH = "/admin-products/inventory";
 const products = ref([]);
 const users = ref([]);
 const reports = ref([]);
 const userSearchQuery = ref("");
-const productSearchQuery = ref("");
+const productSearchQuery = ref(readRouteSearchQuery(route.query.q));
 const selectedFiles = ref([]);
 const previewUrls = ref([]);
 const editingProduct = ref(null);
+const productFormCollapsed = ref(false);
+const productTitleInput = ref(null);
 
 const productForm = reactive(createEmptyProductFormState());
 const ui = reactive({
-  accessNote: "Po kontrollohet aksesimi administrativ...",
   formMessage: "",
   formType: "",
   listMessage: "",
@@ -51,6 +56,35 @@ const productPreviewItems = computed(() => {
     label: index === 0 ? "Cover aktual" : `Foto aktuale ${index + 1}`,
   }));
 });
+const productVariantEntries = computed(() => buildVariantInventoryFromForm(productForm));
+const productMediaCount = computed(() => productPreviewItems.value.length);
+const productStockTotal = computed(() =>
+  productVariantEntries.value.reduce((total, entry) => total + Math.max(0, Number(entry.quantity || 0)), 0),
+);
+const productPriceValue = computed(() => Number(productForm.price || 0));
+const productPricingReady = computed(() => Number.isFinite(productPriceValue.value) && productPriceValue.value > 0);
+const productChecklist = computed(() => ([
+  {
+    key: "title",
+    done: Boolean(String(productForm.title || "").trim() && String(productForm.description || "").trim()),
+  },
+  {
+    key: "pricing",
+    done: productPricingReady.value,
+  },
+  {
+    key: "variants",
+    done: productStockTotal.value > 0,
+  },
+  {
+    key: "media",
+    done: productMediaCount.value > 0,
+  },
+]));
+const isInventoryView = computed(() => route.path === ADMIN_INVENTORY_PATH || route.path === "/admin-products/lista");
+const isAddProductView = computed(() => !isInventoryView.value);
+const activeAdminNavKey = computed(() => (isInventoryView.value ? "inventory" : "products"));
+const adminSearchPlaceholder = computed(() => (isInventoryView.value ? "Search inventory" : "Search products"));
 
 const filteredUsers = computed(() => {
   const normalizedQuery = String(userSearchQuery.value || "").trim().toLowerCase();
@@ -139,27 +173,38 @@ const filteredProducts = computed(() => {
     )
     .map((entry) => entry.product);
 });
-const adminEngagementSummary = computed(() => {
-  const totals = products.value.reduce((accumulator, product) => {
-    accumulator.viewsCount += Number(product.viewsCount || 0);
-    accumulator.wishlistCount += Number(product.wishlistCount || 0);
-    accumulator.cartCount += Number(product.cartCount || 0);
-    accumulator.shareCount += Number(product.shareCount || 0);
-    return accumulator;
-  }, {
-    viewsCount: 0,
-    wishlistCount: 0,
-    cartCount: 0,
-    shareCount: 0,
-  });
+const businessUsersCount = computed(() =>
+  users.value.filter((user) => String(user.role || "").trim().toLowerCase() === "business").length,
+);
+const openReportsCount = computed(() =>
+  reports.value.filter((report) =>
+    !["resolved", "dismissed"].includes(String(report.status || "").trim().toLowerCase()),
+  ).length,
+);
+const publicProductsCount = computed(() => products.value.filter((product) => Boolean(product.isPublic)).length);
+const inStockProductsCount = computed(() => products.value.filter((product) => Number(product.stockQuantity || 0) > 0).length);
+const adminShellNavItems = computed(() => getAdminDashboardNavItems(appState.user));
+const adminNotificationCount = computed(() => openReportsCount.value);
+const adminAvatarLabel = computed(() => getBusinessInitials(appState.user?.fullName || "Admin"));
 
-  return [
-    { label: "Views", value: formatCount(totals.viewsCount) },
-    { label: "Wishlist", value: formatCount(totals.wishlistCount) },
-    { label: "Cart", value: formatCount(totals.cartCount) },
-    { label: "Share", value: formatCount(totals.shareCount) },
-  ];
-});
+function handleAdminProductSearch() {
+  productSearchQuery.value = String(productSearchQuery.value || "").trim();
+  if (!isInventoryView.value) {
+    router.push({
+      path: ADMIN_INVENTORY_PATH,
+      query: productSearchQuery.value ? { q: productSearchQuery.value } : {},
+    });
+    return;
+  }
+  syncRouteSearchQuery(productSearchQuery.value);
+}
+
+watch(
+  () => route.query.q,
+  (value) => {
+    productSearchQuery.value = readRouteSearchQuery(value);
+  },
+);
 
 onMounted(async () => {
   try {
@@ -174,8 +219,7 @@ onMounted(async () => {
       return;
     }
 
-    ui.accessNote = "Je kyçur si admin. Ketu mund t'i menaxhosh artikujt dhe rolet.";
-    await Promise.all([loadProducts(), loadUsers(), loadReports()]);
+    await Promise.all([loadProducts(), loadReports()]);
   } finally {
     markRouteReady();
   }
@@ -202,6 +246,29 @@ async function loadProducts() {
   ui.listMessage = "";
   ui.listType = "";
   products.value = Array.isArray(data.products) ? data.products : [];
+}
+
+function readRouteSearchQuery(value) {
+  if (Array.isArray(value)) {
+    return String(value[0] || "").trim();
+  }
+
+  return String(value || "").trim();
+}
+
+async function syncRouteSearchQuery(query) {
+  const normalizedQuery = String(query || "").trim();
+  if (readRouteSearchQuery(route.query.q) === normalizedQuery) {
+    return;
+  }
+
+  await router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      ...(normalizedQuery ? { q: normalizedQuery } : { q: undefined }),
+    },
+  });
 }
 
 async function loadUsers() {
@@ -234,6 +301,7 @@ async function loadReports() {
 
 function resetProductForm() {
   Object.assign(productForm, createEmptyProductFormState());
+  productFormCollapsed.value = false;
   editingProduct.value = null;
   selectedFiles.value = [];
   revokePreviewUrls();
@@ -241,7 +309,7 @@ function resetProductForm() {
   ui.formType = "";
 }
 
-function beginProductEdit(product) {
+async function beginProductEdit(product) {
   editingProduct.value = product;
   hydrateProductFormFromProduct(productForm, {
     ...product,
@@ -250,8 +318,40 @@ function beginProductEdit(product) {
   selectedFiles.value = [];
   revokePreviewUrls();
   syncProductFormCatalogState(productForm);
+  productFormCollapsed.value = false;
   ui.formMessage = `Po editon artikullin "${product.title}".`;
   ui.formType = "success";
+  if (isInventoryView.value) {
+    await router.push({
+      path: ADMIN_ADD_PRODUCT_PATH,
+      query: productSearchQuery.value ? { q: productSearchQuery.value } : {},
+    });
+  }
+  await nextTick();
+  productTitleInput.value?.focus?.();
+}
+
+function changeProductQuantity(delta) {
+  const currentQuantity = Math.max(0, Number.parseInt(String(productForm.simpleStockQuantity || "0"), 10) || 0);
+  productForm.simpleStockQuantity = String(Math.max(0, currentQuantity + delta));
+}
+
+function toggleProductFormCollapsed() {
+  productFormCollapsed.value = !productFormCollapsed.value;
+}
+
+async function openAdminInventoryView() {
+  await router.push({
+    path: ADMIN_INVENTORY_PATH,
+    query: productSearchQuery.value ? { q: productSearchQuery.value } : {},
+  });
+}
+
+async function openAdminAddProductView() {
+  await router.push({
+    path: ADMIN_ADD_PRODUCT_PATH,
+    query: productSearchQuery.value ? { q: productSearchQuery.value } : {},
+  });
 }
 
 function handleFilesChange(event) {
@@ -498,240 +598,260 @@ async function handleReportStatus(report, status) {
 </script>
 
 <template>
-  <section class="admin-products-page" aria-label="Paneli admin i produkteve">
-    <header class="admin-products-header">
-      <div>
-        <p class="section-label">Paneli admin</p>
-        <h1>Menaxho artikujt</h1>
-        <p class="admin-products-intro">
-          Shto artikuj te rinj dhe ata do te dalin automatikisht ne seksionin perkates te faqes sipas menus se navigimit.
-        </p>
-      </div>
-      <div class="admin-user-chip">
-        <span>Sesioni aktiv</span>
-        <strong>{{ appState.user ? `${appState.user.fullName} • ${formatRoleLabel(appState.user.role)}` : "Duke u kontrolluar..." }}</strong>
-      </div>
-    </header>
-
-    <p class="admin-access-note">{{ ui.accessNote }}</p>
-
-    <section v-if="products.length > 0" class="business-dashboard-analytics-grid" aria-label="Engagement i produkteve">
-      <article
-        v-for="item in adminEngagementSummary"
-        :key="`admin-engagement-${item.label}`"
-        class="summary-chip"
-      >
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-      </article>
-    </section>
-
-    <div class="admin-products-shell">
-      <section class="card admin-form-card admin-form-card-compact">
-        <h2>{{ editingProduct ? "Edito artikullin" : "Shto artikull te ri" }}</h2>
-        <p class="section-text admin-compact-copy">
-          Zgjidh seksionin dhe ruaje artikullin me format me kompakte.
-        </p>
-        <p v-if="editingProduct" class="admin-edit-state">
-          Po editon nje artikull ekzistues. Nese nuk zgjedh foto te reja, ruhen fotot aktuale.
-        </p>
-
-        <form class="auth-form admin-form-compact" @submit.prevent="submitProduct">
-          <div class="admin-form-row admin-form-row-primary">
-            <label class="field">
-            <span>Numri i artikullit</span>
-            <input
-              v-model="productForm.articleNumber"
-              type="text"
-              inputmode="numeric"
-              placeholder="p.sh. 10025"
-            >
-            </label>
-
-            <label class="field">
-            <span>Titulli</span>
-            <input v-model="productForm.title" type="text" placeholder="p.sh. Krem per kqent" required>
-            </label>
-
-            <label class="field">
-            <span>Cmimi (€)</span>
-            <input v-model="productForm.price" type="number" min="0.01" step="0.01" placeholder="p.sh. 13.99" required>
-            </label>
-          </div>
-
-          <ProductVariantConfigurator :form="productForm" />
-
-          <label class="field">
-            <span>Upload photo</span>
-            <input type="file" accept="image/*" multiple :required="!editingProduct" @change="handleFilesChange">
-          </label>
-
-          <p class="product-upload-help">
-            Mund te zgjedhesh disa foto njeheresh. Te faqja e produktit ato shfaqen me butonin `Next`.
-          </p>
-
-          <div class="product-upload-preview" aria-live="polite">
-            <div v-if="productPreviewItems.length === 0" class="product-upload-empty">
-              Asnje foto nuk eshte zgjedhur ende.
-            </div>
-            <figure
-              v-for="(item, index) in productPreviewItems"
-              v-else
-              :key="`${item.path}-${index}`"
-              class="product-upload-preview-item"
-            >
-              <img class="product-upload-preview-image" :src="item.path" :alt="item.label">
-              <figcaption class="product-upload-preview-name">{{ item.label }}</figcaption>
-            </figure>
-          </div>
-
-          <label class="field">
-            <span>Pershkrimi</span>
-            <textarea v-model="productForm.description" rows="4" placeholder="Shkruaje pershkrimin e produktit" required></textarea>
-          </label>
-
-          <div class="auth-form-actions">
-            <button class="button-secondary" type="button" :disabled="ui.productAiBusy" @click="suggestProductWithAi">
-              {{ ui.productAiBusy ? "Duke analizuar..." : "Sugjero me AI" }}
-            </button>
-            <button type="submit">{{ editingProduct ? "Ruaj ndryshimet" : "Ruaje artikullin" }}</button>
-            <button v-if="editingProduct" class="button-secondary" type="button" @click="resetProductForm">Anulo editimin</button>
-          </div>
-        </form>
-
-        <div class="form-message" :class="ui.formType" role="status" aria-live="polite">
-          {{ ui.formMessage }}
-        </div>
-      </section>
-
-      <section class="card admin-list-card admin-list-card-products">
-        <div class="admin-list-header">
-          <div>
-            <p class="section-label">Artikujt</p>
-            <h2>Lista aktuale e produkteve</h2>
-            <p class="admin-compact-copy">{{ filteredProducts.length }} / {{ products.length }} artikuj</p>
-          </div>
-        </div>
-
-        <label class="admin-compact-search" aria-label="Kerko produkt">
-          <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7"></circle>
-            <path d="m20 20-3.5-3.5"></path>
-          </svg>
-          <input
-            v-model="productSearchQuery"
-            type="search"
-            placeholder="Kerko produkt me numer, emer, kategori..."
-          >
-        </label>
-
-        <div class="form-message" :class="ui.listType" role="status" aria-live="polite">
-          {{ ui.listMessage }}
-        </div>
-
-        <div class="admin-products-list admin-products-list-scroll">
-          <div v-if="products.length === 0" class="admin-empty-state">
-            Ende nuk ka produkte ne sistem.
-          </div>
-
-          <div v-else-if="filteredProducts.length === 0" class="admin-empty-state">
-            Nuk u gjet asnje produkt per kete kerkim.
-          </div>
-
-          <ManagedProductCard
-            v-for="product in filteredProducts"
-            :key="product.id"
-          :product="product"
-          @edit="beginProductEdit"
-          @delete="handleDeleteProduct"
-          @toggle-visibility="handleToggleVisibility"
-          @toggle-stock-public="handleToggleStock"
-        />
-        </div>
-      </section>
-    </div>
-
-    <section class="card admin-users-card">
-      <div class="admin-list-header">
-        <div>
-          <p class="section-label">Perdoruesit</p>
-          <h2>Menaxho rolet e llogarive</h2>
-          <p class="admin-compact-copy">{{ filteredUsers.length }} rezultate</p>
-        </div>
-      </div>
-
-      <label class="admin-compact-search" aria-label="Kerko user">
-        <svg class="admin-compact-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7"></circle>
-          <path d="m20 20-3.5-3.5"></path>
-        </svg>
-        <input
-          v-model="userSearchQuery"
-          type="search"
-          placeholder="Kerko user me emer, email ose rol..."
+  <section class="market-page market-page--wide dashboard-page admin-dashboard-page" aria-label="Paneli admin i produkteve">
+    <DashboardShell
+      :nav-items="adminShellNavItems"
+      :active-key="activeAdminNavKey"
+      :brand-initial="adminAvatarLabel"
+      brand-title="Tregio Admin"
+      brand-subtitle="Marketplace control"
+      :brand-image-path="appState.user?.profileImagePath || ''"
+      brand-fallback-icon="users"
+      :profile-image-path="appState.user?.profileImagePath || ''"
+      profile-fallback-icon="users"
+      :profile-name="appState.user?.fullName || 'Admin'"
+      :profile-subtitle="appState.user ? formatRoleLabel(appState.user.role) : 'Checking access...'"
+      :search-query="productSearchQuery"
+      :search-placeholder="adminSearchPlaceholder"
+      :notification-count="adminNotificationCount"
+      @update:search-query="productSearchQuery = $event"
+      @submit-search="handleAdminProductSearch"
+    >
+      <div class="dashboard-admin-grid dashboard-admin-grid--single">
+        <section
+          v-if="isAddProductView"
+          class="market-card dashboard-section product-quick-create"
         >
-      </label>
-
-      <div class="form-message" :class="ui.usersType" role="status" aria-live="polite">
-        {{ ui.usersMessage }}
-      </div>
-
-      <div class="admin-users-list admin-users-list-scroll">
-        <div v-if="users.length === 0" class="admin-empty-state">
-          Nuk ka perdorues per t'u shfaqur.
-        </div>
-
-        <div v-else-if="filteredUsers.length === 0" class="admin-empty-state">
-          Nuk u gjet asnje user per kete kerkim.
-        </div>
-
-        <AdminUserCard
-          v-for="user in filteredUsers"
-          :key="user.id"
-          :user="user"
-          :current-user-id="Number(appState.user?.id || 0)"
-          @change-role="handleRoleChange"
-          @delete="handleDeleteUser"
-          @set-password="handleSetUserPassword"
-        />
-      </div>
-    </section>
-
-    <section class="card admin-users-card">
-      <div class="admin-list-header">
-        <div>
-          <p class="section-label">Raportimet</p>
-          <h2>Moderimi i marketplace-it</h2>
-          <p class="admin-compact-copy">{{ reports.length }} raportime</p>
-        </div>
-      </div>
-
-      <div class="form-message" :class="ui.reportsType" role="status" aria-live="polite">
-        {{ ui.reportsMessage }}
-      </div>
-
-      <div class="admin-users-list admin-users-list-scroll">
-        <div v-if="reports.length === 0" class="admin-empty-state">
-          Nuk ka raportime aktive.
-        </div>
-
-        <article v-for="report in reports" :key="report.id" class="card account-section notification-card">
-          <div class="notification-card-head">
+          <div class="product-quick-create__header">
             <div>
-              <p class="section-label">{{ report.targetType }} • {{ formatDateLabel(report.createdAt) }}</p>
-              <h2>{{ report.targetLabel || "Raportim" }}</h2>
+              <h2>{{ editingProduct ? "Edit product" : "Add product" }}</h2>
+              <p>{{ editingProduct ? "Update the product quickly from one compact card." : "Fast product setup for marketplace inventory." }}</p>
             </div>
-            <strong>{{ report.status }}</strong>
+            <div class="product-quick-create__header-actions">
+              <button type="button" @click="openAdminInventoryView">
+                Go to Inventory
+              </button>
+              <button
+                type="button"
+                class="product-quick-create__toggle"
+                :aria-expanded="(!productFormCollapsed).toString()"
+                @click="toggleProductFormCollapsed"
+              >
+                {{ productFormCollapsed ? "+" : "-" }}
+              </button>
+              <button type="button" @click="resetProductForm">
+                {{ editingProduct ? "Cancel" : "Reset" }}
+              </button>
+            </div>
           </div>
-          <p class="section-text"><strong>Arsye:</strong> {{ report.reason }}</p>
-          <p v-if="report.details" class="section-text">{{ report.details }}</p>
-          <div class="auth-form-actions">
-            <button class="button-secondary" type="button" @click="handleReportStatus(report, 'reviewing')">Ne shqyrtim</button>
-            <button type="button" @click="handleReportStatus(report, 'resolved')">Zgjidhe</button>
-            <button class="button-secondary" type="button" @click="handleReportStatus(report, 'dismissed')">Mbylle</button>
+
+          <div v-if="productFormCollapsed" class="product-quick-create__collapsed">
+            <span>{{ productForm.title || "Add product" }}</span>
+            <strong>{{ productPriceValue > 0 ? formatPrice(productPriceValue) : "Set price" }}</strong>
           </div>
-        </article>
+
+          <form v-show="!productFormCollapsed" class="product-quick-form" @submit.prevent="submitProduct">
+            <div class="product-quick-form__grid product-quick-form__grid--top">
+              <div class="product-quick-form__field product-quick-form__field--quantity">
+                <span class="product-quick-form__label">Stock</span>
+                <div class="product-quick-form__stepper">
+                  <button type="button" aria-label="Ule sasine" @click="changeProductQuantity(-1)">-</button>
+                  <input
+                    v-model="productForm.simpleStockQuantity"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    aria-label="Sasia e produktit"
+                  >
+                  <button type="button" aria-label="Rrite sasine" @click="changeProductQuantity(1)">+</button>
+                </div>
+              </div>
+
+              <label class="product-quick-form__field product-quick-form__field--article">
+                <span class="product-quick-form__label">Article / SKU</span>
+                <input
+                  v-model="productForm.articleNumber"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="p.sh. 10025"
+                >
+              </label>
+
+              <label class="product-quick-form__field product-quick-form__field--title">
+                <span class="product-quick-form__label">Product title</span>
+                <input
+                  ref="productTitleInput"
+                  v-model="productForm.title"
+                  type="text"
+                  placeholder="p.sh. White cotton t-shirt"
+                  required
+                >
+              </label>
+
+              <label class="product-quick-form__field product-quick-form__field--price">
+                <span class="product-quick-form__label">Price</span>
+                <div class="product-quick-form__price-control">
+                  <input
+                    v-model="productForm.price"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="29.00"
+                    required
+                  >
+                  <span>EUR</span>
+                </div>
+              </label>
+            </div>
+
+            <CompactProductConfigurator :form="productForm" />
+
+            <div class="product-quick-form__utility-grid">
+              <label class="product-quick-form__upload">
+                <span class="product-quick-form__label">Upload photo</span>
+                <span class="product-quick-form__upload-drop">
+                  <input
+                    class="product-quick-form__upload-input"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    :required="!editingProduct && productMediaCount === 0"
+                    @change="handleFilesChange"
+                  >
+                  <strong>Click to upload</strong>
+                  <small>{{ editingProduct ? "New photos are optional while editing." : "Choose a cover photo and a few supporting images." }}</small>
+                </span>
+              </label>
+
+              <div class="product-quick-form__preview" aria-live="polite">
+                <span class="product-quick-form__label">Preview</span>
+                <div v-if="productPreviewItems.length === 0" class="product-quick-form__preview-empty">
+                  No photos added yet.
+                </div>
+                <div v-else class="product-quick-form__preview-list">
+                  <figure
+                    v-for="(item, index) in productPreviewItems.slice(0, 4)"
+                    :key="`${item.path}-${index}`"
+                    class="product-quick-form__preview-item"
+                  >
+                    <img :src="item.path" :alt="item.label">
+                    <figcaption>{{ item.label }}</figcaption>
+                  </figure>
+                </div>
+                <small v-if="productMediaCount > 4" class="product-quick-form__preview-note">
+                  +{{ productMediaCount - 4 }} more images
+                </small>
+              </div>
+
+              <label class="product-quick-form__field product-quick-form__field--description">
+                <span class="product-quick-form__label">Description</span>
+                <textarea
+                  v-model="productForm.description"
+                  rows="4"
+                  placeholder="Write a short, clear product description."
+                  required
+                ></textarea>
+              </label>
+            </div>
+
+            <div class="product-quick-form__footer">
+              <div class="product-quick-form__summary">
+                <span :class="{ 'is-ready': productChecklist[0]?.done }">Title ready</span>
+                <span :class="{ 'is-ready': productChecklist[1]?.done }">Price ready</span>
+                <span :class="{ 'is-ready': productChecklist[2]?.done }">Stock {{ formatCount(productStockTotal) }}</span>
+                <span :class="{ 'is-ready': productChecklist[3]?.done }">Photos {{ productMediaCount }}</span>
+              </div>
+
+              <div class="product-quick-form__actions">
+                <button type="button" class="market-button market-button--secondary" @click="resetProductForm">
+                  {{ editingProduct ? "Cancel" : "Clear" }}
+                </button>
+                <button type="submit" class="market-button market-button--primary">
+                  {{ editingProduct ? "Save changes" : "Save product" }}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <div
+            v-if="ui.formMessage"
+            class="product-quick-form__feedback"
+            :class="{
+              'is-error': ui.formType === 'error',
+              'is-success': ui.formType === 'success',
+            }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ ui.formMessage }}
+          </div>
+        </section>
+
+        <section v-if="isInventoryView" class="market-card dashboard-section">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Inventory</p>
+              <h2>All products</h2>
+              <p class="dashboard-note">
+                {{ filteredProducts.length }} shown
+                <template v-if="filteredProducts.length !== products.length">
+                  • {{ products.length }} total
+                </template>
+              </p>
+            </div>
+            <div class="product-quick-form__actions">
+              <button
+                type="button"
+                class="market-button market-button--secondary"
+                @click="openAdminAddProductView"
+              >
+                Add product
+              </button>
+            </div>
+          </div>
+
+          <label class="dashboard-search" aria-label="Kerko produkt">
+            <input
+              v-model="productSearchQuery"
+              type="search"
+              placeholder="Kerko produkt me numer, emer, kategori..."
+            >
+          </label>
+
+          <div
+            v-if="ui.listMessage"
+            class="market-status"
+            :class="{ 'market-status--error': ui.listType === 'error', 'market-status--success': ui.listType === 'success' }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ ui.listMessage }}
+          </div>
+
+          <div v-if="products.length === 0" class="market-empty">
+            <h3>No products in system</h3>
+            <p>Ende nuk ka produkte ne sistem.</p>
+          </div>
+
+          <div v-else-if="filteredProducts.length === 0" class="market-empty">
+            <h3>No matching products</h3>
+            <p>Nuk u gjet asnje produkt per kete kerkim.</p>
+          </div>
+
+          <div v-else class="dashboard-card-list">
+            <ManagedProductCard
+              v-for="product in filteredProducts"
+              :key="product.id"
+              :product="product"
+              @edit="beginProductEdit"
+              @delete="handleDeleteProduct"
+              @toggle-visibility="handleToggleVisibility"
+              @toggle-stock-public="handleToggleStock"
+            />
+          </div>
+        </section>
       </div>
-    </section>
+    </DashboardShell>
   </section>
 </template>

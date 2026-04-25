@@ -99,8 +99,8 @@ async function handleSubmit() {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page">
+    <IonContent :fullscreen="true">
+      <div>
         <AppPageHeader
           kicker="Checkout"
           title="Vendos adresen e porosise."
@@ -108,57 +108,57 @@ async function handleSubmit() {
           back-to="/tabs/cart"
         />
 
-        <section v-if="savedAddress" class="surface-card surface-card--strong section-card stack-list">
+        <section v-if="savedAddress">
           <div>
-            <p class="section-kicker">Adresa e ruajtur</p>
+            <p>Adresa e ruajtur</p>
             <h2>{{ savedAddress.addressLine }}</h2>
-            <p class="section-copy">{{ savedAddress.city }}, {{ savedAddress.country }} · {{ savedAddress.zipCode }}</p>
-            <p class="section-copy">{{ savedAddress.phoneNumber }}</p>
+            <p>{{ savedAddress.city }}, {{ savedAddress.country }} · {{ savedAddress.zipCode }}</p>
+            <p>{{ savedAddress.phoneNumber }}</p>
           </div>
-          <IonButton class="cta-button" data-testid="checkout-saved-address-button" @click="continueWithSavedAddress">Vazhdo me kete adrese</IonButton>
+          <IonButton data-testid="checkout-saved-address-button" @click="continueWithSavedAddress">Vazhdo me kete adrese</IonButton>
         </section>
 
-        <section class="surface-card surface-card--strong section-card stack-list">
+        <section>
           <div>
-            <p class="section-kicker">Adresa e re</p>
+            <p>Adresa e re</p>
             <h2>Ploteso detajet</h2>
           </div>
 
-          <label class="checkout-field">
+          <label>
             <span>Adresa e vendbanimit</span>
             <IonInput v-model="form.addressLine" placeholder="Rruga, hyrja, numri" />
           </label>
 
-          <div class="checkout-grid">
-            <label class="checkout-field">
+          <div>
+            <label>
               <span>Qyteti</span>
               <IonInput v-model="form.city" placeholder="Qyteti" />
             </label>
-            <label class="checkout-field">
+            <label>
               <span>Shteti</span>
               <IonInput v-model="form.country" placeholder="Kosove" />
             </label>
           </div>
 
-          <div class="checkout-grid">
-            <label class="checkout-field">
+          <div>
+            <label>
               <span>Zip code</span>
               <IonInput v-model="form.zipCode" placeholder="10000" />
             </label>
-            <label class="checkout-field">
+            <label>
               <span>Numri i telefonit</span>
               <IonInput v-model="form.phoneNumber" placeholder="+383..." />
             </label>
           </div>
 
-          <label class="checkout-toggle">
+          <label>
             <input v-model="saveForLater" type="checkbox" />
             <span>Ruaje kete adrese per porosite tjera</span>
           </label>
 
-          <p v-if="ui.message" class="checkout-message" :class="ui.type">{{ ui.message }}</p>
+          <p v-if="ui.message">{{ ui.message }}</p>
 
-          <IonButton class="cta-button" data-testid="checkout-address-submit" :disabled="ui.busy" @click="handleSubmit">
+          <IonButton data-testid="checkout-address-submit" :disabled="ui.busy" @click="handleSubmit">
             {{ ui.busy ? "Po ruhet..." : "Vazhdo te pagesa" }}
           </IonButton>
         </section>
@@ -167,46 +167,3 @@ async function handleSubmit() {
   </IonPage>
 </template>
 
-<style scoped>
-.checkout-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkout-field span {
-  color: var(--trego-dark);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.checkout-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.checkout-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--trego-dark);
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.checkout-message {
-  margin: 0;
-  font-size: 0.84rem;
-}
-
-.checkout-message.error {
-  color: var(--trego-danger);
-}
-
-@media (max-width: 420px) {
-  .checkout-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

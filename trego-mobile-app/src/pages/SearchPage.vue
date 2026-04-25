@@ -281,36 +281,36 @@ async function handleLoadMore(event: CustomEvent) {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
+    <IonContent :fullscreen="true">
       <IonRefresher slot="fixed" @ionRefresh="handleRefresh">
         <IonRefresherContent />
       </IonRefresher>
 
-      <div class="mobile-page mobile-page--tabbed mobile-page--edge mobile-page--search">
-        <section class="smart-search-hero">
-          <form class="smart-search-shell" @submit.prevent="runSearch(query)">
+      <div>
+        <section>
+          <form @submit.prevent="runSearch(query)">
             <IonInput
               v-model="query"
-              class="smart-search-input"
+             
               placeholder="Search"
             />
-            <div class="smart-search-actions">
+            <div>
               <button
                 v-if="query.trim()"
-                class="smart-search-clear"
+               
                 type="button"
                 @click="query = ''"
               >
                 <IonIcon :icon="closeOutline" />
               </button>
 
-              <button class="smart-search-camera" type="button" @click="cameraSheetOpen = true">
+              <button type="button" @click="cameraSheetOpen = true">
                 <IonIcon :icon="cameraOutline" />
               </button>
 
               <button
-                class="smart-search-voice"
-                :class="{ active: voiceListening }"
+               
+               
                 type="button"
                 @click="startVoiceSearch"
               >
@@ -320,12 +320,12 @@ async function handleLoadMore(event: CustomEvent) {
           </form>
         </section>
 
-        <section class="stack-list">
-          <div v-if="loading" class="product-grid">
+        <section>
+          <div v-if="loading">
             <ProductCardSkeleton v-for="index in 6" :key="index" />
           </div>
 
-          <div v-else-if="visibleProducts.length" class="product-grid">
+          <div v-else-if="visibleProducts.length">
             <ProductCardMobile
               v-for="product in visibleProducts"
               :key="product.id"
@@ -356,7 +356,7 @@ async function handleLoadMore(event: CustomEvent) {
 
         <input
           ref="cameraInputRef"
-          class="sr-only"
+         
           type="file"
           accept="image/*"
           capture="environment"
@@ -364,7 +364,7 @@ async function handleLoadMore(event: CustomEvent) {
         >
         <input
           ref="uploadInputRef"
-          class="sr-only"
+         
           type="file"
           accept="image/*"
           @change="handleVisualSearch"
@@ -385,113 +385,3 @@ async function handleLoadMore(event: CustomEvent) {
   </IonPage>
 </template>
 
-<style scoped>
-.mobile-page--search {
-  gap: 12px;
-}
-
-.smart-search-hero {
-  position: relative;
-}
-
-.smart-search-shell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 58px;
-  padding: 0 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.64);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1)),
-    radial-gradient(circle at 0% 50%, rgba(255, 255, 255, 0.24), transparent 22%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 14px 30px rgba(31, 41, 55, 0.08);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-}
-
-.smart-search-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: rgba(47, 52, 70, 0.62);
-}
-
-.smart-search-clear,
-.smart-search-camera,
-.smart-search-voice {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-}
-
-.smart-search-clear {
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.smart-search-clear ion-icon {
-  font-size: 0.88rem;
-}
-
-.smart-search-camera ion-icon,
-.smart-search-voice ion-icon {
-  font-size: 1.08rem;
-}
-
-.smart-search-voice.active {
-  color: var(--trego-accent);
-}
-
-.smart-search-input {
-  flex: 1 1 auto;
-  --padding-start: 0;
-  --padding-end: 0;
-  --placeholder-color: rgba(47, 52, 70, 0.5);
-  color: var(--trego-dark);
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
-body[data-theme="dark"] .smart-search-hero {
-  border-color: rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(18, 18, 20, 0.52), rgba(10, 10, 12, 0.28)),
-    radial-gradient(circle at 14% 0%, rgba(255, 255, 255, 0.08), transparent 32%);
-}
-
-body[data-theme="dark"] .smart-search-shell {
-  border-color: rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(16, 16, 18, 0.62), rgba(8, 8, 10, 0.34)),
-    radial-gradient(circle at 0% 50%, rgba(255, 255, 255, 0.05), transparent 20%);
-}
-
-body[data-theme="dark"] .smart-search-actions {
-  color: var(--trego-text);
-}
-
-body[data-theme="dark"] .smart-search-clear {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-</style>

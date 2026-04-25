@@ -1,10 +1,24 @@
 <script setup>
-import { onMounted } from "vue";
-import { useRouter } from "vue-router";
-import HeaderAccountDropdown from "../components/HeaderAccountDropdown.vue";
-import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
+import { onMounted, reactive } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import AuthField from "../components/auth/AuthField.vue";
+import AuthPrimaryButton from "../components/auth/AuthPrimaryButton.vue";
+import AuthShell from "../components/auth/AuthShell.vue";
+import { requestJson, resolveApiMessage } from "../lib/api";
+import { persistLoginGreeting } from "../lib/shop";
+import { applyAuthenticatedSession, ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
+const route = useRoute();
+const form = reactive({
+  email: "",
+  password: "",
+});
+const ui = reactive({
+  loading: false,
+  message: "",
+  type: "",
+});
 
 onMounted(async () => {
   try {
@@ -17,81 +31,94 @@ onMounted(async () => {
     markRouteReady();
   }
 });
+
+async function submitForm() {
+  ui.loading = true;
+  ui.message = "";
+  ui.type = "";
+
+  try {
+    const { response, data } = await requestJson("/api/login", {
+      method: "POST",
+      body: JSON.stringify({
+        identifier: form.email.trim(),
+        password: form.password,
+      }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      ui.message = resolveApiMessage(data, "We couldn't sign you in.");
+      ui.type = "error";
+      if (data?.redirectTo) {
+        await router.push(data.redirectTo);
+      }
+      return;
+    }
+
+    ui.message = data.message || "Signed in successfully.";
+    ui.type = "success";
+    persistLoginGreeting(data.user?.firstName || data.user?.fullName || "User");
+    await applyAuthenticatedSession(data.user || null);
+
+    const redirectPath = String(route.query.redirect || "").trim();
+    await router.push(redirectPath || data.redirectTo || "/");
+  } catch (error) {
+    ui.message = "The server is not responding. Please try again.";
+    ui.type = "error";
+    console.error(error);
+  } finally {
+    ui.loading = false;
+  }
+}
 </script>
 
 <template>
-  <section class="auth-page" aria-label="Sign in page">
-    <div class="auth-page-breadcrumb-strip">
-      <div class="auth-page-breadcrumb-inner">
-        <nav class="auth-page-breadcrumbs" aria-label="Breadcrumb">
-          <RouterLink to="/">Home</RouterLink>
-          <span>›</span>
-          <span>User Account</span>
-          <span>›</span>
-          <strong>Sign In</strong>
-        </nav>
-      </div>
-    </div>
+  <AuthShell
+    title="Sign in to your account"
+    :show-brand="false"
+    :message="ui.message"
+    :message-type="ui.type"
+  >
+    <form class="auth-form" @submit.prevent="submitForm">
+      <AuthField
+        id="login-email"
+        v-model="form.email"
+        label="Email"
+        name="email"
+        type="email"
+        autocomplete="email"
+        inputmode="email"
+        required
+      />
 
-    <div class="auth-page-shell">
-      <HeaderAccountDropdown standalone sync-route-tabs initial-mode="login" />
-    </div>
-  </section>
+      <AuthField
+        id="login-password"
+        v-model="form.password"
+        label="Password"
+        name="password"
+        type="password"
+        autocomplete="current-password"
+        required
+      >
+        <template #label-action>
+          <RouterLink class="auth-link" to="/forgot-password">
+            Forgot password?
+          </RouterLink>
+        </template>
+      </AuthField>
+
+      <AuthPrimaryButton :loading="ui.loading" loading-label="Signing in...">
+        Sign in
+      </AuthPrimaryButton>
+    </form>
+
+    <template #footer>
+      <p class="auth-helper">
+        Not a member?
+        <RouterLink class="auth-link" to="/signup">
+          Create an account
+        </RouterLink>
+      </p>
+    </template>
+  </AuthShell>
 </template>
-
-<style scoped>
-.auth-page {
-  width: 100%;
-  background:
-    radial-gradient(circle at top center, rgba(255, 255, 255, 0.95) 0%, rgba(247, 249, 252, 0.92) 34%, rgba(255, 255, 255, 0.98) 100%);
-}
-
-.auth-page-breadcrumb-strip {
-  width: 100%;
-  background: #f4f6f8;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-}
-
-.auth-page-breadcrumb-inner {
-  width: min(1280px, calc(100vw - 48px));
-  margin: 0 auto;
-  padding: 20px 0;
-}
-
-.auth-page-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  color: #64748b;
-  font-size: 1rem;
-}
-
-.auth-page-breadcrumbs a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.auth-page-breadcrumbs strong {
-  color: #2f9cf3;
-  font-weight: 700;
-}
-
-.auth-page-shell {
-  display: flex;
-  justify-content: center;
-  min-height: calc(100vh - 160px);
-  padding: clamp(40px, 7vw, 80px) 20px 96px;
-}
-
-@media (max-width: 720px) {
-  .auth-page-breadcrumb-inner {
-    width: min(100vw - 24px, 1280px);
-    padding: 16px 0;
-  }
-
-  .auth-page-shell {
-    padding: 28px 12px 56px;
-  }
-}
-</style>

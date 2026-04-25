@@ -68,10 +68,10 @@ async function submitLookup() {
 </script>
 
 <template>
-  <div class="header-track-card">
+  <div class="overlay-panel" @click.stop>
     <button
       v-if="showClose"
-      class="header-track-card-close"
+      class="market-icon-button auth-panel__close"
       type="button"
       aria-label="Close track order"
       @click="emit('close')"
@@ -79,17 +79,17 @@ async function submitLookup() {
       ×
     </button>
 
-    <div class="header-track-card-head">
-      <p class="header-track-card-badge">Track Order</p>
+    <div class="auth-panel">
+      <p>Track Order</p>
       <h3>Find your order instantly</h3>
       <p>
         Enter the Order ID from your receipt or confirmation email and the Billing Email used during checkout.
       </p>
     </div>
 
-    <form class="header-track-form" @submit.prevent="submitLookup">
-      <div class="header-track-form-grid">
-        <label class="header-track-field">
+    <form class="auth-panel auth-panel__form" @submit.prevent="submitLookup">
+      <div class="auth-panel__form-row">
+        <label class="auth-panel__field">
           <span>Order ID</span>
           <input
             v-model="form.orderId"
@@ -100,7 +100,7 @@ async function submitLookup() {
           >
         </label>
 
-        <label class="header-track-field">
+        <label class="auth-panel__field">
           <span>Billing Email</span>
           <input
             v-model="form.billingEmail"
@@ -112,177 +112,23 @@ async function submitLookup() {
         </label>
       </div>
 
-      <p class="header-track-note">
+      <p>
         <span aria-hidden="true">ⓘ</span>
         Order ID is the code we sent to your email address when the order was placed.
       </p>
 
-      <div class="form-message" :class="ui.type" role="status" aria-live="polite">
+      <div
+        role="status"
+        aria-live="polite"
+        :class="['market-status', ui.type === 'error' ? 'market-status--error' : ui.type === 'success' ? 'market-status--success' : '']"
+      >
         {{ ui.message }}
       </div>
 
-      <button class="header-track-submit" type="submit" :disabled="ui.loading">
+      <button class="market-button market-button--primary" type="submit" :disabled="ui.loading">
         {{ ui.loading ? "TRACKING..." : "TRACK ORDER" }}
         <span aria-hidden="true">→</span>
       </button>
     </form>
   </div>
 </template>
-
-<style scoped>
-.header-track-card {
-  position: relative;
-  display: grid;
-  gap: 24px;
-  padding: 34px 34px 32px;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.22);
-}
-
-.header-track-card-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.header-track-card-head {
-  display: grid;
-  gap: 10px;
-  padding-right: 44px;
-}
-
-.header-track-card-badge {
-  width: fit-content;
-  margin: 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 134, 47, 0.12);
-  color: #ff862f;
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.header-track-card-head h3 {
-  margin: 0;
-  color: #202833;
-  font-size: clamp(1.85rem, 2.1vw, 2.35rem);
-  line-height: 1.04;
-  letter-spacing: -0.04em;
-}
-
-.header-track-card-head p {
-  max-width: 680px;
-  margin: 0;
-  color: #64748b;
-  font-size: 1rem;
-  line-height: 1.65;
-}
-
-.header-track-form {
-  display: grid;
-  gap: 18px;
-}
-
-.header-track-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.header-track-field {
-  display: grid;
-  gap: 10px;
-}
-
-.header-track-field span {
-  color: #202833;
-  font-size: 0.96rem;
-  font-weight: 700;
-}
-
-.header-track-field input {
-  min-height: 56px;
-  padding: 0 16px;
-  border: 1px solid #dbe2ea;
-  border-radius: 12px;
-  background: #ffffff;
-  color: #0f172a;
-  font: inherit;
-  outline: none;
-}
-
-.header-track-field input:focus {
-  border-color: rgba(255, 134, 47, 0.72);
-  box-shadow: 0 0 0 4px rgba(255, 134, 47, 0.12);
-}
-
-.header-track-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  color: #64748b;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.header-track-note span {
-  color: #475569;
-  font-weight: 700;
-}
-
-.header-track-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-width: 220px;
-  min-height: 54px;
-  padding: 0 22px;
-  border: 0;
-  border-radius: 12px;
-  background: #ff862f;
-  color: #fff;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-}
-
-.header-track-submit:disabled {
-  opacity: 0.64;
-  cursor: default;
-}
-
-@media (max-width: 760px) {
-  .header-track-card {
-    gap: 20px;
-    padding: 24px 18px 20px;
-    border-radius: 18px;
-  }
-
-  .header-track-card-head {
-    padding-right: 34px;
-  }
-
-  .header-track-form-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .header-track-submit {
-    width: 100%;
-  }
-}
-</style>

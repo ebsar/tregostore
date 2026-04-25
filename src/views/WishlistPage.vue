@@ -197,43 +197,43 @@ async function bulkAddToCart() {
 </script>
 
 <template>
-  <section class="collection-page" aria-label="Wishlist products">
-    <header class="collection-page-header">
-      <p class="section-label">Wishlist</p>
+  <section aria-label="Wishlist products">
+    <header>
+      <p>Wishlist</p>
       <h1>Produktet e ruajtura</h1>
       <p>
         Ketu shfaqen produktet qe i ruan me zemren nga kartat e produkteve. Duhet te jesh i kyçur qe t'i perdorësh.
       </p>
     </header>
 
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
+    <div role="status" aria-live="polite">
       {{ ui.message }}
     </div>
 
-    <div v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+    <div v-if="ui.guest">
       <h2>Per te perdorur wishlist duhet te kyçesh.</h2>
       <p>Krijo llogari ose hyni ne llogarine tende per te ruajtur produktet e preferuara dhe per t'i gjetur me vone.</p>
-      <div class="collection-guest-gate-actions">
-        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fwishlist">
+      <div>
+        <RouterLink to="/login?redirect=%2Fwishlist">
           Login
         </RouterLink>
-        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fwishlist">
+        <RouterLink to="/signup?redirect=%2Fwishlist">
           Sign Up
         </RouterLink>
       </div>
     </div>
 
     <template v-else>
-      <div v-if="unavailableItems.length > 0" class="wishlist-stock-warning" role="status" aria-live="polite">
+      <div v-if="unavailableItems.length > 0" role="status" aria-live="polite">
         <strong>{{ unavailableItems.length }} produkte ne wishlist nuk jane me ne stok.</strong>
         <p>Produktet e zbehura nuk mund te shtohen ne cart derisa biznesi t'i riktheje ne stok.</p>
       </div>
 
-      <div v-if="selectionEnabled" class="saved-products-toolbar">
-        <div class="saved-products-toolbar-left">
-          <label class="saved-products-select-all" for="wishlist-select-all">
+      <div v-if="selectionEnabled">
+        <div>
+          <label for="wishlist-select-all">
             <input
-              id="wishlist-select-all"
+             
               type="checkbox"
               :checked="allSelected"
               :indeterminate.prop="isIndeterminate"
@@ -241,12 +241,12 @@ async function bulkAddToCart() {
             >
             <span>Zgjidh produktet per blerje</span>
           </label>
-          <span class="saved-products-selected-count">
+          <span>
             {{ selectedItems.length }} produkte te zgjedhura
           </span>
         </div>
         <button
-          class="product-action-button cart-action saved-products-toolbar-button"
+         
           type="button"
           :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
           @click="bulkAddToCart"
@@ -255,7 +255,7 @@ async function bulkAddToCart() {
         </button>
       </div>
 
-      <section v-if="items.length > 0" class="saved-products-grid" aria-label="Wishlist grid">
+      <section v-if="items.length > 0" aria-label="Wishlist grid">
         <SavedProductCard
           v-for="item in items"
           :key="item.id"
@@ -269,7 +269,7 @@ async function bulkAddToCart() {
         />
       </section>
 
-      <div v-else class="collection-empty-state">
+      <div v-else>
         Wishlist-i yt eshte bosh. Shto produkte nga faqet e dyqanit dhe ruaji me zemren.
       </div>
     </template>

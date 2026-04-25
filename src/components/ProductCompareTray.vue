@@ -36,28 +36,29 @@ function handleClearComparedProducts() {
 <template>
   <Transition name="compare-tray">
     <aside v-if="showTray" class="compare-tray" aria-label="Krahasimi i produkteve">
-      <div class="compare-tray-copy">
-        <p class="section-label">Krahasim</p>
+      <div class="compare-tray__head">
+        <div>
+        <p>Krahasim</p>
         <strong>{{ compareSummary }}</strong>
         <p>{{ compareHint }}</p>
+        </div>
       </div>
 
-      <div class="compare-tray-previews" aria-hidden="true">
+      <div class="compare-tray__preview" aria-hidden="true">
         <RouterLink
           v-for="item in comparePreviewItems"
           :key="item.id"
-          class="compare-tray-thumb"
           :to="getProductDetailUrl(item.id)"
         >
           <img :src="item.imagePath" :alt="item.title" width="80" height="80">
         </RouterLink>
       </div>
 
-      <div class="compare-tray-actions">
-        <RouterLink class="nav-action nav-action-secondary compare-tray-link" to="/krahaso-produkte">
+      <div class="compare-tray__actions">
+        <RouterLink class="market-button market-button--primary" to="/krahaso-produkte">
           Krahaso
         </RouterLink>
-        <button class="nav-action nav-action-primary compare-tray-clear" type="button" @click="handleClearComparedProducts">
+        <button class="market-button market-button--secondary" type="button" @click="handleClearComparedProducts">
           Pastro
         </button>
       </div>

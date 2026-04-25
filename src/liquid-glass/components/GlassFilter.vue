@@ -33,15 +33,15 @@ const offset = computed(() => {
 </script>
 
 <template>
-    <svg :style="customFilterStyle" aria-hidden="true">
+    <svg aria-hidden="true">
         <defs>
-            <radialGradient :id="`${id}-edge-mask`" cx="50%" cy="50%" r="50%">
+            <radialGradient cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stopColor="black" stopOpacity="0" />
                 <stop :offset="offset" stopColor="black" stopOpacity="0" />
                 <stop offset="100%" stopColor="white" stopOpacity="1" />
             </radialGradient>
-            <filter :id="id" x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
-                <feImage id="feimage" x="0" y="0" width="100%" height="100%" result="DISPLACEMENT_MAP"
+            <filter x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
+                <feImage x="0" y="0" width="100%" height="100%" result="DISPLACEMENT_MAP"
                     :href="getMap(mode, shaderMapUrl)" preserveAspectRatio="xMidYMid slice" />
 
                 <!-- {/* Create edge mask using the displacement map itself */} -->
@@ -106,4 +106,3 @@ const offset = computed(() => {
     </svg>
 </template>
 
-<style scoped></style>

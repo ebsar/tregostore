@@ -488,7 +488,6 @@ function openMediaViewer(kind, sourceUrl, title = "") {
   mediaViewer.src = String(sourceUrl || "").trim();
   mediaViewer.title = String(title || "").trim();
   resetMediaViewerTransform();
-  document.body.classList.add("dialog-open");
 }
 
 function closeMediaViewer() {
@@ -497,7 +496,6 @@ function closeMediaViewer() {
   mediaViewer.src = "";
   mediaViewer.title = "";
   resetMediaViewerTransform();
-  document.body.classList.remove("dialog-open");
 }
 
 function handleMediaViewerWheel(event) {
@@ -1506,45 +1504,45 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="messages-page" aria-label="Mesazhet">
-    <header class="account-header messages-page-header">
+  <section aria-label="Mesazhet">
+    <header>
       <div>
-        <p class="section-label">Mesazhet</p>
+        <p>Mesazhet</p>
       </div>
 
-      <div class="summary-chip messages-summary-chip">
+      <div>
         <span>Mesazhe te palexuara</span>
         <strong>{{ unreadCount }}</strong>
       </div>
     </header>
 
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
+    <div role="status" aria-live="polite">
       {{ ui.message }}
     </div>
 
-    <section v-if="ui.guest" class="collection-empty-state collection-guest-gate">
+    <section v-if="ui.guest">
       <h2>Per te pare mesazhet duhet te kyçesh.</h2>
       <p>Krijo llogari ose hyni ne llogarine tende per te hapur bisedat me bizneset dhe support-in.</p>
-      <div class="collection-guest-gate-actions">
-        <RouterLink class="nav-action nav-action-secondary" to="/login?redirect=%2Fmesazhet">
+      <div>
+        <RouterLink to="/login?redirect=%2Fmesazhet">
           Login
         </RouterLink>
-        <RouterLink class="nav-action nav-action-primary" to="/signup?redirect=%2Fmesazhet">
+        <RouterLink to="/signup?redirect=%2Fmesazhet">
           Sign Up
         </RouterLink>
       </div>
     </section>
 
-    <div v-else class="messages-layout">
-      <aside class="card messages-sidebar">
-        <div class="messages-sidebar-head" :class="{ 'is-search-open': conversationSearchOpen }">
-          <div class="messages-sidebar-head-copy">
-            <p class="section-label">Bisedat</p>
+    <div v-else>
+      <aside>
+        <div>
+          <div>
+            <p>Bisedat</p>
           </div>
-          <div class="messages-sidebar-actions">
-            <div class="messages-sidebar-search" @click.stop>
+          <div>
+            <div @click.stop>
               <button
-                class="nav-action nav-action-secondary messages-sidebar-action messages-sidebar-action-icon"
+               
                 type="button"
                 :title="conversationSearchOpen ? 'Mbyll kerkimin' : 'Kerko ne biseda'"
                 :aria-label="conversationSearchOpen ? 'Mbyll kerkimin' : 'Kerko ne biseda'"
@@ -1560,16 +1558,16 @@ onBeforeUnmount(() => {
                     stroke-linejoin="round"
                   />
                 </svg>
-                <span class="sr-only">Kerko ne biseda</span>
+                <span>Kerko ne biseda</span>
               </button>
 
-              <div v-if="conversationSearchOpen" class="messages-sidebar-search-dropdown">
-                <label class="sr-only" for="messages-conversation-search">Kerko ne biseda</label>
+              <div v-if="conversationSearchOpen">
+                <label for="messages-conversation-search">Kerko ne biseda</label>
                 <input
-                  id="messages-conversation-search"
+                 
                   ref="conversationSearchInputElement"
                   v-model="conversationSearch"
-                  class="messages-conversation-search"
+                 
                   type="search"
                   placeholder="Kerko ne biseda..."
                   autocomplete="off"
@@ -1578,7 +1576,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <button
-              class="nav-action nav-action-secondary messages-sidebar-action messages-sidebar-action-icon"
+             
               type="button"
               :disabled="ui.loadingConversations"
               @click="refreshInbox"
@@ -1595,11 +1593,11 @@ onBeforeUnmount(() => {
                   stroke-linejoin="round"
                 />
               </svg>
-              <span class="sr-only">{{ ui.loadingConversations ? "Duke rifreskuar..." : "Rifresko" }}</span>
+              <span>{{ ui.loadingConversations ? "Duke rifreskuar..." : "Rifresko" }}</span>
             </button>
             <button
               v-if="canOpenSupportConversation"
-              class="nav-action nav-action-secondary messages-sidebar-action messages-sidebar-action-icon"
+             
               type="button"
               @click="openSupportConversation"
               title="Support"
@@ -1615,11 +1613,11 @@ onBeforeUnmount(() => {
                   stroke-linejoin="round"
                 />
               </svg>
-              <span class="sr-only">Support</span>
+              <span>Support</span>
             </button>
             <RouterLink
               v-if="isBusinessUser"
-              class="nav-action nav-action-secondary messages-sidebar-action"
+             
               to="/biznesi-juaj"
             >
               Paneli
@@ -1627,23 +1625,23 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="messages-conversation-list" aria-live="polite">
-          <div v-if="ui.loadingConversations && !conversations.length" class="messages-empty-state">
+        <div aria-live="polite">
+          <div v-if="ui.loadingConversations && !conversations.length">
             Duke ngarkuar bisedat...
           </div>
 
           <button
             v-for="conversation in filteredConversations"
             :key="conversation.id"
-            class="messages-conversation-card"
-            :class="{ 'is-active': Number(conversation.id) === Number(activeConversationId) }"
+           
+           
             type="button"
             @click="openConversation(conversation.id)"
           >
-            <span class="messages-conversation-avatar" aria-hidden="true">
+            <span aria-hidden="true">
               <img
                 v-if="conversation.counterpartImagePath"
-                class="messages-conversation-avatar-image"
+               
                 :src="conversation.counterpartImagePath"
                 :alt="conversation.counterpartName"
                 width="120"
@@ -1651,37 +1649,37 @@ onBeforeUnmount(() => {
                 loading="lazy"
                 decoding="async"
               >
-              <span v-else class="messages-conversation-avatar-fallback">
+              <span v-else>
                 {{ getBusinessInitials(conversation.counterpartName) }}
               </span>
             </span>
 
-            <span class="messages-conversation-copy">
-              <strong class="messages-conversation-name-row">
+            <span>
+              <strong>
                 <span
-                  class="messages-presence-dot"
-                  :class="{ 'is-online': conversation.counterpartIsOnline }"
+                 
+                 
                   aria-hidden="true"
                 ></span>
                 <span>{{ conversation.counterpartName }}</span>
               </strong>
-              <small class="messages-conversation-presence">
+              <small>
                 {{ formatPresenceLabel(conversation) }}
               </small>
-              <span :class="{ 'is-typing': conversation.counterpartTyping }">
+              <span>
                 {{ conversationPreviewText(conversation) }}
               </span>
             </span>
 
-            <span class="messages-conversation-meta">
+            <span>
               <small>{{ formatTimestamp(conversation.lastMessageAt) }}</small>
-              <span v-if="Number(conversation.unreadCount) > 0" class="messages-unread-badge">
+              <span v-if="Number(conversation.unreadCount) > 0">
                 {{ conversation.unreadCount }}
               </span>
             </span>
           </button>
 
-          <div v-if="!ui.loadingConversations && !conversations.length" class="messages-empty-state">
+          <div v-if="!ui.loadingConversations && !conversations.length">
             {{
               isAdminUser
                 ? "Kur nje perdorues ose biznes te hape bisede me support, do ta shohesh ketu."
@@ -1693,21 +1691,21 @@ onBeforeUnmount(() => {
 
           <div
             v-else-if="!ui.loadingConversations && conversations.length && !filteredConversations.length"
-            class="messages-empty-state"
+           
           >
             Nuk u gjet asnje bisede me kete kerkim.
           </div>
         </div>
       </aside>
 
-      <section class="card messages-thread">
+      <section>
         <template v-if="currentConversation">
-          <header class="messages-thread-head">
-            <div class="messages-thread-head-copy">
-              <span class="messages-conversation-avatar messages-thread-avatar" aria-hidden="true">
+          <header>
+            <div>
+              <span aria-hidden="true">
                 <img
                   v-if="currentConversation.counterpartImagePath"
-                  class="messages-conversation-avatar-image"
+                 
                   :src="currentConversation.counterpartImagePath"
                   :alt="currentConversation.counterpartName"
                   width="120"
@@ -1715,24 +1713,24 @@ onBeforeUnmount(() => {
                   loading="lazy"
                   decoding="async"
                 >
-                <span v-else class="messages-conversation-avatar-fallback">
+                <span v-else>
                   {{ getBusinessInitials(currentConversation.counterpartName) }}
                 </span>
               </span>
 
               <div>
-                <p class="section-label">
+                <p>
                   {{ threadCounterpartLabel }}
                 </p>
-                <h2 class="messages-thread-name-row">
+                <h2>
                   <span
-                    class="messages-presence-dot"
-                    :class="{ 'is-online': currentConversation.counterpartIsOnline }"
+                   
+                   
                     aria-hidden="true"
                   ></span>
                   <span>{{ currentConversation.counterpartName }}</span>
                 </h2>
-                <p class="messages-thread-status">
+                <p>
                   {{ threadStatusText }}
                 </p>
               </div>
@@ -1740,44 +1738,40 @@ onBeforeUnmount(() => {
 
             <RouterLink
               v-if="currentConversation.profileUrl && currentConversation.counterpartRole === 'business'"
-              class="nav-action nav-action-secondary"
+             
               :to="currentConversation.profileUrl"
             >
               Shiko profilin
             </RouterLink>
           </header>
 
-          <div ref="messagesViewport" class="messages-thread-viewport">
-            <div v-if="ui.loadingMessages && !messages.length" class="messages-empty-state messages-thread-empty">
+          <div ref="messagesViewport">
+            <div v-if="ui.loadingMessages && !messages.length">
               Duke hapur biseden...
             </div>
 
-            <div v-else-if="!messages.length" class="messages-empty-state messages-thread-empty">
+            <div v-else-if="!messages.length">
               Biseda eshte bosh. Shkruaje mesazhin e pare me poshte.
             </div>
 
             <template v-for="item in threadItems" :key="item.id">
-              <div v-if="item.type === 'separator'" class="messages-date-separator">
+              <div v-if="item.type === 'separator'">
                 <span>{{ item.label }}</span>
               </div>
 
               <article
                 v-else
-                class="messages-bubble"
-                :class="{
-                  'is-own': item.message.isOwn,
-                  'is-deleted': Boolean(item.message.deletedAt),
-                  'is-pending-delete': isMessagePendingDelete(item.message.id),
-                }"
+               
+               
               >
-              <div class="messages-bubble-actions">
+              <div>
                 <div
                   v-if="item.message.isOwn && !item.message.deletedAt"
-                  class="messages-bubble-menu"
+                 
                   @click.stop
                 >
                   <button
-                    class="messages-bubble-menu-trigger"
+                   
                     type="button"
                     @click.stop="toggleBubbleMenu(item.message.id)"
                   >
@@ -1788,24 +1782,24 @@ onBeforeUnmount(() => {
 
                   <div
                     v-if="isBubbleMenuOpen(item.message.id)"
-                    class="messages-bubble-menu-dropdown"
+                   
                   >
                     <button
-                      class="messages-bubble-menu-item"
+                     
                       type="button"
                       @click="copyMessageBody(item.message.body)"
                     >
                       Kopjo
                     </button>
                     <button
-                      class="messages-bubble-menu-item"
+                     
                       type="button"
                       @click="startEditingMessage(item.message)"
                     >
                       Ndrysho
                     </button>
                     <button
-                      class="messages-bubble-menu-item is-danger"
+                     
                       type="button"
                       @click="deleteMessage(item.message)"
                     >
@@ -1816,17 +1810,17 @@ onBeforeUnmount(() => {
               </div>
               <div
                 v-if="item.message.attachmentPath"
-                class="messages-attachment"
-                :class="`is-${attachmentKind(item.message) || 'file'}`"
+               
+               
               >
                 <button
                   v-if="attachmentKind(item.message) === 'image'"
-                  class="messages-attachment-trigger"
+                 
                   type="button"
                   @click="openMediaViewer('image', item.message.attachmentPath, item.message.attachmentFileName || item.message.senderName)"
                 >
                   <img
-                    class="messages-attachment-image"
+                   
                     :src="item.message.attachmentPath"
                     :alt="item.message.attachmentFileName || 'Attachment'"
                     loading="lazy"
@@ -1834,12 +1828,12 @@ onBeforeUnmount(() => {
                 </button>
                 <button
                   v-else-if="attachmentKind(item.message) === 'video'"
-                  class="messages-attachment-trigger"
+                 
                   type="button"
                   @click="openMediaViewer('video', item.message.attachmentPath, item.message.attachmentFileName || item.message.senderName)"
                 >
                   <video
-                    class="messages-attachment-video"
+                   
                     :src="item.message.attachmentPath"
                     muted
                     playsinline
@@ -1848,18 +1842,18 @@ onBeforeUnmount(() => {
                 </button>
                 <div
                   v-else-if="attachmentKind(item.message) === 'audio'"
-                  class="messages-audio-card"
+                 
                 >
-                  <div class="messages-audio-waveform" aria-hidden="true">
+                  <div aria-hidden="true">
                     <span
                       v-for="(barHeight, barIndex) in waveformBarsForMessage(item.message)"
                       :key="`${item.message.id}-${barIndex}`"
-                      class="messages-audio-wave"
-                      :style="{ height: `${barHeight}%` }"
+                     
+                     
                     ></span>
                   </div>
                   <audio
-                    class="messages-attachment-audio"
+                   
                     :src="item.message.attachmentPath"
                     controls
                     preload="metadata"
@@ -1867,7 +1861,7 @@ onBeforeUnmount(() => {
                 </div>
                 <a
                   v-else
-                  class="messages-attachment-file"
+                 
                   :href="item.message.attachmentPath"
                   target="_blank"
                   rel="noreferrer"
@@ -1876,33 +1870,33 @@ onBeforeUnmount(() => {
                 </a>
               </div>
               <p>{{ item.message.body }}</p>
-              <span class="messages-bubble-meta">
+              <span>
                 {{ item.message.isOwn ? "Ti" : item.message.senderName }} · {{ formatTimestamp(item.message.createdAt) }}
                 <template v-if="messageEditedLabel(item.message)">
-                  · <span class="messages-message-meta-note">{{ messageEditedLabel(item.message) }}</span>
+                  · <span>{{ messageEditedLabel(item.message) }}</span>
                 </template>
                 <template v-if="item.message.isOwn">
-                  · <span class="messages-delivery-state">{{ formatDeliveredState(item.message) }}</span>
+                  · <span>{{ formatDeliveredState(item.message) }}</span>
                 </template>
               </span>
               </article>
             </template>
 
-            <div v-if="counterpartTyping" class="messages-typing-indicator" aria-live="polite">
-              <span class="messages-typing-dot"></span>
-              <span class="messages-typing-dot"></span>
-              <span class="messages-typing-dot"></span>
+            <div v-if="counterpartTyping" aria-live="polite">
+              <span></span>
+              <span></span>
+              <span></span>
               <strong>{{ currentConversation.counterpartName }}</strong>
               <span>po shkruan...</span>
             </div>
           </div>
 
-          <div v-if="activePendingDelete" class="messages-delete-undo-bar" role="status" aria-live="polite">
+          <div v-if="activePendingDelete" role="status" aria-live="polite">
             <span>
               Mesazhi do te fshihet pas pak.
             </span>
             <button
-              class="messages-bubble-copy"
+             
               type="button"
               @click="undoDeleteMessage(activePendingDelete.messageId)"
             >
@@ -1911,8 +1905,8 @@ onBeforeUnmount(() => {
           </div>
 
           <form
-            class="messages-compose"
-            :class="{ 'is-drag-over': ui.dragOverComposer }"
+           
+           
             @submit.prevent="sendMessage"
             @click.stop
             @dragenter.prevent="handleComposerDragOver"
@@ -1920,13 +1914,13 @@ onBeforeUnmount(() => {
             @dragleave="handleComposerDragLeave"
             @drop="handleComposerDrop"
           >
-            <div v-if="isEditingMessage" class="messages-editing-banner">
+            <div v-if="isEditingMessage">
               <div>
                 <strong>Po ndryshon mesazhin</strong>
                 <p>Ndrysho tekstin dhe dergoje perseri.</p>
               </div>
               <button
-                class="messages-bubble-copy"
+               
                 type="button"
                 @click="cancelEditingMessage"
               >
@@ -1936,23 +1930,23 @@ onBeforeUnmount(() => {
 
             <input
               ref="attachmentInputElement"
-              class="sr-only"
+             
               type="file"
               :accept="attachmentAccept"
               @change="handleAttachmentSelection"
             >
 
-            <div v-if="pendingAttachment" class="messages-attachment-preview">
-              <div class="messages-attachment-preview-media">
+            <div v-if="pendingAttachment">
+              <div>
                 <img
                   v-if="attachmentPreviewKind() === 'image'"
-                  class="messages-attachment-image"
+                 
                   :src="pendingAttachmentPreviewUrl"
                   :alt="pendingAttachment.name || 'Preview'"
                 >
                 <video
                   v-else-if="attachmentPreviewKind() === 'video'"
-                  class="messages-attachment-video"
+                 
                   :src="pendingAttachmentPreviewUrl"
                   controls
                   playsinline
@@ -1960,29 +1954,29 @@ onBeforeUnmount(() => {
                 ></video>
                 <audio
                   v-else-if="attachmentPreviewKind() === 'audio'"
-                  class="messages-attachment-audio"
+                 
                   :src="pendingAttachmentPreviewUrl"
                   controls
                   preload="metadata"
                 ></audio>
                 <div
                   v-if="attachmentPreviewKind() === 'audio'"
-                  class="messages-audio-waveform is-preview"
+                 
                   aria-hidden="true"
                 >
                   <span
                     v-for="(barHeight, barIndex) in pendingWaveformBars()"
                     :key="`pending-${barIndex}`"
-                    class="messages-audio-wave"
-                    :style="{ height: `${barHeight}%` }"
+                   
+                   
                   ></span>
                 </div>
-                <span v-else class="messages-attachment-file">
+                <span v-else>
                   {{ pendingAttachment.name }}
                 </span>
               </div>
               <button
-                class="messages-attachment-remove"
+               
                 type="button"
                 @click="clearPendingAttachment"
               >
@@ -1990,16 +1984,16 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <div class="messages-compose-anchor">
+            <div>
               <div
                 v-if="aiSuggestionsOpen && replySuggestions.length"
-                class="messages-ai-suggestions"
+               
                 aria-live="polite"
               >
                 <button
                   v-for="suggestion in replySuggestions"
                   :key="suggestion"
-                  class="messages-ai-chip"
+                 
                   type="button"
                   @click="applyReplySuggestion(suggestion)"
                 >
@@ -2007,15 +2001,15 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div class="messages-compose-row">
+              <div>
                 <button
-                  class="messages-compose-icon messages-compose-icon-ai"
+                 
                   type="button"
                   :disabled="ui.loadingSuggestions"
                   @click="toggleAiSuggestions"
                 >
                   <svg
-                    class="messages-compose-icon-svg"
+                   
                     viewBox="0 0 24 24"
                     aria-hidden="true"
                   >
@@ -2024,16 +2018,16 @@ onBeforeUnmount(() => {
                       fill="currentColor"
                     />
                   </svg>
-                  <span class="sr-only">Sugjero me AI</span>
+                  <span>Sugjero me AI</span>
                 </button>
 
-                <div class="messages-compose-input-shell">
-                  <label class="sr-only" for="messages-compose-input">Shkruaje mesazhin</label>
+                <div>
+                  <label for="messages-compose-input">Shkruaje mesazhin</label>
                   <textarea
-                    id="messages-compose-input"
+                   
                     ref="composerInputElement"
                     v-model="composer.body"
-                    class="messages-compose-input"
+                   
                     rows="1"
                     maxlength="1500"
                     placeholder="Shkruaje mesazhin..."
@@ -2043,31 +2037,31 @@ onBeforeUnmount(() => {
                   ></textarea>
 
                   <button
-                    class="messages-compose-icon messages-compose-icon-plus"
-                    :class="{ 'is-open': composerMenuOpen, 'is-recording': ui.recordingAudio }"
+                   
+                   
                     type="button"
                     @click="toggleComposerMenu"
                   >
                     +
                   </button>
 
-                  <div v-if="composerMenuOpen" class="messages-compose-menu">
+                  <div v-if="composerMenuOpen">
                     <button
-                      class="messages-compose-menu-item"
+                     
                       type="button"
                       @click="handleComposerMenuAction('media')"
                     >
                       Foto/Video
                     </button>
                     <button
-                      class="messages-compose-menu-item"
+                     
                       type="button"
                       @click="handleComposerMenuAction('audio')"
                     >
                       {{ ui.recordingAudio ? "Ndalo audio" : "Audio" }}
                     </button>
                     <button
-                      class="messages-compose-menu-item"
+                     
                       type="button"
                       @click="handleComposerMenuAction('pdf')"
                     >
@@ -2077,14 +2071,14 @@ onBeforeUnmount(() => {
                 </div>
 
                 <button
-                  class="nav-action nav-action-primary messages-send-button"
+                 
                   type="submit"
                   :disabled="ui.sending"
                   :title="ui.sending ? (isEditingMessage ? 'Duke ruajtur...' : 'Duke derguar...') : (isEditingMessage ? 'Ruaj' : 'Dergo')"
                   :aria-label="ui.sending ? (isEditingMessage ? 'Duke ruajtur...' : 'Duke derguar...') : (isEditingMessage ? 'Ruaj' : 'Dergo')"
                 >
                   <svg
-                    class="messages-compose-icon-svg"
+                   
                     viewBox="0 0 24 24"
                     aria-hidden="true"
                   >
@@ -2093,25 +2087,25 @@ onBeforeUnmount(() => {
                       fill="currentColor"
                     />
                   </svg>
-                  <span class="sr-only">
+                  <span>
                     {{ ui.sending ? (isEditingMessage ? "Duke ruajtur..." : "Duke derguar...") : (isEditingMessage ? "Ruaj" : "Dergo") }}
                   </span>
                 </button>
               </div>
             </div>
 
-            <div class="messages-compose-footer">
-              <div class="messages-compose-meta">
-                <div v-if="pendingUploadLabel" class="messages-upload-progress">
+            <div>
+              <div>
+                <div v-if="pendingUploadLabel">
                   <span>{{ pendingUploadLabel }}</span>
-                  <span class="messages-upload-progress-bar">
+                  <span>
                     <span
-                      class="messages-upload-progress-fill"
-                      :style="{ width: `${Math.max(6, Math.round(uploadProgress))}%` }"
+                     
+                     
                     ></span>
                   </span>
                 </div>
-                <span class="messages-compose-counter">
+                <span>
                   {{ composerCharacterCount }}/1500
                 </span>
               </div>
@@ -2119,7 +2113,7 @@ onBeforeUnmount(() => {
           </form>
         </template>
 
-        <div v-else class="messages-empty-state messages-thread-empty">
+        <div v-else>
           Zgjidh nje bisede nga lista ne te majte per t'i pare mesazhet.
         </div>
       </section>
@@ -2127,15 +2121,15 @@ onBeforeUnmount(() => {
 
     <div
       v-if="mediaViewer.open"
-      class="messages-media-viewer"
+     
       role="dialog"
       aria-modal="true"
       @click.self="closeMediaViewer"
     >
-      <div class="messages-media-viewer-backdrop"></div>
-      <div class="messages-media-viewer-card">
+      <div></div>
+      <div>
         <button
-          class="messages-media-viewer-close"
+         
           type="button"
           @click="closeMediaViewer"
         >
@@ -2144,7 +2138,7 @@ onBeforeUnmount(() => {
         <div
           v-if="mediaViewer.kind === 'image'"
           ref="mediaViewerStage"
-          class="messages-media-viewer-stage"
+         
           @wheel.prevent="handleMediaViewerWheel"
           @pointerdown="handleMediaViewerPointerDown"
           @pointermove="handleMediaViewerPointerMove"
@@ -2156,15 +2150,15 @@ onBeforeUnmount(() => {
           @dblclick="toggleMediaViewerZoom"
         >
           <img
-            class="messages-media-viewer-image"
+           
             :src="mediaViewer.src"
             :alt="mediaViewer.title || 'Attachment preview'"
-            :style="mediaViewerImageStyle"
+           
           >
         </div>
         <video
           v-else-if="mediaViewer.kind === 'video'"
-          class="messages-media-viewer-video"
+         
           :src="mediaViewer.src"
           controls
           autoplay

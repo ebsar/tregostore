@@ -145,116 +145,26 @@ const glassStyle = computed<Partial<CSSProperties>>(() => ({
 </script>
 
 <template>
-    <div :class="`relative ${className} ${active ? 'active' : ''} ${Boolean(onClick) ? 'cursor-pointer' : ''}`"
-        :style="style" @click="onClick">
-        <GlassFilter :mode="mode" :id="filterId" :displacementScale="displacementScale"
+    <div
+        @click="onClick">
+        <GlassFilter :mode="mode" :displacementScale="displacementScale"
             :aberrationIntensity="aberrationIntensity" :width="glassSize.width" :height="glassSize.height"
             :shaderMapUrl="shaderMapUrl" />
 
-        <div class="glass" :style="glassStyle" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @mousedown="onMouseDown" @mouseup="onMouseUp">
+        <div @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @mousedown="onMouseDown" @mouseup="onMouseUp">
             <!-- backdrop layer that gets wiggly -->
-            <span class="glass__warp" :style="{
-                ...backdropStyle,
-                position: 'absolute',
-                inset: '0',
-            }"></span>
-            <span class="glass__fill"></span>
-            <span class="glass__specular"></span>
-            <span class="glass__outline"></span>
-            <span class="glass__iridescence"></span>
-            <span class="glass__depth"></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
 
             <!-- user content stays sharp -->
-            <div class="glass__content" :style="{
-                textShadow: props.overLight ? '0px 2px 12px rgba(0, 0, 0, 0)' : '0px 2px 12px rgba(0, 0, 0, 0.4)',
-            }">
+            <div>
                 <slot />
             </div>
         </div>
     </div>
 </template>
 
-<style scoped>
-.glass {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 24px;
-  overflow: hidden;
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-  border-radius: var(--glass-radius);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0.05)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 46%, rgba(255, 255, 255, 0.07));
-}
-
-.glass__warp,
-.glass__fill,
-.glass__specular,
-.glass__outline,
-.glass__iridescence,
-.glass__depth {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-}
-
-.glass__warp {
-  opacity: 0.96;
-}
-
-.glass__fill {
-  background:
-    radial-gradient(120% 88% at 50% 0%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06) 26%, rgba(255, 255, 255, 0) 56%),
-    radial-gradient(140% 120% at 50% 100%, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 64%);
-  mix-blend-mode: screen;
-  opacity: 0.7;
-}
-
-.glass__specular {
-  inset: 1px 5% auto;
-  height: 22%;
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.22) 58%, rgba(255, 255, 255, 0) 100%);
-  opacity: var(--glass-specular-opacity);
-  filter: blur(0.4px);
-}
-
-.glass__outline {
-  padding: 1.35px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.36) 28%, rgba(255, 255, 255, 0.16) 68%, rgba(255, 255, 255, 0.08));
-  opacity: var(--glass-outline-opacity);
-  mix-blend-mode: screen;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
-
-.glass__iridescence {
-  inset: auto 4% 0;
-  height: 26%;
-  border-radius: 999px;
-  background:
-    linear-gradient(90deg, rgba(92, 181, 255, 0.22), rgba(255, 255, 255, 0) 28%, rgba(255, 255, 255, 0) 72%, rgba(255, 140, 204, 0.22));
-  opacity: var(--glass-iridescence-opacity);
-  filter: blur(5px);
-}
-
-.glass__depth {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.58),
-    inset 0 8px 16px rgba(255, 255, 255, 0.08),
-    inset 0 -10px 18px rgba(0, 0, 0, 0.12),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.glass__content {
-  position: relative;
-  z-index: 1;
-  font: 500 20px/1 system-ui;
-}
-</style>

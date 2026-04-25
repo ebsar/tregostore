@@ -192,8 +192,8 @@ function selectDelivery(method: string) {
 
 <template>
   <IonPage>
-    <IonContent class="app-gradient" :fullscreen="true">
-      <div class="mobile-page">
+    <IonContent :fullscreen="true">
+      <div>
         <AppPageHeader
           kicker="Checkout"
           title="Zgjedhe dergesen dhe pagesen."
@@ -201,33 +201,33 @@ function selectDelivery(method: string) {
           back-to="/checkout/address"
         />
 
-        <section class="surface-card surface-card--strong section-card stack-list">
+        <section>
           <div>
-            <p class="section-kicker">Rezervimi</p>
+            <p>Rezervimi</p>
             <h2>{{ reservedUntil ? `Rezervuar deri ${formatDateLabel(reservedUntil)}` : "Po pergatitet checkout" }}</h2>
-            <p class="section-copy">Stoku mbahet perkohesisht i rezervuar qe te mos humbesh porosine gjate procesit.</p>
+            <p>Stoku mbahet perkohesisht i rezervuar qe te mos humbesh porosine gjate procesit.</p>
           </div>
 
-          <label class="checkout-field">
+          <label>
             <span>Kodi promocional</span>
-            <div class="promo-row">
-              <input v-model="promoCode" class="promo-input" type="text" placeholder="p.sh. TREGO10" />
-              <IonButton class="ghost-button promo-button" @click="applyPromo">Apliko</IonButton>
+            <div>
+              <input v-model="promoCode" type="text" placeholder="p.sh. TREGO10" />
+              <IonButton @click="applyPromo">Apliko</IonButton>
             </div>
           </label>
         </section>
 
-        <section class="surface-card section-card stack-list">
+        <section>
           <div>
-            <p class="section-kicker">Dergesa</p>
+            <p>Dergesa</p>
             <h2>{{ formatDeliveryMethodLabel(selectedDeliveryMethod) }}</h2>
           </div>
 
           <button
             v-for="option in DELIVERY_METHOD_OPTIONS"
             :key="option.value"
-            class="checkout-choice"
-            :class="{ active: selectedDeliveryMethod === option.value }"
+           
+           
             type="button"
             @click="selectDelivery(option.value)"
           >
@@ -236,36 +236,36 @@ function selectDelivery(method: string) {
           </button>
         </section>
 
-        <section v-if="pricing" class="surface-card surface-card--strong section-card">
-          <div class="checkout-summary-grid">
-            <div class="summary-chip">
+        <section v-if="pricing">
+          <div>
+            <div>
               <span>Nentotali</span>
               <strong>{{ formatPrice(pricing.subtotal) }}</strong>
             </div>
-            <div class="summary-chip">
+            <div>
               <span>Zbritja</span>
               <strong>{{ formatPrice(pricing.discountAmount) }}</strong>
             </div>
-            <div class="summary-chip">
+            <div>
               <span>Transporti</span>
               <strong>{{ formatPrice(pricing.shippingAmount) }}</strong>
             </div>
-            <div class="summary-chip">
+            <div>
               <span>Totali</span>
               <strong>{{ formatPrice(pricing.total) }}</strong>
             </div>
           </div>
         </section>
 
-        <section class="surface-card section-card stack-list">
+        <section>
           <div>
-            <p class="section-kicker">Pagesa</p>
+            <p>Pagesa</p>
             <h2>Zgjedhja finale</h2>
           </div>
 
           <button
-            class="checkout-choice"
-            :class="{ active: selectedPaymentMethod === 'cash-on-delivery' }"
+           
+           
             type="button"
             @click="selectedPaymentMethod = 'cash-on-delivery'"
           >
@@ -274,8 +274,8 @@ function selectDelivery(method: string) {
           </button>
 
           <button
-            class="checkout-choice"
-            :class="{ active: selectedPaymentMethod === 'card-online' }"
+           
+           
             type="button"
             @click="selectedPaymentMethod = 'card-online'"
           >
@@ -283,17 +283,17 @@ function selectDelivery(method: string) {
             <span>{{ digitalWalletCopy }}</span>
           </button>
 
-          <div class="meta-pill-row">
-            <span class="meta-pill">Adresa e ruajtur</span>
-            <span class="meta-pill">Invoice pas porosise</span>
-            <span class="meta-pill">Promo code aktiv</span>
-            <span class="meta-pill">Secure checkout ne app</span>
+          <div>
+            <span>Adresa e ruajtur</span>
+            <span>Invoice pas porosise</span>
+            <span>Promo code aktiv</span>
+            <span>Secure checkout ne app</span>
           </div>
 
-          <p v-if="ui.message" class="checkout-message" :class="ui.type">{{ ui.message }}</p>
+          <p v-if="ui.message">{{ ui.message }}</p>
 
           <IonButton
-            class="cta-button"
+           
             data-testid="checkout-payment-submit"
             :disabled="ui.busy"
             @click="selectedPaymentMethod === 'card-online' ? openStripeCheckout() : submitCashOrder()"
@@ -306,90 +306,3 @@ function selectDelivery(method: string) {
   </IonPage>
 </template>
 
-<style scoped>
-.checkout-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkout-field span {
-  color: var(--trego-dark);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.promo-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
-.promo-input {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 14px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 18px;
-  background: var(--trego-input-bg);
-  color: var(--trego-dark);
-}
-
-.promo-button {
-  min-width: 98px;
-}
-
-.checkout-choice {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
-  border: 1px solid var(--trego-input-border);
-  border-radius: 20px;
-  background: var(--trego-interactive-bg);
-  text-align: left;
-  color: var(--trego-dark);
-}
-
-.checkout-choice strong,
-.checkout-choice span {
-  margin: 0;
-}
-
-.checkout-choice span {
-  color: var(--trego-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.checkout-choice.active {
-  border-color: var(--trego-selection-border);
-  box-shadow: var(--trego-selection-shadow);
-}
-
-.checkout-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.checkout-message {
-  margin: 0;
-  font-size: 0.84rem;
-}
-
-.checkout-message.error {
-  color: var(--trego-danger);
-}
-
-.checkout-message.info {
-  color: var(--trego-muted);
-}
-
-@media (max-width: 420px) {
-  .promo-row,
-  .checkout-summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

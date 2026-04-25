@@ -151,6 +151,8 @@ SPA_FRONTEND_ROUTES = {
     "/te-dhenat-personale",
     "/adresat",
     "/porosite",
+    "/payments",
+    "/support",
     "/track-order",
     "/porosite-e-biznesit",
     "/refund-returne",
@@ -163,6 +165,11 @@ SPA_FRONTEND_ROUTES = {
     "/menyra-e-pageses",
     "/kafshet-shtepiake",
     "/admin-products",
+    "/admin-users",
+    "/admin-disputes",
+    "/admin-categories",
+    "/admin-commissions",
+    "/admin-payouts",
     "/bizneset-e-regjistruara",
     "/krahaso-produkte",
     "/liquid-glass",
@@ -4022,14 +4029,12 @@ def validate_registration(data: dict[str, str]) -> list[str]:
     if not EMAIL_RE.match(email):
         errors.append("Vendos nje email valid.")
 
-    if len(phone_digits) < 6:
+    if phone_number and len(phone_digits) < 6:
         errors.append("Vendos nje numer telefoni valid.")
 
     errors.extend(validate_password_strength(password, label="Fjalekalimi"))
 
-    if not birth_date:
-        errors.append("Zgjedhe daten e lindjes.")
-    else:
+    if birth_date:
         try:
             parsed_birth_date = date.fromisoformat(birth_date)
             if parsed_birth_date > date.today():
@@ -4037,7 +4042,7 @@ def validate_registration(data: dict[str, str]) -> list[str]:
         except ValueError:
             errors.append("Data e lindjes nuk eshte valide.")
 
-    if gender not in GENDER_OPTIONS:
+    if gender and gender not in GENDER_OPTIONS:
         errors.append("Zgjedhe gjinine.")
 
     return errors
@@ -4506,7 +4511,13 @@ def build_product_variant_key(
         parts.append(f"size:{normalized_size}")
     if isinstance(attributes, dict):
         preferred_order = [
+            "ram",
             "storage",
+            "memory",
+            "processor",
+            "batteryCapacity",
+            "displaySize",
+            "camera",
             "condition",
             "material",
             "fit",
@@ -4608,7 +4619,13 @@ def build_product_variant_label(
         parts.append(normalized_size)
     if isinstance(attributes, dict):
         preferred_order = [
+            "ram",
             "storage",
+            "memory",
+            "processor",
+            "batteryCapacity",
+            "displaySize",
+            "camera",
             "condition",
             "material",
             "fit",
@@ -4665,7 +4682,13 @@ def normalize_variant_inventory_value(
     normalized_entries: list[dict[str, object]] = []
     seen_keys: set[str] = set()
     attribute_field_candidates = [
+        "ram",
         "storage",
+        "memory",
+        "processor",
+        "batteryCapacity",
+        "displaySize",
+        "camera",
         "condition",
         "material",
         "fit",
@@ -4708,6 +4731,19 @@ def normalize_variant_inventory_value(
             )
             if str(raw_attribute_value or "").strip():
                 normalized_attributes[attribute_key] = str(raw_attribute_value).strip()
+
+        if isinstance(raw_attributes, dict):
+            for raw_attribute_key, raw_attribute_value in raw_attributes.items():
+                normalized_attribute_key = str(raw_attribute_key or "").strip()
+                normalized_attribute_value = str(raw_attribute_value or "").strip()
+                if (
+                    not normalized_attribute_key
+                    or normalized_attribute_key in {"color", "size"}
+                    or not normalized_attribute_value
+                ):
+                    continue
+                if normalized_attribute_key not in normalized_attributes:
+                    normalized_attributes[normalized_attribute_key] = normalized_attribute_value
 
         if requires_size and size and size not in CLOTHING_SIZES:
             errors.append(f"Madhesia `{size}` nuk eshte valide te varianti #{index}.")
@@ -10523,61 +10559,26 @@ def build_chat_unread_reminder_message(
         f"TREGO"
     )
     html_body = f"""
-    <style>
-      :root {{
-        color-scheme: light dark;
-        supported-color-schemes: light dark;
-      }}
-      @media (prefers-color-scheme: dark) {{
-        .trego-reminder-shell {{
-          background: #16181d !important;
-        }}
-        .trego-reminder-card {{
-          background: rgba(30, 33, 39, 0.96) !important;
-          border-color: rgba(255, 255, 255, 0.08) !important;
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32) !important;
-        }}
-        .trego-reminder-text,
-        .trego-reminder-title,
-        .trego-reminder-note {{
-          color: #f5f2ee !important;
-        }}
-        .trego-reminder-muted {{
-          color: #d4cbc3 !important;
-        }}
-        .trego-reminder-info {{
-          background: linear-gradient(180deg, #2a2f38, #232831) !important;
-          border-color: rgba(255, 255, 255, 0.08) !important;
-          color: #ddd3ca !important;
-        }}
-        .trego-reminder-button {{
-          background: #4f8dff !important;
-          color: #ffffff !important;
-        }}
-      }}
-    </style>
-    <div class="trego-reminder-shell" style="margin:0;padding:32px 18px;background:#f6efe7;font-family:Arial,sans-serif;color:#33251f;">
-      <div class="trego-reminder-card" style="max-width:560px;margin:0 auto;padding:28px 24px;border-radius:28px;background:rgba(255,255,255,0.92);border:1px solid rgba(214,195,182,0.8);box-shadow:0 20px 50px rgba(120,88,70,0.12);">
-        <div style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all;">
-          {html.escape(preview_text)}
+    <div>
+      <div>
+        <div>
+          <img src="{html.escape(logo_url, quote=True)}" alt="TREGO">
         </div>
-        <div style="text-align:center;margin-bottom:20px;">
-          <img src="{html.escape(logo_url, quote=True)}" alt="TREGO" style="width:132px;max-width:100%;height:auto;display:inline-block;">
-        </div>
-        <p class="trego-reminder-text" style="margin:0 0 14px;font-size:15px;line-height:1.7;color:#33251f;">Pershendetje {html.escape(recipient_name)},</p>
-        <h2 class="trego-reminder-title" style="margin:0 0 14px;font-size:28px;line-height:1.1;color:#2f201d;">Keni mesazh te pa lexuar</h2>
-        <p class="trego-reminder-muted" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#5f4b40;">
-          Hey {html.escape(recipient_name)}, keni mesazh te pa lexuar nga <strong style="color:#2f201d;">{html.escape(sender_name)}</strong>.
+        <p>{html.escape(preview_text)}</p>
+        <p>Pershendetje {html.escape(recipient_name)},</p>
+        <h2>Keni mesazh te pa lexuar</h2>
+        <p>
+          Hey {html.escape(recipient_name)}, keni mesazh te pa lexuar nga <strong>{html.escape(sender_name)}</strong>.
         </p>
-        <div class="trego-reminder-info" style="margin:0 0 20px;padding:16px 18px;border-radius:18px;background:linear-gradient(180deg,#fffaf6,#f7efe8);border:1px solid rgba(221,203,191,0.88);color:#6e5649;font-size:14px;line-height:1.6;">
+        <div>
           Hape biseden dhe ktheji pergjigje sa me shpejt.
         </div>
-        <div style="text-align:center;margin:24px 0 12px;">
-          <a class="trego-reminder-button" href="{html.escape(messages_url, quote=True)}" style="display:inline-block;padding:14px 22px;border-radius:999px;background:#1f5eff;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+        <div>
+          <a href="{html.escape(messages_url, quote=True)}">
             Hap mesazhin
           </a>
         </div>
-        <p class="trego-reminder-note trego-reminder-muted" style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#8a7468;text-align:center;">
+        <p>
           Ky email u dergua automatikisht nga TREGO per t'ju kujtuar nje mesazh te palexuar.
         </p>
       </div>
@@ -17193,12 +17194,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "errors": errors})
             return
 
-        full_name = payload["fullName"].strip()
+        full_name = str(payload.get("fullName", "")).strip()
         first_name, last_name = split_full_name(full_name)
-        email = payload["email"].strip().lower()
+        email = str(payload.get("email", "")).strip().lower()
         phone_number, phone_lookup = normalize_user_phone(payload.get("phoneNumber", ""))
-        password_hash = hash_password(payload["password"])
-        birth_date = payload["birthDate"].strip()
+        password_hash = hash_password(str(payload.get("password", "")))
+        birth_date = str(payload.get("birthDate", "")).strip()
         gender = normalize_gender_value(payload.get("gender", ""))
         verification_code = generate_email_verification_code()
 

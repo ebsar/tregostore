@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import { requestJson, resolveApiMessage } from "../lib/api";
 import {
   DELIVERY_METHOD_OPTIONS,
@@ -11,7 +11,7 @@ import {
   persistCheckoutAddressDraft,
   persistCheckoutDeliveryMethod,
   persistCheckoutPaymentMethod,
-  persistOrderConfirmationMessage,
+  persistOrderSuccessSnapshot,
   readCheckoutAddressDraft,
   readCheckoutDeliveryMethod,
   readCheckoutPaymentMethod,
@@ -38,23 +38,18 @@ const selectedMethod = ref(readCheckoutPaymentMethod() || "");
 const deliveryOptions = ref([...DELIVERY_METHOD_OPTIONS]);
 const checkoutSelectedIds = ref([]);
 const submitting = ref(false);
+const editingAddress = ref(true);
+const editingDelivery = ref(false);
+const editingPayment = ref(false);
 const addressConfirmed = ref(false);
 const shippingConfirmed = ref(false);
 const confirmedAddressSignature = ref("");
 const confirmedDeliveryMethod = ref("");
+const customerName = ref("");
 const formState = reactive(createEmptyAddress());
-const contactState = reactive({
-  fullName: "",
-  email: "",
-  receiveOffers: true,
-  comment: "",
-});
 const ui = reactive({
   message: "",
   type: "",
-  locationMessage: "",
-  locationType: "",
-  locationBusy: false,
 });
 
 const subtotalAmount = computed(() => {
@@ -67,7 +62,6 @@ const subtotalAmount = computed(() => {
     0,
   );
 });
-
 const discountAmount = computed(() => Number(pricing.value?.discountAmount || 0));
 const shippingAmount = computed(() => {
   if (!shippingConfirmed.value) {
@@ -84,9 +78,6 @@ const shippingAmount = computed(() => {
   return Number(matchedOption?.shippingAmount || 0);
 });
 const totalAmount = computed(() => Math.max(0, subtotalAmount.value - discountAmount.value + shippingAmount.value));
-const totalItemsCount = computed(() =>
-  summaryItems.value.reduce((total, item) => total + Math.max(1, Number(item.quantity) || 1), 0),
-);
 const addressReady = computed(() =>
   Boolean(
     String(formState.addressLine || "").trim()
@@ -96,16 +87,14 @@ const addressReady = computed(() =>
     && String(formState.phoneNumber || "").trim(),
   ),
 );
-const showShippingOptions = computed(() => addressConfirmed.value);
-const showPaymentOptions = computed(() => shippingConfirmed.value);
 const availablePaymentMethods = computed(() => {
   if (selectedDeliveryMethod.value === "pickup") {
     return [
       {
         value: "card-online",
-        title: "Paguaj me kartel",
-        copy: "Per terheqje ne biznes, pagesa lejohet vetem online.",
-        status: "Pagese online",
+        title: "Card payment",
+        copy: "Pickup orders can be completed only with online payment.",
+        status: "Online",
       },
     ];
   }
@@ -113,27 +102,80 @@ const availablePaymentMethods = computed(() => {
   return [
     {
       value: "cash",
-      title: "Paguaj cash ne dorezim",
-      copy: "Porosia konfirmohet dhe pagesa behet kur te arrije te ti.",
-      status: "Cash on delivery",
+      title: "Cash on delivery",
+      copy: "Pay when the order reaches you.",
+      status: "Pay on arrival",
     },
     {
       value: "card-online",
-      title: "Paguaj me kartel",
-      copy: "Vazhdo me Stripe per ta perfunduar pagesen online.",
-      status: "Pagese online",
+      title: "Card payment",
+      copy: "Continue with Stripe to complete the order online.",
+      status: "Online",
     },
   ];
 });
-const primaryCheckoutLabel = computed(() =>
-  selectedMethod.value === "card-online" ? "Vazhdo me pagesen" : "Konfirmoje porosine",
-);
 const canSubmitCheckout = computed(() =>
   addressConfirmed.value
   && shippingConfirmed.value
   && Boolean(selectedMethod.value)
   && !submitting.value,
 );
+const selectedDeliveryOption = computed(() =>
+  deliveryOptions.value.find(
+    (option) => String(option.value || "").trim().toLowerCase() === selectedDeliveryMethod.value,
+  ) || null,
+);
+const selectedPaymentOption = computed(() =>
+  availablePaymentMethods.value.find(
+    (option) => String(option.value || "").trim().toLowerCase() === selectedMethod.value,
+  ) || null,
+);
+const checkoutCustomerName = computed(() =>
+  String(customerName.value || "").trim() || "Delivery contact",
+);
+const addressSummaryText = computed(() => {
+  const pieces = [
+    String(formState.addressLine || "").trim(),
+    [String(formState.zipCode || "").trim(), String(formState.city || "").trim()].filter(Boolean).join(" "),
+    String(formState.country || "").trim(),
+  ].filter(Boolean);
+
+  if (pieces.length === 0) {
+    return "Add your delivery address to continue.";
+  }
+
+  return pieces.join(", ");
+});
+const deliverySummaryTitle = computed(() =>
+  selectedDeliveryOption.value?.label || "Choose delivery option",
+);
+const deliverySummaryText = computed(() => {
+  const pieces = [
+    String(selectedDeliveryOption.value?.estimatedDeliveryText || "").trim(),
+    shippingConfirmed.value
+      ? (shippingAmount.value > 0 ? formatPrice(shippingAmount.value) : "Free delivery")
+      : "Select and confirm delivery",
+  ].filter(Boolean);
+
+  return pieces.join(" • ");
+});
+const paymentSummaryTitle = computed(() =>
+  selectedPaymentOption.value?.title || "Choose payment method",
+);
+const paymentSummaryText = computed(() =>
+  String(selectedPaymentOption.value?.copy || "").trim() || "Select how you want to complete the order.",
+);
+const primarySubmitLabel = computed(() => {
+  if (submitting.value) {
+    return "Processing...";
+  }
+
+  if (selectedMethod.value === "card-online") {
+    return "Continue to payment";
+  }
+
+  return "Place order";
+});
 
 function syncPaymentMethodAvailability() {
   if (selectedDeliveryMethod.value === "pickup" && selectedMethod.value === "cash") {
@@ -161,6 +203,9 @@ function invalidateCheckoutSteps({ preserveMessage = false } = {}) {
   selectedMethod.value = "";
   persistCheckoutDeliveryMethod("");
   persistCheckoutPaymentMethod("");
+  editingAddress.value = true;
+  editingDelivery.value = false;
+  editingPayment.value = false;
 
   if (!preserveMessage) {
     ui.message = "";
@@ -196,10 +241,9 @@ onMounted(async () => {
       return;
     }
 
-    contactState.fullName = String(
+    customerName.value = String(
       user.fullName || [user.firstName, user.lastName].filter(Boolean).join(" "),
     ).trim();
-    contactState.email = String(user.email || "").trim();
 
     await loadSavedAddress();
     await loadCheckoutPreview({ silent: true });
@@ -252,7 +296,7 @@ function syncDeliveryOptions(pricingPayload) {
   }
 }
 
-async function loadCheckoutPreview({ silent = false, announceSuccess = false } = {}) {
+async function loadCheckoutPreview({ silent = false } = {}) {
   const selectedIds = checkoutSelectedIds.value.length > 0
     ? checkoutSelectedIds.value
     : readCheckoutSelectedCartIds();
@@ -294,10 +338,7 @@ async function loadCheckoutPreview({ silent = false, announceSuccess = false } =
   syncDeliveryOptions(pricing.value);
   promoCode.value = String(pricing.value?.promoCode || promoCode.value || "").trim().toUpperCase();
 
-  if (announceSuccess) {
-    ui.message = pricingData.message || "Kuponi u aplikua.";
-    ui.type = "success";
-  } else if (!silent) {
+  if (!silent) {
     ui.message = "";
     ui.type = "";
   }
@@ -311,13 +352,9 @@ function applySavedAddress() {
   invalidateCheckoutSteps({ preserveMessage: true });
   Object.assign(formState, savedAddress.value);
   persistCheckoutAddressDraft(formState);
-  ui.message = "Adresa e ruajtur u vendos. Tani kliko konfirmo adresen.";
+  ui.message = "Adresa e ruajtur u vendos. Tani kliko save address.";
   ui.type = "success";
   void loadCheckoutPreview({ silent: true });
-}
-
-async function applyPromotion() {
-  await loadCheckoutPreview({ announceSuccess: true });
 }
 
 function handleDeliverySelection(method) {
@@ -327,10 +364,12 @@ function handleDeliverySelection(method) {
     confirmedDeliveryMethod.value = "";
     selectedMethod.value = "";
     persistCheckoutPaymentMethod("");
+    editingPayment.value = false;
   }
   selectedDeliveryMethod.value = nextMethod;
   persistCheckoutDeliveryMethod(nextMethod);
   syncPaymentMethodAvailability();
+  editingDelivery.value = true;
   void loadCheckoutPreview({ silent: true });
 }
 
@@ -346,6 +385,7 @@ function handlePaymentSelection(method) {
 
   selectedMethod.value = nextMethod;
   persistCheckoutPaymentMethod(nextMethod);
+  editingPayment.value = false;
 }
 
 function handleAddressContextBlur() {
@@ -369,6 +409,9 @@ function confirmAddressStep() {
   persistCheckoutPaymentMethod("");
   ui.message = "Adresa u konfirmua. Tani zgjidh menyren e transportit.";
   ui.type = "success";
+  editingAddress.value = false;
+  editingDelivery.value = true;
+  editingPayment.value = false;
 }
 
 function confirmShippingStep() {
@@ -389,6 +432,8 @@ function confirmShippingStep() {
   syncPaymentMethodAvailability();
   ui.message = "Menyra e transportit u konfirmua. Tani zgjidh pagesen.";
   ui.type = "success";
+  editingDelivery.value = false;
+  editingPayment.value = true;
 }
 
 async function continueToPayment() {
@@ -469,9 +514,15 @@ async function submitCashOrder() {
     const confirmationMessage = notificationWarnings.length > 0
       ? `${data.message || "Porosia u dergua per konfirmim."} ${notificationWarnings.join(" ")}`
       : (data.message || "Porosia u dergua per konfirmim.");
-    persistOrderConfirmationMessage(confirmationMessage);
+    persistOrderSuccessSnapshot({
+      order: data.order,
+      message: confirmationMessage,
+    });
     clearCheckoutFlowState();
-    router.push("/porosite");
+    await router.push({
+      path: "/porosia-u-konfirmua",
+      query: data?.order?.id ? { order: String(data.order.id) } : {},
+    });
   } finally {
     submitting.value = false;
   }
@@ -526,882 +577,984 @@ function backToCart() {
   persistCheckoutAddressDraft(formState);
   router.push("/cart");
 }
-
-function applyResolvedLocation(address) {
-  const nextAddress = normalizeAddress(address);
-  invalidateCheckoutSteps({ preserveMessage: true });
-  Object.assign(formState, {
-    ...nextAddress,
-    country: nextAddress.country || formState.country || "Kosove",
-    phoneNumber: formState.phoneNumber || "",
-  });
-  persistCheckoutAddressDraft(formState);
-  ui.locationMessage = "Lokacioni u plotesua. Kontrolloje dhe konfirmoje adresen para se te vazhdosh.";
-  ui.locationType = "success";
-  void loadCheckoutPreview({ silent: true });
-}
-
-async function useDeviceLocation() {
-  ui.locationMessage = "";
-  ui.locationType = "";
-
-  if (!navigator.geolocation) {
-    ui.locationMessage = "Browser-i yt nuk e mbeshtet lokacionin automatik. Plotëso adresën manualisht.";
-    ui.locationType = "info";
-    return;
-  }
-
-  ui.locationBusy = true;
-  ui.locationMessage = "Po kerkohet leja e lokacionit nga telefoni...";
-  ui.locationType = "info";
-
-  try {
-    const position = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 12000,
-        maximumAge: 30000,
-      });
-    });
-
-    const { response, data } = await requestJson("/api/address/geocode", {
-      method: "POST",
-      body: JSON.stringify({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      }),
-    });
-
-    if (!response.ok || !data?.ok || !data.address) {
-      ui.locationMessage = resolveApiMessage(data, "Lokacioni nuk u identifikua automatikisht. Plotëso adresën manualisht.");
-      ui.locationType = "info";
-      return;
-    }
-
-    applyResolvedLocation(data.address);
-  } catch (error) {
-    const errorCode = Number(error?.code || 0);
-    if (errorCode === 1) {
-      ui.locationMessage = "Leja per lokacion u refuzua. Plotëso adresën manualisht.";
-      ui.locationType = "info";
-      return;
-    }
-
-    ui.locationMessage = "Lokacioni nuk u mor. Plotëso adresën manualisht.";
-    ui.locationType = "info";
-  } finally {
-    ui.locationBusy = false;
-  }
-}
 </script>
 
 <template>
-  <section class="account-page checkout-address-page checkout-address-page--reference" aria-label="Adresa e porosise">
-    <header class="account-header profile-page-header checkout-address-header">
-      <div>
-        <p class="section-label">Porosia</p>
-        <h1>Te dhenat e kontaktit</h1>
-        <p class="section-text">Ec hap pas hapi: konfirmo adresen, pastaj transportin, dhe ne fund menyren e pageses.</p>
+  <section class="checkout-review" aria-label="Checkout">
+    <div class="checkout-review__container">
+      <header class="checkout-review__top">
+        <nav class="checkout-review__steps" aria-label="Checkout steps">
+          <div class="checkout-review__step checkout-review__step--completed">
+            <span class="checkout-review__step-circle" aria-hidden="true">
+              <svg viewBox="0 0 20 20">
+                <path d="m5.2 10.2 3.1 3.1 6.5-6.5"></path>
+              </svg>
+            </span>
+            <span class="checkout-review__step-label">Order</span>
+          </div>
+          <span class="checkout-review__step-line" aria-hidden="true"></span>
+          <div class="checkout-review__step checkout-review__step--active">
+            <span class="checkout-review__step-circle">2</span>
+            <span class="checkout-review__step-label">Checkout</span>
+          </div>
+          <span class="checkout-review__step-line" aria-hidden="true"></span>
+          <div class="checkout-review__step">
+            <span class="checkout-review__step-circle">3</span>
+            <span class="checkout-review__step-label">Payment</span>
+          </div>
+          <span class="checkout-review__step-line" aria-hidden="true"></span>
+          <div class="checkout-review__step">
+            <span class="checkout-review__step-circle">4</span>
+            <span class="checkout-review__step-label">Review</span>
+          </div>
+        </nav>
+      </header>
+
+      <div
+        v-if="ui.message"
+        class="checkout-review__notice"
+        :class="{
+          'checkout-review__notice--error': ui.type === 'error',
+          'checkout-review__notice--success': ui.type === 'success',
+        }"
+        role="status"
+        aria-live="polite"
+      >
+        {{ ui.message }}
       </div>
-    </header>
 
-    <div class="form-message" :class="ui.type" role="status" aria-live="polite">
-      {{ ui.message }}
-    </div>
+      <form class="checkout-review__layout" @submit.prevent="continueToPayment">
+        <main class="checkout-review__main">
+          <section class="checkout-review__section">
+            <div class="checkout-review__section-head">
+              <h1>Order details</h1>
+            </div>
 
-    <div class="checkout-address-layout">
-      <form class="checkout-address-main" @submit.prevent="continueToPayment">
-        <div v-if="savedAddress" class="checkout-saved-address-banner">
-          <div>
-            <strong>Ke nje adrese te ruajtur.</strong>
-            <span>Perdore per ta mbushur formen me nje klik.</span>
-          </div>
-          <button class="checkout-inline-button" type="button" @click="applySavedAddress">
-            Përdor adresen e ruajtur
-          </button>
-        </div>
+            <div v-if="summaryItems.length > 0" class="checkout-review__items">
+              <article v-for="item in summaryItems" :key="item.id" class="checkout-review__item-row">
+                <div class="checkout-review__item-image-wrap">
+                  <img
+                    :src="item.imagePath"
+                    :alt="item.title"
+                    width="96"
+                    height="96"
+                    loading="lazy"
+                    decoding="async"
+                  >
+                </div>
+                <div class="checkout-review__item-copy">
+                  <strong>{{ item.title }}</strong>
+                  <span v-if="item.businessName">{{ item.businessName }}</span>
+                  <span v-if="item.size || item.color">
+                    {{ [item.size ? `Size ${item.size}` : "", item.color ? `Color ${item.color}` : ""].filter(Boolean).join(" • ") }}
+                  </span>
+                </div>
+                <span class="checkout-review__item-qty">{{ Math.max(1, Number(item.quantity) || 1) }} pc</span>
+                <strong class="checkout-review__item-price">
+                  {{ formatPrice((Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1)) }}
+                </strong>
+              </article>
+            </div>
 
-        <section class="checkout-block">
-          <div class="checkout-block-head">
-            <h2>Te dhenat e kontaktit</h2>
-          </div>
+            <div v-else class="checkout-review__empty">
+              No items are selected for checkout.
+            </div>
+          </section>
 
-          <label class="field checkout-field-full">
-            <span>Emri dhe mbiemri</span>
-            <input v-model="contactState.fullName" type="text" placeholder="Emri dhe mbiemri" autocomplete="name">
-          </label>
-
-          <div class="checkout-two-column">
-            <label class="field">
-              <span>Email adresa</span>
-              <input v-model="contactState.email" type="email" placeholder="name@example.com" autocomplete="email">
-            </label>
-
-            <label class="field">
-              <span>Numri i telefonit</span>
-              <input
-                v-model="formState.phoneNumber"
-                type="tel"
-                placeholder="+383 44 123 456"
-                autocomplete="tel"
-                required
-                @blur="handleAddressContextBlur"
-              >
-            </label>
-          </div>
-
-          <label class="checkout-checkbox">
-            <input v-model="contactState.receiveOffers" type="checkbox">
-            <span>Me dergo ofertat javore</span>
-          </label>
-        </section>
-
-        <section class="checkout-block">
-          <div class="checkout-block-head">
-            <h2>Adresa e transportit</h2>
-          </div>
-
-          <div class="checkout-two-column">
-            <label class="field">
-              <span>Shteti</span>
-              <select v-model="formState.country" @change="handleAddressContextBlur">
-                <option
-                  v-for="country in COUNTRY_OPTIONS"
-                  :key="country"
-                  :value="country"
-                >
-                  {{ country }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Qyteti</span>
-              <input
-                v-model="formState.city"
-                type="text"
-                placeholder="Shkruaje qytetin"
-                required
-                @blur="handleAddressContextBlur"
-              >
-            </label>
-          </div>
-
-          <label class="field checkout-field-full">
-            <span>Adresa</span>
-            <input
-              v-model="formState.addressLine"
-              type="text"
-              placeholder="Rruga, hyrja, apartamenti"
-              required
-              @blur="handleAddressContextBlur"
-            >
-          </label>
-
-          <div class="checkout-two-column checkout-two-column--compact">
-            <label class="field">
-              <span>Kodi postar</span>
-              <input
-                v-model="formState.zipCode"
-                type="text"
-                placeholder="Shkruaje kodin postar"
-                required
-                @blur="handleAddressContextBlur"
-              >
-            </label>
-
-            <div class="checkout-location-inline">
-              <span class="checkout-inline-label">Mbushje e shpejte</span>
+          <section class="checkout-review__section">
+            <div class="checkout-review__section-head">
+              <h2>Delivery</h2>
               <button
-                class="ghost-button checkout-location-button"
+                class="checkout-review__edit"
                 type="button"
-                :disabled="ui.locationBusy"
-                @click="useDeviceLocation"
+                @click="
+                  editingAddress = true;
+                  editingDelivery = addressConfirmed;
+                  editingPayment = false;
+                "
               >
-                {{ ui.locationBusy ? "Po merret lokacioni..." : "Perdor lokacionin tim" }}
+                Edit
               </button>
             </div>
-          </div>
 
-          <label class="field checkout-field-full">
-            <span>Koment shtese</span>
-            <textarea
-              v-model="contactState.comment"
-              rows="4"
-              placeholder="Koment per porosine"
-            ></textarea>
-          </label>
+            <div class="checkout-review__info-grid">
+              <article class="checkout-review__info-card">
+                <div class="checkout-review__info-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 21s6-5.3 6-10.2A6 6 0 0 0 6 10.8C6 15.7 12 21 12 21Z"></path>
+                    <circle cx="12" cy="10.8" r="2.4"></circle>
+                  </svg>
+                </div>
+                <div class="checkout-review__info-copy">
+                  <strong>{{ checkoutCustomerName }}</strong>
+                  <p>{{ addressSummaryText }}</p>
+                </div>
+              </article>
 
-          <div v-if="ui.locationMessage" class="form-message" :class="ui.locationType" role="status" aria-live="polite">
-            {{ ui.locationMessage }}
-          </div>
+              <article class="checkout-review__info-card">
+                <div class="checkout-review__info-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4.8 7.5h10.6v8.2H4.8z"></path>
+                    <path d="M15.4 10.1h2.7l1.1 1.5v4.1h-3.8"></path>
+                    <circle cx="8.1" cy="17.1" r="1.4"></circle>
+                    <circle cx="16.8" cy="17.1" r="1.4"></circle>
+                  </svg>
+                </div>
+                <div class="checkout-review__info-copy">
+                  <strong>{{ deliverySummaryTitle }}</strong>
+                  <p>{{ deliverySummaryText }}</p>
+                </div>
+              </article>
+            </div>
 
-          <label class="checkout-checkbox">
-            <input v-model="saveForLater" type="checkbox">
-            <span>Ruaje kete adrese per heren tjeter</span>
-          </label>
-
-          <div class="checkout-step-actions">
-            <p class="checkout-step-note">
-              {{
-                addressConfirmed
-                  ? "Adresa u konfirmua. Mund te vazhdosh te menyra e transportit."
-                  : "Kur adresa te jete gati, konfirmoje qe te hapet hapi tjeter."
-              }}
-            </p>
-            <button
-              class="checkout-confirm-button"
-              type="button"
-              :disabled="!addressReady"
-              @click="confirmAddressStep"
-            >
-              {{ addressConfirmed ? "Adresa u konfirmua" : "Konfirmo adresen" }}
-            </button>
-          </div>
-        </section>
-
-        <section v-if="showShippingOptions" class="checkout-block">
-          <div class="checkout-block-head">
-            <h2>Menyra e transportit</h2>
-          </div>
-
-          <div class="checkout-methods-grid">
-            <button
-              v-for="option in deliveryOptions"
-              :key="option.value"
-              class="checkout-method-card"
-              :class="{ active: selectedDeliveryMethod === option.value }"
-              type="button"
-              @click="handleDeliverySelection(option.value)"
-            >
-              <div class="checkout-method-copy">
-                <strong>{{ option.label }}</strong>
-                <span>{{ option.description || option.estimatedDeliveryText }}</span>
+            <div v-if="editingAddress || !addressConfirmed" class="checkout-review__editor">
+              <div class="checkout-review__editor-head">
+                <strong>Address details</strong>
+                <button
+                  v-if="savedAddress"
+                  class="checkout-review__text-button"
+                  type="button"
+                  @click="applySavedAddress"
+                >
+                  Use saved address
+                </button>
               </div>
-              <div class="checkout-method-meta">
-                <span>{{ option.estimatedDeliveryText }}</span>
-                <span class="checkout-method-radio" aria-hidden="true"></span>
+
+              <div class="checkout-review__form-grid">
+                <label class="checkout-review__field">
+                  <span>Full name</span>
+                  <input
+                    v-model="customerName"
+                    type="text"
+                    placeholder="Your full name"
+                    autocomplete="name"
+                  >
+                </label>
+
+                <label class="checkout-review__field">
+                  <span>Phone number</span>
+                  <input
+                    v-model="formState.phoneNumber"
+                    type="tel"
+                    placeholder="+383 44 123 456"
+                    autocomplete="tel"
+                    @blur="handleAddressContextBlur"
+                  >
+                </label>
+
+                <label class="checkout-review__field">
+                  <span>Country</span>
+                  <select v-model="formState.country" @change="handleAddressContextBlur">
+                    <option v-for="country in COUNTRY_OPTIONS" :key="country" :value="country">
+                      {{ country }}
+                    </option>
+                  </select>
+                </label>
+
+                <label class="checkout-review__field">
+                  <span>City</span>
+                  <input
+                    v-model="formState.city"
+                    type="text"
+                    placeholder="City"
+                    @blur="handleAddressContextBlur"
+                  >
+                </label>
+
+                <label class="checkout-review__field checkout-review__field--full">
+                  <span>Address</span>
+                  <input
+                    v-model="formState.addressLine"
+                    type="text"
+                    placeholder="Street, building, apartment"
+                    @blur="handleAddressContextBlur"
+                  >
+                </label>
+
+                <label class="checkout-review__field">
+                  <span>ZIP code</span>
+                  <input
+                    v-model="formState.zipCode"
+                    type="text"
+                    placeholder="ZIP code"
+                    @blur="handleAddressContextBlur"
+                  >
+                </label>
               </div>
-            </button>
-          </div>
 
-          <div class="checkout-step-actions">
-            <p class="checkout-step-note">
-              {{
-                shippingConfirmed
-                  ? "Transporti u konfirmua. Tani mund te zgjedhesh menyren e pageses."
-                  : "Zgjidh nje menyre transporti dhe konfirmoje qe te hapet pagesa."
-              }}
-            </p>
-            <button
-              class="checkout-confirm-button"
-              type="button"
-              :disabled="!selectedDeliveryMethod"
-              @click="confirmShippingStep"
-            >
-              {{ shippingConfirmed ? "Transporti u konfirmua" : "Konfirmo menyren e transportit" }}
-            </button>
-          </div>
-        </section>
+              <div class="checkout-review__editor-actions">
+                <label class="checkout-review__checkbox">
+                  <input v-model="saveForLater" type="checkbox">
+                  <span>Save this address for next time</span>
+                </label>
 
-        <section v-if="showPaymentOptions" class="checkout-block">
-          <div class="checkout-block-head">
-            <h2>Menyra e pageses</h2>
-          </div>
-
-          <div class="checkout-methods-grid checkout-methods-grid--payments">
-            <button
-              v-for="option in availablePaymentMethods"
-              :key="option.value"
-              class="checkout-method-card checkout-method-card--payment"
-              :class="{ active: selectedMethod === option.value }"
-              type="button"
-              @click="handlePaymentSelection(option.value)"
-            >
-              <div class="checkout-method-copy">
-                <strong>{{ option.title }}</strong>
-                <span>{{ option.copy }}</span>
+                <button
+                  class="checkout-review__secondary"
+                  type="button"
+                  :disabled="!addressReady"
+                  @click="confirmAddressStep"
+                >
+                  {{ addressConfirmed ? "Address saved" : "Save address" }}
+                </button>
               </div>
-              <div class="checkout-method-meta">
-                <span>{{ option.status }}</span>
-                <span class="checkout-method-radio" aria-hidden="true"></span>
+            </div>
+
+            <div v-if="addressConfirmed && (editingDelivery || !shippingConfirmed)" class="checkout-review__editor">
+              <div class="checkout-review__editor-head">
+                <strong>Delivery option</strong>
               </div>
-            </button>
-          </div>
-        </section>
 
-        <div class="checkout-actions">
-          <button class="checkout-back-button" type="button" @click="backToCart">
-            Kthehu te shporta
-          </button>
-          <button class="checkout-next-button" type="submit" :disabled="!canSubmitCheckout">
-            {{ submitting ? "Duke vazhduar..." : primaryCheckoutLabel }}
-          </button>
-        </div>
-      </form>
+              <div class="checkout-review__choice-grid">
+                <button
+                  v-for="option in deliveryOptions"
+                  :key="option.value"
+                  class="checkout-review__choice-card"
+                  type="button"
+                  :class="{ 'checkout-review__choice-card--active': selectedDeliveryMethod === option.value }"
+                  :aria-pressed="selectedDeliveryMethod === option.value"
+                  @click="handleDeliverySelection(option.value)"
+                >
+                  <div class="checkout-review__choice-copy">
+                    <strong>{{ option.label }}</strong>
+                    <p>{{ option.description || option.estimatedDeliveryText }}</p>
+                  </div>
+                  <div class="checkout-review__choice-meta">
+                    <span>{{ option.estimatedDeliveryText }}</span>
+                    <strong>{{ Number(option.shippingAmount || 0) > 0 ? formatPrice(option.shippingAmount) : "Free" }}</strong>
+                  </div>
+                </button>
+              </div>
 
-      <aside class="checkout-address-sidebar">
-        <div class="checkout-sidebar-items">
-          <article
-            v-for="item in summaryItems"
-            :key="item.id"
-            class="checkout-sidebar-item"
-          >
-            <div class="checkout-sidebar-item-media">
-              <img
-                :src="item.imagePath"
-                :alt="item.title"
-                width="120"
-                height="120"
-                loading="lazy"
-                decoding="async"
+              <div class="checkout-review__editor-actions checkout-review__editor-actions--end">
+                <button
+                  class="checkout-review__secondary"
+                  type="button"
+                  :disabled="!selectedDeliveryMethod"
+                  @click="confirmShippingStep"
+                >
+                  {{ shippingConfirmed ? "Delivery saved" : "Save delivery" }}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="checkout-review__section">
+            <div class="checkout-review__section-head">
+              <h2>Payment method</h2>
+              <button
+                class="checkout-review__edit"
+                type="button"
+                :disabled="!shippingConfirmed"
+                @click="editingPayment = true"
               >
+                Edit
+              </button>
             </div>
-            <div class="checkout-sidebar-item-copy">
-              <strong>{{ item.title }}</strong>
-              <span v-if="item.size">Madhesia: {{ item.size }}</span>
-              <span v-if="item.color">Ngjyra: {{ item.color }}</span>
-              <span>Sasia: {{ item.quantity }}</span>
+
+            <article class="checkout-review__payment-card" :class="{ 'checkout-review__payment-card--placeholder': !selectedPaymentOption }">
+              <div class="checkout-review__info-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3.5" y="6.5" width="17" height="11" rx="2"></rect>
+                  <path d="M3.5 10h17"></path>
+                </svg>
+              </div>
+              <div class="checkout-review__info-copy">
+                <strong>{{ paymentSummaryTitle }}</strong>
+                <p>{{ paymentSummaryText }}</p>
+              </div>
+            </article>
+
+            <div v-if="shippingConfirmed && (editingPayment || !selectedMethod)" class="checkout-review__editor">
+              <div class="checkout-review__choice-grid checkout-review__choice-grid--payment">
+                <button
+                  v-for="option in availablePaymentMethods"
+                  :key="option.value"
+                  class="checkout-review__choice-card"
+                  type="button"
+                  :class="{ 'checkout-review__choice-card--active': selectedMethod === option.value }"
+                  :aria-pressed="selectedMethod === option.value"
+                  @click="handlePaymentSelection(option.value)"
+                >
+                  <div class="checkout-review__choice-copy">
+                    <strong>{{ option.title }}</strong>
+                    <p>{{ option.copy }}</p>
+                  </div>
+                  <div class="checkout-review__choice-meta">
+                    <span>{{ option.status }}</span>
+                  </div>
+                </button>
+              </div>
             </div>
-            <strong class="checkout-sidebar-item-price">
-              {{ formatPrice((Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1)) }}
-            </strong>
-          </article>
-        </div>
 
-        <form class="checkout-sidebar-coupon" @submit.prevent="applyPromotion">
-          <input
-            v-model="promoCode"
-            class="checkout-sidebar-coupon-input"
-            type="text"
-            placeholder="Kupon"
-            autocomplete="off"
-          >
-          <button class="checkout-sidebar-coupon-button" type="submit">Apliko</button>
-        </form>
+            <p v-else-if="!shippingConfirmed" class="checkout-review__hint">
+              Confirm delivery to unlock payment selection.
+            </p>
+          </section>
+        </main>
 
-        <div class="checkout-sidebar-totals">
-          <div class="checkout-sidebar-line">
-            <span>Nentotali:</span>
-            <strong>{{ formatPrice(subtotalAmount) }}</strong>
-          </div>
-          <div class="checkout-sidebar-line">
-            <span>Zbritja:</span>
-            <strong>{{ formatPrice(discountAmount) }}</strong>
-          </div>
-          <div class="checkout-sidebar-line">
-            <span>Kostoja e transportit:</span>
-            <strong>{{ formatPrice(shippingAmount) }}</strong>
-          </div>
-          <div class="checkout-sidebar-total">
-            <span>Totali:</span>
+        <aside class="checkout-review__summary">
+          <div class="checkout-review__summary-head">
+            <span>Total</span>
             <strong>{{ formatPrice(totalAmount) }}</strong>
           </div>
-          <div v-if="totalItemsCount > 0" class="checkout-sidebar-count">
-            {{ totalItemsCount }} artikuj te zgjedhur
+
+          <div class="checkout-review__summary-divider"></div>
+
+          <div class="checkout-review__summary-line">
+            <span>Subtotal</span>
+            <strong>{{ formatPrice(subtotalAmount) }}</strong>
           </div>
-        </div>
-      </aside>
+          <div class="checkout-review__summary-line">
+            <span>Discount</span>
+            <strong class="checkout-review__summary-line--discount">
+              {{ discountAmount > 0 ? `-${formatPrice(discountAmount)}` : formatPrice(0) }}
+            </strong>
+          </div>
+          <div class="checkout-review__summary-line">
+            <span>Delivery</span>
+            <strong>{{ shippingAmount > 0 ? formatPrice(shippingAmount) : "Free" }}</strong>
+          </div>
+
+          <button class="checkout-review__primary" type="submit" :disabled="!canSubmitCheckout">
+            {{ primarySubmitLabel }}
+          </button>
+
+          <p class="checkout-review__legal">
+            By continuing, you agree to our
+            <RouterLink to="/refund-returne">returns policy</RouterLink>
+            and can contact
+            <RouterLink to="/mesazhet">support</RouterLink>.
+          </p>
+
+          <button class="checkout-review__back" type="button" @click="backToCart">
+            Back to cart
+          </button>
+        </aside>
+      </form>
     </div>
   </section>
 </template>
 
 <style scoped>
-.checkout-address-page--reference {
-  width: min(100%, 1180px);
-  display: grid;
-  gap: 18px;
+.checkout-review {
+  min-height: 100%;
+  background: #f5f5f5;
+  padding: 32px 20px 64px;
 }
 
-.checkout-address-header h1 {
-  margin: 0;
-  color: #101828;
+.checkout-review__container {
+  width: min(100%, 1240px);
+  margin: 0 auto;
 }
 
-.checkout-address-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
-  align-items: start;
+.checkout-review__top {
+  margin-bottom: 24px;
 }
 
-.checkout-address-main,
-.checkout-address-sidebar {
-  border-radius: 16px;
-  border: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
-}
-
-.checkout-address-main {
-  display: grid;
-  gap: 0;
-  padding: 22px 22px 18px;
-}
-
-.checkout-saved-address-banner {
+.checkout-review__steps {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 14px;
-  padding: 0 0 18px;
-  border-bottom: 1px solid #edf2f7;
 }
 
-.checkout-saved-address-banner strong,
-.checkout-block-head h2 {
-  color: #111827;
-}
-
-.checkout-saved-address-banner span {
-  display: block;
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-.checkout-inline-button {
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #111827;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.checkout-block {
-  display: grid;
-  gap: 16px;
-  padding: 22px 0;
-  border-bottom: 1px solid #edf2f7;
-}
-
-.checkout-block:last-of-type {
-  border-bottom: 0;
-}
-
-.checkout-block-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.checkout-block-head h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.checkout-two-column {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.checkout-two-column--compact {
-  align-items: end;
-}
-
-.checkout-field-full {
-  grid-column: 1 / -1;
-}
-
-.checkout-address-main .field {
-  display: grid;
-  gap: 8px;
-}
-
-.checkout-address-main .field span,
-.checkout-inline-label {
-  color: #111827;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.checkout-address-main input,
-.checkout-address-main select,
-.checkout-address-main textarea {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #111827;
-  font: inherit;
-  outline: none;
-}
-
-.checkout-address-main textarea {
-  min-height: 116px;
-  padding: 14px;
-  resize: vertical;
-}
-
-.checkout-address-main input:focus,
-.checkout-address-main select:focus,
-.checkout-address-main textarea:focus {
-  border-color: rgba(50, 80, 242, 0.4);
-  box-shadow: 0 0 0 4px rgba(50, 80, 242, 0.08);
-}
-
-.checkout-checkbox {
+.checkout-review__step {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #475569;
-  font-size: 0.92rem;
+  color: #9a9a9a;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.checkout-review__step-circle {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbdbdb;
+  border-radius: 999px;
+  background: #ececec;
+  color: #8a8a8a;
+  font-size: 12px;
   font-weight: 600;
 }
 
-.checkout-checkbox input {
-  width: 16px;
-  height: 16px;
-  min-height: 16px;
-  padding: 0;
-  accent-color: #3250f2;
+.checkout-review__step--completed {
+  color: #2d7f4f;
 }
 
-.checkout-location-inline {
-  display: grid;
-  gap: 8px;
+.checkout-review__step--completed .checkout-review__step-circle {
+  border-color: #2d7f4f;
+  background: #2d7f4f;
+  color: #ffffff;
 }
 
-.checkout-location-button {
-  width: fit-content;
-  min-height: 42px;
-  padding: 0 14px;
+.checkout-review__step--completed svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.checkout-methods-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+.checkout-review__step--active {
+  color: #111111;
 }
 
-.checkout-methods-grid--payments {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.checkout-review__step--active .checkout-review__step-circle {
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
 }
 
-.checkout-method-card {
-  display: grid;
-  gap: 10px;
-  min-height: 96px;
-  padding: 16px;
+.checkout-review__step-line {
+  width: 56px;
+  height: 1px;
+  background: #dddddd;
+}
+
+.checkout-review__notice {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid #e5e5e5;
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #111827;
-  text-align: left;
+  background: #ffffff;
+  color: #4f4f4f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.checkout-review__notice--error {
+  border-color: #efcccc;
+  color: #b43b3b;
+}
+
+.checkout-review__notice--success {
+  border-color: #cae4d4;
+  color: #2d7f4f;
+}
+
+.checkout-review__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.95fr) minmax(300px, 0.95fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.checkout-review__main {
+  display: grid;
+  gap: 32px;
+}
+
+.checkout-review__section,
+.checkout-review__summary {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+}
+
+.checkout-review__section {
+  padding: 22px;
+}
+
+.checkout-review__summary {
+  position: sticky;
+  top: 24px;
+  padding: 22px;
+  box-shadow: 0 12px 28px rgba(17, 17, 17, 0.04);
+}
+
+.checkout-review__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.checkout-review__section-head h1,
+.checkout-review__section-head h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.checkout-review__edit,
+.checkout-review__text-button,
+.checkout-review__back {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #666666;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.checkout-method-card:hover {
-  transform: translateY(-1px);
+.checkout-review__edit:hover,
+.checkout-review__text-button:hover,
+.checkout-review__back:hover {
+  color: #111111;
 }
 
-.checkout-method-card.active {
-  border-color: rgba(50, 80, 242, 0.45);
-  box-shadow: 0 0 0 3px rgba(50, 80, 242, 0.08);
+.checkout-review__edit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.checkout-method-copy {
+.checkout-review__items {
+  display: grid;
+  gap: 14px;
+}
+
+.checkout-review__item-row {
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #f7f7f7;
+}
+
+.checkout-review__item-image-wrap {
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #ececec;
+}
+
+.checkout-review__item-image-wrap img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.checkout-review__item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.checkout-review__item-copy strong {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.checkout-review__item-copy span,
+.checkout-review__item-qty {
+  color: #707070;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.checkout-review__item-qty,
+.checkout-review__item-price {
+  white-space: nowrap;
+}
+
+.checkout-review__item-price {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.checkout-review__empty,
+.checkout-review__hint {
+  color: #727272;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.checkout-review__info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.checkout-review__info-card,
+.checkout-review__payment-card {
+  min-height: 112px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 18px;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.checkout-review__payment-card--placeholder {
+  background: #fafafa;
+}
+
+.checkout-review__info-icon {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: #f4f4f4;
+  color: #111111;
+}
+
+.checkout-review__info-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.checkout-review__info-copy {
   display: grid;
   gap: 6px;
 }
 
-.checkout-method-copy strong {
-  font-size: 0.96rem;
-}
-
-.checkout-method-copy span,
-.checkout-method-meta span {
-  color: #64748b;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.checkout-method-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.checkout-method-radio {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  border: 2px solid #cbd5e1;
-  position: relative;
-}
-
-.checkout-method-card.active .checkout-method-radio {
-  border-color: #3250f2;
-}
-
-.checkout-method-card.active .checkout-method-radio::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 999px;
-  background: #3250f2;
-}
-
-.checkout-step-hint {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.92rem;
-  line-height: 1.6;
-}
-
-.checkout-step-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.checkout-step-note {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.92rem;
-  line-height: 1.6;
-}
-
-.checkout-confirm-button {
-  min-height: 44px;
-  padding: 0 18px;
-  border: 1px solid rgba(50, 80, 242, 0.14);
-  border-radius: 12px;
-  background: rgba(50, 80, 242, 0.08);
-  color: #2340da;
-  font-weight: 800;
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-}
-
-.checkout-confirm-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(50, 80, 242, 0.12);
-}
-
-.checkout-confirm-button:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.checkout-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding-top: 18px;
-}
-
-.checkout-back-button,
-.checkout-next-button {
-  min-height: 46px;
-  padding: 0 18px;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.checkout-back-button {
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #334155;
-}
-
-.checkout-next-button {
-  border: 0;
-  background: linear-gradient(180deg, #4f5fff, #3250f2);
-  color: #fff;
-  box-shadow: 0 16px 28px rgba(50, 80, 242, 0.18);
-}
-
-.checkout-next-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.checkout-address-sidebar {
-  position: sticky;
-  top: calc(var(--page-nav-clearance) - 20px);
-  display: grid;
-  gap: 16px;
-  padding: 16px;
-}
-
-.checkout-sidebar-items {
-  display: grid;
-  gap: 12px;
-}
-
-.checkout-sidebar-item {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-}
-
-.checkout-sidebar-item-media {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-
-.checkout-sidebar-item-media img {
-  width: 42px;
-  height: 42px;
-  object-fit: contain;
-}
-
-.checkout-sidebar-item-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.checkout-sidebar-item-copy strong {
-  color: #111827;
-  font-size: 0.84rem;
+.checkout-review__info-copy strong {
+  color: #111111;
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1.35;
 }
 
-.checkout-sidebar-item-copy span,
-.checkout-sidebar-item-price {
-  color: #64748b;
-  font-size: 0.78rem;
-  line-height: 1.4;
+.checkout-review__info-copy p {
+  margin: 0;
+  color: #717171;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.checkout-sidebar-item-price {
-  color: #111827;
-  font-weight: 700;
-}
-
-.checkout-sidebar-coupon {
+.checkout-review__editor {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #ededed;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #edf2f7;
+  gap: 16px;
 }
 
-.checkout-sidebar-coupon-input,
-.checkout-sidebar-coupon-button {
-  min-height: 40px;
-  border-radius: 8px;
-}
-
-.checkout-sidebar-coupon-input {
-  padding: 0 12px;
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #111827;
-  font: inherit;
-  outline: none;
-}
-
-.checkout-sidebar-coupon-button {
-  padding: 0 14px;
-  border: 1px solid #dbe2ea;
-  background: #fff;
-  color: #111827;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.checkout-sidebar-totals {
-  display: grid;
-  gap: 10px;
-}
-
-.checkout-sidebar-line,
-.checkout-sidebar-total {
+.checkout-review__editor-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.checkout-sidebar-line {
-  color: #64748b;
-  font-size: 0.9rem;
+.checkout-review__editor-head strong {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.checkout-sidebar-line strong {
-  color: #111827;
+.checkout-review__form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
 }
 
-.checkout-sidebar-total {
-  padding-top: 10px;
-  border-top: 1px solid #edf2f7;
-  color: #111827;
-  font-size: 1rem;
-  font-weight: 800;
+.checkout-review__field {
+  display: grid;
+  gap: 8px;
 }
 
-.checkout-sidebar-total strong {
-  font-size: 1.5rem;
-  line-height: 1;
+.checkout-review__field--full {
+  grid-column: 1 / -1;
 }
 
-.checkout-sidebar-count {
-  color: #64748b;
-  font-size: 0.8rem;
+.checkout-review__field span {
+  color: #6f6f6f;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
-@media (max-width: 1100px) {
-  .checkout-address-layout {
+.checkout-review__field input,
+.checkout-review__field select {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #dedede;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 14px;
+  color: #111111;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+
+.checkout-review__field input:focus,
+.checkout-review__field select:focus {
+  border-color: #bdbdbd;
+}
+
+.checkout-review__editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.checkout-review__editor-actions--end {
+  justify-content: flex-end;
+}
+
+.checkout-review__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #666666;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.checkout-review__secondary {
+  min-width: 152px;
+  height: 42px;
+  border: 1px solid #d8d8d8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #111111;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.checkout-review__secondary:hover {
+  background: #f7f7f7;
+}
+
+.checkout-review__secondary:disabled,
+.checkout-review__primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.checkout-review__choice-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.checkout-review__choice-card {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #e3e3e3;
+  border-radius: 12px;
+  background: #fafafa;
+  color: #111111;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.checkout-review__choice-card:hover,
+.checkout-review__choice-card--active {
+  border-color: #111111;
+  background: #ffffff;
+}
+
+.checkout-review__choice-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.checkout-review__choice-copy strong {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.checkout-review__choice-copy p {
+  margin: 0;
+  color: #717171;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.checkout-review__choice-meta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.checkout-review__choice-meta span {
+  color: #717171;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.checkout-review__choice-meta strong {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.checkout-review__summary-head,
+.checkout-review__summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.checkout-review__summary-head {
+  color: #111111;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.checkout-review__summary-head strong {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.checkout-review__summary-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: #ebebeb;
+}
+
+.checkout-review__summary-line {
+  color: #666666;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.checkout-review__summary-line + .checkout-review__summary-line {
+  margin-top: 12px;
+}
+
+.checkout-review__summary-line strong {
+  color: #111111;
+  font-weight: 600;
+}
+
+.checkout-review__summary-line--discount {
+  color: #c33939;
+}
+
+.checkout-review__primary {
+  width: 100%;
+  height: 46px;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #242424 0%, #111111 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 160ms ease;
+}
+
+.checkout-review__primary:hover {
+  opacity: 0.94;
+}
+
+.checkout-review__legal {
+  margin: 14px 0 0;
+  color: #787878;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.checkout-review__legal a {
+  color: #555555;
+  text-decoration: underline;
+}
+
+.checkout-review__back {
+  margin-top: 16px;
+}
+
+@media (max-width: 980px) {
+  .checkout-review__layout {
     grid-template-columns: 1fr;
   }
 
-  .checkout-address-sidebar {
+  .checkout-review__summary {
     position: static;
   }
 }
 
 @media (max-width: 760px) {
-  .checkout-address-main {
-    padding: 18px 16px 16px;
+  .checkout-review {
+    padding: 20px 14px 40px;
   }
 
-  .checkout-saved-address-banner,
-  .checkout-actions,
-  .checkout-step-actions {
-    flex-direction: column;
-    align-items: stretch;
+  .checkout-review__steps {
+    gap: 8px;
   }
 
-  .checkout-two-column,
-  .checkout-methods-grid {
+  .checkout-review__step-label {
+    display: none;
+  }
+
+  .checkout-review__step-line {
+    width: 28px;
+  }
+
+  .checkout-review__section {
+    padding: 18px;
+  }
+
+  .checkout-review__section-head h1,
+  .checkout-review__section-head h2 {
+    font-size: 20px;
+  }
+
+  .checkout-review__item-row {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .checkout-review__item-image-wrap {
+    width: 64px;
+    height: 64px;
+  }
+
+  .checkout-review__item-qty,
+  .checkout-review__item-price {
+    grid-column: 2;
+  }
+
+  .checkout-review__info-grid,
+  .checkout-review__form-grid {
     grid-template-columns: 1fr;
   }
 
-  .checkout-back-button,
-  .checkout-next-button {
+  .checkout-review__editor-actions {
+    align-items: stretch;
+  }
+
+  .checkout-review__secondary {
     width: 100%;
-  }
-
-  .checkout-sidebar-item {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
-
-  .checkout-sidebar-item-price {
-    grid-column: 2;
-    justify-self: end;
   }
 }
 </style>
