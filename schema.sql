@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_email_verified INTEGER NOT NULL DEFAULT 1,
     email_verified_at TEXT NOT NULL DEFAULT '',
     profile_image_path TEXT NOT NULL DEFAULT '',
+    marketing_emails_opt_in INTEGER NOT NULL DEFAULT 0,
+    terms_accepted_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -93,6 +95,8 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     profile_edit_approved_at TEXT NOT NULL DEFAULT '',
     profile_edit_notes TEXT NOT NULL DEFAULT '',
     shipping_settings TEXT NOT NULL DEFAULT '',
+    auto_reply_enabled INTEGER NOT NULL DEFAULT 0,
+    auto_reply_message TEXT NOT NULL DEFAULT '',
     phone_number TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     address_line TEXT NOT NULL DEFAULT '',
@@ -355,6 +359,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_lines_user_product_variant
 
 CREATE INDEX IF NOT EXISTS idx_cart_lines_user_updated_at
     ON cart_lines(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS guest_cart_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    visitor_token TEXT NOT NULL,
+    product_id INTEGER NOT NULL,
+    variant_key TEXT NOT NULL DEFAULT 'default',
+    variant_label TEXT NOT NULL DEFAULT 'Standard',
+    selected_size TEXT NOT NULL DEFAULT '',
+    selected_color TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_product_variant
+    ON guest_cart_lines(visitor_token, product_id, variant_key);
+
+CREATE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_updated_at
+    ON guest_cart_lines(visitor_token, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive } from "vue";
+import { computed, reactive } from "vue";
 import OrderItemCard from "./OrderItemCard.vue";
 import {
   buildFulfillmentTimeline,
@@ -11,6 +11,7 @@ import {
   formatPaymentMethodLabel,
   formatPrice,
   getFulfillmentTerminalEvent,
+  getBusinessInitials,
 } from "../lib/shop";
 
 const props = defineProps({
@@ -29,6 +30,14 @@ const props = defineProps({
   busyOrderId: {
     type: Number,
     default: 0,
+  },
+  preview: {
+    type: Boolean,
+    default: false,
+  },
+  detailsTo: {
+    type: [String, Object],
+    default: "",
   },
 });
 
@@ -176,10 +185,93 @@ function affectedItemsLabel(order) {
 
   return `Ky veprim do te perditesoje ${count} artikuj ne kete porosi.`;
 }
+
+const previewItemCount = computed(() => {
+  const explicitTotal = Number(props.order?.totalItems || 0);
+  if (Number.isFinite(explicitTotal) && explicitTotal > 0) {
+    return Math.trunc(explicitTotal);
+  }
+
+  const items = Array.isArray(props.order?.items) ? props.order.items : [];
+  return items.reduce((total, item) => total + Math.max(1, Number(item?.quantity || 1)), 0);
+});
+
+const previewItemLabel = computed(() => {
+  const count = previewItemCount.value;
+  return `${count} item${count === 1 ? "" : "s"}`;
+});
+
+const previewItemSummary = computed(() => {
+  const explicitSummary = String(props.order?.itemSummary || "").trim();
+  if (explicitSummary) {
+    return explicitSummary;
+  }
+
+  const items = Array.isArray(props.order?.items) ? props.order.items : [];
+  const titles = [
+    ...new Set(
+      items
+        .map((item) => String(item?.title || item?.productTitle || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (titles.length) {
+    return titles.slice(0, 3).join(", ");
+  }
+
+  return "Order details are ready to review.";
+});
+
+const detailsRoute = computed(() => props.detailsTo || "");
+
+const orderItems = computed(() => (Array.isArray(props.order?.items) ? props.order.items : []));
+
+const businessNames = computed(() => {
+  const explicitSummary = String(props.order?.businessSummary || "").trim();
+  if (explicitSummary) {
+    return [explicitSummary];
+  }
+
+  const names = orderItems.value
+    .map((item) => String(item?.businessName || "").trim())
+    .filter(Boolean);
+  return [...new Set(names)];
+});
+
+const businessIdentityName = computed(() => {
+  const names = businessNames.value;
+  if (names.length > 0) {
+    return names.slice(0, 2).join(", ");
+  }
+
+  return props.showAdminFinance ? "Marketplace sellers" : "Your business";
+});
+
+const businessIdentityMeta = computed(() => {
+  const lineCount = Number(props.order?.itemLineCount || orderItems.value.length || 0);
+  const sellerCount = businessNames.value.length;
+
+  if (props.showAdminFinance && sellerCount > 1) {
+    return `${sellerCount} sellers in this order`;
+  }
+
+  if (lineCount > 0) {
+    return `${lineCount} product line${lineCount === 1 ? "" : "s"}`;
+  }
+
+  return "Seller";
+});
+
+const clientIdentityName = computed(() => String(props.order?.customerName || "").trim() || "Client");
+const clientIdentityMeta = computed(() =>
+  String(props.order?.customerEmail || props.order?.phoneNumber || "").trim() || "Ordered client",
+);
+const businessIdentityInitials = computed(() => getBusinessInitials(businessIdentityName.value));
+const clientIdentityInitials = computed(() => getBusinessInitials(clientIdentityName.value));
 </script>
 
 <template>
-  <article class="business-order-card">
+  <article class="business-order-card" :class="{ 'business-order-card--preview': preview }">
       <div class="business-order-card__header">
         <div class="business-order-card__meta">
           <p>Porosia #{{ order.id || "-" }}</p>
@@ -194,7 +286,15 @@ function affectedItemsLabel(order) {
         <div class="business-order-card__meta">
           <span>{{ formatPaymentMethodLabel(order.paymentMethod) }}</span>
           <strong>{{ formatDateLabel(order.createdAt || "") }}</strong>
+          <RouterLink
+            v-if="preview"
+            class="market-button market-button--primary"
+            :to="detailsRoute"
+          >
+            View details
+          </RouterLink>
           <a
+            v-else
             class="market-button market-button--ghost"
             :href="`/api/orders/invoice?id=${order.id}`"
             target="_blank"
@@ -205,7 +305,52 @@ function affectedItemsLabel(order) {
         </div>
       </div>
 
-      <div class="business-order-card__body">
+      <div class="business-order-card__parties" aria-label="Business and client">
+        <div class="business-order-card__party business-order-card__party--business">
+          <span class="business-order-card__party-avatar">{{ businessIdentityInitials }}</span>
+          <span>
+            <small>Business</small>
+            <strong>{{ businessIdentityName }}</strong>
+            <em>{{ businessIdentityMeta }}</em>
+          </span>
+        </div>
+
+        <span class="business-order-card__party-link" aria-hidden="true"></span>
+
+        <div class="business-order-card__party business-order-card__party--client">
+          <span class="business-order-card__party-avatar">{{ clientIdentityInitials }}</span>
+          <span>
+            <small>Client who ordered</small>
+            <strong>{{ clientIdentityName }}</strong>
+            <em>{{ clientIdentityMeta }}</em>
+          </span>
+        </div>
+      </div>
+
+      <div v-if="preview" class="business-order-card__preview">
+        <div class="business-order-card__preview-main">
+          <strong>{{ formatPrice(order.totalPrice || 0) }}</strong>
+          <span>{{ previewItemLabel }}</span>
+          <p>{{ previewItemSummary }}</p>
+        </div>
+
+        <div class="business-order-card__preview-facts">
+          <span>
+            <small>Status</small>
+            <strong>{{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) || "Open" }}</strong>
+          </span>
+          <span>
+            <small>Delivery</small>
+            <strong>{{ order.deliveryLabel || formatDeliveryMethodLabel(order.deliveryMethod) }}</strong>
+          </span>
+          <span v-if="showAdminFinance">
+            <small>Seller</small>
+            <strong>{{ order.businessSummary || "Multiple sellers" }}</strong>
+          </span>
+        </div>
+      </div>
+
+      <div v-else class="business-order-card__body">
         <div v-if="canManageStatus && hasPendingConfirmation(order)" class="business-order-card__decision">
           <div class="business-order-card__decision-copy">
             <span>Pret konfirmim</span>
@@ -229,40 +374,52 @@ function affectedItemsLabel(order) {
           </button>
         </div>
 
-        <div v-else-if="canManageStatus" class="business-order-card__controls">
-          <label>
-            <span>Fulfillment</span>
-            <select v-model="orderDraftFor(order).fulfillmentStatus">
-              <option value="confirmed">Confirmed</option>
-              <option value="packed">Packed</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="returned">Returned</option>
-            </select>
-          </label>
+        <details v-else-if="canManageStatus" class="business-order-card__fulfillment-panel">
+          <summary>
+            <span class="business-order-card__fulfillment-icon" aria-hidden="true"></span>
+            <span class="business-order-card__fulfillment-copy">
+              <small>Fulfillment</small>
+              <strong>{{ formatFulfillmentStatusLabel(orderDraftFor(order).fulfillmentStatus) }}</strong>
+              <em>{{ orderDraftFor(order).trackingCode || "Open only when status or tracking needs updates" }}</em>
+            </span>
+            <span class="business-order-card__fulfillment-chevron" aria-hidden="true"></span>
+          </summary>
 
-          <label>
-            <span>Tracking code</span>
-            <input v-model="orderDraftFor(order).trackingCode" type="text" placeholder="p.sh. TRK-2048">
-          </label>
+          <div class="business-order-card__controls">
+            <label>
+              <span>Next status</span>
+              <select v-model="orderDraftFor(order).fulfillmentStatus">
+                <option value="confirmed">Confirmed</option>
+                <option value="packed">Packed</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="returned">Returned</option>
+              </select>
+            </label>
 
-          <label>
-            <span>Tracking link</span>
-            <input v-model="orderDraftFor(order).trackingUrl" type="url" placeholder="https://...">
-          </label>
+            <label>
+              <span>Tracking code</span>
+              <input v-model="orderDraftFor(order).trackingCode" type="text" placeholder="p.sh. TRK-2048">
+            </label>
 
-          <p class="dashboard-note">{{ affectedItemsLabel(order) }}</p>
+            <label>
+              <span>Tracking link</span>
+              <input v-model="orderDraftFor(order).trackingUrl" type="url" placeholder="https://...">
+            </label>
 
-          <button
-            class="market-button market-button--primary"
-            type="button"
-            :disabled="busyOrderId === Number(order.id) || !orderItemIdsForStatus(order, orderDraftFor(order).fulfillmentStatus).length"
-            @click="submitOrderStatus(order)"
-          >
-            {{ busyOrderId === Number(order.id) ? "Duke ruajtur..." : "Ruaje statusin e porosise" }}
-          </button>
-        </div>
+            <p class="dashboard-note">{{ affectedItemsLabel(order) }}</p>
+
+            <button
+              class="market-button market-button--primary"
+              type="button"
+              :disabled="busyOrderId === Number(order.id) || !orderItemIdsForStatus(order, orderDraftFor(order).fulfillmentStatus).length"
+              @click="submitOrderStatus(order)"
+            >
+              {{ busyOrderId === Number(order.id) ? "Duke ruajtur..." : "Ruaje statusin e porosise" }}
+            </button>
+          </div>
+        </details>
 
         <div class="business-order-card__items">
         <div v-for="item in order.items || []" :key="item.id" class="business-order-card__item">

@@ -84,21 +84,23 @@ function navigateTo(path: string) {
   <IonTabs>
     <IonRouterOutlet />
 
-    <nav v-if="!usesNativeIOSTabs" aria-label="Primary">
-      <div>
-        <div />
+    <nav v-if="!usesNativeIOSTabs" class="trego-tab-shell" aria-label="Primary">
+      <div class="trego-tab-shell__group">
+        <div
+          class="trego-tab-shell__indicator"
+          :style="{ transform: `translateX(${activeGroupIndex * 100}%)` }"
+        />
 
         <button
           v-for="item in groupedTabs"
           :key="item.key"
-         
-         
+          :class="['trego-tab-shell__item', { 'is-active': activeTab === item.key }]"
           type="button"
           @click="navigateTo(item.path)"
         >
           <span
             v-if="badgeMap[item.key]"
-           
+            class="trego-tab-shell__badge"
           >
             {{ badgeMap[item.key] }}
           </span>
@@ -108,8 +110,7 @@ function navigateTo(path: string) {
       </div>
 
       <button
-       
-       
+        class="trego-tab-shell__search"
         type="button"
         @click="navigateTo(searchTab.path)"
         :aria-label="searchTab.label"
@@ -121,4 +122,3 @@ function navigateTo(path: string) {
     </nav>
   </IonTabs>
 </template>
-

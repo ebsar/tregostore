@@ -57,6 +57,20 @@ function createPaginatedResult<T>(
 const GET_REQUEST_CACHE = new Map<string, { expiresAt: number; response: ResponseMeta; data: any }>();
 const INFLIGHT_GET_REQUESTS = new Map<string, Promise<JsonResult<any>>>();
 const VISITOR_TOKEN_STORAGE_KEY = "trego-mobile-visitor-token";
+const REQUEST_TIMEOUT_MS = 15000;
+const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function cloneJsonData<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function shouldRetry(method: string, response: Response | null, attempt: number, maxAttempts: number) {
+  return method === "GET" && attempt < maxAttempts - 1 && (!response || RETRYABLE_STATUS_CODES.has(Number(response.status || 0)));
+}
 
 function generateVisitorToken() {
   return `visitor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
@@ -112,6 +126,7 @@ export async function requestJson<T = any>(
   const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
   const cacheKey = runtime.cacheKey || `${method}:${path}`;
   const canUseCache = method === "GET" && cacheTtlMs > 0 && !config.body;
+  const staleCache = canUseCache ? GET_REQUEST_CACHE.get(cacheKey) : null;
 
   if (config.body && !(config.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -129,7 +144,7 @@ export async function requestJson<T = any>(
     if (cached && cached.expiresAt > Date.now()) {
       return {
         response: { ...cached.response },
-        data: JSON.parse(JSON.stringify(cached.data)),
+        data: cloneJsonData(cached.data),
       };
     }
 
@@ -138,7 +153,7 @@ export async function requestJson<T = any>(
       const result = await inflight;
       return {
         response: { ...result.response },
-        data: JSON.parse(JSON.stringify(result.data)),
+        data: cloneJsonData(result.data),
       };
     }
   }
@@ -147,51 +162,83 @@ export async function requestJson<T = any>(
     let response: Response | null = null;
     let data: T = {} as T;
 
-    try {
-      if (isNativePlatform()) {
-        const nativeHeaders = Object.fromEntries(headers.entries());
-        const parsedBody =
-          typeof config.body === "string"
-            ? JSON.parse(config.body)
-            : config.body;
+    const maxAttempts = method === "GET" ? 2 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        if (isNativePlatform()) {
+          const nativeHeaders = Object.fromEntries(headers.entries());
+          const parsedBody =
+            typeof config.body === "string"
+              ? JSON.parse(config.body)
+              : config.body;
 
-        const nativeResponse = await CapacitorHttp.request({
-          url: createApiUrl(path),
-          method,
-          headers: nativeHeaders,
-          data: parsedBody,
-          responseType: "json",
-          webFetchExtra: {
+          const nativeResponse = await CapacitorHttp.request({
+            url: createApiUrl(path),
+            method,
+            headers: nativeHeaders,
+            data: parsedBody,
+            responseType: "json",
+            connectTimeout: REQUEST_TIMEOUT_MS,
+            readTimeout: REQUEST_TIMEOUT_MS,
+            webFetchExtra: {
+              credentials: "include",
+            },
+          });
+
+          data = (nativeResponse.data || {}) as T;
+          response = {
+            ok: nativeResponse.status >= 200 && nativeResponse.status < 300,
+            status: nativeResponse.status,
+            statusText: "",
+          } as Response;
+        } else {
+          const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+          const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+            : 0;
+
+          response = await fetch(createApiUrl(path), {
+            ...config,
             credentials: "include",
-          },
-        });
+            mode: "cors",
+            signal: controller?.signal,
+          });
 
-        data = (nativeResponse.data || {}) as T;
-        response = {
-          ok: nativeResponse.status >= 200 && nativeResponse.status < 300,
-          status: nativeResponse.status,
-          statusText: "",
-        } as Response;
-      } else {
-        response = await fetch(createApiUrl(path), {
-          ...config,
-          credentials: "include",
-          mode: "cors",
-        });
+          if (timeoutId) {
+            window.clearTimeout(timeoutId);
+          }
 
-        try {
-          data = await response.json();
-        } catch {
-          data = {} as T;
+          try {
+            data = await response.json();
+          } catch {
+            data = {} as T;
+          }
         }
+
+        if (shouldRetry(method, response, attempt, maxAttempts)) {
+          await sleep(180 * (attempt + 1));
+          continue;
+        }
+        break;
+      } catch (error) {
+        console.error(error);
+        markConnectionUnstable();
+        if (shouldRetry(method, response, attempt, maxAttempts)) {
+          await sleep(180 * (attempt + 1));
+          continue;
+        }
+        data = {
+          ok: false,
+          message: "Lidhja me serverin deshtoi.",
+        } as T;
       }
-    } catch (error) {
-      console.error(error);
-      markConnectionUnstable();
-      data = {
-        ok: false,
-        message: "Lidhja me serverin deshtoi.",
-      } as T;
+    }
+
+    if (!response?.ok && staleCache) {
+      return {
+        response: { ...staleCache.response },
+        data: cloneJsonData(staleCache.data),
+      };
     }
 
     const result = {
@@ -203,7 +250,7 @@ export async function requestJson<T = any>(
       GET_REQUEST_CACHE.set(cacheKey, {
         expiresAt: Date.now() + cacheTtlMs,
         response: result.response,
-        data: JSON.parse(JSON.stringify(result.data)),
+        data: cloneJsonData(result.data),
       });
     }
 

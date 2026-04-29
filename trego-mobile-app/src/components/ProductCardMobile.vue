@@ -35,20 +35,19 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
 
 <template>
   <article
-   
-   
+    :class="['trego-product-card', { 'trego-product-card--compact': compact, 'trego-product-card--analytics': analyticsMode }]"
   >
-    <div>
+    <div class="trego-product-card__media">
       <SmartImageMobile :src="getProductImage(product)" :alt="product.title" />
-      <button type="button" @click="emit('open', product.id)">
-        <span>Hap produktin</span>
+      <button class="trego-product-card__open" type="button" @click="emit('open', product.id)">
+        <span class="trego-sr-only">Hap produktin</span>
       </button>
 
-      <span v-if="discount">Sale</span>
+      <span v-if="discount" class="trego-product-card__badge">Sale</span>
 
-      <div v-if="!analyticsMode">
+      <div v-if="!analyticsMode" class="trego-product-card__actions">
         <button
-         
+          class="trego-product-card__icon"
           type="button"
           @click.stop="emit('wishlist', product.id)"
         >
@@ -56,7 +55,7 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
         </button>
 
         <button
-         
+          class="trego-product-card__icon"
           type="button"
           @click.stop="emit('cart', product.id)"
         >
@@ -65,14 +64,14 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
       </div>
     </div>
 
-    <div>
-      <p>{{ product.businessName || "TREGIO" }}</p>
-      <button type="button" @click="emit('open', product.id)">
+    <div class="trego-product-card__body">
+      <p class="trego-product-card__business">{{ product.businessName || "TREGIO" }}</p>
+      <button class="trego-product-card__title" type="button" @click="emit('open', product.id)">
         {{ product.title }}
       </button>
 
-      <div>
-        <div>
+      <div class="trego-product-card__price-row">
+        <div class="trego-product-card__price">
           <strong>{{ formatPrice(product.price) }}</strong>
           <span v-if="hasCompareAtPrice">
             {{ formatPrice(product.compareAtPrice) }}
@@ -80,20 +79,20 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
         </div>
       </div>
 
-      <div v-if="analyticsMode">
+      <div v-if="analyticsMode" class="trego-product-card__analytics">
         <span
           v-for="item in engagementItems"
           :key="`${product.id}-${item.label}`"
-         
+          class="trego-product-card__metric"
         >
           <small>{{ item.label }}</small>
           <strong>{{ item.value }}</strong>
         </span>
       </div>
 
-      <div v-else>
+      <div v-else class="trego-product-card__meta">
         <span>{{ buyersValue }} shitje</span>
-        <span>
+        <span class="trego-product-card__rating">
           <IonIcon :icon="star" />
           {{ ratingValue }}
         </span>
@@ -101,4 +100,3 @@ const buyersValue = computed(() => formatCount(props.product.buyersCount || 0));
     </div>
   </article>
 </template>
-

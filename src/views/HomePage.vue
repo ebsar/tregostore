@@ -1,10 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import MarketSectionTitle from "../components/MarketSectionTitle.vue";
-import ProductCard from "../components/ProductCard.vue";
 import HomeProductCard from "../components/HomeProductCard.vue";
-import RecommendationSections from "../components/RecommendationSections.vue";
 import SplitProductHero from "../components/SplitProductHero.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import {
@@ -35,13 +33,15 @@ import {
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
 
 const router = useRouter();
+const ProductCard = defineAsyncComponent(() => import("../components/ProductCard.vue"));
+const RecommendationSections = defineAsyncComponent(() => import("../components/RecommendationSections.vue"));
 const heroSearchQuery = ref("");
 const heroVisualSearchInputElement = ref(null);
-const products = ref([]);
-const homeCatalogProducts = ref([]);
-const homeRecommendationSections = ref([]);
-const businesses = ref([]);
-const recentlyViewedProducts = ref([]);
+const products = shallowRef([]);
+const homeCatalogProducts = shallowRef([]);
+const homeRecommendationSections = shallowRef([]);
+const businesses = shallowRef([]);
+const recentlyViewedProducts = shallowRef([]);
 const newsletterEmail = ref("");
 const businessProfile = ref(null);
 const businessProducts = ref([]);
@@ -989,35 +989,26 @@ onMounted(async () => {
     }
   });
 
-  try {
-    if (appState.sessionLoaded && appState.user?.role === "business") {
-      await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
-      markRouteReady();
-      return;
-    }
-
-    const publicProductsPromise = loadProducts();
-    const homeRecommendationsPromise = loadHomeRecommendations();
-    const homeCatalogPromise = loadHomeCatalogProducts();
-    const businessesPromise = loadBusinesses();
-    void ensureSessionLoaded()
-      .then(async (user) => {
-        if (user?.role === "business") {
-          await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
-          return;
-        }
-
+  const initialDataPromises = [
+    loadProducts(),
+    loadHomeRecommendations(),
+    loadHomeCatalogProducts(),
+    loadBusinesses(),
+    ensureSessionLoaded().then(async (user) => {
+      if (user?.role === "business") {
+        await Promise.all([loadBusinessProfile(), loadBusinessProducts()]);
+      } else {
         await refreshCollectionState();
-      })
-      .catch((error) => {
-        console.error(error);
-      });
+      }
+    })
+  ];
 
-    await Promise.all([publicProductsPromise, homeRecommendationsPromise, homeCatalogPromise, businessesPromise]);
-    markRouteReady();
+  try {
+    await Promise.all(initialDataPromises);
   } catch (error) {
+    console.error("[TREGIO] Data load failed:", error);
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
-    console.error(error);
+  } finally {
     markRouteReady();
   }
 });
@@ -1140,7 +1131,7 @@ async function loadHomeRecommendations() {
   }
 
   const requestId = ++homeRecommendationsRequestId;
-  const payload = await fetchHomeRecommendations(8);
+  const payload = await fetchHomeRecommendations(16);
   if (requestId !== homeRecommendationsRequestId) {
     return;
   }
@@ -1829,6 +1820,28 @@ async function handleCart(productId) {
   .home-page > * + * {
     margin-top: 36px;
   }
+
+  .home-catalog__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .home-catalog__title {
+    font-size: 20px;
+  }
+
+  .home-product-grid {
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    column-gap: 12px;
+    row-gap: 18px;
+  }
+
+  .home-product-grid > * {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -1847,9 +1860,9 @@ async function handleCart(productId) {
 
 @media (max-width: 540px) {
   .home-product-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    column-gap: 14px;
-    row-gap: 26px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 12px;
+    row-gap: 16px;
   }
 
   .home-product-grid > * {
@@ -1859,7 +1872,15 @@ async function handleCart(productId) {
 
 @media (max-width: 400px) {
   .home-product-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 10px;
+    row-gap: 14px;
   }
 }
+
+@media (max-width: 340px) {
+  .home-product-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>

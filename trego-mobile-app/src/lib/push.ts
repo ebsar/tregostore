@@ -1,12 +1,17 @@
 import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
+import type {
+  ActionPerformed,
+  PushNotificationSchema,
+  Token,
+} from "@capacitor/push-notifications";
 import type { Router } from "vue-router";
 import type { SessionUser } from "../types/models";
 import { refreshCounts } from "../stores/session";
+import { requestJson } from "./api";
 
-const ONESIGNAL_APP_ID = String(import.meta.env.VITE_ONESIGNAL_APP_ID || "").trim();
 const PUSH_PERMISSION_PROMPT_KEY = "trego-mobile-push-permission-prompted";
-
-type OneSignalSdk = typeof import("onesignal-cordova-plugin").default;
+const PUSH_DEVICE_ID_KEY = "trego-mobile-push-device-id";
 
 export interface PushClientStatus {
   configured: boolean;
@@ -17,16 +22,30 @@ export interface PushClientStatus {
   platform: string;
 }
 
-let sdkPromise: Promise<OneSignalSdk | null> | null = null;
 let initialized = false;
-let clickListenerRegistered = false;
-let foregroundListenerRegistered = false;
+let registering = false;
+let lastRegisteredToken = "";
+let currentUser: SessionUser | null = null;
 
 function isNativePushRuntime() {
   try {
     return Capacitor.isNativePlatform() && typeof window !== "undefined";
   } catch {
     return false;
+  }
+}
+
+function getDeviceId() {
+  try {
+    const existing = window.localStorage.getItem(PUSH_DEVICE_ID_KEY);
+    if (existing) {
+      return existing;
+    }
+    const generated = `native-${Capacitor.getPlatform()}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    window.localStorage.setItem(PUSH_DEVICE_ID_KEY, generated);
+    return generated;
+  } catch {
+    return "";
   }
 }
 
@@ -63,10 +82,7 @@ function appendNotificationQuery(path: string, query: Record<string, unknown>): 
   const searchParams = new URLSearchParams(existingQuery);
   Object.entries(query).forEach(([key, value]) => {
     const normalizedValue = normalizeNotificationValue(value);
-    if (!normalizedValue) {
-      return;
-    }
-    if (!searchParams.has(key)) {
+    if (normalizedValue && !searchParams.has(key)) {
       searchParams.set(key, normalizedValue);
     }
   });
@@ -75,52 +91,43 @@ function appendNotificationQuery(path: string, query: Record<string, unknown>): 
   return `${basePath}${nextQuery ? `?${nextQuery}` : ""}${hashValue ? `#${hashValue}` : ""}`;
 }
 
-function buildNotificationRoute(event: any): string {
-  const notification = event?.notification || {};
-  const additionalData = notification?.additionalData || {};
-  const type = normalizeNotificationValue(additionalData.type).toLowerCase();
-  const conversationId = normalizeNotificationValue(additionalData.conversationId);
-  const messageId = normalizeNotificationValue(additionalData.messageId);
-  const orderId = normalizeNotificationValue(additionalData.orderId);
-  const orderItemId = normalizeNotificationValue(additionalData.orderItemId);
-  const productId = normalizeNotificationValue(additionalData.productId);
-  const status = normalizeNotificationValue(additionalData.status).toLowerCase();
+function extractNotificationData(notification: PushNotificationSchema | undefined): Record<string, unknown> {
+  const data = notification?.data;
+  return data && typeof data === "object" ? data as Record<string, unknown> : {};
+}
+
+function buildNotificationRouteFromData(data: Record<string, unknown>): string {
+  const type = normalizeNotificationValue(data.type).toLowerCase();
+  const conversationId = normalizeNotificationValue(data.conversationId);
+  const messageId = normalizeNotificationValue(data.messageId);
+  const orderId = normalizeNotificationValue(data.orderId);
+  const orderItemId = normalizeNotificationValue(data.orderItemId);
+  const productId = normalizeNotificationValue(data.productId);
+  const status = normalizeNotificationValue(data.status).toLowerCase();
 
   if (type === "chat_message" && conversationId) {
-    return appendNotificationQuery(`/messages/${conversationId}`, {
-      messageId,
-      fromPush: 1,
-    });
+    return appendNotificationQuery(`/messages/${conversationId}`, { messageId, fromPush: 1 });
   }
 
   if (type === "order_status" && orderId) {
-    return appendNotificationQuery("/orders", {
-      orderId,
-      orderItemId,
-      status,
-      fromPush: 1,
-    });
+    return appendNotificationQuery("/orders", { orderId, orderItemId, status, fromPush: 1 });
   }
 
   if (type === "order_created") {
-    return appendNotificationQuery("/business", {
-      orderId,
-      fromPush: 1,
-    });
+    return appendNotificationQuery("/business", { orderId, fromPush: 1 });
   }
 
   if ((type === "sale_product" || type === "sale_ending") && productId) {
     return appendNotificationQuery(`/product/${productId}`, {
       fromPush: 1,
-      alertKind: normalizeNotificationValue(additionalData.alertKind),
+      alertKind: normalizeNotificationValue(data.alertKind),
     });
   }
 
   return appendNotificationQuery(
-    normalizeNotificationPath(additionalData.path)
-      || normalizeNotificationPath(additionalData.href)
-      || normalizeNotificationPath(notification.launchURL)
-      || normalizeNotificationPath(event?.result?.url),
+    normalizeNotificationPath(data.path)
+      || normalizeNotificationPath(data.href)
+      || "/tabs/account/notifications",
     {
       conversationId,
       messageId,
@@ -133,46 +140,46 @@ function buildNotificationRoute(event: any): string {
   );
 }
 
-async function loadOneSignalSdk(): Promise<OneSignalSdk | null> {
-  if (!isPushConfigured() || !isNativePushRuntime()) {
-    return null;
+function buildNotificationRoute(event: ActionPerformed): string {
+  return buildNotificationRouteFromData(extractNotificationData(event.notification));
+}
+
+function getNativeProvider() {
+  const platform = Capacitor.getPlatform();
+  return platform === "ios" ? "apns" : "fcm";
+}
+
+async function saveNativeToken(token: string) {
+  if (!currentUser?.id || !token) {
+    return;
   }
 
-  if (!sdkPromise) {
-    sdkPromise = import("onesignal-cordova-plugin")
-      .then((module) => module.default)
-      .catch((error) => {
-        console.warn("OneSignal SDK load skipped", error);
-        return null;
-      });
+  try {
+    await requestJson("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({
+        provider: getNativeProvider(),
+        platform: Capacitor.getPlatform(),
+        token,
+        deviceId: getDeviceId(),
+        userAgent: `TREGIO Capacitor ${Capacitor.getPlatform()}`,
+      }),
+    });
+  } catch (error) {
+    console.warn("Push token sync skipped", error);
   }
-
-  return sdkPromise;
 }
 
 export function isPushConfigured() {
-  return Boolean(ONESIGNAL_APP_ID);
+  return isNativePushRuntime();
 }
 
 export async function getPushClientStatus(router?: Router | null): Promise<PushClientStatus> {
-  const configured = isPushConfigured();
   const nativeRuntime = isNativePushRuntime();
   const platform = nativeRuntime ? Capacitor.getPlatform() : "web";
-  if (!configured || !nativeRuntime) {
+  if (!nativeRuntime) {
     return {
-      configured,
-      nativeRuntime,
-      initialized,
-      permission: configured ? "unavailable" : "unavailable",
-      subscribed: false,
-      platform,
-    };
-  }
-
-  const OneSignal = await ensurePushClient(router);
-  if (!OneSignal) {
-    return {
-      configured,
+      configured: false,
       nativeRuntime,
       initialized,
       permission: "unavailable",
@@ -181,101 +188,79 @@ export async function getPushClientStatus(router?: Router | null): Promise<PushC
     };
   }
 
-  let permission: PushClientStatus["permission"] = "unavailable";
-  let subscribed = false;
+  await ensurePushClient(router);
 
+  let permission: PushClientStatus["permission"] = "unavailable";
   try {
-    const rawPermission = (OneSignal as any)?.Notifications?.permission;
-    if (typeof rawPermission === "boolean") {
-      permission = rawPermission ? "granted" : "denied";
-    } else if (typeof (OneSignal as any)?.Notifications?.canRequestPermission === "function") {
-      const canRequest = await (OneSignal as any).Notifications.canRequestPermission();
-      permission = canRequest ? "prompt" : "denied";
-    }
+    const permissions = await PushNotifications.checkPermissions();
+    permission = permissions.receive === "granted"
+      ? "granted"
+      : permissions.receive === "denied"
+        ? "denied"
+        : "prompt";
   } catch {
     permission = "unavailable";
   }
 
-  try {
-    const subscription = (OneSignal as any)?.User?.pushSubscription;
-    subscribed = Boolean(subscription?.id || subscription?.token || subscription?.optedIn);
-  } catch {
-    subscribed = false;
-  }
-
   return {
-    configured,
+    configured: true,
     nativeRuntime,
     initialized,
     permission,
-    subscribed,
+    subscribed: Boolean(lastRegisteredToken),
     platform,
   };
 }
 
 export async function ensurePushClient(router?: Router | null) {
-  const OneSignal = await loadOneSignalSdk();
-  if (!OneSignal) {
+  if (!isNativePushRuntime()) {
     return null;
   }
 
-  if (!initialized) {
-    try {
-      if (import.meta.env.DEV) {
-        OneSignal.Debug.setLogLevel(6);
-      }
-      OneSignal.initialize(ONESIGNAL_APP_ID);
-      initialized = true;
-    } catch (error) {
-      console.warn("OneSignal initialize skipped", error);
-      return null;
-    }
+  if (initialized) {
+    return PushNotifications;
   }
 
-  if (router && !clickListenerRegistered) {
-    OneSignal.Notifications.addEventListener("click", (event) => {
+  try {
+    await PushNotifications.addListener("registration", async (token: Token) => {
+      lastRegisteredToken = String(token.value || "").trim();
+      await saveNativeToken(lastRegisteredToken);
+    });
+    await PushNotifications.addListener("registrationError", (error) => {
+      console.warn("Push registration failed", error);
+    });
+    await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+      void refreshCounts();
+      const data = extractNotificationData(notification);
+      if (data?.type) {
+        void requestJson("/api/notifications/count", {}, { cacheTtlMs: 500 });
+      }
+    });
+    await PushNotifications.addListener("pushNotificationActionPerformed", (event) => {
       const nextPath = buildNotificationRoute(event);
-      if (!nextPath) {
+      if (!nextPath || !router) {
         return;
       }
-
       void refreshCounts();
       void router.push(nextPath).catch(() => {});
     });
-    clickListenerRegistered = true;
+    initialized = true;
+  } catch (error) {
+    console.warn("Push client initialization skipped", error);
+    return null;
   }
 
-  if (!foregroundListenerRegistered) {
-    OneSignal.Notifications.addEventListener("foregroundWillDisplay", () => {
-      void refreshCounts();
-    });
-    foregroundListenerRegistered = true;
-  }
-
-  return OneSignal;
+  return PushNotifications;
 }
 
 export async function syncPushIdentity(
   user: SessionUser | null,
   router?: Router | null,
 ) {
-  const OneSignal = await ensurePushClient(router);
-  if (!OneSignal) {
-    return;
-  }
-
-  try {
-    if (user?.id) {
-      OneSignal.login(String(user.id));
-      OneSignal.User.addTags({
-        role: String(user.role || "client"),
-        platform: Capacitor.getPlatform(),
-      });
-    } else {
-      OneSignal.logout();
-    }
-  } catch (error) {
-    console.warn("OneSignal identity sync skipped", error);
+  currentUser = user;
+  await ensurePushClient(router);
+  if (user?.id && lastRegisteredToken) {
+    await saveNativeToken(lastRegisteredToken);
   }
 }
 
@@ -283,25 +268,31 @@ export async function requestPushPermissionIfNeeded(
   force = false,
   router?: Router | null,
 ) {
-  const OneSignal = await ensurePushClient(router);
-  if (!OneSignal || typeof window === "undefined") {
+  const client = await ensurePushClient(router);
+  if (!client || typeof window === "undefined") {
     return false;
   }
 
-  const alreadyPrompted = window.localStorage.getItem(PUSH_PERMISSION_PROMPT_KEY) === "1";
-  if (!force && alreadyPrompted) {
+  if (!force) {
     return false;
   }
 
   try {
-    const canRequestPermission = await OneSignal.Notifications.canRequestPermission();
-    const accepted = canRequestPermission
-      ? await OneSignal.Notifications.requestPermission(true)
-      : false;
+    const permission = await PushNotifications.requestPermissions();
     window.localStorage.setItem(PUSH_PERMISSION_PROMPT_KEY, "1");
-    return Boolean(accepted);
+    if (permission.receive !== "granted") {
+      return false;
+    }
+
+    if (!registering) {
+      registering = true;
+      await PushNotifications.register();
+      registering = false;
+    }
+    return true;
   } catch (error) {
-    console.warn("OneSignal permission request skipped", error);
+    registering = false;
+    console.warn("Push permission request skipped", error);
     return false;
   }
 }

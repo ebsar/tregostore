@@ -196,24 +196,22 @@ watch([query, selectedCategory], async () => {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
-        <section>
-          <div>
+      <div class="trego-mobile-screen">
+        <section class="trego-search-card">
+          <div class="trego-search-form">
             <IonIcon :icon="storefrontOutline" />
             <input
               v-model="query"
-             
               type="search"
               placeholder="Kerko biznesin"
             >
           </div>
 
-          <div>
+          <div class="trego-chip-row">
             <button
               v-for="category in categories"
               :key="category"
-             
-             
+              :class="['trego-chip', { 'is-active': selectedCategory === category }]"
               type="button"
               @click="selectedCategory = category"
             >
@@ -222,11 +220,11 @@ watch([query, selectedCategory], async () => {
           </div>
         </section>
 
-        <section v-if="loading">
+        <section v-if="loading" class="trego-business-list">
           <BusinessCardSkeleton v-for="index in 4" :key="index" />
         </section>
 
-        <section v-else-if="visibleBusinesses.length">
+        <section v-else-if="visibleBusinesses.length" class="trego-business-list">
           <BusinessCardMobile
             v-for="business in visibleBusinesses"
             :key="business.id"
@@ -260,4 +258,3 @@ watch([query, selectedCategory], async () => {
     </IonContent>
   </IonPage>
 </template>
-

@@ -12,7 +12,7 @@ const props = defineProps({
   },
   height: {
     type: Number,
-    default: 220,
+    default: 180,
   },
 });
 
@@ -82,7 +82,7 @@ const chartLabels = computed(() => {
 <style scoped>
 .dashboard-chart {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 svg {
@@ -102,7 +102,7 @@ svg {
 .dashboard-chart__line {
   fill: none;
   stroke: #2563eb;
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -110,15 +110,15 @@ svg {
 circle {
   fill: #ffffff;
   stroke: #2563eb;
-  stroke-width: 2;
+  stroke-width: 1.75;
 }
 
 .dashboard-chart__labels {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   color: #848484;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.25;
 }
 </style>

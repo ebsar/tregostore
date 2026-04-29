@@ -564,7 +564,7 @@ async function handleRequestEditAccess() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen trego-studio-screen">
         <AppPageHeader
           kicker="Business Studio"
           title="Menaxho produktet, porosite dhe promocionet nga telefoni."
@@ -593,10 +593,10 @@ async function handleRequestEditAccess() {
         </EmptyStatePanel>
 
         <template v-else>
-          <section>
-            <div>
+          <section class="trego-studio-card">
+            <div class="trego-account-hero__row">
               <div>
-                <p>Profili</p>
+                <p class="trego-kicker">Profili</p>
                 <h2>{{ businessProfile?.businessName || sessionState.user?.businessName || "Business Studio" }}</h2>
                 <p>
                   {{ businessProfile?.businessDescription || "Menaxho katalogun, porosite dhe komunikimin pa kaluar ne desktop." }}
@@ -605,7 +605,7 @@ async function handleRequestEditAccess() {
               <span>{{ businessProfile?.verificationStatus || "locked" }}</span>
             </div>
 
-            <div>
+            <div class="trego-studio-summary">
               <article v-for="item in summaryCards" :key="item.label">
                 <IonIcon :icon="item.icon" />
                 <strong>{{ item.value }}</strong>
@@ -614,11 +614,11 @@ async function handleRequestEditAccess() {
             </div>
           </section>
 
-          <section>
+          <section class="trego-studio-actions" aria-label="Business functions">
             <button
               v-for="item in studioQuickActions"
               :key="item.key"
-             
+              class="trego-studio-action"
               type="button"
               @click="handleStudioAction(item)"
             >
@@ -630,11 +630,11 @@ async function handleRequestEditAccess() {
             </button>
           </section>
 
-          <section v-if="studioFocusCards.length > 0">
+          <section v-if="studioFocusCards.length > 0" class="trego-studio-focus">
             <button
               v-for="item in studioFocusCards"
               :key="item.key"
-             
+              class="trego-studio-focus__item"
               type="button"
               @click="item.key === 'verify' ? handleRequestVerification() : handleStudioAction(item)"
             >
@@ -644,12 +644,12 @@ async function handleRequestEditAccess() {
             </button>
           </section>
 
-          <section>
-            <button type="button" @click="activeSection = 'catalog'">Katalogu</button>
-            <button type="button" @click="activeSection = 'orders'">Porosite</button>
-            <button type="button" @click="activeSection = 'promotions'">Promocione</button>
-            <button type="button" @click="activeSection = 'returns'">Kthime</button>
-            <button type="button" @click="activeSection = 'profile'">Profili</button>
+          <section class="trego-segment-row" aria-label="Business sections">
+            <button :class="{ 'is-active': activeSection === 'catalog' }" type="button" @click="activeSection = 'catalog'">Katalogu</button>
+            <button :class="{ 'is-active': activeSection === 'orders' }" type="button" @click="activeSection = 'orders'">Porosite</button>
+            <button :class="{ 'is-active': activeSection === 'promotions' }" type="button" @click="activeSection = 'promotions'">Promocione</button>
+            <button :class="{ 'is-active': activeSection === 'returns' }" type="button" @click="activeSection = 'returns'">Kthime</button>
+            <button :class="{ 'is-active': activeSection === 'profile' }" type="button" @click="activeSection = 'profile'">Profili</button>
           </section>
 
           <p v-if="ui.message">{{ ui.message }}</p>
@@ -659,27 +659,26 @@ async function handleRequestEditAccess() {
           </section>
 
           <template v-else-if="activeSection === 'catalog'">
-            <section>
-              <div>
+            <section class="trego-studio-card">
+              <div class="trego-section-toolbar">
                 <div>
-                  <p>Shto produkt</p>
+                  <p class="trego-kicker">Shto produkt</p>
                   <h2>{{ editingProductId ? "Perditeso artikullin" : "Krijo artikull te ri" }}</h2>
                   <p>Hapat jane ndare per mobile: detajet, cmimi, variantet, media dhe preview final.</p>
                 </div>
                 <IonButton @click="resetProductForm">Reset</IonButton>
               </div>
 
-              <div v-if="!canManageCatalog">
+              <div v-if="!canManageCatalog" class="trego-card">
                 <IonIcon :icon="alertCircleOutline" />
                 <span>Verifiko biznesin para se te shtosh ose importosh produkte.</span>
               </div>
 
-              <div>
+              <div class="trego-flow-steps">
                 <button
                   v-for="step in productFlowSteps"
                   :key="step.id"
-                 
-                 
+                  :class="['trego-flow-step', { 'is-active': productFlowStep === step.id }]"
                   type="button"
                   @click="openProductFlowStep(step.id)"
                 >
@@ -695,7 +694,7 @@ async function handleRequestEditAccess() {
                     <h3>Emri, kodi dhe pershkrimi</h3>
                   </div>
                 </div>
-                <div>
+                <div class="trego-form-grid">
                   <label><span>SKU / Article</span><input v-model="productForm.articleNumber" type="text" placeholder="ART-10025" /></label>
                   <label><span>Titulli</span><input v-model="productForm.title" type="text" placeholder="Titulli i produktit" /></label>
                 </div>
@@ -1020,4 +1019,3 @@ async function handleRequestEditAccess() {
     </IonContent>
   </IonPage>
 </template>
-

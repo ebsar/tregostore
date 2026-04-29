@@ -17,6 +17,8 @@ const form = reactive({
   birthDate: "",
   gender: "",
   password: "",
+  marketingEmailsOptIn: false,
+  termsAccepted: false,
 });
 const ui = reactive({
   loading: false,
@@ -57,6 +59,13 @@ async function submitForm() {
     return;
   }
 
+  if (!form.termsAccepted) {
+    ui.message = "Please accept the Terms & Conditions to create your account.";
+    ui.type = "error";
+    ui.loading = false;
+    return;
+  }
+
   const submittedEmail = form.email.trim();
 
   try {
@@ -69,6 +78,8 @@ async function submitForm() {
         phoneNumber: form.phoneNumber.trim(),
         birthDate: form.birthDate,
         gender: form.gender,
+        marketingEmailsOptIn: form.marketingEmailsOptIn,
+        termsAccepted: form.termsAccepted,
       }),
     });
 
@@ -93,6 +104,8 @@ async function submitForm() {
     form.birthDate = "";
     form.gender = "";
     form.password = "";
+    form.marketingEmailsOptIn = false;
+    form.termsAccepted = false;
 
     await router.push(data.redirectTo || getVerifyEmailUrl(submittedEmail));
   } catch (error) {
@@ -179,6 +192,29 @@ async function submitForm() {
         required
       />
 
+      <div class="signup-form__consents">
+        <label class="signup-form__choice" for="signup-marketing-emails">
+          <input
+            id="signup-marketing-emails"
+            v-model="form.marketingEmailsOptIn"
+            name="marketingEmailsOptIn"
+            type="checkbox"
+          >
+          <span>Send me emails with ads, offers, and promotions.</span>
+        </label>
+
+        <label class="signup-form__choice" for="signup-terms">
+          <input
+            id="signup-terms"
+            v-model="form.termsAccepted"
+            name="termsAccepted"
+            type="checkbox"
+            required
+          >
+          <span>I accept the Terms & Conditions.</span>
+        </label>
+      </div>
+
       <AuthPrimaryButton :loading="ui.loading" loading-label="Creating account...">
         Create account
       </AuthPrimaryButton>
@@ -200,6 +236,28 @@ async function submitForm() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.signup-form__consents {
+  display: grid;
+  gap: 10px;
+}
+
+.signup-form__choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: #525252;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.signup-form__choice input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: #111111;
 }
 
 @media (max-width: 560px) {

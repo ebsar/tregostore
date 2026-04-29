@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="colorPrimary">#FF6F18</color>
+    <color name="colorPrimaryDark">#F26522</color>
+    <color name="colorAccent">#FF6F18</color>
+    <color name="trego_background">#F6F7F8</color>
+    <color name="trego_surface">#FFFFFF</color>
     <color name="trego_notification_accent">#FF6A2B</color>
 </resources>

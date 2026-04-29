@@ -32,6 +32,77 @@ const technologySection = computed(() => isTechnologySection(props.form.pageSect
 const customAttributesSection = computed(() => !clothingSection.value && !technologySection.value);
 const packageAmountSection = computed(() => supportsPackageAmount(props.form.pageSection));
 const selectedColorCount = computed(() => Array.isArray(props.form.selectedColors) ? props.form.selectedColors.length : 0);
+const aiContextText = computed(() => normalizeSuggestionText([
+  props.form.title,
+  props.form.metaDescription,
+  props.form.description,
+  props.form.brand,
+  props.form.material,
+  props.form.productType,
+].filter(Boolean).join(" ")));
+const subcategorySuggestions = computed(() =>
+  rankSuggestionOptions(audienceOptions.value, AUDIENCE_KEYWORDS, audienceOptions.value.length),
+);
+const productTypeSuggestions = computed(() =>
+  rankSuggestionOptions(productTypeOptions.value, PRODUCT_TYPE_KEYWORDS, Math.min(7, productTypeOptions.value.length)),
+);
+const colorSuggestions = computed(() => buildColorSuggestions());
+const detailSuggestionGroups = computed(() => {
+  const groups = [];
+
+  if (clothingSection.value) {
+    groups.push({
+      key: "color",
+      label: "Colors",
+      options: colorSuggestions.value,
+    });
+    groups.push({
+      key: "sizePreset",
+      label: "Sizes",
+      options: getClothingSizePresetSuggestions(),
+    });
+  }
+
+  if (packageAmountSection.value) {
+    groups.push({
+      key: "package",
+      label: "Package",
+      options: getPackageSuggestionOptions(),
+    });
+  }
+
+  if (technologySection.value) {
+    groups.push({
+      key: "technologyPreset",
+      label: "Tech details",
+      options: getTechnologyPresetSuggestions(),
+    });
+  }
+
+  if (customAttributesSection.value) {
+    groups.push({
+      key: "customAttribute",
+      label: "Details",
+      options: getCustomAttributeSuggestions(),
+    });
+  }
+
+  return groups.filter((group) => Array.isArray(group.options) && group.options.length > 0);
+});
+const hasAiCatalogSuggestions = computed(() =>
+  subcategorySuggestions.value.length > 0
+  || productTypeSuggestions.value.length > 0
+  || detailSuggestionGroups.value.length > 0,
+);
+const aiGuidanceSummary = computed(() => {
+  if (subcategorySuggestions.value.length > 0) {
+    return "Category selected. Pick the best subcategory, then choose product type.";
+  }
+  if (productTypeSuggestions.value.length > 0) {
+    return "Subcategory selected. Product type recommendations are ready.";
+  }
+  return "Product details are ready for this category.";
+});
 const enabledClothingVariantCount = computed(() =>
   (Array.isArray(props.form.clothingColorVariants) ? props.form.clothingColorVariants : []).reduce(
     (total, colorVariant) =>
@@ -71,6 +142,127 @@ const COLOR_SWATCH_STYLES = {
   ari: "linear-gradient(135deg, #ffe49b, #c89a2c)",
   krem: "linear-gradient(135deg, #fff6eb, #e2c9ae)",
   "shume-ngjyra": "linear-gradient(135deg, #ff6f91 0%, #ffd36e 32%, #8bd97c 64%, #66a9ff 100%)",
+};
+
+const AUDIENCE_KEYWORDS = {
+  men: ["men", "man", "male", "meshkuj", "burra", "mashkull", "djem"],
+  women: ["women", "woman", "female", "femra", "grua", "vajza", "zonja"],
+  kids: ["kids", "children", "femije", "djem", "vajza"],
+  babies: ["baby", "babies", "bebe", "foshnje"],
+};
+
+const PRODUCT_TYPE_KEYWORDS = {
+  tshirt: ["tshirt", "t shirt", "maice", "maic"],
+  shirt: ["shirt", "kemishe"],
+  blouse: ["blouse", "bluze"],
+  pants: ["pants", "pantallona"],
+  jeans: ["jeans", "xhinse", "denim"],
+  shorts: ["shorts", "pantallona te shkurta"],
+  hoodie: ["hoodie", "duks"],
+  sweater: ["sweater", "pulover"],
+  jacket: ["jacket", "jakne"],
+  coat: ["coat", "pallto"],
+  tracksuit: ["tracksuit", "trenerke"],
+  shoes: ["shoes", "kepuce"],
+  sneakers: ["sneakers", "patika"],
+  dress: ["dress", "fustan"],
+  skirt: ["skirt", "fund"],
+  perfume: ["perfume", "parfum"],
+  shampoo: ["shampoo", "shampo"],
+  "face-cream": ["face cream", "krem fytyre", "krem per fytyre"],
+  "body-cream": ["body cream", "krem trup", "krem per trup"],
+  "hand-cream": ["hand cream", "krem duar", "krem per duar"],
+  "hair-cream": ["hair cream", "krem floke"],
+  makeup: ["makeup", "kozmetike"],
+  lipstick: ["lipstick", "buzekuq"],
+  table: ["table", "tavoline"],
+  chair: ["chair", "karrige"],
+  sofa: ["sofa", "divan"],
+  bed: ["bed", "krevat"],
+  lamp: ["lamp", "llambe"],
+  phone: ["phone", "telefon", "iphone", "android"],
+  laptop: ["laptop"],
+  tablet: ["tablet"],
+  headphones: ["headphones", "degjuese"],
+  smartwatch: ["smartwatch", "ore"],
+};
+
+const COLOR_KEYWORDS = {
+  bardhe: ["white", "bardhe", "e bardhe"],
+  zeze: ["black", "zeze", "e zeze"],
+  gri: ["gray", "grey", "gri"],
+  beige: ["beige", "bezh"],
+  kafe: ["brown", "kafe"],
+  kuqe: ["red", "kuqe", "e kuqe"],
+  roze: ["pink", "roze"],
+  vjollce: ["purple", "vjollce"],
+  blu: ["blue", "blu", "kalter"],
+  gjelber: ["green", "gjelber"],
+  verdhe: ["yellow", "verdhe"],
+  portokalli: ["orange", "portokalli"],
+  argjend: ["silver", "argjend"],
+  ari: ["gold", "ari"],
+  krem: ["cream", "krem"],
+};
+
+const DETAIL_RECOMMENDATIONS_BY_TYPE = {
+  tshirt: { colors: ["bardhe", "zeze", "blu", "gri"], material: "Cotton" },
+  shirt: { colors: ["bardhe", "blu", "zeze"], material: "Cotton" },
+  blouse: { colors: ["bardhe", "roze", "zeze"], material: "Cotton blend" },
+  pants: { colors: ["zeze", "gri", "beige"], material: "Cotton blend" },
+  jeans: { colors: ["blu", "zeze", "gri"], material: "Denim" },
+  hoodie: { colors: ["zeze", "gri", "blu"], material: "Fleece cotton" },
+  jacket: { colors: ["zeze", "gri", "kafe"], material: "Polyester" },
+  shoes: { colors: ["zeze", "bardhe", "kafe"], material: "Leather" },
+  sneakers: { colors: ["bardhe", "zeze", "blu"], material: "Mesh" },
+  perfume: { packages: [{ label: "50 ml", value: "50", unit: "ml" }, { label: "100 ml", value: "100", unit: "ml" }] },
+  shampoo: { packages: [{ label: "250 ml", value: "250", unit: "ml" }, { label: "500 ml", value: "500", unit: "ml" }] },
+  "face-cream": { packages: [{ label: "50 ml", value: "50", unit: "ml" }, { label: "100 ml", value: "100", unit: "ml" }] },
+  "body-cream": { packages: [{ label: "200 ml", value: "200", unit: "ml" }, { label: "250 ml", value: "250", unit: "ml" }] },
+  "hand-cream": { packages: [{ label: "75 ml", value: "75", unit: "ml" }, { label: "100 ml", value: "100", unit: "ml" }] },
+};
+
+const SECTION_FALLBACK_COLORS = {
+  clothing: ["zeze", "bardhe", "blu", "gri", "beige"],
+  sport: ["zeze", "blu", "bardhe", "gri"],
+  technology: ["zeze", "argjend", "bardhe", "gri"],
+  home: ["kafe", "beige", "bardhe", "gri"],
+};
+
+const TECHNOLOGY_PRESETS_BY_TYPE = {
+  phone: [
+    { label: "8GB / 256GB", values: { ram: "8 GB", storage: "256 GB", camera: "48 MP", displaySize: "6.5 inch", batteryCapacity: "4500 mAh", color: "zeze" } },
+    { label: "12GB / 512GB", values: { ram: "12 GB", storage: "512 GB", camera: "50 MP", displaySize: "6.7 inch", batteryCapacity: "5000 mAh", color: "argjend" } },
+  ],
+  laptop: [
+    { label: "16GB / 512GB SSD", values: { ram: "16 GB", storage: "512 GB SSD", processor: "Intel i7 / Ryzen 7", displaySize: "15.6 inch", color: "gri" } },
+    { label: "8GB / 256GB SSD", values: { ram: "8 GB", storage: "256 GB SSD", processor: "Intel i5 / Ryzen 5", displaySize: "14 inch", color: "argjend" } },
+  ],
+  tablet: [
+    { label: "8GB / 128GB", values: { ram: "8 GB", storage: "128 GB", displaySize: "10.9 inch", batteryCapacity: "7000 mAh", color: "gri" } },
+  ],
+  smartwatch: [
+    { label: "Bluetooth / 44mm", values: { storage: "32 GB", displaySize: "44 mm", batteryCapacity: "Up to 18h", color: "zeze" } },
+  ],
+  headphones: [
+    { label: "Wireless", values: { batteryCapacity: "Up to 30h", color: "zeze" } },
+  ],
+};
+
+const CUSTOM_ATTRIBUTE_PRESETS_BY_TYPE = {
+  table: [{ label: "Wood", key: "material", value: "Wood" }, { label: "120 x 70 cm", key: "dimensions", value: "120 x 70 cm" }],
+  chair: [{ label: "Fabric", key: "material", value: "Fabric" }, { label: "Matte finish", key: "finish", value: "Matte" }],
+  sofa: [{ label: "3-seat", key: "model", value: "3-seat" }, { label: "Fabric", key: "material", value: "Fabric" }],
+  bed: [{ label: "160 x 200 cm", key: "dimensions", value: "160 x 200 cm" }, { label: "Wood", key: "material", value: "Wood" }],
+  lamp: [{ label: "LED", key: "model", value: "LED" }, { label: "Metal", key: "material", value: "Metal" }],
+  sneakers: [{ label: "Mesh", key: "material", value: "Mesh" }, { label: "EU 42", key: "size", value: "EU 42" }],
+  ball: [{ label: "Size 5", key: "size", value: "5" }, { label: "PU leather", key: "material", value: "PU leather" }],
+  "sports-bag": [{ label: "30 L", key: "volume", value: "30 L" }, { label: "Polyester", key: "material", value: "Polyester" }],
+};
+
+const SECTION_CUSTOM_ATTRIBUTE_FALLBACKS = {
+  home: [{ label: "Material", key: "material", value: "Wood" }, { label: "Dimensions", key: "dimensions", value: "Standard" }],
+  sport: [{ label: "Material", key: "material", value: "Polyester" }, { label: "Size", key: "size", value: "Standard" }],
 };
 
 watch(
@@ -171,6 +363,225 @@ function getColorSwatchStyle(colorValue) {
 
 function getColorLabel(colorValue) {
   return PRODUCT_COLOR_LABELS[colorValue] || colorValue;
+}
+
+function normalizeSuggestionText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function scoreSuggestionValue(value, aliases = []) {
+  const context = aiContextText.value;
+  if (!context) {
+    return 0;
+  }
+
+  const candidateTokens = normalizeSuggestionText([value, ...aliases].join(" "))
+    .split(" ")
+    .filter((token) => token.length > 1);
+
+  return candidateTokens.reduce((score, token) => {
+    if (!context.includes(token)) {
+      return score;
+    }
+    return score + (token.length > 3 ? 4 : 2);
+  }, 0);
+}
+
+function rankSuggestionOptions(options = [], keywordMap = {}, limit = 6) {
+  return options
+    .map((option, index) => {
+      const aliases = keywordMap[String(option.value || "").trim().toLowerCase()] || [];
+      const score = scoreSuggestionValue(`${option.label} ${option.value}`, aliases);
+      return {
+        ...option,
+        score,
+        index,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, limit);
+}
+
+function getRecommendedColorValues() {
+  const productType = String(props.form.productType || "").trim().toLowerCase();
+  const section = String(props.form.pageSection || "").trim().toLowerCase();
+  return DETAIL_RECOMMENDATIONS_BY_TYPE[productType]?.colors
+    || SECTION_FALLBACK_COLORS[section]
+    || [];
+}
+
+function buildColorSuggestions() {
+  const recommendedColors = getRecommendedColorValues();
+  const recommendedSet = new Set(recommendedColors);
+  return PRODUCT_REQUIRED_COLOR_OPTIONS
+    .map((option, index) => {
+      const aliases = COLOR_KEYWORDS[String(option.value || "").trim().toLowerCase()] || [];
+      const score = scoreSuggestionValue(`${option.label} ${option.value}`, aliases)
+        + (recommendedSet.has(option.value) ? 6 - Math.max(0, recommendedColors.indexOf(option.value)) : 0)
+        + (isColorSelected(option.value) ? 1 : 0);
+      return {
+        ...option,
+        score,
+        index,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, 6);
+}
+
+function getClothingSizePresetSuggestions() {
+  const audience = String(props.form.audience || "").trim().toLowerCase();
+  if (audience === "babies") {
+    return [
+      { label: "0-3 / 3-6", sizes: ["XS", "S"] },
+      { label: "6-12 / 12-18", sizes: ["M", "L"] },
+    ];
+  }
+  if (audience === "kids") {
+    return [
+      { label: "Kids core", sizes: ["XS", "S", "M"] },
+      { label: "Kids full", sizes: ["XS", "S", "M", "L"] },
+    ];
+  }
+  return [
+    { label: "Core sizes", sizes: ["S", "M", "L"] },
+    { label: "Full range", sizes: ["XS", "S", "M", "L", "XL", "XXL"] },
+    { label: "Plus sizes", sizes: ["XL", "XXL", "XXXL"] },
+  ];
+}
+
+function getPackageSuggestionOptions() {
+  const productType = String(props.form.productType || "").trim().toLowerCase();
+  return DETAIL_RECOMMENDATIONS_BY_TYPE[productType]?.packages || [
+    { label: "50 ml", value: "50", unit: "ml" },
+    { label: "100 ml", value: "100", unit: "ml" },
+    { label: "250 ml", value: "250", unit: "ml" },
+  ];
+}
+
+function getTechnologyPresetSuggestions() {
+  const productType = String(props.form.productType || "").trim().toLowerCase();
+  return TECHNOLOGY_PRESETS_BY_TYPE[productType] || [
+    { label: "Standard tech", values: { ram: "8 GB", storage: "256 GB", color: "zeze" } },
+  ];
+}
+
+function getCustomAttributeSuggestions() {
+  const productType = String(props.form.productType || "").trim().toLowerCase();
+  const section = String(props.form.pageSection || "").trim().toLowerCase();
+  return CUSTOM_ATTRIBUTE_PRESETS_BY_TYPE[productType]
+    || SECTION_CUSTOM_ATTRIBUTE_FALLBACKS[section]
+    || [{ label: "Material", key: "material", value: "Standard" }];
+}
+
+function selectAudienceSuggestion(audienceValue) {
+  props.form.audience = String(audienceValue || "").trim().toLowerCase();
+  handleSectionChange();
+}
+
+function selectProductTypeSuggestion(productTypeValue) {
+  props.form.productType = String(productTypeValue || "").trim().toLowerCase();
+  syncVariantCollections();
+}
+
+function applyDetailSuggestion(groupKey, option) {
+  if (groupKey === "color") {
+    toggleColor(option.value);
+    return;
+  }
+
+  if (groupKey === "sizePreset") {
+    applySizePresetSuggestion(option.sizes || []);
+    return;
+  }
+
+  if (groupKey === "package") {
+    props.form.packageAmountValue = String(option.value || "");
+    props.form.packageAmountUnit = String(option.unit || "ml");
+    return;
+  }
+
+  if (groupKey === "technologyPreset") {
+    applyTechnologyPresetSuggestion(option.values || {});
+    return;
+  }
+
+  if (groupKey === "customAttribute") {
+    applyCustomAttributeSuggestion(option);
+  }
+}
+
+function applySizePresetSuggestion(sizes = []) {
+  const normalizedSizes = new Set(
+    sizes.map((size) => String(size || "").trim().toUpperCase()).filter(Boolean),
+  );
+  if (normalizedSizes.size === 0) {
+    return;
+  }
+
+  if (!selectedColorCount.value) {
+    const firstColor = colorSuggestions.value[0]?.value || PRODUCT_REQUIRED_COLOR_OPTIONS[0]?.value || "";
+    if (firstColor) {
+      props.form.selectedColors = [firstColor];
+    }
+  }
+
+  syncClothingColorVariants();
+  props.form.clothingColorVariants = props.form.clothingColorVariants.map((row) => ({
+    ...row,
+    sizeEntries: row.sizeEntries.map((entry) => ({
+      ...entry,
+      enabled: entry.enabled || normalizedSizes.has(String(entry.size || "").trim().toUpperCase()),
+    })),
+  }));
+}
+
+function applyTechnologyPresetSuggestion(values = {}) {
+  if (!Array.isArray(props.form.technologyVariants) || props.form.technologyVariants.length === 0) {
+    props.form.technologyVariants = [createEmptyTechnologyVariant()];
+  }
+
+  props.form.technologyVariants[0] = {
+    ...props.form.technologyVariants[0],
+    ...Object.fromEntries(
+      Object.entries(values).filter(([, value]) => String(value || "").trim()),
+    ),
+  };
+}
+
+function applyCustomAttributeSuggestion(option = {}) {
+  if (!Array.isArray(props.form.customVariantRows) || props.form.customVariantRows.length === 0) {
+    props.form.customVariantRows = [createEmptyCustomVariantRow()];
+  }
+
+  const targetIndex = props.form.customVariantRows.findIndex((row) =>
+    !String(row.attributeKey || "").trim() && !String(row.attributeValue || "").trim(),
+  );
+  const nextRow = {
+    attributeKey: String(option.key || "").trim(),
+    attributeValue: String(option.value || "").trim(),
+    quantity: "0",
+    price: "",
+    imagePath: "",
+  };
+
+  if (targetIndex >= 0) {
+    props.form.customVariantRows[targetIndex] = {
+      ...props.form.customVariantRows[targetIndex],
+      ...nextRow,
+    };
+    return;
+  }
+
+  props.form.customVariantRows = [
+    ...props.form.customVariantRows,
+    nextRow,
+  ];
 }
 
 function enabledSizeEntries(colorVariant) {
@@ -305,6 +716,68 @@ function removeCustomVariantRow(index) {
         <div v-else class="product-compact-config__stock-note">
           <span>Quick note</span>
           <small>Use the stock field above if this product does not need detailed variant rows.</small>
+        </div>
+      </div>
+
+      <div v-if="hasAiCatalogSuggestions" class="product-compact-config__ai-panel">
+        <div class="product-compact-config__ai-head">
+          <span>AI recommendations</span>
+          <small>{{ aiGuidanceSummary }}</small>
+        </div>
+
+        <div v-if="subcategorySuggestions.length > 0" class="product-compact-config__ai-group">
+          <p>Subcategory</p>
+          <div class="product-compact-config__ai-chips">
+            <button
+              v-for="option in subcategorySuggestions"
+              :key="`ai-audience-${option.value}`"
+              type="button"
+              :class="{ 'is-selected': form.audience === option.value }"
+              @click="selectAudienceSuggestion(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="productTypeSuggestions.length > 0" class="product-compact-config__ai-group">
+          <p>Product type</p>
+          <div class="product-compact-config__ai-chips">
+            <button
+              v-for="option in productTypeSuggestions"
+              :key="`ai-type-${option.value}`"
+              type="button"
+              :class="{ 'is-selected': form.productType === option.value }"
+              @click="selectProductTypeSuggestion(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-for="group in detailSuggestionGroups"
+          :key="`ai-detail-${group.key}`"
+          class="product-compact-config__ai-group"
+        >
+          <p>{{ group.label }}</p>
+          <div class="product-compact-config__ai-chips">
+            <button
+              v-for="option in group.options"
+              :key="`${group.key}-${option.value || option.label}`"
+              type="button"
+              :class="{ 'is-selected': group.key === 'color' && isColorSelected(option.value) }"
+              @click="applyDetailSuggestion(group.key, option)"
+            >
+              <span
+                v-if="group.key === 'color'"
+                class="product-compact-config__swatch-dot"
+                :style="getColorSwatchStyle(option.value)"
+                aria-hidden="true"
+              ></span>
+              {{ option.label }}
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -658,6 +1131,77 @@ function removeCustomVariantRow(index) {
   line-height: 1.4;
 }
 
+.product-compact-config__ai-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbe7ff;
+  border-radius: 12px;
+  background: #f7fbff;
+}
+
+.product-compact-config__ai-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.product-compact-config__ai-head span,
+.product-compact-config__ai-group p {
+  margin: 0;
+  color: #111111;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.product-compact-config__ai-head small {
+  max-width: 520px;
+  color: #5b6f95;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.product-compact-config__ai-group {
+  display: grid;
+  gap: 7px;
+}
+
+.product-compact-config__ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.product-compact-config__ai-chips button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f4f8f;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.product-compact-config__ai-chips button:hover,
+.product-compact-config__ai-chips button.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .product-compact-config__colors {
   display: grid;
   gap: 10px;
@@ -889,9 +1433,14 @@ function removeCustomVariantRow(index) {
 @media (max-width: 720px) {
   .product-compact-config__section-head,
   .product-compact-config__colors-head,
+  .product-compact-config__ai-head,
   .product-compact-config__variant-group-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .product-compact-config__ai-head small {
+    text-align: left;
   }
 }
 </style>

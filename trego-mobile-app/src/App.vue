@@ -251,8 +251,8 @@ watch(
 
     <div
       v-if="showStatusBanner"
-     
-     
+      class="trego-status-banner"
+      role="status"
     >
       <span />
       <span>{{ bannerLabel }}</span>

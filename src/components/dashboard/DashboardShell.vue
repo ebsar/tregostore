@@ -471,7 +471,7 @@ function buildDashboardRoute(target, extraQuery = {}) {
 
             <template v-for="item in group.items" :key="`${item.key}-${item.label}`">
               <RouterLink
-                v-if="item.to"
+                v-if="item.to && !item.local"
                 :to="item.to"
                 :class="{ 'is-active': activeKey === item.key }"
                 @click="sidebarOpen = false"

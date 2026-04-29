@@ -94,7 +94,7 @@ watch(
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <section v-if="loading">
           <IonSpinner name="crescent" />
         </section>
@@ -170,4 +170,3 @@ watch(
     </IonContent>
   </IonPage>
 </template>
-

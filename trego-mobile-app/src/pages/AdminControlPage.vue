@@ -190,7 +190,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <AppPageHeader
           kicker="Admin"
           title="Kontroll qendror per users, biznese dhe raportime."
@@ -394,4 +394,3 @@ async function handleReportUpdate(report: ReportItem, status: string) {
     </IonContent>
   </IonPage>
 </template>
-

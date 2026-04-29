@@ -43,19 +43,19 @@ struct LiquidGlassTabBar: View {
     @State private var animatedProgress: CGFloat = 0
 
     private let groupedTabs: [LiquidGlassTab] = [.home, .businesses, .cart, .llogaria]
-    private let shellHeight: CGFloat = 68
-    private let searchOrbSize: CGFloat = 66
+    private let shellHeight: CGFloat = 58
+    private let searchOrbSize: CGFloat = 56
     private let innerInset: CGFloat = 5
     private let gap: CGFloat = 8
-    private let groupedShadowRadius: CGFloat = 16
+    private let groupedShadowRadius: CGFloat = 10
 
     var body: some View {
         HStack(spacing: gap) {
             groupedTabShell
             searchOrb
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity)
         .onAppear {
@@ -99,9 +99,9 @@ struct LiquidGlassTabBar: View {
             .compositingGroup()
             .overlay {
                 Capsule()
-                    .strokeBorder(shellStroke, lineWidth: 0.85)
+                    .strokeBorder(shellStroke, lineWidth: 0.9)
             }
-            .shadow(color: shadowColor, radius: groupedShadowRadius, x: 0, y: 8)
+            .shadow(color: shadowColor, radius: groupedShadowRadius, x: 0, y: 5)
         }
         .frame(height: shellHeight)
     }
@@ -133,7 +133,7 @@ struct LiquidGlassTabBar: View {
             }
             .frame(width: searchOrbSize, height: searchOrbSize)
             .compositingGroup()
-            .shadow(color: shadowColor.opacity(0.82), radius: 14, x: 0, y: 7)
+                    .shadow(color: shadowColor.opacity(0.72), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(LiquidGlassTab.kerko.title))
@@ -146,7 +146,7 @@ struct LiquidGlassTabBar: View {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: tab.symbolName)
-                        .font(.system(size: 18, weight: selection == tab ? .semibold : .medium))
+                        .font(.system(size: 17, weight: selection == tab ? .semibold : .medium))
                         .symbolRenderingMode(.hierarchical)
 
                     if let badge = badges[tab], !badge.isEmpty {
@@ -161,7 +161,7 @@ struct LiquidGlassTabBar: View {
                 }
 
                 Text(tab.title)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
             }
@@ -385,19 +385,19 @@ struct LiquidGlassTabBar: View {
     }
 
     private var shellTint: Color {
-        colorScheme == .dark ? .white.opacity(0.04) : .white.opacity(0.1)
+        colorScheme == .dark ? .white.opacity(0.05) : .white.opacity(0.94)
     }
 
     private var selectedTint: Color {
-        colorScheme == .dark ? .white.opacity(0.1) : .white.opacity(0.18)
+        colorScheme == .dark ? Color(red: 1.0, green: 0.435, blue: 0.094).opacity(0.16) : Color(red: 1.0, green: 0.953, blue: 0.918)
     }
 
     private var shellStroke: Color {
-        colorScheme == .dark ? .white.opacity(0.15) : .white.opacity(0.48)
+        colorScheme == .dark ? .white.opacity(0.12) : Color(red: 0.898, green: 0.906, blue: 0.922)
     }
 
     private var selectedStroke: Color {
-        colorScheme == .dark ? .white.opacity(0.2) : .white.opacity(0.58)
+        colorScheme == .dark ? Color(red: 1.0, green: 0.435, blue: 0.094).opacity(0.28) : Color(red: 1.0, green: 0.435, blue: 0.094).opacity(0.28)
     }
 
     private var selectedForeground: Color {
@@ -436,7 +436,7 @@ struct LiquidGlassTabBar: View {
 }
 
 private enum TregoTabBarPalette {
-    static let badge = Color(red: 0.95, green: 0.45, blue: 0.2)
+    static let badge = Color(red: 1.0, green: 0.435, blue: 0.094)
 }
 
 private struct TregoGlassNoiseTexture: View {

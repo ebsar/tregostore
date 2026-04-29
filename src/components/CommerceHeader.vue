@@ -1,14 +1,24 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import HeaderCartOverlay from "./HeaderCartOverlay.vue";
 import { deriveSectionFromCategory, PRODUCT_PAGE_SECTION_OPTIONS } from "../lib/product-catalog";
+import { requestJson } from "../lib/api";
+import { setPendingVisualSearchFile } from "../lib/visual-search-transfer";
 import { appState } from "../stores/app-state";
 
 const route = useRoute();
 const router = useRouter();
+const HeaderCartOverlay = defineAsyncComponent(() => import("./HeaderCartOverlay.vue"));
+const HeaderWishlistOverlay = defineAsyncComponent(() => import("./HeaderWishlistOverlay.vue"));
 const searchQuery = ref("");
+const searchFormElement = ref(null);
+const searchInputElement = ref(null);
+const mobileSearchToggleElement = ref(null);
+const visualSearchInputElement = ref(null);
 const cartDrawerOpen = ref(false);
+const wishlistDrawerOpen = ref(false);
+const mobileSearchOpen = ref(false);
+const unreadNotificationsCount = ref(0);
 const promoNow = ref(Date.now());
 const promoDeadline = Date.now() + ((((4 * 24) + 18) * 60 * 60) * 1000);
 let promoIntervalId = 0;
@@ -63,6 +73,10 @@ const activeCategoryValue = computed(() => {
   return pageSectionFromRoute || "all";
 });
 const businessDirectoryActive = computed(() => route.path === "/bizneset");
+const canUseProductPhotoSearch = computed(() => {
+  const role = String(appState.user?.role || "").toLowerCase();
+  return role !== "admin" && role !== "business";
+});
 
 const categoryLinks = computed(() => ([
   {
@@ -83,6 +97,13 @@ const cartBadgeLabel = computed(() => {
 
   return appState.cartCount > 99 ? "99+" : String(appState.cartCount);
 });
+const accountNotificationBadgeLabel = computed(() => {
+  if (unreadNotificationsCount.value <= 0) {
+    return "";
+  }
+
+  return unreadNotificationsCount.value > 99 ? "99+" : String(unreadNotificationsCount.value);
+});
 
 watch(
   () => route.query.q,
@@ -96,6 +117,16 @@ watch(
   () => route.fullPath,
   () => {
     cartDrawerOpen.value = false;
+    wishlistDrawerOpen.value = false;
+    mobileSearchOpen.value = false;
+    void loadUnreadNotificationsCount();
+  },
+);
+
+watch(
+  () => appState.user?.id,
+  () => {
+    void loadUnreadNotificationsCount();
   },
 );
 
@@ -106,6 +137,8 @@ onMounted(() => {
   }, 1000);
 
   window.addEventListener("tregio:open-track-order", handleOpenTrackOrderEvent);
+  window.addEventListener("click", handleWindowClick);
+  void loadUnreadNotificationsCount();
 });
 
 onBeforeUnmount(() => {
@@ -115,6 +148,7 @@ onBeforeUnmount(() => {
   }
 
   window.removeEventListener("tregio:open-track-order", handleOpenTrackOrderEvent);
+  window.removeEventListener("click", handleWindowClick);
 });
 
 function normalizeSearchQuery(value) {
@@ -148,6 +182,7 @@ async function handleSearchSubmit() {
   const currentQuery = normalizeSearchQuery(route.query.q);
 
   if (route.path === "/kerko" && currentQuery === nextQuery) {
+    mobileSearchOpen.value = false;
     return;
   }
 
@@ -155,18 +190,100 @@ async function handleSearchSubmit() {
     path: "/kerko",
     query: nextQuery ? { q: nextQuery } : {},
   });
+  mobileSearchOpen.value = false;
+}
+
+async function toggleMobileSearch() {
+  mobileSearchOpen.value = !mobileSearchOpen.value;
+  if (!mobileSearchOpen.value) {
+    return;
+  }
+
+  await nextTick();
+  searchInputElement.value?.focus?.();
+  searchInputElement.value?.select?.();
+}
+
+function openVisualSearchPicker() {
+  visualSearchInputElement.value?.click?.();
+}
+
+async function handleVisualSearchSelection(event) {
+  const nextFile = event?.target?.files?.[0] || null;
+  if (!nextFile) {
+    return;
+  }
+
+  setPendingVisualSearchFile(nextFile);
+  await router.push("/kerko");
+
+  if (event?.target) {
+    event.target.value = "";
+  }
 }
 
 async function handleOpenTrackOrderEvent() {
   await router.push("/track-order");
 }
 
+function handleWindowClick(event) {
+  if (!mobileSearchOpen.value) {
+    return;
+  }
+
+  const target = event?.target;
+  if (!target) {
+    return;
+  }
+
+  if (searchFormElement.value?.contains(target) || mobileSearchToggleElement.value?.contains(target)) {
+    return;
+  }
+
+  mobileSearchOpen.value = false;
+}
+
+async function loadUnreadNotificationsCount() {
+  if (!appState.user) {
+    unreadNotificationsCount.value = 0;
+    return;
+  }
+
+  try {
+    const { response, data } = await requestJson("/api/notifications/count");
+    if (!response.ok || !data?.ok) {
+      unreadNotificationsCount.value = 0;
+      return;
+    }
+
+    unreadNotificationsCount.value = Math.max(0, Number(data.unreadCount || 0));
+  } catch (error) {
+    console.error(error);
+    unreadNotificationsCount.value = 0;
+  }
+}
+
 function openCartDrawer() {
+  wishlistDrawerOpen.value = false;
   cartDrawerOpen.value = true;
 }
 
 function closeCartDrawer() {
   cartDrawerOpen.value = false;
+}
+
+function openWishlistDrawer() {
+  cartDrawerOpen.value = false;
+  wishlistDrawerOpen.value = true;
+}
+
+function closeWishlistDrawer() {
+  wishlistDrawerOpen.value = false;
+}
+
+async function handleWishlistLogin() {
+  wishlistDrawerOpen.value = false;
+  await router.push("/login?redirect=%2Fwishlist");
 }
 </script>
 
@@ -176,24 +293,61 @@ function closeCartDrawer() {
       <RouterLink class="site-header__brand" to="/" aria-label="TREGIO home">
         <img
           class="site-header__brand-image"
-          src="/trego-logo.png"
+          src="/trego-logo.webp?v=20260410"
           alt="TREGIO"
           width="1024"
           height="1024"
+          decoding="async"
+          fetchpriority="high"
         >
       </RouterLink>
 
-      <form class="site-header__search" role="search" @submit.prevent="handleSearchSubmit">
+      <form
+        ref="searchFormElement"
+        class="site-header__search"
+        :class="{ 'site-header__search--mobile-open': mobileSearchOpen }"
+        role="search"
+        @submit.prevent="handleSearchSubmit"
+      >
         <label class="site-header__search-label" for="site-header-search">Search products</label>
-        <input
-          id="site-header-search"
-          v-model="searchQuery"
-          class="site-header__search-input"
-          type="search"
-          name="q"
-          placeholder="Search products, brands, and stores"
-          autocomplete="off"
-        />
+        <div
+          class="site-header__search-field"
+          :class="{ 'site-header__search-field--photo': canUseProductPhotoSearch }"
+        >
+          <input
+            id="site-header-search"
+            ref="searchInputElement"
+            v-model="searchQuery"
+            class="site-header__search-input"
+            type="search"
+            name="q"
+            placeholder="Search products, brands, and stores"
+            autocomplete="off"
+          />
+          <button
+            v-if="canUseProductPhotoSearch"
+            class="site-header__search-camera"
+            type="button"
+            aria-label="Search products by photo"
+            title="Search products by photo"
+            @click="openVisualSearchPicker"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="7" width="16" height="11" rx="3"></rect>
+              <circle cx="12" cy="12.5" r="3"></circle>
+              <path d="M8 7l1.4-2h5.2L16 7"></path>
+            </svg>
+          </button>
+          <input
+            v-if="canUseProductPhotoSearch"
+            ref="visualSearchInputElement"
+            class="site-header__visual-input"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            @change="handleVisualSearchSelection"
+          >
+        </div>
       </form>
 
       <div class="site-header__actions" aria-label="Quick actions">
@@ -202,13 +356,31 @@ function closeCartDrawer() {
             <circle cx="12" cy="8.5" r="3.75"></circle>
             <path d="M4.5 19.25c1.4-3.35 4.3-5 7.5-5s6.1 1.65 7.5 5"></path>
           </svg>
+          <span v-if="accountNotificationBadgeLabel" class="site-header__icon-badge site-header__icon-badge--notification">
+            {{ accountNotificationBadgeLabel }}
+          </span>
         </RouterLink>
 
-        <RouterLink class="site-header__icon-link" to="/wishlist" aria-label="Wishlist">
+        <button
+          ref="mobileSearchToggleElement"
+          class="site-header__icon-link site-header__icon-button site-header__mobile-search-toggle"
+          type="button"
+          :aria-expanded="mobileSearchOpen ? 'true' : 'false'"
+          aria-controls="site-header-search"
+          aria-label="Search"
+          @click="toggleMobileSearch"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.75"></circle>
+            <path d="M16 16l4.25 4.25"></path>
+          </svg>
+        </button>
+
+        <button class="site-header__icon-link site-header__icon-button" type="button" aria-label="Wishlist" @click="openWishlistDrawer">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 20.25 5.35 14.1a5 5 0 0 1-.55-6.75 4.25 4.25 0 0 1 6.15-.25L12 8.15l1.05-1.05a4.25 4.25 0 0 1 6.15.25 5 5 0 0 1-.55 6.75Z"></path>
           </svg>
-        </RouterLink>
+        </button>
 
         <button class="site-header__icon-link site-header__icon-button" type="button" aria-label="Cart" @click="openCartDrawer">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -262,6 +434,16 @@ function closeCartDrawer() {
       <HeaderCartOverlay v-if="cartDrawerOpen" @close="closeCartDrawer" />
     </Transition>
   </Teleport>
+
+  <Teleport to="body">
+    <Transition name="wishlist-drawer">
+      <HeaderWishlistOverlay
+        v-if="wishlistDrawerOpen"
+        @close="closeWishlistDrawer"
+        @request-login="handleWishlistLogin"
+      />
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -280,6 +462,7 @@ function closeCartDrawer() {
   margin: 0 auto;
   box-sizing: border-box;
   min-height: 124px;
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(260px, 560px) auto;
   align-items: center;
@@ -306,6 +489,12 @@ function closeCartDrawer() {
 }
 
 .site-header__search {
+  width: 100%;
+  min-width: 0;
+}
+
+.site-header__search-field {
+  position: relative;
   width: 100%;
   min-width: 0;
 }
@@ -338,6 +527,10 @@ function closeCartDrawer() {
     background-color 160ms ease;
 }
 
+.site-header__search-field--photo .site-header__search-input {
+  padding-right: 52px;
+}
+
 .site-header__search-input::placeholder {
   color: #8a8a8a;
 }
@@ -345,6 +538,53 @@ function closeCartDrawer() {
 .site-header__search-input:focus {
   border-color: #cfcfcf;
   background: #ffffff;
+}
+
+.site-header__search-camera {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 1px solid #e4ebfb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #2563eb;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.site-header__search-camera:hover,
+.site-header__search-camera:focus-visible {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  outline: none;
+}
+
+.site-header__search-camera svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.site-header__visual-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .site-header__actions {
@@ -374,6 +614,10 @@ function closeCartDrawer() {
   background: transparent;
   padding: 0;
   cursor: pointer;
+}
+
+.site-header__mobile-search-toggle {
+  display: none;
 }
 
 .site-header__icon-link:hover {
@@ -407,6 +651,10 @@ function closeCartDrawer() {
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+}
+
+.site-header__icon-badge--notification {
+  background: #ff6f18;
 }
 
 .site-header__category-strip {
@@ -588,12 +836,31 @@ function closeCartDrawer() {
   }
 
   .site-header__search {
+    display: none;
     grid-area: search;
+  }
+
+  .site-header__search--mobile-open {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: calc(100% - 6px);
+    z-index: 8;
+    display: block;
+    padding: 10px;
+    border: 1px solid #ece7e2;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 38px rgba(17, 17, 17, 0.12);
   }
 
   .site-header__actions {
     grid-area: actions;
     gap: 14px;
+  }
+
+  .site-header__mobile-search-toggle {
+    display: inline-flex;
   }
 
   .site-header__brand {

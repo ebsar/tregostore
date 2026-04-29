@@ -12,20 +12,14 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("@vercel/speed-insights")) {
+            return "observability";
+          }
           if (id.includes("node_modules")) {
-            if (id.includes("vue-router")) {
-              return "vendor-router";
+            if (id.includes("vue") || id.includes("vue-router")) {
+              return "vendor-core";
             }
-            return "vendor";
-          }
-          if (id.includes("/src/views/Admin")) {
-            return "admin-pages";
-          }
-          if (id.includes("/src/views/Business")) {
-            return "business-pages";
-          }
-          if (id.includes("/src/views/Checkout") || id.includes("/src/views/Payment")) {
-            return "checkout-pages";
+            return "vendor-lib";
           }
           return undefined;
         },

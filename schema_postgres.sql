@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     full_name TEXT NOT NULL,
@@ -11,6 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_email_verified INTEGER NOT NULL DEFAULT 1,
     email_verified_at TEXT NOT NULL DEFAULT '',
     profile_image_path TEXT NOT NULL DEFAULT '',
+    marketing_emails_opt_in INTEGER NOT NULL DEFAULT 0,
+    terms_accepted_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
 );
 
@@ -93,6 +97,8 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     profile_edit_approved_at TEXT NOT NULL DEFAULT '',
     profile_edit_notes TEXT NOT NULL DEFAULT '',
     shipping_settings TEXT NOT NULL DEFAULT '',
+    auto_reply_enabled INTEGER NOT NULL DEFAULT 0,
+    auto_reply_message TEXT NOT NULL DEFAULT '',
     phone_number TEXT NOT NULL DEFAULT '',
     city TEXT NOT NULL DEFAULT '',
     address_line TEXT NOT NULL DEFAULT '',
@@ -103,6 +109,8 @@ CREATE TABLE IF NOT EXISTS business_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_business_profiles_user_id ON business_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_business_profiles_name_lower ON business_profiles ((LOWER(business_name)));
+CREATE INDEX IF NOT EXISTS idx_business_profiles_name_trgm
+    ON business_profiles USING gin (LOWER(business_name) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_business_profiles_updated_at ON business_profiles(updated_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_business_profiles_business_number
@@ -161,6 +169,13 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_created
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient_read
     ON chat_messages(recipient_user_id, read_at, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id_desc
+    ON chat_messages(conversation_id, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_unread_recipient
+    ON chat_messages(recipient_user_id, conversation_id, id DESC)
+    WHERE read_at IS NULL OR read_at = '';
 
 CREATE TABLE IF NOT EXISTS uploaded_assets (
     id BIGSERIAL PRIMARY KEY,
@@ -225,6 +240,23 @@ CREATE INDEX IF NOT EXISTS idx_products_public_creator_id ON products(is_public,
 CREATE INDEX IF NOT EXISTS idx_products_public_created_at ON products(is_public, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_title_lower ON products ((LOWER(title)));
 CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
+CREATE INDEX IF NOT EXISTS idx_products_public_category_created
+    ON products(category, created_at DESC, id DESC)
+    WHERE is_public = 1 AND stock_quantity > 0;
+CREATE INDEX IF NOT EXISTS idx_products_public_type_created
+    ON products(product_type, created_at DESC, id DESC)
+    WHERE is_public = 1 AND stock_quantity > 0;
+CREATE INDEX IF NOT EXISTS idx_products_public_price
+    ON products(price, id DESC)
+    WHERE is_public = 1 AND stock_quantity > 0;
+CREATE INDEX IF NOT EXISTS idx_products_title_trgm
+    ON products USING gin (LOWER(title) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_products_description_trgm
+    ON products USING gin (LOWER(description) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_products_ai_search_trgm
+    ON products USING gin (LOWER(ai_image_search_text) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_products_brand_trgm
+    ON products USING gin (LOWER(COALESCE(brand, '')) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_products_import_source_group ON products(created_by_user_id, source_id, group_key);
 CREATE INDEX IF NOT EXISTS idx_products_import_source_product_key ON products(created_by_user_id, source_id, source_product_key);
 
@@ -325,6 +357,7 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wishlist_user_created_at ON wishlist_items(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wishlist_items_product_id ON wishlist_items(product_id);
 
 CREATE TABLE IF NOT EXISTS cart_items (
     user_id BIGINT NOT NULL,
@@ -359,6 +392,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_lines_user_product_variant
 
 CREATE INDEX IF NOT EXISTS idx_cart_lines_user_updated_at
     ON cart_lines(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS guest_cart_lines (
+    id BIGSERIAL PRIMARY KEY,
+    visitor_token TEXT NOT NULL,
+    product_id BIGINT NOT NULL,
+    variant_key TEXT NOT NULL DEFAULT 'default',
+    variant_label TEXT NOT NULL DEFAULT 'Standard',
+    selected_size TEXT NOT NULL DEFAULT '',
+    selected_color TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_product_variant
+    ON guest_cart_lines(visitor_token, product_id, variant_key);
+
+CREATE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_updated_at
+    ON guest_cart_lines(visitor_token, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS orders (
     id BIGSERIAL PRIMARY KEY,

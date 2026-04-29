@@ -35,6 +35,7 @@ const AdminWorkspacePlaceholderPage = () => import("../views/AdminWorkspacePlace
 const BusinessDashboardPage = () => import("../views/BusinessDashboardPage.vue");
 const RegisteredBusinessesPage = () => import("../views/RegisteredBusinessesPage.vue");
 const ProductComparePage = () => import("../views/ProductComparePage.vue");
+const LiquidGlassPage = () => import("../views/LiquidGlassPage.vue");
 
 const routes = [
   {
@@ -393,6 +394,14 @@ const routes = [
     },
   },
   {
+    path: "/liquid-glass",
+    component: LiquidGlassPage,
+    meta: {
+      pageKey: "liquid-glass",
+      title: "TREGIO | Liquid Glass",
+    },
+  },
+  {
     path: "/about",
     redirect: "/",
   },
@@ -401,13 +410,62 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior() {
+  scrollBehavior(to, from) {
+    if (to.path === from.path) {
+      return false;
+    }
+
     return { top: 0 };
   },
 });
 
-router.beforeEach((to) => {
+const DASHBOARD_ROUTE_PAGE_KEYS = new Set([
+  "account",
+  "addresses",
+  "admin-categories",
+  "admin-commissions",
+  "admin-disputes",
+  "admin-orders",
+  "admin-payouts",
+  "admin-products",
+  "admin-users",
+  "business-dashboard",
+  "business-orders",
+  "notifications",
+  "orders",
+  "payments",
+  "personal-data",
+  "refund-returns",
+  "registered-businesses",
+  "support",
+]);
+
+function isAdminProductWorkspace(path) {
+  return ["/admin-products", "/admin-products/inventory", "/admin-products/lista"].includes(path);
+}
+
+function isDashboardRoute(route) {
+  return DASHBOARD_ROUTE_PAGE_KEYS.has(String(route.meta?.pageKey || ""));
+}
+
+function isDashboardShellNavigation(to, from) {
+  if (!from.matched?.length) {
+    return false;
+  }
+
+  return isDashboardRoute(to) && isDashboardRoute(from);
+}
+
+router.beforeEach((to, from) => {
   if (to.meta?.routeLoader) {
+    if (
+      to.path === from.path
+      || isDashboardShellNavigation(to, from)
+      || (isAdminProductWorkspace(to.path) && isAdminProductWorkspace(from.path))
+    ) {
+      return;
+    }
+
     beginRouteLoading();
   }
 });

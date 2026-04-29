@@ -55,11 +55,23 @@
       "destination": "/index.html"
     },
     {
+      "source": "/bizneset",
+      "destination": "/index.html"
+    },
+    {
       "source": "/kafshet-shtepiake",
       "destination": "/index.html"
     },
     {
       "source": "/profili-biznesit",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/mesazhet",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/njoftimet",
       "destination": "/index.html"
     },
     {
@@ -111,7 +123,27 @@
       "destination": "/index.html"
     },
     {
+      "source": "/payments",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/track-order",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/refund-returne",
+      "destination": "/index.html"
+    },
+    {
       "source": "/porosite-e-biznesit",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-porosite",
       "destination": "/index.html"
     },
     {
@@ -123,7 +155,39 @@
       "destination": "/index.html"
     },
     {
+      "source": "/porosia-u-konfirmua",
+      "destination": "/index.html"
+    },
+    {
       "source": "/admin-products",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-products/inventory",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-products/lista",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-users",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-disputes",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-categories",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-commissions",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin-payouts",
       "destination": "/index.html"
     },
     {
@@ -132,6 +196,14 @@
     },
     {
       "source": "/bizneset-e-regjistruara",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/krahaso-produkte",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/liquid-glass",
       "destination": "/index.html"
     },
     {

@@ -366,7 +366,7 @@ async function handleLogin() {
 .cart-drawer {
   position: fixed;
   inset: 0;
-  z-index: 180;
+  z-index: 1300;
   display: flex;
   justify-content: flex-end;
 }

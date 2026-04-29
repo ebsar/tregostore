@@ -1021,7 +1021,9 @@ async function bootstrap() {
 async function refreshCollectionState() {
   if (!appState.user) {
     wishlistIds.value = [];
-    cartIds.value = [];
+    const cartItems = await fetchProtectedCollection("/api/cart");
+    cartIds.value = cartItems.map((item) => item.productId || item.id);
+    setCartItems(cartItems);
     return;
   }
 
@@ -1198,7 +1200,7 @@ async function handleWishlist() {
   }
 
   if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
+    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist.";
     ui.type = "error";
     return;
   }
@@ -1252,7 +1254,7 @@ async function handleRecommendationWishlist(productId) {
   }
 
   if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
+    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist.";
     ui.type = "error";
     return;
   }
@@ -1284,12 +1286,6 @@ async function handleRecommendationWishlist(productId) {
 async function handleRecommendationCart(productId) {
   const targetProduct = findRecommendationProduct(productId);
   if (!targetProduct) {
-    return;
-  }
-
-  if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
-    ui.type = "error";
     return;
   }
 
@@ -1355,12 +1351,6 @@ function incrementQuantity() {
 
 async function addCurrentProductToCart(options = {}) {
   if (!currentProduct.value) {
-    return false;
-  }
-
-  if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
-    ui.type = "error";
     return false;
   }
 
@@ -2731,16 +2721,18 @@ function getReviewAvatarStyle(name) {
           <div class="pdp-option-stack">
             <section class="pdp-option-group">
               <p class="search-sidebar__label">Color</p>
-              <div v-if="colorOptions.length > 0" class="pdp-option-grid">
+              <div v-if="colorOptions.length > 0" class="pdp-option-grid pdp-option-grid--colors">
                 <button
                   v-for="option in colorOptions"
                   :key="option.value"
                   type="button"
+                  :style="getColorSwatchStyle(option.value)"
                   :aria-pressed="selectedColor === option.value"
                   :disabled="!option.inStock"
                   @click="chooseColor(option.value)"
                 >
-                  {{ option.label }}
+                  <span class="pdp-color-dot" aria-hidden="true"></span>
+                  <span>{{ option.label }}</span>
                 </button>
               </div>
               <p v-else class="section-heading__copy">

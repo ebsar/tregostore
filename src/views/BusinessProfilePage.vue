@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import ProductCard from "../components/ProductCard.vue";
 import { useInfiniteScrollSentinel } from "../composables/useInfiniteScrollSentinel";
 import { fetchProtectedCollection, requestJson, resolveApiMessage } from "../lib/api";
+import { getDashboardIconPath } from "../lib/dashboard-ui";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { applyDocumentSeo, buildAbsoluteUrl, buildBreadcrumbJsonLd } from "../lib/seo";
 import { appState, ensureSessionLoaded, markRouteReady, setCartItems } from "../stores/app-state";
@@ -170,6 +171,67 @@ const businessShippingSummary = computed(() => {
     });
   }
   return items;
+});
+const businessProfileDescription = computed(() =>
+  String(business.value?.businessDescription || "").trim() || "Ky biznes ende nuk ka shtuar pershkrim.",
+);
+const businessTrustBadges = computed(() => {
+  if (!business.value) {
+    return [];
+  }
+
+  return [
+    {
+      icon: "store",
+      label: formatVerificationStatusLabel(business.value.verificationStatus),
+    },
+    Number(business.value.sellerReviewCount || 0) > 0
+      ? {
+          icon: "heart",
+          label: `${Number(business.value.sellerRating || 0).toFixed(1)} / 5 - ${business.value.sellerReviewCount} reviews`,
+        }
+      : null,
+    {
+      icon: "pin",
+      label: business.value.city || "Kosove",
+    },
+    {
+      icon: "messages",
+      label: business.value.supportEmail || business.value.phoneNumber || "Marketplace support",
+    },
+  ].filter(Boolean);
+});
+const businessProfileStats = computed(() => {
+  if (!business.value) {
+    return [];
+  }
+
+  return [
+    {
+      icon: "products",
+      label: "Products",
+      value: String(totalProductsCount.value || business.value.productsCount || 0),
+      meta: "Public catalog",
+    },
+    {
+      icon: "heart",
+      label: "Followers",
+      value: String(business.value.followersCount || 0),
+      meta: "Store audience",
+    },
+    {
+      icon: "pin",
+      label: "Location",
+      value: business.value.city || "Kosove",
+      meta: business.value.addressLine || "Public seller",
+    },
+    {
+      icon: "messages",
+      label: "Support",
+      value: business.value.supportEmail || business.value.phoneNumber || "Message in TREGIO",
+      meta: business.value.supportHours || "Ask before buying",
+    },
+  ];
 });
 
 const comparedProductIds = computed(() =>
@@ -655,6 +717,25 @@ function buildBusinessShippingSummaryLine(label, fee, eta) {
     String(eta || "").trim(),
   ].filter(Boolean).join(" • ");
 }
+function getBusinessInfoIcon(label) {
+  const normalizedLabel = String(label || "").trim().toLowerCase();
+  if (normalizedLabel.includes("website")) {
+    return "dashboard";
+  }
+  if (normalizedLabel.includes("email") || normalizedLabel.includes("support")) {
+    return "messages";
+  }
+  if (normalizedLabel.includes("hour")) {
+    return "history";
+  }
+  if (normalizedLabel.includes("return")) {
+    return "orders";
+  }
+  if (normalizedLabel.includes("shipping") || normalizedLabel.includes("pickup")) {
+    return "shipping";
+  }
+  return "store";
+}
 </script>
 
 <template>
@@ -681,10 +762,10 @@ function buildBusinessShippingSummaryLine(label, fee, eta) {
         <strong>{{ business.businessName }}</strong>
       </nav>
 
-      <header class="market-card market-card--padded business-hero">
-        <div class="business-hero__main">
-          <div class="business-hero__identity">
-            <div class="business-hero__logo">
+      <header class="business-profile-hero">
+        <div class="business-profile-hero__main">
+          <div class="business-profile-hero__identity">
+            <div class="business-profile-hero__logo">
               <img
                 v-if="business.logoPath"
                 :src="business.logoPath"
@@ -694,125 +775,158 @@ function buildBusinessShippingSummaryLine(label, fee, eta) {
                 loading="lazy"
                 decoding="async"
               >
-              <span v-else class="business-hero__logo-mark">
+              <span v-else class="business-profile-hero__logo-mark">
                 {{ getBusinessInitials(business.businessName) }}
               </span>
             </div>
 
-            <div class="business-hero__summary">
-              <p class="business-hero__label">Marketplace seller</p>
+            <div class="business-profile-hero__summary">
+              <p class="market-page__eyebrow">Marketplace seller</p>
               <h1>{{ business.businessName }}</h1>
               <p class="section-heading__copy">
-                {{ business.businessDescription || "Ky biznes ende nuk ka shtuar pershkrim." }}
+                {{ businessProfileDescription }}
               </p>
             </div>
           </div>
 
-          <div class="business-hero__meta">
-            <span>{{ formatVerificationStatusLabel(business.verificationStatus) }}</span>
-            <span v-if="Number(business.sellerReviewCount || 0) > 0">
-              {{ Number(business.sellerRating || 0).toFixed(1) }} / 5 • {{ business.sellerReviewCount }} reviews
+          <div class="business-profile-hero__badges" aria-label="Business highlights">
+            <span
+              v-for="badge in businessTrustBadges"
+              :key="badge.label"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="getDashboardIconPath(badge.icon)" />
+              </svg>
+              {{ badge.label }}
             </span>
-            <span>{{ business.city || "Kosove" }}</span>
-            <span>{{ business.supportEmail || business.phoneNumber || "Marketplace support" }}</span>
           </div>
         </div>
 
-        <div class="business-hero__actions">
+        <div class="business-profile-hero__actions">
           <button
-            class="market-button market-button--primary"
+            class="market-button market-button--primary business-profile-action"
             type="button"
             :disabled="!canFollow"
             @click="toggleFollow"
           >
-            {{ business.isFollowed ? "Following" : "Follow store" }}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="getDashboardIconPath('heart')" />
+            </svg>
+            <span>{{ business.isFollowed ? "Following" : "Follow store" }}</span>
           </button>
 
           <button
-            class="market-button market-button--secondary"
+            class="market-button market-button--secondary business-profile-action"
             type="button"
             :disabled="!canUseMessageAction || openingChat"
             @click="handleOpenChat"
           >
-            {{ openingChat ? "Opening..." : messageActionLabel }}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="getDashboardIconPath('messages')" />
+            </svg>
+            <span>{{ openingChat ? "Opening..." : messageActionLabel }}</span>
           </button>
 
           <a
             v-if="business.websiteUrl"
-            class="market-button market-button--ghost"
+            class="market-button market-button--ghost business-profile-action"
             :href="business.websiteUrl"
             target="_blank"
             rel="noreferrer"
           >
-            Website
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="getDashboardIconPath('dashboard')" />
+            </svg>
+            <span>Website</span>
           </a>
 
-          <button class="market-button market-button--ghost" type="button" @click="handleReportBusiness">
-            Report
+          <button class="market-button market-button--ghost business-profile-action" type="button" @click="handleReportBusiness">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="getDashboardIconPath('bell')" />
+            </svg>
+            <span>Report</span>
           </button>
         </div>
       </header>
 
-      <section class="metric-grid">
-        <article class="metric-card">
-          <p class="metric-card__label">Public products</p>
-          <strong>{{ business.productsCount || 0 }}</strong>
-        </article>
-        <article class="metric-card">
-          <p class="metric-card__label">Followers</p>
-          <strong>{{ business.followersCount || 0 }}</strong>
-        </article>
-        <article class="metric-card">
-          <p class="metric-card__label">City</p>
-          <strong>{{ business.city || "-" }}</strong>
-        </article>
-        <article class="metric-card">
-          <p class="metric-card__label">Phone</p>
-          <strong>{{ business.phoneNumber || "-" }}</strong>
-        </article>
-        <article class="metric-card">
-          <p class="metric-card__label">Address</p>
-          <strong>{{ business.addressLine || "-" }}</strong>
-        </article>
-        <article class="metric-card">
-          <p class="metric-card__label">Support</p>
-          <strong>{{ business.supportEmail || business.phoneNumber || "Mesazho biznesin ne TREGIO" }}</strong>
+      <section class="business-profile-stats" aria-label="Business profile summary">
+        <article
+          v-for="item in businessProfileStats"
+          :key="item.label"
+          class="business-profile-stat"
+        >
+          <span class="business-profile-stat__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="getDashboardIconPath(item.icon)" />
+            </svg>
+          </span>
+          <span>
+            <small>{{ item.label }}</small>
+            <strong>{{ item.value }}</strong>
+            <em>{{ item.meta }}</em>
+          </span>
         </article>
       </section>
 
-      <section class="market-card market-card--padded">
-        <div class="market-page__header">
-          <div class="market-page__header-copy">
+      <section class="business-profile-overview" aria-label="Store details">
+        <article class="business-profile-panel">
+          <div class="business-profile-section-head">
             <p class="market-page__eyebrow">Store details</p>
-            <h2>Contact and delivery information</h2>
-            <p>
-              Website, support, return policy, and delivery methods are grouped in one clear section to improve trust before purchase.
-            </p>
+            <h2>Contact</h2>
           </div>
-        </div>
+          <div v-if="businessContactSummary.length > 0" class="business-profile-info-list">
+            <div v-for="item in businessContactSummary" :key="`contact-${item.label}`" class="business-profile-info-row">
+              <span class="business-profile-info-row__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path :d="getDashboardIconPath(getBusinessInfoIcon(item.label))" />
+                </svg>
+              </span>
+              <span>
+                <small>{{ item.label }}</small>
+                <strong>{{ item.value }}</strong>
+              </span>
+            </div>
+          </div>
+          <div v-else class="business-profile-panel__empty">
+            Contact details will appear here when the seller adds them.
+          </div>
+        </article>
 
-        <div class="business-contact-grid">
-          <div v-for="item in businessContactSummary" :key="`contact-${item.label}`">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
+        <article class="business-profile-panel">
+          <div class="business-profile-section-head">
+            <p class="market-page__eyebrow">Delivery</p>
+            <h2>Shipping and pickup</h2>
           </div>
-          <div v-for="item in businessShippingSummary" :key="`shipping-${item.label}`">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
+          <div v-if="businessShippingSummary.length > 0" class="business-profile-info-list">
+            <div v-for="item in businessShippingSummary" :key="`shipping-${item.label}`" class="business-profile-info-row">
+              <span class="business-profile-info-row__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path :d="getDashboardIconPath(getBusinessInfoIcon(item.label))" />
+                </svg>
+              </span>
+              <span>
+                <small>{{ item.label }}</small>
+                <strong>{{ item.value }}</strong>
+              </span>
+            </div>
           </div>
-        </div>
+          <div v-else class="business-profile-panel__empty">
+            Shipping options will appear here when the seller configures them.
+          </div>
+        </article>
       </section>
 
-      <section class="market-card market-card--padded">
-        <div class="market-page__header">
-          <div class="market-page__header-copy">
+      <section class="business-profile-products">
+        <div class="business-profile-section-head business-profile-section-head--row">
+          <div>
             <p class="market-page__eyebrow">Catalog</p>
             <h2>Products from this seller</h2>
             <p>Shfleto artikujt qe ky biznes i ka publikuar ne TREGIO.</p>
           </div>
+          <span>{{ products.length }} shown</span>
         </div>
 
-        <div v-if="products.length > 0" class="product-collection__grid" aria-label="Produktet e biznesit">
+        <div v-if="products.length > 0" class="product-collection__grid business-profile-products__grid" aria-label="Produktet e biznesit">
           <ProductCard
             v-for="product in products"
             :key="product.id"
@@ -862,3 +976,336 @@ function buildBusinessShippingSummaryLine(label, fee, eta) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.business-profile-page {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 40px;
+}
+
+.business-profile-page__shell {
+  display: grid;
+  gap: 18px;
+}
+
+.business-profile-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+  gap: 18px;
+  align-items: start;
+  padding: 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.business-profile-hero__main {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.business-profile-hero__identity {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.business-profile-hero__logo,
+.business-profile-hero__logo-mark {
+  width: 104px;
+  height: 104px;
+  border-radius: 8px;
+  background: #f3f4f6;
+}
+
+.business-profile-hero__logo {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.business-profile-hero__logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.business-profile-hero__logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #111827;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.business-profile-hero__summary {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.business-profile-hero__summary h1,
+.business-profile-section-head h2 {
+  margin: 0;
+  color: #111827;
+  font-weight: 750;
+  line-height: 1.15;
+}
+
+.business-profile-hero__summary h1 {
+  font-size: 30px;
+}
+
+.business-profile-hero__summary p:not(.market-page__eyebrow),
+.business-profile-section-head p {
+  margin: 0;
+  max-width: 760px;
+  color: #5b6472;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.business-profile-hero__badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.business-profile-hero__badges span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.business-profile-hero__badges svg,
+.business-profile-action svg,
+.business-profile-stat__icon svg,
+.business-profile-info-row__icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.business-profile-hero__actions {
+  display: grid;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.business-profile-action {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+}
+
+.business-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.business-profile-stat {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.business-profile-stat__icon,
+.business-profile-info-row__icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #2563eb;
+}
+
+.business-profile-stat span:last-child,
+.business-profile-info-row span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.business-profile-stat small,
+.business-profile-info-row small {
+  color: #7a8491;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.business-profile-stat strong,
+.business-profile-info-row strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+}
+
+.business-profile-stat em {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-profile-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.business-profile-panel,
+.business-profile-products {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.business-profile-section-head {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.business-profile-section-head--row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.business-profile-section-head--row > span {
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.business-profile-info-list {
+  display: grid;
+  gap: 10px;
+}
+
+.business-profile-info-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.business-profile-panel__empty {
+  padding: 14px;
+  border: 1px dashed #d9dee7;
+  border-radius: 8px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.business-profile-products__grid {
+  gap: 12px;
+}
+
+.business-profile-products__grid :deep(.product-card) {
+  border-radius: 8px;
+}
+
+.business-profile__products-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+@media (max-width: 1080px) {
+  .business-profile-hero,
+  .business-profile-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .business-profile-hero__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .business-profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .business-profile-page {
+    gap: 14px;
+  }
+
+  .business-profile-hero,
+  .business-profile-panel,
+  .business-profile-products {
+    padding: 14px;
+  }
+
+  .business-profile-hero__identity {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .business-profile-hero__logo,
+  .business-profile-hero__logo-mark {
+    width: 72px;
+    height: 72px;
+  }
+
+  .business-profile-hero__logo-mark {
+    font-size: 21px;
+  }
+
+  .business-profile-hero__summary h1 {
+    font-size: 22px;
+  }
+
+  .business-profile-hero__actions,
+  .business-profile-stats,
+  .business-profile-section-head--row {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

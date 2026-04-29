@@ -193,7 +193,7 @@ function selectDelivery(method: string) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <AppPageHeader
           kicker="Checkout"
           title="Zgjedhe dergesen dhe pagesen."
@@ -305,4 +305,3 @@ function selectDelivery(method: string) {
     </IonContent>
   </IonPage>
 </template>
-

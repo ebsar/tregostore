@@ -50,7 +50,7 @@ function handleClearComparedProducts() {
           :key="item.id"
           :to="getProductDetailUrl(item.id)"
         >
-          <img :src="item.imagePath" :alt="item.title" width="80" height="80">
+          <img :src="item.imagePath" :alt="item.title" width="80" height="80" loading="lazy" decoding="async">
         </RouterLink>
       </div>
 

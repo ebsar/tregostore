@@ -8,6 +8,8 @@ import { clearRecentSearches, readRecentSearches, rememberRecentSearch, removeRe
 import {
   formatCategoryLabel,
   formatPrice,
+  formatProductColorLabel,
+  formatProductTypeLabel,
   getProductDetailUrl,
   hasProductAvailableStock,
 } from "../lib/shop";
@@ -36,6 +38,7 @@ const SEARCH_PROMPT_SUGGESTIONS = [
 const draftQuery = ref("");
 const recentSearches = ref([]);
 const products = ref([]);
+const smartSearchFilters = ref(null);
 const availableFilters = ref(createEmptyProductFacets());
 const wishlistIds = ref([]);
 const cartIds = ref([]);
@@ -225,6 +228,38 @@ const activeFilterChips = computed(() => {
 
   return nextChips;
 });
+const smartSearchChips = computed(() => {
+  const filtersPayload = smartSearchFilters.value && typeof smartSearchFilters.value === "object"
+    ? smartSearchFilters.value
+    : {};
+  const appliedFilters = filtersPayload.applied && typeof filtersPayload.applied === "object"
+    ? filtersPayload.applied
+    : {};
+  const nextChips = [];
+
+  if (appliedFilters.productType) {
+    nextChips.push(formatProductTypeLabel(appliedFilters.productType));
+  } else if (appliedFilters.category || appliedFilters.categoryGroup) {
+    nextChips.push(formatCategoryLabel(appliedFilters.category || appliedFilters.categoryGroup));
+  } else if (filtersPayload.category) {
+    nextChips.push(filtersPayload.category);
+  }
+
+  if (appliedFilters.color) {
+    nextChips.push(formatProductColorLabel(appliedFilters.color));
+  } else if (filtersPayload.color) {
+    nextChips.push(filtersPayload.color);
+  }
+
+  if (Number.isFinite(Number(appliedFilters.minPrice))) {
+    nextChips.push(`From ${formatPrice(Number(appliedFilters.minPrice))}`);
+  }
+  if (Number.isFinite(Number(appliedFilters.maxPrice))) {
+    nextChips.push(`Under ${formatPrice(Number(appliedFilters.maxPrice))}`);
+  }
+
+  return nextChips.filter(Boolean);
+});
 const formattedResultsCount = computed(() =>
   new Intl.NumberFormat("en-US").format(
     visualSearchActive.value ? filteredProducts.value.length : totalProductsCount.value,
@@ -328,8 +363,16 @@ const searchTitle = computed(() =>
     ? "Produktet me te shitura"
     : "Kerko produktet",
 );
+const canUseProductPhotoSearch = computed(() => {
+  const role = String(appState.user?.role || "").toLowerCase();
+  return role !== "admin" && role !== "business";
+});
 
 const searchIntro = computed(() => {
+  if (!canUseProductPhotoSearch.value && !(featuredCollection.value === "best-sellers" && !activeQuery.value)) {
+    return "Shkruaj p.sh. `me trego maica te kuqe`, `dua pantallona te gjera` ose perdor filtrat per te gjetur produktin.";
+  }
+
   if (featuredCollection.value === "best-sellers" && !activeQuery.value) {
     return "Po shfaqen produktet qe po levizin me shpejt ne marketplace sipas shitjeve, reviews dhe interesit real.";
   }
@@ -824,7 +867,9 @@ async function bootstrap() {
 async function refreshCollectionState() {
   if (!appState.user) {
     wishlistIds.value = [];
-    cartIds.value = [];
+    const cartItems = await fetchProtectedCollection("/api/cart");
+    cartIds.value = cartItems.map((item) => item.productId || item.id);
+    setCartItems(cartItems);
     return;
   }
 
@@ -894,6 +939,16 @@ function applyServerActiveFilters(activeFilters = {}) {
   filters.size = String(activeFilters.size || "").trim().toUpperCase();
   filters.color = String(activeFilters.color || "").trim().toLowerCase();
   filters.sort = String(activeFilters.sort || filters.sort || "popular").trim().toLowerCase() || "popular";
+  if (Object.prototype.hasOwnProperty.call(activeFilters, "minPrice")) {
+    const nextMinPrice = Number(activeFilters.minPrice);
+    minPriceInput.value = Number.isFinite(nextMinPrice) ? formatPriceInputDisplay(nextMinPrice) : "";
+    selectedPriceRange.value = "";
+  }
+  if (Object.prototype.hasOwnProperty.call(activeFilters, "maxPrice")) {
+    const nextMaxPrice = Number(activeFilters.maxPrice);
+    maxPriceInput.value = Number.isFinite(nextMaxPrice) ? formatPriceInputDisplay(nextMaxPrice) : "";
+    selectedPriceRange.value = "";
+  }
 }
 
 function buildSearchRouteQuery(nextQueryValue = draftQuery.value) {
@@ -1053,6 +1108,9 @@ async function loadProducts(options = {}) {
   if (data.facets) {
     availableFilters.value = normalizeProductFacets(data.facets);
   }
+  smartSearchFilters.value = data.smartFilters && Object.keys(data.smartFilters).length > 0
+    ? data.smartFilters
+    : null;
   applyServerActiveFilters(data.activeFilters);
   ui.message = "";
   ui.type = "";
@@ -1175,6 +1233,7 @@ async function runVisualSearch(options = {}) {
   }
 
   visualSearchActive.value = true;
+  smartSearchFilters.value = null;
   const nextProducts = Array.isArray(result.products) ? result.products : [];
   products.value = nextProducts.filter((product) => hasProductAvailableStock(product));
   totalProductsCount.value = Number(result.total || products.value.length || 0);
@@ -1288,7 +1347,7 @@ function resetFilters() {
 
 async function handleWishlist(productId) {
   if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
+    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist.";
     ui.type = "error";
     return;
   }
@@ -1326,12 +1385,6 @@ async function handleWishlist(productId) {
 }
 
 async function handleCart(productId) {
-  if (!appState.user) {
-    ui.message = "Duhet te kyçesh ose te krijosh llogari para se te perdoresh wishlist ose cart.";
-    ui.type = "error";
-    return;
-  }
-
   const product = products.value.find((entry) => Number(entry.id) === Number(productId));
   if (product?.requiresVariantSelection) {
     router.push(getProductDetailUrl(productId, route.fullPath));
@@ -1392,7 +1445,12 @@ function handleCompare(product) {
           </div>
         </div>
 
-        <form class="search-hero__form" role="search" @submit.prevent="submitSearch">
+        <form
+          class="search-hero__form"
+          :class="{ 'search-hero__form--photo': canUseProductPhotoSearch }"
+          role="search"
+          @submit.prevent="submitSearch"
+        >
           <input
             v-model="draftQuery"
             name="q"
@@ -1401,12 +1459,19 @@ function handleCompare(product) {
             autocomplete="off"
           >
           <button
-            class="market-button market-button--secondary"
+            v-if="canUseProductPhotoSearch"
+            class="search-hero__camera-button"
             type="button"
             :disabled="visualSearchBusy"
+            :aria-label="visualSearchBusy ? 'Scanning product photo' : 'Search products by photo'"
+            :title="visualSearchBusy ? 'Scanning product photo' : 'Search products by photo'"
             @click="openVisualSearchPicker"
           >
-            {{ visualSearchBusy ? "Scanning..." : "Visual search" }}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="7" width="16" height="11" rx="3"></rect>
+              <circle cx="12" cy="12.5" r="3"></circle>
+              <path d="M8 7l1.4-2h5.2L16 7"></path>
+            </svg>
           </button>
           <button class="market-button market-button--primary" type="submit" aria-label="Search products">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1425,6 +1490,11 @@ function handleCompare(product) {
           >
             {{ suggestion }}
           </button>
+        </div>
+
+        <div v-if="smartSearchChips.length > 0" class="search-smart-summary" aria-label="Smart search filters">
+          <span>Smart filters</span>
+          <strong v-for="chip in smartSearchChips" :key="chip">{{ chip }}</strong>
         </div>
       </header>
 
@@ -1737,7 +1807,12 @@ function handleCompare(product) {
               <button class="market-button market-button--secondary" type="button" @click="resetFilters">
                 Reset filters
               </button>
-              <button class="market-button market-button--ghost" type="button" @click="openVisualSearchPicker">
+              <button
+                v-if="canUseProductPhotoSearch"
+                class="market-button market-button--ghost"
+                type="button"
+                @click="openVisualSearchPicker"
+              >
                 Try visual search
               </button>
             </div>
@@ -1775,6 +1850,7 @@ function handleCompare(product) {
       </div>
 
       <input
+        v-if="canUseProductPhotoSearch"
         ref="visualSearchInputElement"
         class="visually-hidden"
         type="file"
@@ -1785,3 +1861,376 @@ function handleCompare(product) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.search-page {
+  display: grid;
+  gap: 16px;
+}
+
+.search-page__shell {
+  display: grid;
+  gap: 16px;
+}
+
+.search-hero {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.search-hero__label {
+  margin: 0;
+  color: var(--dashboard-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.search-hero__copy {
+  margin: 8px 0 0;
+  color: var(--dashboard-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.search-hero :deep(.market-status--compact) {
+  justify-self: end;
+}
+
+.search-hero__suggestions,
+.search-page__chips,
+.search-results__pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-hero__suggestions button,
+.search-page__chips button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--dashboard-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-visual {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.search-visual img {
+  width: 88px;
+  height: 88px;
+  display: block;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.search-visual h2 {
+  margin: 0;
+  color: var(--dashboard-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.search-history {
+  display: grid;
+  gap: 14px;
+}
+
+.search-history__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-history__item {
+  max-width: 100%;
+  flex: 1 1 220px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.search-history__item > button:first-child {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dashboard-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.search-page__layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.search-sidebar {
+  position: sticky;
+  top: calc(var(--dashboard-sticky-offset) + 84px);
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.search-sidebar__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-sidebar__header > div {
+  min-width: 0;
+}
+
+.search-sidebar__header strong,
+section.search-toolbar strong {
+  color: var(--dashboard-text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.search-page__layout .search-sidebar__header > .market-button {
+  display: none;
+}
+
+.search-sidebar__label,
+section.search-toolbar label span {
+  margin: 0 0 4px;
+  color: var(--dashboard-muted-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.search-sidebar__section {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.search-sidebar__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-sidebar__options button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--dashboard-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.search-sidebar__options button[aria-pressed="true"] {
+  border-color: var(--dashboard-accent-border);
+  background: var(--dashboard-accent-soft);
+  color: var(--dashboard-accent);
+}
+
+.search-price,
+.search-sidebar label,
+.search-results {
+  display: grid;
+  gap: 12px;
+}
+
+.search-price__sliders {
+  display: grid;
+  gap: 10px;
+}
+
+.search-price__sliders input[type="range"] {
+  width: 100%;
+}
+
+.search-price__inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.search-sidebar__footer {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+section.search-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+section.search-toolbar > div:first-child {
+  min-width: 0;
+}
+
+section.search-toolbar > div:first-child p:last-child {
+  margin: 6px 0 0;
+}
+
+section.search-toolbar > div:last-child {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+section.search-toolbar > div:last-child > button:first-child {
+  display: none;
+}
+
+section.search-toolbar label {
+  min-width: 190px;
+  display: grid;
+  gap: 8px;
+}
+
+.search-results__grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.search-results__pager {
+  justify-content: center;
+}
+
+.search-results__pager :deep(.market-button[aria-current="page"]) {
+  border-color: var(--dashboard-accent-border);
+  background: var(--dashboard-accent-soft);
+  color: var(--dashboard-accent);
+}
+
+@media (max-width: 1100px) {
+  .search-page__layout {
+    grid-template-columns: 244px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .search-visual {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .search-visual img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .search-visual > .market-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .search-page__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .search-sidebar {
+    position: fixed;
+    top: 96px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1200;
+    width: min(388px, calc(100vw - 24px));
+    overflow-y: auto;
+    box-shadow: 0 24px 48px rgba(17, 17, 17, 0.16);
+  }
+
+  .search-sidebar.is-hidden-mobile {
+    display: none;
+  }
+
+  .search-page__layout .search-sidebar__header > .market-button,
+  section.search-toolbar > div:last-child > button:first-child {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 640px) {
+  .search-page,
+  .search-page__shell {
+    gap: 14px;
+  }
+
+  .search-hero,
+  .search-sidebar {
+    padding: 14px;
+  }
+
+  .search-hero :deep(.market-status--compact) {
+    justify-self: stretch;
+  }
+
+  .search-visual {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .search-history__list {
+    display: grid;
+  }
+
+  .search-history__item {
+    width: 100%;
+  }
+
+  section.search-toolbar > div:last-child,
+  .search-price__inputs {
+    grid-template-columns: 1fr;
+  }
+
+  section.search-toolbar > div:last-child {
+    display: grid;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  section.search-toolbar label {
+    min-width: 0;
+  }
+
+  .search-results__grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

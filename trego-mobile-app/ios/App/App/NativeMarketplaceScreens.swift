@@ -2197,6 +2197,23 @@ private struct TregoAppSettingsScreen: View {
                     options: notificationOptions
                 ) { store.updateAppNotificationMode($0) }
 
+                Button {
+                    Task {
+                        let response = await store.enableNativePushNotifications()
+                        if response.ok == true {
+                            store.globalMessage = response.message ?? "Push notifications u aktivizuan."
+                        } else {
+                            store.globalMessage = response.message ?? "Njoftimet nuk u aktivizuan."
+                        }
+                    }
+                } label: {
+                    TregoFeatureLinkRow(
+                        title: "Push notifications",
+                        subtitle: "Lock screen alerts per porosi dhe mesazhe"
+                    )
+                }
+                .buttonStyle(.plain)
+
                 TregoSettingsSelectionCard(
                     title: "Privatesia",
                     subtitle: "Kontrolli i rekomandimeve dhe tracking-ut",
@@ -8332,7 +8349,8 @@ private struct TregoTopTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 28, weight: .bold))
+            .font(.system(size: 24, weight: .bold))
+            .lineSpacing(0)
             .foregroundStyle(Color.primary.opacity(0.9))
     }
 }
@@ -8342,7 +8360,8 @@ private struct TregoSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 22, weight: .bold))
+            .font(.system(size: 19, weight: .bold))
+            .lineSpacing(0)
             .foregroundStyle(Color.primary.opacity(0.9))
     }
 }
@@ -11006,13 +11025,13 @@ private struct TregoProductCard: View {
     let onWishlist: () -> Void
     let onAddToCart: () -> Void
 
-    private let imageHeight: CGFloat = 136
+    private let imageHeight: CGFloat = 126
     private let titleHeight: CGFloat = 34
     private let businessHeight: CGFloat = 16
     private let metaHeight: CGFloat = 16
-    private let cardHeight: CGFloat = 252
-    private let imageCornerRadius: CGFloat = 18
-    private let cardCornerRadius: CGFloat = 20
+    private let cardHeight: CGFloat = 232
+    private let imageCornerRadius: CGFloat = 12
+    private let cardCornerRadius: CGFloat = TregoNativeTheme.cardRadius
     private let iconButtonSize: CGFloat = 30
     private let iconSize: CGFloat = 12.5
     @Environment(\.colorScheme) private var colorScheme
@@ -11036,10 +11055,10 @@ private struct TregoProductCard: View {
                             .font(.system(size: iconSize, weight: .bold))
                             .foregroundStyle(isWishlisted ? Color.red : Color.primary)
                             .frame(width: iconButtonSize, height: iconButtonSize)
-                            .background(Color.white, in: Circle())
+                            .background(TregoNativeTheme.cardSurface, in: Circle())
                             .overlay {
                                 Circle()
-                                    .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.8)
+                                    .strokeBorder(TregoNativeTheme.border, lineWidth: 0.8)
                             }
                     }
                     .buttonStyle(.plain)
@@ -11051,10 +11070,10 @@ private struct TregoProductCard: View {
                             .font(.system(size: iconSize, weight: .bold))
                             .foregroundStyle(TregoNativeTheme.accent)
                             .frame(width: iconButtonSize, height: iconButtonSize)
-                            .background(Color.white, in: Circle())
+                            .background(TregoNativeTheme.cardSurface, in: Circle())
                             .overlay {
                                 Circle()
-                                    .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.8)
+                                    .strokeBorder(TregoNativeTheme.border, lineWidth: 0.8)
                             }
                     }
                     .buttonStyle(.plain)
@@ -11121,16 +11140,16 @@ private struct TregoProductCard: View {
             .frame(height: metaHeight + 14, alignment: .leading)
         }
         .frame(maxWidth: .infinity, minHeight: cardHeight, alignment: .topLeading)
-        .padding(11)
+        .padding(8)
         .background(
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(Color.white)
+                .fill(TregoNativeTheme.cardSurface)
         )
         .overlay {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), lineWidth: 0.9)
+                .strokeBorder(TregoNativeTheme.border, lineWidth: 0.9)
         }
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.05), radius: 10, y: 4)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.04), radius: 4, y: 2)
     }
 
     private var isSaleProduct: Bool {
@@ -13405,31 +13424,52 @@ private final class TregoSpeechRecognizer: ObservableObject {
 }
 
 private enum TregoNativeTheme {
-    static let accent = Color(red: 0.94, green: 0.45, blue: 0.18)
-    static let softAccent = Color(red: 0.32, green: 0.52, blue: 0.98)
-    static let systemBackground = Color(uiColor: .systemBackground)
+    static let accent = Color(red: 1.0, green: 0.435, blue: 0.094)
+    static let accentStrong = Color(red: 0.95, green: 0.396, blue: 0.133)
+    static let softAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+        ? UIColor(red: 1.0, green: 0.435, blue: 0.094, alpha: 0.18)
+        : UIColor(red: 1.0, green: 0.953, blue: 0.918, alpha: 1)
+    })
+    static let systemBackground = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+        ? UIColor(red: 0.059, green: 0.067, blue: 0.082, alpha: 1)
+        : UIColor(red: 0.965, green: 0.969, blue: 0.973, alpha: 1)
+    })
     static let cardSurface = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-        ? UIColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1)
+        ? UIColor(red: 0.09, green: 0.102, blue: 0.129, alpha: 1)
         : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
+    })
+    static let mutedSurface = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+        ? UIColor(red: 0.114, green: 0.133, blue: 0.169, alpha: 1)
+        : UIColor(red: 0.984, green: 0.984, blue: 0.984, alpha: 1)
+    })
+    static let border = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+        ? UIColor(white: 1, alpha: 0.1)
+        : UIColor(red: 0.898, green: 0.906, blue: 0.922, alpha: 1)
     })
     static let background = LinearGradient(
         colors: [
             Color(uiColor: UIColor { traits in
                 traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
+                ? UIColor(red: 0.059, green: 0.067, blue: 0.082, alpha: 1)
+                : UIColor(red: 0.965, green: 0.969, blue: 0.973, alpha: 1)
             }),
             Color(uiColor: UIColor { traits in
                 traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
+                ? UIColor(red: 0.059, green: 0.067, blue: 0.082, alpha: 1)
+                : UIColor(red: 0.965, green: 0.969, blue: 0.973, alpha: 1)
             }),
         ],
         startPoint: .top,
         endPoint: .bottom
     )
-    static let cardFill = AnyShapeStyle(.ultraThinMaterial)
+    static let cardFill = AnyShapeStyle(cardSurface)
+    static let cardRadius: CGFloat = 16
+    static let compactRadius: CGFloat = 12
 }
 
 enum TregoNativeProductCatalog {
@@ -13554,11 +13594,11 @@ private struct TregoPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 15, weight: .bold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .background(tint.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(tint.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }
@@ -13566,14 +13606,14 @@ private struct TregoPrimaryButtonStyle: ButtonStyle {
 private struct TregoSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 15, weight: .bold))
             .foregroundStyle(Color.primary.opacity(0.86))
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .background(Color.white.opacity(configuration.isPressed ? 0.7 : 0.82), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(TregoNativeTheme.cardSurface.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(.white.opacity(0.48), lineWidth: 0.75)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(TregoNativeTheme.border, lineWidth: 0.8)
             }
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
@@ -13584,10 +13624,10 @@ private struct TregoMiniButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: 12, weight: .bold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(tint.opacity(configuration.isPressed ? 0.82 : 1), in: Capsule())
     }
 }
@@ -13595,14 +13635,14 @@ private struct TregoMiniButtonStyle: ButtonStyle {
 private struct TregoMiniOutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: 12, weight: .bold))
             .foregroundStyle(Color.primary.opacity(0.8))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color.white.opacity(configuration.isPressed ? 0.62 : 0.78), in: Capsule())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(TregoNativeTheme.cardSurface.opacity(configuration.isPressed ? 0.72 : 1), in: Capsule())
             .overlay {
                 Capsule()
-                    .strokeBorder(.white.opacity(0.44), lineWidth: 0.75)
+                    .strokeBorder(TregoNativeTheme.border, lineWidth: 0.8)
             }
     }
 }
@@ -13613,7 +13653,7 @@ private struct TregoMiniIconButtonStyle: ButtonStyle {
             .foregroundStyle(Color.primary.opacity(0.78))
             .background(
                 Circle()
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.66 : 0.82))
+                    .fill(TregoNativeTheme.cardSurface.opacity(configuration.isPressed ? 0.72 : 1))
             )
     }
 }
@@ -13632,17 +13672,17 @@ private struct TregoDangerButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 15, weight: .bold))
             .foregroundStyle(colorScheme == .dark ? Color.red.opacity(0.95) : Color.red.opacity(0.82))
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(TregoNativeTheme.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.red.opacity(configuration.isPressed ? 0.1 : 0.06))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Color.red.opacity(colorScheme == .dark ? 0.34 : 0.22), lineWidth: 0.9)
             }
             .scaleEffect(configuration.isPressed ? 0.985 : 1)

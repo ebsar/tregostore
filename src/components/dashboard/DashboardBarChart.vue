@@ -44,22 +44,22 @@ const maxValue = computed(() =>
 <style scoped>
 .dashboard-bar-chart {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .dashboard-bar-chart__row {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
 .dashboard-bar-chart__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   color: #666666;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .dashboard-bar-chart__meta strong {
@@ -68,7 +68,7 @@ const maxValue = computed(() =>
 }
 
 .dashboard-bar-chart__track {
-  height: 8px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
   background: #efefef;

@@ -9,6 +9,7 @@ import {
   formatEstimatedDeliveryLabel,
   formatPrice,
   getDeliveryMethodOption,
+  persistCheckoutGuestMode,
   persistCheckoutSelectedCartIds,
   readSavedForLaterItems,
   rememberSavedForLaterItem,
@@ -91,9 +92,8 @@ onMounted(async () => {
     const user = await ensureSessionLoaded();
     if (!user) {
       ui.guest = true;
-      ui.message = "Per te perdorur shporten duhet te kyçesh ose te krijosh llogari.";
-      ui.type = "error";
-      return;
+    } else {
+      ui.guest = false;
     }
 
     await loadItems();
@@ -359,6 +359,7 @@ function handleCheckout() {
   }
 
   persistCheckoutSelectedCartIds(selectedItems.value.map((item) => item.id));
+  persistCheckoutGuestMode(ui.guest);
   router.push("/adresa-e-porosise");
 }
 
@@ -405,20 +406,11 @@ function productComparePrice(item) {
       {{ ui.message }}
     </div>
 
-    <div v-if="ui.guest" class="market-empty">
-      <h2>Per te perdorur shporten duhet te kyçesh</h2>
-      <p>Krijo llogari ose hyni ne llogarine tende per te ruajtur produktet dhe per te vazhduar me porosite.</p>
-      <div class="market-empty__actions">
-        <RouterLink class="market-button market-button--primary" to="/login?redirect=%2Fcart">
-          Login
-        </RouterLink>
-        <RouterLink class="market-button market-button--secondary" to="/signup?redirect=%2Fcart">
-          Sign up
-        </RouterLink>
-      </div>
+    <div v-if="ui.guest" class="market-status market-status--compact" role="status" aria-live="polite">
+      Mund te vazhdosh blerjen si guest. Hyr ose krijo llogari vetem nese do ta ruash historikun e porosive.
     </div>
 
-    <div v-else class="cart-page__shell">
+    <div class="cart-page__shell">
       <div v-if="unavailableItems.length > 0" class="market-status market-status--error" role="status" aria-live="polite">
         <span>{{ unavailableItems.length }} products in cart are no longer in stock. Remove them or save them for later before checkout.</span>
       </div>
@@ -429,7 +421,7 @@ function productComparePrice(item) {
             <div class="market-page__header-copy">
               <p class="market-page__eyebrow">Cart</p>
               <h1>Shopping cart</h1>
-              <p>{{ cartSubtitle }} • {{ estimatedDeliveryText }}</p>
+              <p>{{ cartSubtitle }} - {{ estimatedDeliveryText }}</p>
             </div>
           </div>
 
@@ -563,7 +555,7 @@ function productComparePrice(item) {
                 :disabled="selectedItems.length === 0 || selectedUnavailableItems.length > 0"
                 @click="handleCheckout"
               >
-                Proceed to checkout
+                {{ ui.guest ? "Continue as guest" : "Proceed to checkout" }}
               </button>
             </div>
           </section>
@@ -617,3 +609,307 @@ function productComparePrice(item) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.cart-page {
+  display: grid;
+  gap: 16px;
+}
+
+.cart-page__shell {
+  display: grid;
+  gap: 16px;
+}
+
+.cart-page__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+  align-items: start;
+}
+
+.cart-section {
+  display: grid;
+  gap: 16px;
+}
+
+.cart-section h1,
+.cart-section h2,
+.cart-section h3 {
+  margin: 0;
+  color: var(--dashboard-text);
+  line-height: 1.2;
+}
+
+.cart-section h1 {
+  font-size: 32px;
+}
+
+.cart-section h2 {
+  font-size: 24px;
+}
+
+.cart-section h3 {
+  font-size: 18px;
+}
+
+.cart-section .market-page__header-copy p:last-child {
+  margin: 8px 0 0;
+  color: var(--dashboard-muted);
+  line-height: 1.55;
+}
+
+.cart-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cart-table th,
+.cart-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.cart-table th {
+  color: var(--dashboard-muted-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cart-item__product {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.cart-item__product img {
+  width: 84px;
+  height: 84px;
+  display: block;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #f3f3f3;
+}
+
+.cart-item {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cart-item strong,
+.cart-item span {
+  overflow-wrap: anywhere;
+}
+
+.cart-item .search-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cart-item .search-toolbar strong {
+  margin: 0;
+  color: var(--dashboard-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.cart-quantity {
+  width: fit-content;
+  min-width: 120px;
+  height: 40px;
+  display: inline-grid;
+  grid-template-columns: 36px 46px 36px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.cart-quantity button,
+.cart-quantity span {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--dashboard-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.cart-quantity button {
+  cursor: pointer;
+}
+
+.cart-quantity span {
+  border-inline: 1px solid #eeeeee;
+}
+
+.cart-summary {
+  position: sticky;
+  top: calc(var(--dashboard-sticky-offset) + 84px);
+  display: grid;
+  gap: 16px;
+}
+
+.cart-summary__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.cart-summary__line span {
+  color: var(--dashboard-muted);
+  font-size: 13px;
+}
+
+.cart-summary__line strong {
+  color: var(--dashboard-text);
+  font-size: 14px;
+}
+
+.cart-summary__line--total {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #ececec;
+  border-bottom: 0;
+}
+
+.cart-summary__line--total strong {
+  font-size: 20px;
+}
+
+.checkout-actions .market-button {
+  width: 100%;
+}
+
+.checkout-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+@media (max-width: 980px) {
+  .cart-page__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cart-summary {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .cart-table thead {
+    display: none;
+  }
+
+  .cart-table,
+  .cart-table tbody,
+  .cart-table tr,
+  .cart-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .cart-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .cart-table tr {
+    padding: 14px;
+    border: 1px solid #ececec;
+    border-radius: 12px;
+    background: #fcfcfc;
+  }
+
+  .cart-table td {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .cart-table td + td {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #ededed;
+  }
+
+  .cart-table td::before {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--dashboard-muted-2);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .cart-table td:nth-child(1)::before {
+    content: "Product";
+  }
+
+  .cart-table td:nth-child(2)::before {
+    content: "Price";
+  }
+
+  .cart-table td:nth-child(3)::before {
+    content: "Quantity";
+  }
+
+  .cart-table td:nth-child(4)::before {
+    content: "Subtotal";
+  }
+
+  .cart-item__product {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .cart-item__product img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .cart-quantity {
+    width: 100%;
+    max-width: 160px;
+  }
+
+  .checkout-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .cart-section h1 {
+    font-size: 28px;
+  }
+
+  .cart-item__product {
+    grid-template-columns: 1fr;
+  }
+
+  .cart-item__product img {
+    width: 88px;
+    height: 88px;
+  }
+
+  .cart-summary__line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+</style>

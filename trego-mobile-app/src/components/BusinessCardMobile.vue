@@ -46,28 +46,27 @@ const isVerified = computed(() =>
 </script>
 
 <template>
-  <article>
-    <div>
-      <button type="button" @click="emit('open')">
-        <div>
+  <article class="trego-business-card">
+    <div class="trego-business-card__header">
+      <button class="trego-business-card__identity" type="button" @click="emit('open')">
+        <div class="trego-business-card__logo">
           <SmartImageMobile v-if="logoUrl" :src="logoUrl" :alt="business.businessName" />
           <IonIcon v-else :icon="storefrontOutline" />
-          <span v-if="isVerified">
+          <span v-if="isVerified" class="trego-business-card__verified">
             <IonIcon :icon="checkmarkCircle" />
           </span>
         </div>
 
-        <div>
+        <div class="trego-business-card__copy">
           <h3>{{ business.businessName }}</h3>
           <p>{{ businessCity }}</p>
         </div>
       </button>
 
-      <div>
+      <div class="trego-business-card__actions">
         <button
-         
+          class="trego-business-card__follow"
           data-testid="business-follow-button"
-         
           type="button"
           :disabled="followBusy"
           @click="emit('follow')"
@@ -75,17 +74,17 @@ const isVerified = computed(() =>
           {{ business.isFollowed ? "Following" : "Follow" }}
         </button>
 
-        <button data-testid="business-message-button" type="button" @click="emit('message')">
+        <button class="trego-business-card__message" data-testid="business-message-button" type="button" @click="emit('message')">
           <IonIcon :icon="chatbubbleEllipsesOutline" />
         </button>
       </div>
     </div>
 
-    <div v-if="previewProducts.length">
+    <div v-if="previewProducts.length" class="trego-business-card__products">
       <button
         v-for="product in previewProducts"
         :key="product.id"
-       
+        class="trego-business-card__product"
         type="button"
         @click="emit('open-product', product.id)"
       >
@@ -96,4 +95,3 @@ const isVerified = computed(() =>
 
   </article>
 </template>
-

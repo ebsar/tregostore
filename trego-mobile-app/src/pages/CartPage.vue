@@ -46,7 +46,7 @@ function handleCheckout() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <section>
           <div>
             <p>Cart</p>
@@ -119,4 +119,3 @@ function handleCheckout() {
     </IonContent>
   </IonPage>
 </template>
-

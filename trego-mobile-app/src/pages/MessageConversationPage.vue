@@ -140,7 +140,7 @@ watch(
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <div>
           <AppBackButton back-to="/messages" />
         </div>
@@ -229,4 +229,3 @@ watch(
     </IonContent>
   </IonPage>
 </template>
-

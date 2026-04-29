@@ -152,66 +152,64 @@ async function handleLogout() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen trego-account-screen">
         <div>
-          <div>
-            <button type="button" @click="handleSupport">
+          <div class="trego-account-topbar">
+            <button class="trego-secondary-button" type="button" @click="handleSupport">
               <IonIcon :icon="headsetOutline" />
-              <span>Customer Service</span>
+              <span>Support</span>
             </button>
 
-            <button type="button" @click="searchOpen = !searchOpen">
+            <button class="trego-icon-button" type="button" @click="searchOpen = !searchOpen">
               <IonIcon :icon="searchOutline" />
             </button>
           </div>
 
-          <section v-if="searchOpen">
+          <section v-if="searchOpen" class="trego-search-card trego-account-search">
             <IonIcon :icon="searchOutline" />
             <input
               v-model="searchQuery"
-             
               type="search"
               placeholder="Kerko settings, porosi, mesazhe"
             >
           </section>
 
-          <section v-if="sessionState.user">
-            <div>
-              <div>
+          <section v-if="sessionState.user" class="trego-account-hero">
+            <div class="trego-account-hero__row">
+              <div class="trego-account-avatar">
                 <img
                   v-if="accountImageUrl"
                   :src="accountImageUrl"
                   :alt="greeting"
-                 
                 >
                 <span v-else>{{ accountInitials }}</span>
               </div>
 
               <div>
-                <p>User information</p>
+                <p class="trego-kicker">Account</p>
                 <h1>{{ greeting }}</h1>
                 <p>{{ sessionState.user.email || "Tregio account" }}</p>
               </div>
             </div>
 
-            <div>
+            <div class="trego-role-row">
               <span v-if="isAdminUser">Admin</span>
               <span v-else-if="isBusinessUser">Business</span>
             </div>
           </section>
         </div>
 
-        <section v-if="!sessionState.sessionLoaded">
+        <section v-if="!sessionState.sessionLoaded" class="trego-card">
           <IonSpinner name="crescent" />
         </section>
 
         <template v-else-if="!sessionState.user">
-          <section>
-            <p>Account</p>
+          <section class="trego-account-hero">
+            <p class="trego-kicker">Account</p>
             <h1>Kyçuni ose krijoni llogari.</h1>
             <p>Qasuni në wishlist, porosi, mesazhe dhe settings sapo të hyni në llogari.</p>
 
-            <div>
+            <div class="trego-top-actions">
               <IonButton @click="router.push('/login?redirect=/tabs/account')">
                 Login
               </IonButton>
@@ -223,11 +221,11 @@ async function handleLogout() {
         </template>
 
         <template v-else>
-          <section>
+          <section class="trego-function-list" aria-label="Account functions">
             <button
               v-for="item in filteredActionItems"
               :key="item.title"
-             
+              class="trego-function-item"
               type="button"
               @click="handleShortcutSelect(item)"
             >
@@ -246,4 +244,3 @@ async function handleLogout() {
     </IonContent>
   </IonPage>
 </template>
-

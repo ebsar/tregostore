@@ -17,6 +17,8 @@ export const CHECKOUT_ADDRESS_DRAFT_KEY = "trego_checkout_address_draft";
 export const CHECKOUT_PAYMENT_METHOD_KEY = "trego_checkout_payment_method";
 export const CHECKOUT_DELIVERY_METHOD_KEY = "trego_checkout_delivery_method";
 export const CHECKOUT_SELECTED_CART_IDS_KEY = "trego_checkout_selected_cart_ids";
+export const CHECKOUT_GUEST_MODE_KEY = "trego_checkout_guest_mode";
+export const CHECKOUT_GUEST_CONTACT_KEY = "trego_checkout_guest_contact";
 export const ORDER_CONFIRMATION_MESSAGE_KEY = "trego_order_confirmation_message";
 export const ORDER_SUCCESS_SNAPSHOT_KEY = "trego_order_success_snapshot";
 export const TRACK_ORDER_LOOKUP_KEY = "trego_track_order_lookup";
@@ -320,6 +322,64 @@ export function readCheckoutPaymentMethod() {
   }
 }
 
+export function persistCheckoutGuestMode(enabled) {
+  try {
+    if (enabled) {
+      window.sessionStorage.setItem(CHECKOUT_GUEST_MODE_KEY, "1");
+      return;
+    }
+
+    window.sessionStorage.removeItem(CHECKOUT_GUEST_MODE_KEY);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+export function readCheckoutGuestMode() {
+  try {
+    return String(window.sessionStorage.getItem(CHECKOUT_GUEST_MODE_KEY) || "").trim() === "1";
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+export function persistCheckoutGuestContact(contact) {
+  try {
+    const payload = {
+      customerName: String(contact?.customerName || "").trim(),
+      customerEmail: String(contact?.customerEmail || "").trim().toLowerCase(),
+    };
+    window.sessionStorage.setItem(CHECKOUT_GUEST_CONTACT_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+export function readCheckoutGuestContact() {
+  try {
+    const rawValue = window.sessionStorage.getItem(CHECKOUT_GUEST_CONTACT_KEY);
+    if (!rawValue) {
+      return {
+        customerName: "",
+        customerEmail: "",
+      };
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    return {
+      customerName: String(parsedValue?.customerName || "").trim(),
+      customerEmail: String(parsedValue?.customerEmail || "").trim().toLowerCase(),
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      customerName: "",
+      customerEmail: "",
+    };
+  }
+}
+
 export function persistCheckoutDeliveryMethod(method) {
   try {
     window.sessionStorage.setItem(
@@ -494,6 +554,8 @@ export function clearCheckoutFlowState() {
     window.sessionStorage.removeItem(CHECKOUT_PAYMENT_METHOD_KEY);
     window.sessionStorage.removeItem(CHECKOUT_DELIVERY_METHOD_KEY);
     window.sessionStorage.removeItem(CHECKOUT_SELECTED_CART_IDS_KEY);
+    window.sessionStorage.removeItem(CHECKOUT_GUEST_MODE_KEY);
+    window.sessionStorage.removeItem(CHECKOUT_GUEST_CONTACT_KEY);
   } catch (error) {
     console.error(error);
   }

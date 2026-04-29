@@ -87,7 +87,7 @@ async function resendCode() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <section>
           <div>
             <AppBackButton back-to="/forgot-password" />
@@ -146,4 +146,3 @@ async function resendCode() {
     </IonContent>
   </IonPage>
 </template>
-

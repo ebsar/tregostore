@@ -1,12 +1,9 @@
 <script setup>
-import { computeRoute, injectSpeedInsights } from "@vercel/speed-insights";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import CommerceHeader from "./components/CommerceHeader.vue";
 import LoaderOverlay from "./components/LoaderOverlay.vue";
 import LoginGreetingToast from "./components/LoginGreetingToast.vue";
-import ProductCompareTray from "./components/ProductCompareTray.vue";
-import SiteFooter from "./components/SiteFooter.vue";
 import { applyDocumentSeo } from "./lib/seo";
 import { appState, ensureSessionLoaded, syncGreetingToastFromSession } from "./stores/app-state";
 
@@ -20,10 +17,21 @@ let lastGlobalToastKey = "";
 let inlineSuccessObserver = null;
 const inlineSuccessStatusMessages = new WeakMap();
 let speedInsightsHandle = null;
+let computeSpeedInsightsRoute = null;
 const VoiceAssistantWidget = defineAsyncComponent(() => import("./components/VoiceAssistantWidget.vue"));
+const ProductCompareTray = defineAsyncComponent(() => import("./components/ProductCompareTray.vue"));
+const PushNotificationPrompt = defineAsyncComponent(() => import("./components/PushNotificationPrompt.vue"));
+const SiteFooter = defineAsyncComponent(() => import("./components/SiteFooter.vue"));
 const speedInsightsClientConfig = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG || "").trim();
 const speedInsightsBasePath = String(import.meta.env.VITE_VERCEL_OBSERVABILITY_BASEPATH || "").trim();
-let sessionWarmupTimeoutId = 0;
+const hasVoiceAssistantConfig = Boolean(
+  String(import.meta.env.VITE_VAPI_PUBLIC_KEY || "").trim()
+  && String(import.meta.env.VITE_VAPI_ASSISTANT_ID || "").trim(),
+);
+const deferredChromeReady = ref(false);
+let cancelSessionWarmup = () => {};
+let cancelDeferredChrome = () => {};
+let cancelSpeedInsightsWarmup = () => {};
 const CHROMELESS_AUTH_PAGE_KEYS = new Set([
   "login",
   "signup",
@@ -56,6 +64,7 @@ const NOINDEX_PAGE_KEYS = new Set([
   "business-dashboard",
   "registered-businesses",
   "product-compare",
+  "liquid-glass",
 ]);
 const DEFAULT_ROUTE_DESCRIPTIONS = {
   home: "TREGIO eshte marketplace per biznese lokale me produkte publike, checkout te sigurt dhe porosi te gjurmueshme.",
@@ -71,6 +80,15 @@ const isChromelessAuthPage = computed(() =>
 );
 const showSiteFooter = computed(() =>
   !isChromelessAuthPage.value,
+);
+const showDeferredFooter = computed(() =>
+  deferredChromeReady.value && showSiteFooter.value,
+);
+const showDeferredChrome = computed(() =>
+  deferredChromeReady.value && !isChromelessAuthPage.value,
+);
+const showVoiceAssistant = computed(() =>
+  showDeferredChrome.value && hasVoiceAssistantConfig,
 );
 
 watch(
@@ -100,10 +118,15 @@ watch(
 
 onMounted(() => {
   syncGreetingToastFromSession();
-  sessionWarmupTimeoutId = window.setTimeout(() => {
+  cancelSessionWarmup = scheduleIdleTask(() => {
     void ensureSessionLoaded();
-  }, 180);
-  initializeSpeedInsights();
+  }, 900);
+  cancelDeferredChrome = scheduleIdleTask(() => {
+    deferredChromeReady.value = true;
+  }, 1200);
+  cancelSpeedInsightsWarmup = scheduleIdleTask(() => {
+    void initializeSpeedInsights();
+  }, 1800);
   window.addEventListener("trego:toast", handleGlobalToastEvent);
   startInlineSuccessObserver();
   nextTick(() => scanInlineSuccessStatuses());
@@ -119,11 +142,24 @@ onBeforeUnmount(() => {
     window.clearTimeout(globalToastTimeoutId);
     globalToastTimeoutId = 0;
   }
-  if (sessionWarmupTimeoutId) {
-    window.clearTimeout(sessionWarmupTimeoutId);
-    sessionWarmupTimeoutId = 0;
-  }
+  cancelSessionWarmup();
+  cancelDeferredChrome();
+  cancelSpeedInsightsWarmup();
 });
+
+function scheduleIdleTask(callback, timeout = 1200) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === "function") {
+    const idleId = window.requestIdleCallback(callback, { timeout });
+    return () => window.cancelIdleCallback?.(idleId);
+  }
+
+  const timeoutId = window.setTimeout(callback, timeout);
+  return () => window.clearTimeout(timeoutId);
+}
 
 function handleGlobalToastEvent(event) {
   const message = String(event?.detail?.message || "").trim();
@@ -216,24 +252,35 @@ function scanInlineSuccessStatuses() {
   });
 }
 
-function initializeSpeedInsights() {
+async function initializeSpeedInsights() {
   if (typeof window === "undefined") {
     return;
   }
 
-  speedInsightsHandle = injectSpeedInsights(
-    {
-      framework: "vue",
-      ...(speedInsightsBasePath ? { basePath: speedInsightsBasePath } : {}),
-    },
-    speedInsightsClientConfig || undefined,
-  );
+  try {
+    const speedInsights = await import("@vercel/speed-insights");
+    computeSpeedInsightsRoute = speedInsights.computeRoute;
+    speedInsightsHandle = speedInsights.injectSpeedInsights(
+      {
+        framework: "vue",
+        ...(speedInsightsBasePath ? { basePath: speedInsightsBasePath } : {}),
+      },
+      speedInsightsClientConfig || undefined,
+    );
+  } catch (error) {
+    console.warn("Speed Insights could not be initialized.", error);
+    return;
+  }
 
   updateSpeedInsightsRoute();
 }
 
 function updateSpeedInsightsRoute() {
-  speedInsightsHandle?.setRoute?.(computeRoute(route.path, route.params));
+  if (!speedInsightsHandle || !computeSpeedInsightsRoute) {
+    return;
+  }
+
+  speedInsightsHandle.setRoute?.(computeSpeedInsightsRoute(route.path, route.params));
 }
 </script>
 
@@ -267,8 +314,9 @@ function updateSpeedInsightsRoute() {
       </div>
     </div>
   </div>
-  <VoiceAssistantWidget v-if="!isChromelessAuthPage" />
-  <ProductCompareTray v-if="!isChromelessAuthPage" />
+  <VoiceAssistantWidget v-if="showVoiceAssistant" />
+  <ProductCompareTray v-if="showDeferredChrome" />
+  <PushNotificationPrompt v-if="showDeferredChrome && appState.user" />
 
   <div class="market-app">
     <CommerceHeader v-if="!isChromelessAuthPage" />
@@ -278,7 +326,7 @@ function updateSpeedInsightsRoute() {
       <RouterView />
       </main>
 
-      <SiteFooter v-if="showSiteFooter" />
+      <SiteFooter v-if="showDeferredFooter" />
     </div>
   </div>
 </template>

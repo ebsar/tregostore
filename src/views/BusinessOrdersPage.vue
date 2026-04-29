@@ -25,6 +25,8 @@ const orders = ref([]);
 const orderSearchQuery = ref(readRouteSearchQuery(route.query.q));
 const activeStatusTab = ref(readRouteStatusTab(route.query.status));
 const busyOrderId = ref(0);
+const selectedOrderDetail = ref(null);
+const orderDetailBusy = ref(false);
 const ui = reactive({
   message: "",
   type: "",
@@ -81,6 +83,26 @@ const orderStatusTabs = computed(() =>
       : orders.value.filter((order) => matchesBusinessOrderTab(order, tab.key)).length,
   })),
 );
+const selectedOrderId = computed(() => readRouteOrderId(route.query.orderId || route.query.id));
+const isOrderDetailView = computed(() => selectedOrderId.value > 0);
+const selectedOrder = computed(() => {
+  const orderId = selectedOrderId.value;
+  if (!orderId) {
+    return null;
+  }
+
+  if (Number(selectedOrderDetail.value?.id || 0) === orderId) {
+    return selectedOrderDetail.value;
+  }
+
+  return orders.value.find((order) => Number(order?.id || 0) === orderId) || null;
+});
+const ordersListRoute = computed(() => {
+  const nextQuery = { ...route.query };
+  delete nextQuery.orderId;
+  delete nextQuery.id;
+  return { path: "/porosite-e-biznesit", query: nextQuery };
+});
 
 watch(
   () => route.query.q,
@@ -93,6 +115,20 @@ watch(
   () => route.query.status,
   (value) => {
     activeStatusTab.value = readRouteStatusTab(value);
+  },
+);
+
+watch(
+  () => route.query.orderId || route.query.id,
+  async () => {
+    if (!isOrderDetailView.value) {
+      selectedOrderDetail.value = null;
+      return;
+    }
+
+    if (appState.user?.role === "business") {
+      await loadSelectedOrderDetail();
+    }
   },
 );
 
@@ -110,13 +146,16 @@ onMounted(async () => {
     }
 
     await loadOrders();
+    if (isOrderDetailView.value) {
+      await loadSelectedOrderDetail();
+    }
   } finally {
     markRouteReady();
   }
 });
 
 async function loadOrders() {
-  const { response, data } = await requestJson("/api/business/orders");
+  const { response, data } = await requestJson("/api/business/orders?preview=1");
   if (!response.ok || !data?.ok) {
     ui.message = resolveApiMessage(data, "Porosite e biznesit nuk u ngarkuan.");
     ui.type = "error";
@@ -129,12 +168,60 @@ async function loadOrders() {
   ui.type = "";
 }
 
+async function loadSelectedOrderDetail() {
+  const orderId = selectedOrderId.value;
+  if (!orderId) {
+    selectedOrderDetail.value = null;
+    return;
+  }
+
+  if (
+    Number(selectedOrderDetail.value?.id || 0) === orderId
+    && Array.isArray(selectedOrderDetail.value?.items)
+  ) {
+    return;
+  }
+
+  orderDetailBusy.value = true;
+  try {
+    const { response, data } = await requestJson(`/api/business/orders?id=${encodeURIComponent(orderId)}`);
+
+    if (!response.ok || !data?.ok || !data.order) {
+      selectedOrderDetail.value = null;
+      ui.message = resolveApiMessage(data, "Detajet e porosise nuk u ngarkuan.");
+      ui.type = "error";
+      return;
+    }
+
+    selectedOrderDetail.value = data.order;
+    if (orders.value.some((order) => Number(order?.id || 0) === orderId)) {
+      orders.value = orders.value.map((order) =>
+        Number(order?.id || 0) === orderId
+          ? { ...order, ...data.order }
+          : order,
+      );
+    } else {
+      orders.value = [data.order, ...orders.value];
+    }
+    ui.message = "";
+    ui.type = "";
+  } finally {
+    orderDetailBusy.value = false;
+  }
+}
+
 function readRouteSearchQuery(value) {
   if (Array.isArray(value)) {
     return String(value[0] || "").trim();
   }
 
   return String(value || "").trim();
+}
+
+function readRouteOrderId(value) {
+  const normalizedValue = Array.isArray(value) ? value[0] : value;
+  const parsedValue = Number(normalizedValue || 0);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? Math.trunc(parsedValue) : 0;
 }
 
 function readRouteStatusTab(value) {
@@ -166,6 +253,16 @@ async function setBusinessOrderTab(tabKey) {
 
   activeStatusTab.value = nextTab;
   await syncRouteFilters();
+}
+
+function orderDetailsRoute(order) {
+  return {
+    path: "/porosite-e-biznesit",
+    query: {
+      ...route.query,
+      orderId: Number(order?.id || 0) || undefined,
+    },
+  };
 }
 
 async function handleUpdateOrderStatus(payload) {
@@ -230,46 +327,61 @@ async function handleUpdateOrderStatus(payload) {
 }
 
 function applyOrderItemsUpdate(payload) {
+  orders.value = orders.value.map((order) => applyOrderItemsUpdateToOrder(order, payload));
+  if (Number(selectedOrderDetail.value?.id || 0) === Number(payload?.orderId || 0)) {
+    selectedOrderDetail.value = applyOrderItemsUpdateToOrder(selectedOrderDetail.value, payload);
+  }
+}
+
+function applyOrderItemsUpdateToOrder(order, payload) {
+  if (!order || Number(order?.id || 0) !== Number(payload?.orderId || 0)) {
+    return order;
+  }
+
   const orderItemIds = Array.isArray(payload?.orderItemIds)
     ? payload.orderItemIds.map((itemId) => Number(itemId || 0)).filter((itemId) => itemId > 0)
     : [];
   const nextStatus = String(payload?.fulfillmentStatus || "").trim().toLowerCase();
   const timestamp = new Date().toISOString();
+  let hasUpdatedItem = false;
+  const nextItems = Array.isArray(order?.items)
+    ? order.items.map((item) => {
+      if (!orderItemIds.includes(Number(item?.id || 0))) {
+        return item;
+      }
 
-  orders.value = orders.value.map((order) => {
-    let hasUpdatedItem = false;
-    const nextItems = Array.isArray(order?.items)
-      ? order.items.map((item) => {
-        if (!orderItemIds.includes(Number(item?.id || 0))) {
-          return item;
-        }
+      hasUpdatedItem = true;
+      return {
+        ...item,
+        fulfillmentStatus: nextStatus || item.fulfillmentStatus,
+        trackingCode: String(payload?.trackingCode || "").trim(),
+        trackingUrl: String(payload?.trackingUrl || "").trim(),
+        confirmedAt: nextStatus === "confirmed" ? timestamp : item.confirmedAt,
+        shippedAt: nextStatus === "shipped" ? timestamp : item.shippedAt,
+        deliveredAt: nextStatus === "delivered" ? timestamp : item.deliveredAt,
+        cancelledAt: nextStatus === "cancelled" ? timestamp : item.cancelledAt,
+      };
+    })
+    : [];
 
-        hasUpdatedItem = true;
-        return {
-          ...item,
-          fulfillmentStatus: nextStatus || item.fulfillmentStatus,
-          trackingCode: String(payload?.trackingCode || "").trim(),
-          trackingUrl: String(payload?.trackingUrl || "").trim(),
-          confirmedAt: nextStatus === "confirmed" ? timestamp : item.confirmedAt,
-          shippedAt: nextStatus === "shipped" ? timestamp : item.shippedAt,
-          deliveredAt: nextStatus === "delivered" ? timestamp : item.deliveredAt,
-          cancelledAt: nextStatus === "cancelled" ? timestamp : item.cancelledAt,
-        };
-      })
-      : [];
-
-    if (!hasUpdatedItem) {
+  if (!hasUpdatedItem) {
+    if (!nextStatus) {
       return order;
     }
-
-    const nextOrderStatus = summarizeOrderFulfillmentStatus(nextItems);
     return {
       ...order,
-      items: nextItems,
-      fulfillmentStatus: nextOrderStatus,
-      status: nextOrderStatus,
+      fulfillmentStatus: nextStatus,
+      status: nextStatus,
     };
-  });
+  }
+
+  const nextOrderStatus = summarizeOrderFulfillmentStatus(nextItems);
+  return {
+    ...order,
+    items: nextItems,
+    fulfillmentStatus: nextOrderStatus,
+    status: nextOrderStatus,
+  };
 }
 
 function buildBusinessOrderSearchHaystack(order) {
@@ -290,6 +402,8 @@ function buildBusinessOrderSearchHaystack(order) {
     order?.fulfillmentStatus,
     order?.status,
     order?.paymentMethod,
+    order?.itemSummary,
+    order?.businessSummary,
     itemText,
   ]
     .filter(Boolean)
@@ -374,6 +488,37 @@ function matchesBusinessOrderTab(order, tabKey) {
         <p>Ende nuk ka porosi per biznesin tend.</p>
       </div>
 
+      <section v-else-if="isOrderDetailView" class="dashboard-section order-detail-workspace" aria-live="polite">
+        <div class="dashboard-section__head">
+          <div>
+            <p class="market-page__eyebrow">Order details</p>
+            <h2>Order #{{ selectedOrderId }}</h2>
+            <p class="dashboard-note">Full customer, item, tracking, and fulfillment details stay inside this dashboard view.</p>
+          </div>
+          <RouterLink class="market-button market-button--ghost" :to="ordersListRoute">
+            Back to orders
+          </RouterLink>
+        </div>
+
+        <div v-if="orderDetailBusy" class="market-empty">
+          <h3>Loading order details</h3>
+          <p>Po hapen detajet pa e ringarkuar dashboard-in.</p>
+        </div>
+
+        <BusinessOrderCard
+          v-else-if="selectedOrder"
+          :order="selectedOrder"
+          can-manage-status
+          :busy-order-id="busyOrderId"
+          @update-order-status="handleUpdateOrderStatus"
+        />
+
+        <div v-else class="market-empty">
+          <h3>Order not found</h3>
+          <p>Kjo porosi nuk u gjet ose nuk eshte pjese e biznesit tend.</p>
+        </div>
+      </section>
+
       <section v-else class="dashboard-section" aria-live="polite">
         <div class="dashboard-section__head">
           <div>
@@ -407,7 +552,8 @@ function matchesBusinessOrderTab(order, tabKey) {
             v-for="order in filteredOrders"
             :key="order.id"
             :order="order"
-            can-manage-status
+            preview
+            :details-to="orderDetailsRoute(order)"
             :busy-order-id="busyOrderId"
             @update-order-status="handleUpdateOrderStatus"
           />

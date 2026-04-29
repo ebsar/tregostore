@@ -5,6 +5,7 @@ import { StatusBar } from "@capacitor/status-bar";
 import App from "./App.vue";
 import router from "./router";
 import { initTheme } from "./composables/useTheme";
+import "./theme/tregio-mobile-system.css";
 
 async function setupNativeChrome() {
   if (!Capacitor.isNativePlatform()) {

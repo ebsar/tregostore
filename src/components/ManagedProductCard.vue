@@ -77,10 +77,26 @@ const details = computed(() =>
 );
 
 const engagementItems = computed(() => ([
-  { label: "Views", value: formatCount(props.product.viewsCount || 0) },
-  { label: "Wishlist", value: formatCount(props.product.wishlistCount || 0) },
-  { label: "Cart", value: formatCount(props.product.cartCount || 0) },
-  { label: "Share", value: formatCount(props.product.shareCount || 0) },
+  {
+    label: "Views",
+    value: formatCount(props.product.viewsCount || 0),
+    iconPath: "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10-3a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z",
+  },
+  {
+    label: "Wishlist",
+    value: formatCount(props.product.wishlistCount || 0),
+    iconPath: "M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 0 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z",
+  },
+  {
+    label: "Cart",
+    value: formatCount(props.product.cartCount || 0),
+    iconPath: "M6 7h12l-1 14H7L6 7Zm3 0a3 3 0 0 1 6 0",
+  },
+  {
+    label: "Share",
+    value: formatCount(props.product.shareCount || 0),
+    iconPath: "M12 3v12m0-12 4 4m-4-4-4 4M5 11v8h14v-8",
+  },
 ]));
 
 onMounted(() => {
@@ -149,9 +165,23 @@ function handleDelete() {
 
     <div class="managed-product-card__body">
       <div class="managed-product-card__top">
-        <div>
+        <div class="managed-product-card__meta">
           <p class="managed-product-card__eyebrow">{{ formatCategoryLabel(product.category) }}</p>
           <p v-if="product.articleNumber" class="managed-product-card__eyebrow">Nr. {{ product.articleNumber }}</p>
+        </div>
+        <div class="managed-product-card__metrics" aria-label="Statistikat e produktit">
+          <span
+            v-for="item in engagementItems"
+            :key="`${product.id}-${item.label}`"
+            class="managed-product-card__metric"
+            :title="`${item.label}: ${item.value}`"
+            :aria-label="`${item.label}: ${item.value}`"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="item.iconPath" />
+            </svg>
+            <strong>{{ item.value }}</strong>
+          </span>
         </div>
         <div class="managed-product-card__top-actions">
           <strong>{{ formatPrice(product.price) }}</strong>
@@ -175,16 +205,6 @@ function handleDelete() {
         {{ stockStateLabel }}
       </p>
       <p class="managed-product-card__description">{{ product.description }}</p>
-      <div class="managed-product-card__metrics" aria-label="Statistikat e produktit">
-        <span
-          v-for="item in engagementItems"
-          :key="`${product.id}-${item.label}`"
-          class="managed-product-card__metric"
-        >
-          <small>{{ item.label }}</small>
-          <strong>{{ item.value }}</strong>
-        </span>
-      </div>
       <div class="managed-product-card__details">
         <span
           v-for="detail in details"

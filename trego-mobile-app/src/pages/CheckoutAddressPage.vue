@@ -100,7 +100,7 @@ async function handleSubmit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <AppPageHeader
           kicker="Checkout"
           title="Vendos adresen e porosise."
@@ -166,4 +166,3 @@ async function handleSubmit() {
     </IonContent>
   </IonPage>
 </template>
-

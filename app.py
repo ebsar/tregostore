@@ -28,6 +28,17 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 import zipfile
 
+from app_routes import (
+    ADMIN_PAGE_ROUTES,
+    AUTHENTICATED_PAGE_ROUTES,
+    BUSINESS_PAGE_ROUTES,
+    CHAT_PAGE_ROUTE,
+    GET_API_ROUTES,
+    PASSWORD_RESET_ROUTE,
+    POST_API_ROUTES,
+    build_page_routes,
+)
+
 try:
     from api import catalog_import as catalog_import_lib
 except ModuleNotFoundError:
@@ -45,6 +56,38 @@ except ImportError:
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_environment_files(base_dir: Path) -> None:
+    original_environment_keys = set(os.environ.keys())
+    for file_name in (".env", ".env.local"):
+        env_path = base_dir / file_name
+        try:
+            raw_lines = env_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+
+        for raw_line in raw_lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            key, raw_value = line.split("=", 1)
+            key = key.strip()
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+                continue
+            if key in original_environment_keys:
+                continue
+
+            value = raw_value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ[key] = value
+
+
+load_environment_files(BASE_DIR)
+
 STATIC_DIR = BASE_DIR / "static"
 FRONTEND_DIST_DIR = BASE_DIR / "dist"
 FRONTEND_DIR = FRONTEND_DIST_DIR if FRONTEND_DIST_DIR.exists() else STATIC_DIR
@@ -83,6 +126,52 @@ BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 ONESIGNAL_APP_ID = str(os.environ.get("ONESIGNAL_APP_ID", "")).strip()
 ONESIGNAL_REST_API_KEY = str(os.environ.get("ONESIGNAL_REST_API_KEY", "")).strip()
 ONESIGNAL_API_URL = "https://api.onesignal.com/notifications?c=push"
+WEB_PUSH_VAPID_PUBLIC_KEY = str(os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "")).strip()
+WEB_PUSH_VAPID_PRIVATE_KEY = str(os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "")).strip()
+WEB_PUSH_CONTACT = (
+    str(os.environ.get("WEB_PUSH_CONTACT", "")).strip()
+    or str(os.environ.get("BREVO_SENDER_EMAIL", "")).strip()
+    or "mailto:admin@tregos.store"
+)
+FCM_PROJECT_ID = str(os.environ.get("FCM_PROJECT_ID", "")).strip()
+FCM_SERVICE_ACCOUNT_JSON = str(os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "")).strip()
+FCM_SERVICE_ACCOUNT_FILE = str(os.environ.get("FCM_SERVICE_ACCOUNT_FILE", "")).strip()
+FCM_SERVER_KEY = str(os.environ.get("FCM_SERVER_KEY", "")).strip()
+FCM_TOKEN_URL = "https://oauth2.googleapis.com/token"
+FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
+APNS_TEAM_ID = str(os.environ.get("APNS_TEAM_ID", "")).strip()
+APNS_KEY_ID = str(os.environ.get("APNS_KEY_ID", "")).strip()
+APNS_BUNDLE_ID = str(os.environ.get("APNS_BUNDLE_ID", "")).strip() or "store.trego.mobile"
+APNS_AUTH_KEY = str(os.environ.get("APNS_AUTH_KEY", "")).strip()
+APNS_AUTH_KEY_FILE = str(os.environ.get("APNS_AUTH_KEY_FILE", "")).strip()
+APNS_USE_SANDBOX = str(os.environ.get("APNS_USE_SANDBOX", "")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+    "po",
+}
+try:
+    PUSH_DELIVERY_TIMEOUT_SECONDS = min(
+        30,
+        max(2, int(str(os.environ.get("TREGO_PUSH_TIMEOUT_SECONDS", "8")).strip() or 8)),
+    )
+except (TypeError, ValueError):
+    PUSH_DELIVERY_TIMEOUT_SECONDS = 8
+try:
+    PUSH_QUEUE_BATCH_SIZE = min(
+        250,
+        max(1, int(str(os.environ.get("TREGO_PUSH_QUEUE_BATCH_SIZE", "50")).strip() or 50)),
+    )
+except (TypeError, ValueError):
+    PUSH_QUEUE_BATCH_SIZE = 50
+try:
+    PUSH_QUEUE_MAX_ATTEMPTS = min(
+        8,
+        max(1, int(str(os.environ.get("TREGO_PUSH_QUEUE_MAX_ATTEMPTS", "3")).strip() or 3)),
+    )
+except (TypeError, ValueError):
+    PUSH_QUEUE_MAX_ATTEMPTS = 3
 GOOGLE_WEB_CLIENT_ID = str(
     os.environ.get("GOOGLE_WEB_CLIENT_ID") or os.environ.get("VITE_GOOGLE_WEB_CLIENT_ID") or ""
 ).strip()
@@ -107,7 +196,7 @@ SESSION_MAX_AGE_SECONDS = 86400
 PRODUCTS_PAGE_DEFAULT_LIMIT = 12
 PRODUCTS_PAGE_MAX_LIMIT = 24
 RECOMMENDATIONS_DEFAULT_LIMIT = 8
-RECOMMENDATIONS_MAX_LIMIT = 12
+RECOMMENDATIONS_MAX_LIMIT = 16
 RECOMMENDATION_CANDIDATE_POOL_LIMIT = 240
 RECOMMENDATION_ACTIVITY_LIMIT = 28
 RECOMMENDATION_TERM_STOPWORDS = {
@@ -135,78 +224,7 @@ RECOMMENDATION_TERM_STOPWORDS = {
     "sale",
     "off",
 }
-SPA_FRONTEND_ROUTES = {
-    "/",
-    "/about",
-    "/kerko",
-    "/profili-biznesit",
-    "/mesazhet",
-    "/njoftimet",
-    "/login",
-    "/forgot-password",
-    "/signup",
-    "/verifiko-email",
-    "/biznesi-juaj",
-    "/llogaria",
-    "/te-dhenat-personale",
-    "/adresat",
-    "/porosite",
-    "/payments",
-    "/support",
-    "/track-order",
-    "/porosite-e-biznesit",
-    "/refund-returne",
-    "/admin-porosite",
-    "/ndrysho-fjalekalimin",
-    "/produkti",
-    "/wishlist",
-    "/cart",
-    "/adresa-e-porosise",
-    "/menyra-e-pageses",
-    "/kafshet-shtepiake",
-    "/admin-products",
-    "/admin-users",
-    "/admin-disputes",
-    "/admin-categories",
-    "/admin-commissions",
-    "/admin-payouts",
-    "/bizneset-e-regjistruara",
-    "/krahaso-produkte",
-    "/liquid-glass",
-}
-LEGACY_PAGE_ROUTES = {
-    "/": "/legacy/index.html",
-    "/about": "/legacy/about.html",
-    "/kerko": "/legacy/search.html",
-    "/profili-biznesit": "/legacy/business-profile-public.html",
-    "/mesazhet": "/legacy/messages.html",
-    "/njoftimet": "/legacy/account.html",
-    "/login": "/legacy/login.html",
-    "/forgot-password": "/legacy/forgot-password.html",
-    "/signup": "/legacy/signup.html",
-    "/verifiko-email": "/legacy/verify-email.html",
-    "/biznesi-juaj": "/legacy/index.html",
-    "/llogaria": "/legacy/account.html",
-    "/te-dhenat-personale": "/legacy/personal-data.html",
-    "/adresat": "/legacy/addresses.html",
-    "/porosite": "/legacy/orders.html",
-    "/track-order": "/legacy/orders.html",
-    "/porosite-e-biznesit": "/legacy/business-orders.html",
-    "/ndrysho-fjalekalimin": "/legacy/change-password.html",
-    "/produkti": "/legacy/product-detail.html",
-    "/wishlist": "/legacy/wishlist.html",
-    "/cart": "/legacy/cart.html",
-    "/adresa-e-porosise": "/legacy/checkout-address.html",
-    "/menyra-e-pageses": "/legacy/payment-options.html",
-    "/kafshet-shtepiake": "/legacy/pets.html",
-    "/admin-products": "/legacy/index.html",
-    "/bizneset-e-regjistruara": "/legacy/registered-businesses.html",
-}
-PAGE_ROUTES = (
-    {route: "/index.html" for route in SPA_FRONTEND_ROUTES}
-    if FRONTEND_DIST_DIR.exists()
-    else LEGACY_PAGE_ROUTES
-)
+PAGE_ROUTES = build_page_routes(FRONTEND_DIST_DIR.exists())
 
 
 def load_product_catalog() -> dict[str, object]:
@@ -357,9 +375,142 @@ SEARCH_INTENT_PRODUCT_TYPE_KEYWORDS = {
     "phone-parts": {"pjese telefoni"},
     "phone-accessories": {"aksesor telefoni"},
 }
+SMART_SEARCH_COLOR_ALIASES = {
+    "white": "bardhe",
+    "bardhe": "bardhe",
+    "black": "zeze",
+    "zeze": "zeze",
+    "gray": "gri",
+    "grey": "gri",
+    "gri": "gri",
+    "beige": "beige",
+    "bezh": "beige",
+    "brown": "kafe",
+    "kafe": "kafe",
+    "red": "kuqe",
+    "kuqe": "kuqe",
+    "pink": "roze",
+    "roze": "roze",
+    "purple": "vjollce",
+    "violet": "vjollce",
+    "vjollce": "vjollce",
+    "blue": "blu",
+    "navy": "blu",
+    "blu": "blu",
+    "green": "gjelber",
+    "gjelber": "gjelber",
+    "yellow": "verdhe",
+    "verdhe": "verdhe",
+    "orange": "portokalli",
+    "portokalli": "portokalli",
+    "silver": "argjend",
+    "argjend": "argjend",
+    "gold": "ari",
+    "ari": "ari",
+    "cream": "krem",
+    "krem": "krem",
+    "multi color": "shume-ngjyra",
+    "multicolor": "shume-ngjyra",
+    "shume ngjyra": "shume-ngjyra",
+}
+SMART_SEARCH_PRODUCT_TYPE_ALIASES = {
+    "t shirt": "tshirt",
+    "t-shirt": "tshirt",
+    "tee": "tshirt",
+    "maice": "tshirt",
+    "maic": "tshirt",
+    "shirt": "shirt",
+    "kemishe": "shirt",
+    "blouse": "blouse",
+    "bluze": "blouse",
+    "pants": "pants",
+    "pantallona": "pants",
+    "jeans": "jeans",
+    "jean": "jeans",
+    "xhinse": "jeans",
+    "shorts": "shorts",
+    "dress": "dress",
+    "fustan": "dress",
+    "skirt": "skirt",
+    "fund": "skirt",
+    "hoodie": "hoodie",
+    "duks": "hoodie",
+    "sweater": "sweater",
+    "pulover": "sweater",
+    "jacket": "jacket",
+    "jakne": "jacket",
+    "coat": "coat",
+    "pallto": "coat",
+    "tracksuit": "tracksuit",
+    "trenerke": "tracksuit",
+    "shoes": "shoes",
+    "kepuce": "shoes",
+    "sneakers": "sneakers",
+    "patika": "sneakers",
+    "phone": "phone",
+    "telefon": "phone",
+    "laptop": "laptop",
+    "headphones": "headphones",
+    "kufje": "headphones",
+    "degjuese": "headphones",
+    "perfume": "perfume",
+    "parfum": "perfume",
+    "makeup": "makeup",
+    "cream": "face-cream",
+    "krem": "face-cream",
+}
+SMART_SEARCH_CATEGORY_ALIASES = {
+    "clothes": "clothing",
+    "clothing": "clothing",
+    "veshje": "clothing",
+    "cosmetics": "cosmetics",
+    "kozmetike": "cosmetics",
+    "home": "home",
+    "shtepi": "home",
+    "sport": "sport",
+    "technology": "technology",
+    "tech": "technology",
+    "teknologji": "technology",
+}
+SMART_SEARCH_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "below",
+    "dollar",
+    "eur",
+    "euro",
+    "for",
+    "i",
+    "max",
+    "me",
+    "of",
+    "or",
+    "the",
+    "to",
+    "under",
+    "usd",
+    "with",
+    "dua",
+    "doja",
+    "gjej",
+    "kerkoj",
+    "kerko",
+    "ma",
+    "me",
+    "nje",
+    "per",
+    "shfaq",
+    "te",
+    "trego",
+}
 USER_ROLES = {"client", "admin", "business"}
 CHAT_PARTICIPANT_ROLES = {"client", "business", "admin"}
 CHAT_MESSAGE_MAX_LENGTH = 1500
+BUSINESS_AUTO_REPLY_MAX_LENGTH = 500
+DEFAULT_BUSINESS_AUTO_REPLY_MESSAGE = (
+    "Hey @username, hope you're doing great. We will text you as soon as possible."
+)
 GENDER_OPTIONS = {"mashkull", "femer", "other"}
 GENDER_ALIASES = {
     "male": "mashkull",
@@ -491,6 +642,11 @@ CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
 }
 SALE_NOTIFICATION_SCAN_LOCK = threading.Lock()
 LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = 0.0
+PUSH_QUEUE_WORKER_LOCK = threading.Lock()
+FCM_ACCESS_TOKEN_LOCK = threading.Lock()
+FCM_ACCESS_TOKEN_CACHE = {"token": "", "expires_at": 0.0}
+APNS_PROVIDER_TOKEN_LOCK = threading.Lock()
+APNS_PROVIDER_TOKEN_CACHE = {"token": "", "expires_at": 0.0}
 IMAGE_CONTENT_TYPE_EXTENSIONS = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -542,7 +698,7 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 PASSWORD_RESET_CODE_LENGTH = 6
 PASSWORD_RESET_TTL_MINUTES = 30
 PASSWORD_RESET_MAX_ATTEMPTS = 5
-APP_SCHEMA_VERSION = "2026-04-12-catalog-import-pipeline-1"
+APP_SCHEMA_VERSION = "2026-04-28-performance-optimized-1"
 PUBLIC_CACHE_REVISION_META_KEY = "public_cache_revision"
 PUBLIC_PRODUCTS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=20, s-maxage=60, stale-while-revalidate=120"
@@ -597,6 +753,8 @@ POSTGRES_MIGRATION_LOCK_ID = 90422117
 CHAT_ONLINE_WINDOW_SECONDS = 180
 USER_PRESENCE_HEARTBEAT_SECONDS = 45
 CHAT_TYPING_WINDOW_SECONDS = 8
+CHAT_MESSAGES_DEFAULT_LIMIT = 50
+CHAT_MESSAGES_MAX_LIMIT = 100
 ADDRESS_SELECT_COLUMNS = """
     id,
     user_id,
@@ -629,6 +787,8 @@ BUSINESS_PROFILE_SELECT_COLUMNS = """
     profile_edit_approved_at,
     profile_edit_notes,
     shipping_settings,
+    auto_reply_enabled,
+    auto_reply_message,
     phone_number,
     city,
     address_line,
@@ -698,13 +858,45 @@ PRODUCT_SELECT_COLUMNS = """
     products.import_metadata AS import_metadata,
     products.created_by_user_id AS created_by_user_id,
     products.created_at AS created_at,
-    COALESCE(order_totals.buyers_count, 0) AS buyers_count,
-    COALESCE(view_totals.views_count, 0) AS views_count,
-    COALESCE(wishlist_totals.wishlist_count, 0) AS wishlist_count,
-    COALESCE(cart_totals.cart_count, 0) AS cart_count,
-    COALESCE(share_totals.share_count, 0) AS share_count,
-    COALESCE(review_totals.average_rating, 0) AS average_rating,
-    COALESCE(review_totals.review_count, 0) AS review_count,
+    COALESCE((
+        SELECT COUNT(DISTINCT order_id)
+        FROM order_items
+        WHERE product_id = products.id
+    ), 0) AS buyers_count,
+    COALESCE((
+        SELECT COUNT(*)
+        FROM product_engagements
+        WHERE product_id = products.id
+          AND event_type = 'view'
+    ), 0) AS views_count,
+    COALESCE((
+        SELECT COUNT(DISTINCT user_id)
+        FROM wishlist_items
+        WHERE product_id = products.id
+    ), 0) AS wishlist_count,
+    COALESCE((
+        SELECT COUNT(DISTINCT user_id)
+        FROM cart_lines
+        WHERE product_id = products.id
+    ), 0) AS cart_count,
+    COALESCE((
+        SELECT COUNT(*)
+        FROM product_engagements
+        WHERE product_id = products.id
+          AND event_type = 'share'
+    ), 0) AS share_count,
+    COALESCE((
+        SELECT ROUND(AVG(rating), 2)
+        FROM product_reviews
+        WHERE product_id = products.id
+          AND status = 'published'
+    ), 0) AS average_rating,
+    COALESCE((
+        SELECT COUNT(*)
+        FROM product_reviews
+        WHERE product_id = products.id
+          AND status = 'published'
+    ), 0) AS review_count,
     COALESCE(product_business_profile.business_name, '') AS business_name,
     COALESCE(product_business_profile.id, 0) AS business_profile_id,
     COALESCE(product_business_profile.verification_status, '') AS business_verification_status,
@@ -715,60 +907,6 @@ PRODUCT_SELECT_COLUMNS = """
     COALESCE(product_business_profile.shipping_settings, '') AS business_shipping_settings
 """
 PRODUCT_SELECT_RELATION_JOINS = """
-    LEFT JOIN (
-        SELECT
-            product_id,
-            COUNT(DISTINCT order_id) AS buyers_count
-        FROM order_items
-        WHERE product_id IS NOT NULL
-        GROUP BY product_id
-    ) order_totals ON order_totals.product_id = products.id
-    LEFT JOIN (
-        SELECT
-            product_id,
-            COUNT(*) AS views_count
-        FROM product_engagements
-        WHERE product_id IS NOT NULL
-          AND event_type = 'view'
-        GROUP BY product_id
-    ) view_totals ON view_totals.product_id = products.id
-    LEFT JOIN (
-        SELECT
-            product_id,
-            COUNT(DISTINCT user_id) AS wishlist_count
-        FROM wishlist_items
-        WHERE product_id IS NOT NULL
-          AND user_id IS NOT NULL
-        GROUP BY product_id
-    ) wishlist_totals ON wishlist_totals.product_id = products.id
-    LEFT JOIN (
-        SELECT
-            product_id,
-            COUNT(DISTINCT user_id) AS cart_count
-        FROM cart_lines
-        WHERE product_id IS NOT NULL
-          AND user_id IS NOT NULL
-        GROUP BY product_id
-    ) cart_totals ON cart_totals.product_id = products.id
-    LEFT JOIN (
-        SELECT
-            product_id,
-            COUNT(*) AS share_count
-        FROM product_engagements
-        WHERE product_id IS NOT NULL
-          AND event_type = 'share'
-        GROUP BY product_id
-    ) share_totals ON share_totals.product_id = products.id
-    LEFT JOIN (
-        SELECT
-            product_id,
-            ROUND(AVG(rating), 2) AS average_rating,
-            COUNT(*) AS review_count
-        FROM product_reviews
-        WHERE product_id IS NOT NULL
-          AND status = 'published'
-        GROUP BY product_id
-    ) review_totals ON review_totals.product_id = products.id
     LEFT JOIN business_profiles product_business_profile
         ON product_business_profile.user_id = products.created_by_user_id
 """
@@ -851,6 +989,14 @@ ORDER_ITEM_SELECT_COLUMNS = """
     created_at
 """
 
+
+def qualify_order_select_columns(table_alias: str = "orders") -> str:
+    return "\n".join(
+        f"    {table_alias}.{line.strip()}"
+        for line in ORDER_SELECT_COLUMNS.splitlines()
+        if line.strip()
+    )
+
 def _load_single_env_file(
     env_path: Path,
     *,
@@ -920,6 +1066,20 @@ def read_bool_env(name: str, default_value: bool) -> bool:
         return default_value
 
     return raw_value in {"1", "true", "yes", "on", "po"}
+
+
+def read_int_env(name: str, default_value: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    raw_value = str(os.environ.get(name, "")).strip()
+    try:
+        value = int(raw_value) if raw_value else int(default_value)
+    except (TypeError, ValueError):
+        value = int(default_value)
+
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
 
 
 def read_text_env(name: str, default_value: str = "") -> str:
@@ -998,9 +1158,10 @@ class DatabaseCursor:
 
 
 class DatabaseConnection:
-    def __init__(self, raw_connection, backend: str):
+    def __init__(self, raw_connection, backend: str, from_pool: bool = False):
         self._raw_connection = raw_connection
         self.backend = backend
+        self.from_pool = from_pool
 
     def execute(self, query: str, params=()):
         cursor = self._raw_connection.execute(
@@ -1020,6 +1181,11 @@ class DatabaseConnection:
         self._raw_connection.rollback()
 
     def close(self):
+        if self.from_pool:
+            pool = ensure_postgres_pool()
+            if pool:
+                pool.putconn(self._raw_connection)
+                return
         self._raw_connection.close()
 
     def __enter__(self):
@@ -1040,6 +1206,10 @@ class CheckoutProcessError(Exception):
         self.errors = list(errors or [])
         self.message = str(message or "").strip()
         super().__init__(self.message or "Checkout process failed.")
+
+
+class DatabaseUnavailableError(RuntimeError):
+    pass
 
 
 def is_postgres_connection(connection: DatabaseConnection) -> bool:
@@ -1078,8 +1248,72 @@ def get_business_initials(value: str) -> str:
     return "".join(part[0].upper() for part in parts)
 
 
+POSTGRES_POOL = None
+POSTGRES_POOL_LOCK = threading.Lock()
+POSTGRES_POOL_MIN_SIZE = read_int_env("TREGO_POSTGRES_POOL_MIN_SIZE", 0, minimum=0, maximum=8)
+POSTGRES_POOL_MAX_SIZE = read_int_env("TREGO_POSTGRES_POOL_MAX_SIZE", 4, minimum=1, maximum=16)
+POSTGRES_POOL_TIMEOUT_SECONDS = read_int_env("TREGO_POSTGRES_POOL_TIMEOUT_SECONDS", 2, minimum=1, maximum=10)
+POSTGRES_STATEMENT_TIMEOUT_MS = read_int_env("TREGO_POSTGRES_STATEMENT_TIMEOUT_MS", 4500, minimum=1000, maximum=30000)
+POSTGRES_IDLE_TRANSACTION_TIMEOUT_MS = read_int_env(
+    "TREGO_POSTGRES_IDLE_TRANSACTION_TIMEOUT_MS",
+    5000,
+    minimum=1000,
+    maximum=30000,
+)
+CATALOG_FACETS_SCAN_LIMIT = read_int_env("TREGO_CATALOG_FACETS_SCAN_LIMIT", 2500, minimum=200, maximum=20000)
+
+
+def configure_postgres_connection(raw_connection) -> None:
+    raw_connection.execute(f"SET statement_timeout = '{POSTGRES_STATEMENT_TIMEOUT_MS}ms'")
+    raw_connection.execute(f"SET idle_in_transaction_session_timeout = '{POSTGRES_IDLE_TRANSACTION_TIMEOUT_MS}ms'")
+    raw_connection.commit()
+
+
+def ensure_postgres_pool():
+    global POSTGRES_POOL
+    if POSTGRES_POOL is not None:
+        return POSTGRES_POOL
+
+    with POSTGRES_POOL_LOCK:
+        if POSTGRES_POOL is not None:
+            return POSTGRES_POOL
+
+        try:
+            from psycopg_pool import ConnectionPool
+            from psycopg.rows import dict_row
+        except ImportError:
+            return None
+
+        db_url = get_database_url()
+        if not db_url:
+            return None
+
+        try:
+            POSTGRES_POOL = ConnectionPool(
+                db_url,
+                min_size=min(POSTGRES_POOL_MIN_SIZE, POSTGRES_POOL_MAX_SIZE),
+                max_size=POSTGRES_POOL_MAX_SIZE,
+                open=True,
+                name="trego-pool",
+                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+                configure=configure_postgres_connection,
+            )
+        except Exception:
+            return None
+
+        return POSTGRES_POOL
+
+
 def get_db_connection() -> DatabaseConnection:
     if use_postgres_database():
+        pool = ensure_postgres_pool()
+        if pool:
+            try:
+                raw_connection = pool.getconn(timeout=float(POSTGRES_POOL_TIMEOUT_SECONDS))
+                return DatabaseConnection(raw_connection, "postgres", from_pool=True)
+            except Exception as error:
+                raise DatabaseUnavailableError("Databaza eshte e zene. Provoje perseri pas pak.") from error
+
         try:
             import psycopg
             from psycopg.rows import dict_row
@@ -1089,11 +1323,11 @@ def get_db_connection() -> DatabaseConnection:
                 "Shtoje ne requirements.txt para deploy-it."
             ) from error
 
-        raw_connection = psycopg.connect(
-            get_database_url(),
-            row_factory=dict_row,
-            prepare_threshold=None,
-        )
+        if not read_bool_env("TREGO_ALLOW_DIRECT_DB_FALLBACK", False):
+            raise DatabaseUnavailableError("Databaza nuk eshte e disponueshme per momentin.")
+
+        raw_connection = psycopg.connect(get_database_url(), row_factory=dict_row, prepare_threshold=None)
+        configure_postgres_connection(raw_connection)
         return DatabaseConnection(raw_connection, "postgres")
 
     raw_connection = sqlite3.connect(DB_PATH)
@@ -1138,14 +1372,12 @@ def initialize_database() -> None:
             if needs_schema_bootstrap:
                 connection.executescript(schema_path.read_text(encoding="utf-8"))
 
-            # Run migrations on every startup/request bootstrap. The migration
-            # helpers are written to be idempotent, and this keeps old/live
-            # databases healthy even when the stored schema_version says "up to
-            # date" while some columns/tables are still missing.
-            migrate_database(connection)
-            ensure_runtime_meta_table(connection)
             if current_schema_version != APP_SCHEMA_VERSION or needs_schema_bootstrap:
+                # Run migrations if schema version changed or if it's a new database.
+                migrate_database(connection)
+                ensure_runtime_meta_table(connection)
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
+
             ensure_bootstrap_admin(connection)
         except Exception:
             if acquired_postgres_lock:
@@ -1487,6 +1719,8 @@ def migrate_database(connection: DatabaseConnection) -> None:
     now_text_value = datetime_to_storage_text(utc_now())
 
     ensure_runtime_meta_table(connection)
+    if is_postgres_connection(connection):
+        connection.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 
     if not table_exists(connection, "user_sessions"):
         connection.execute(
@@ -1631,6 +1865,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
     if not column_exists(connection, "users", "last_seen_at"):
         connection.execute(
             "ALTER TABLE users ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''"
+        )
+
+    if not column_exists(connection, "users", "marketing_emails_opt_in"):
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN marketing_emails_opt_in INTEGER NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "users", "terms_accepted_at"):
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN terms_accepted_at TEXT NOT NULL DEFAULT ''"
         )
 
     users_missing_phone_lookup = connection.execute(
@@ -1818,6 +2062,16 @@ def migrate_database(connection: DatabaseConnection) -> None:
             "ALTER TABLE business_profiles ADD COLUMN shipping_settings TEXT NOT NULL DEFAULT ''"
         )
 
+    if not column_exists(connection, "business_profiles", "auto_reply_enabled"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN auto_reply_enabled INTEGER NOT NULL DEFAULT 0"
+        )
+
+    if not column_exists(connection, "business_profiles", "auto_reply_message"):
+        connection.execute(
+            "ALTER TABLE business_profiles ADD COLUMN auto_reply_message TEXT NOT NULL DEFAULT ''"
+        )
+
     connection.execute(
         """
         UPDATE business_profiles
@@ -1845,7 +2099,13 @@ def migrate_database(connection: DatabaseConnection) -> None:
             profile_edit_requested_at = COALESCE(profile_edit_requested_at, ''),
             profile_edit_approved_at = COALESCE(profile_edit_approved_at, ''),
             profile_edit_notes = COALESCE(profile_edit_notes, ''),
-            shipping_settings = COALESCE(shipping_settings, '')
+            shipping_settings = COALESCE(shipping_settings, ''),
+            auto_reply_enabled = CASE
+                WHEN LOWER(TRIM(CAST(COALESCE(auto_reply_enabled, 0) AS TEXT))) IN ('1', 'true', 'yes', 'on', 'po')
+                    THEN 1
+                ELSE 0
+            END,
+            auto_reply_message = COALESCE(NULLIF(TRIM(auto_reply_message), ''), '')
         """
     )
 
@@ -2076,6 +2336,20 @@ def migrate_database(connection: DatabaseConnection) -> None:
         ON chat_messages(recipient_user_id, read_at, created_at DESC)
         """
     )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id_desc
+        ON chat_messages(conversation_id, id DESC)
+        """
+    )
+    if is_postgres_connection(connection):
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_unread_recipient
+            ON chat_messages(recipient_user_id, conversation_id, id DESC)
+            WHERE read_at IS NULL OR read_at = ''
+            """
+        )
 
     if not table_exists(connection, "chat_typing_states"):
         if is_postgres_connection(connection):
@@ -2549,6 +2823,58 @@ def migrate_database(connection: DatabaseConnection) -> None:
     )
     connection.execute(
         """
+        CREATE INDEX IF NOT EXISTS idx_products_public_category_created
+        ON products(category, created_at DESC, id DESC)
+        WHERE is_public = 1 AND stock_quantity > 0
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_type_created
+        ON products(product_type, created_at DESC, id DESC)
+        WHERE is_public = 1 AND stock_quantity > 0
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_products_public_price
+        ON products(price, id DESC)
+        WHERE is_public = 1 AND stock_quantity > 0
+        """
+    )
+    if is_postgres_connection(connection):
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_title_trgm
+            ON products USING gin (LOWER(title) gin_trgm_ops)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_description_trgm
+            ON products USING gin (LOWER(description) gin_trgm_ops)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_ai_search_trgm
+            ON products USING gin (LOWER(ai_image_search_text) gin_trgm_ops)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_products_brand_trgm
+            ON products USING gin (LOWER(COALESCE(brand, '')) gin_trgm_ops)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_business_profiles_name_trgm
+            ON business_profiles USING gin (LOWER(business_name) gin_trgm_ops)
+            """
+        )
+    connection.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_products_import_source_group
         ON products(created_by_user_id, source_id, group_key)
         """
@@ -2843,10 +3169,73 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    if not table_exists(connection, "guest_cart_lines"):
+        connection.execute(
+            """
+            CREATE TABLE guest_cart_lines (
+                id BIGSERIAL PRIMARY KEY,
+                visitor_token TEXT NOT NULL,
+                product_id BIGINT NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT 'default',
+                variant_label TEXT NOT NULL DEFAULT 'Standard',
+                selected_size TEXT NOT NULL DEFAULT '',
+                selected_color TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE guest_cart_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                visitor_token TEXT NOT NULL,
+                product_id INTEGER NOT NULL,
+                variant_key TEXT NOT NULL DEFAULT 'default',
+                variant_label TEXT NOT NULL DEFAULT 'Standard',
+                selected_size TEXT NOT NULL DEFAULT '',
+                selected_color TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_product_variant
+        ON guest_cart_lines(visitor_token, product_id, variant_key)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_guest_cart_lines_visitor_updated_at
+        ON guest_cart_lines(visitor_token, updated_at DESC)
+        """
+    )
+
     connection.execute(
         """
         UPDATE cart_lines
         SET
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), ?),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), COALESCE(NULLIF(TRIM(created_at), ''), ?)),
+            selected_size = COALESCE(selected_size, ''),
+            selected_color = COALESCE(selected_color, ''),
+            variant_key = COALESCE(NULLIF(TRIM(variant_key), ''), 'default'),
+            variant_label = COALESCE(NULLIF(TRIM(variant_label), ''), 'Standard')
+        """,
+        (now_text_value, now_text_value),
+    )
+
+    connection.execute(
+        """
+        UPDATE guest_cart_lines
+        SET
+            visitor_token = COALESCE(visitor_token, ''),
             created_at = COALESCE(NULLIF(TRIM(created_at), ''), ?),
             updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), COALESCE(NULLIF(TRIM(created_at), ''), ?)),
             selected_size = COALESCE(selected_size, ''),
@@ -3386,6 +3775,138 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    if not table_exists(connection, "push_subscriptions"):
+        connection.execute(
+            """
+            CREATE TABLE push_subscriptions (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'webpush',
+                platform TEXT NOT NULL DEFAULT 'web',
+                token TEXT NOT NULL DEFAULT '',
+                endpoint TEXT NOT NULL DEFAULT '',
+                p256dh TEXT NOT NULL DEFAULT '',
+                auth_secret TEXT NOT NULL DEFAULT '',
+                subscription_json TEXT NOT NULL DEFAULT '{}',
+                device_id TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'webpush',
+                platform TEXT NOT NULL DEFAULT 'web',
+                token TEXT NOT NULL DEFAULT '',
+                endpoint TEXT NOT NULL DEFAULT '',
+                p256dh TEXT NOT NULL DEFAULT '',
+                auth_secret TEXT NOT NULL DEFAULT '',
+                subscription_json TEXT NOT NULL DEFAULT '{}',
+                device_id TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_active
+        ON push_subscriptions(user_id, is_active, updated_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint
+        ON push_subscriptions(endpoint)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_provider_token
+        ON push_subscriptions(provider, token)
+        """
+    )
+
+    if not table_exists(connection, "push_notification_queue"):
+        connection.execute(
+            """
+            CREATE TABLE push_notification_queue (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                href TEXT NOT NULL DEFAULT '',
+                notification_type TEXT NOT NULL DEFAULT 'info',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                idempotency_key TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+                sent_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+            if is_postgres_connection(connection)
+            else """
+            CREATE TABLE push_notification_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                href TEXT NOT NULL DEFAULT '',
+                notification_type TEXT NOT NULL DEFAULT 'info',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                idempotency_key TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sent_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_queue_status_available
+        ON push_notification_queue(status, available_at, id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_queue_user_status
+        ON push_notification_queue(user_id, status, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_push_queue_idempotency
+        ON push_notification_queue(idempotency_key)
+        """
+    )
+
     if not table_exists(connection, "product_sale_alerts"):
         connection.execute(
             """
@@ -3776,6 +4297,26 @@ def migrate_database(connection: DatabaseConnection) -> None:
         """
     )
 
+    # Performance optimizations for product counts
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wishlist_items_product_id
+        ON wishlist_items(product_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_cart_lines_product_id
+        ON cart_lines(product_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_product_engagements_product_id_event
+        ON product_engagements(product_id, event_type)
+        """
+    )
+
 
 def column_exists(
     connection: DatabaseConnection,
@@ -4013,13 +4554,20 @@ def normalize_gender_value(raw_value: object) -> str:
     return GENDER_ALIASES.get(str(raw_value or "").strip().lower(), "")
 
 
-def validate_registration(data: dict[str, str]) -> list[str]:
+def coerce_consent_flag(raw_value: object) -> bool:
+    if isinstance(raw_value, bool):
+        return raw_value
+
+    return str(raw_value or "").strip().lower() in {"1", "true", "po", "yes", "on"}
+
+
+def validate_registration(data: dict[str, object]) -> list[str]:
     errors: list[str] = []
-    full_name = data.get("fullName", "").strip()
-    email = data.get("email", "").strip().lower()
-    phone_number = data.get("phoneNumber", "").strip()
-    password = data.get("password", "")
-    birth_date = data.get("birthDate", "").strip()
+    full_name = str(data.get("fullName", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    phone_number = str(data.get("phoneNumber", "")).strip()
+    password = str(data.get("password", ""))
+    birth_date = str(data.get("birthDate", "")).strip()
     gender = normalize_gender_value(data.get("gender", ""))
     phone_digits = re.sub(r"\D", "", phone_number)
 
@@ -4044,6 +4592,9 @@ def validate_registration(data: dict[str, str]) -> list[str]:
 
     if gender and gender not in GENDER_OPTIONS:
         errors.append("Zgjedhe gjinine.")
+
+    if not coerce_consent_flag(data.get("termsAccepted")):
+        errors.append("Duhet te pranosh Terms & Conditions per te krijuar llogari.")
 
     return errors
 
@@ -5588,6 +6139,16 @@ def parse_order_id_query(
     )
 
 
+def has_order_id_query(query_params: dict[str, list[str]]) -> bool:
+    return bool(
+        str(query_params.get("id", [""])[0] or query_params.get("orderId", [""])[0]).strip()
+    )
+
+
+def parse_truthy_query_flag(query_params: dict[str, list[str]], key: str) -> bool:
+    return str(query_params.get(key, [""])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def parse_order_item_id(data: dict[str, object]) -> tuple[list[str], int | None]:
     errors: list[str] = []
     raw_order_item_id = str(data.get("orderItemId", "")).strip()
@@ -5689,6 +6250,37 @@ def parse_conversation_id_query(
             or query_params.get("id", [""])[0]
         }
     )
+
+
+def parse_chat_messages_pagination_query(
+    query_params: dict[str, list[str]],
+) -> tuple[list[str], int | None, int]:
+    errors: list[str] = []
+    before_id: int | None = None
+    limit = CHAT_MESSAGES_DEFAULT_LIMIT
+    raw_before_id = str(
+        query_params.get("beforeId", [""])[0]
+        or query_params.get("before", [""])[0]
+        or ""
+    ).strip()
+    raw_limit = str(query_params.get("limit", [""])[0] or "").strip()
+
+    if raw_before_id:
+        try:
+            before_id = int(raw_before_id)
+            if before_id <= 0:
+                errors.append("Kursori i mesazheve nuk eshte valid.")
+        except ValueError:
+            errors.append("Kursori i mesazheve nuk eshte valid.")
+
+    if raw_limit:
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            errors.append("Limiti i mesazheve nuk eshte valid.")
+
+    limit = max(1, min(CHAT_MESSAGES_MAX_LIMIT, limit))
+    return errors, before_id, limit
 
 
 def parse_chat_message_body(
@@ -5881,6 +6473,14 @@ def parse_include_facets_query(query_params: dict[str, list[str]]) -> bool:
     return raw_value in {"1", "true", "yes", "on"}
 
 
+def parse_include_total_query(query_params: dict[str, list[str]]) -> bool:
+    raw_value = str(query_params.get("includeTotal", [""])[0]).strip().lower()
+    if not raw_value:
+        return False
+
+    return raw_value in {"1", "true", "yes", "on"}
+
+
 def parse_catalog_filters_query(
     query_params: dict[str, list[str]],
 ) -> tuple[list[str], str | None, str | None, str | None]:
@@ -5982,6 +6582,239 @@ def infer_category_group_from_product_type(product_type: str | None) -> str | No
             return inferred_group
 
     return None
+
+
+def normalize_smart_search_match_text(value: object) -> str:
+    normalized_value = unicodedata.normalize("NFKD", normalize_search_intent_text(str(value or "")))
+    ascii_value = "".join(
+        character
+        for character in normalized_value
+        if not unicodedata.combining(character)
+    )
+    ascii_value = ascii_value.replace("-", " ")
+    return re.sub(r"[^a-z0-9.,]+", " ", ascii_value).strip()
+
+
+def build_smart_search_alias_map(
+    base_aliases: dict[str, str],
+    labels: dict[str, str],
+    allowed_values: set[str],
+) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for alias, mapped_value in base_aliases.items():
+        normalized_alias = normalize_smart_search_match_text(alias)
+        normalized_value = str(mapped_value or "").strip().lower()
+        if normalized_alias and normalized_value in allowed_values:
+            aliases[normalized_alias] = normalized_value
+
+    for value, label in labels.items():
+        normalized_value = str(value or "").strip().lower()
+        if normalized_value not in allowed_values:
+            continue
+
+        value_alias = normalize_smart_search_match_text(normalized_value)
+        label_alias = normalize_smart_search_match_text(label)
+        if value_alias:
+            aliases[value_alias] = normalized_value
+        if label_alias:
+            aliases[label_alias] = normalized_value
+
+    return aliases
+
+
+def find_smart_search_alias(
+    normalized_text: str,
+    aliases: dict[str, str],
+) -> tuple[str | None, str | None]:
+    if not normalized_text:
+        return None, None
+
+    for alias, mapped_value in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        if not alias:
+            continue
+        alias_pattern = r"\b" + r"\s+".join(re.escape(part) for part in alias.split()) + r"\b"
+        if re.search(alias_pattern, normalized_text):
+            return mapped_value, alias
+
+    return None, None
+
+
+def parse_smart_search_number(value: object) -> float | None:
+    try:
+        parsed_value = float(str(value or "").replace(",", ".").strip())
+    except ValueError:
+        return None
+
+    if not math.isfinite(parsed_value) or parsed_value < 0:
+        return None
+    return round(parsed_value, 2)
+
+
+def parse_smart_search_price_bounds(normalized_text: str) -> tuple[float | None, float | None]:
+    min_price: float | None = None
+    max_price: float | None = None
+
+    range_match = re.search(
+        r"\b(\d+(?:[.,]\d+)?)\s+(?:to|deri|through|until)\s+(\d+(?:[.,]\d+)?)\b",
+        normalized_text,
+    )
+    if range_match:
+        first_price = parse_smart_search_number(range_match.group(1))
+        second_price = parse_smart_search_number(range_match.group(2))
+        if first_price is not None and second_price is not None:
+            min_price = min(first_price, second_price)
+            max_price = max(first_price, second_price)
+
+    if max_price is None:
+        for pattern in (
+            r"\b(?:under|below|max|maximum|less than|up to|deri|nen|me pak se|jo me shume se)\s+(\d+(?:[.,]\d+)?)\b",
+            r"\b(\d+(?:[.,]\d+)?)\s*(?:eur|euro|usd|dollar)?\s*(?:or less|and under|max|maximum|under|below)\b",
+        ):
+            match = re.search(pattern, normalized_text)
+            if match:
+                max_price = parse_smart_search_number(match.group(1))
+                break
+
+    if min_price is None:
+        for pattern in (
+            r"\b(?:over|above|min|minimum|from|starting at|mbi|prej)\s+(\d+(?:[.,]\d+)?)\b",
+            r"\b(\d+(?:[.,]\d+)?)\s*(?:eur|euro|usd|dollar)?\s*(?:and up|or more|plus)\b",
+        ):
+            match = re.search(pattern, normalized_text)
+            if match:
+                min_price = parse_smart_search_number(match.group(1))
+                break
+
+    return min_price, max_price
+
+
+def clean_smart_search_text(
+    normalized_text: str,
+    matched_aliases: list[str],
+) -> str:
+    cleaned_text = f" {normalized_text} "
+    cleanup_patterns = [
+        r"\b(?:under|below|max|maximum|less than|up to|deri|nen|me pak se|jo me shume se)\s+\d+(?:[.,]\d+)?\b",
+        r"\b(?:over|above|min|minimum|from|starting at|mbi|prej)\s+\d+(?:[.,]\d+)?\b",
+        r"\b\d+(?:[.,]\d+)?\s*(?:eur|euro|usd|dollar)?\s*(?:or less|and under|or more|and up|max|maximum|under|below|plus)\b",
+        r"\b\d+(?:[.,]\d+)?\s+(?:to|deri|through|until)\s+\d+(?:[.,]\d+)?\b",
+        r"\b(?:eur|euro|usd|dollar)\b",
+    ]
+    for pattern in cleanup_patterns:
+        cleaned_text = re.sub(pattern, " ", cleaned_text)
+
+    for alias in matched_aliases:
+        alias_pattern = r"\b" + r"\s+".join(re.escape(part) for part in alias.split()) + r"\b"
+        cleaned_text = re.sub(alias_pattern, " ", cleaned_text)
+
+    remaining_tokens = [
+        token
+        for token in re.split(r"\s+", cleaned_text.strip())
+        if token and token not in SMART_SEARCH_STOPWORDS and not token.isdigit()
+    ]
+    return re.sub(r"\s+", " ", " ".join(remaining_tokens)).strip()[:80]
+
+
+def parse_smart_search_filters(query_text: str) -> dict[str, object]:
+    normalized_text = normalize_smart_search_match_text(query_text)
+    if not normalized_text:
+        return {
+            "category": None,
+            "categoryGroup": None,
+            "productType": None,
+            "color": None,
+            "minPrice": None,
+            "maxPrice": None,
+            "searchText": "",
+            "matched": False,
+            "displayCategory": "",
+            "displayColor": "",
+        }
+
+    matched_aliases: list[str] = []
+    color_aliases = build_smart_search_alias_map(
+        SMART_SEARCH_COLOR_ALIASES,
+        PRODUCT_COLOR_LABELS,
+        PRODUCT_COLORS,
+    )
+    product_type_aliases = build_smart_search_alias_map(
+        SMART_SEARCH_PRODUCT_TYPE_ALIASES,
+        PRODUCT_TYPE_LABELS,
+        PRODUCT_TYPES,
+    )
+    category_aliases = build_smart_search_alias_map(
+        SMART_SEARCH_CATEGORY_ALIASES,
+        PRODUCT_CATEGORY_LABELS,
+        PRODUCT_CATEGORIES | {"clothing", "cosmetics"},
+    )
+
+    color, color_alias = find_smart_search_alias(normalized_text, color_aliases)
+    if color_alias:
+        matched_aliases.append(color_alias)
+
+    product_type, product_type_alias = find_smart_search_alias(normalized_text, product_type_aliases)
+    if product_type_alias:
+        matched_aliases.append(product_type_alias)
+
+    category_match, category_alias = find_smart_search_alias(normalized_text, category_aliases)
+    if category_alias:
+        matched_aliases.append(category_alias)
+
+    category: str | None = None
+    category_group: str | None = None
+    if category_match in PRODUCT_CATEGORIES:
+        category = category_match
+        category_group = derive_category_group_from_category(category)
+    elif category_match in {"clothing", "cosmetics"}:
+        category_group = category_match
+
+    if not category and product_type:
+        category = infer_category_from_product_type(product_type)
+    if not category_group and product_type:
+        category_group = infer_category_group_from_product_type(product_type)
+
+    min_price, max_price = parse_smart_search_price_bounds(normalized_text)
+    search_text = clean_smart_search_text(normalized_text, matched_aliases)
+    matched = any([category, category_group, product_type, color, min_price is not None, max_price is not None])
+
+    return {
+        "category": category,
+        "categoryGroup": category_group,
+        "productType": product_type,
+        "color": color,
+        "minPrice": min_price,
+        "maxPrice": max_price,
+        "searchText": search_text if matched else "",
+        "matched": matched,
+        "displayCategory": (
+            product_type_alias
+            or category_alias
+            or (PRODUCT_TYPE_LABELS.get(str(product_type or ""), "") if product_type else "")
+            or str(category or category_group or "")
+        ),
+        "displayColor": color_alias or (PRODUCT_COLOR_LABELS.get(str(color or ""), "") if color else ""),
+    }
+
+
+def serialize_smart_search_filters(filters: dict[str, object]) -> dict[str, object]:
+    if not bool(filters.get("matched")):
+        return {}
+
+    return {
+        "category": str(filters.get("displayCategory") or filters.get("productType") or filters.get("category") or filters.get("categoryGroup") or ""),
+        "color": str(filters.get("displayColor") or filters.get("color") or ""),
+        "min_price": filters.get("minPrice"),
+        "max_price": filters.get("maxPrice"),
+        "applied": {
+            "category": str(filters.get("category") or ""),
+            "categoryGroup": str(filters.get("categoryGroup") or ""),
+            "productType": str(filters.get("productType") or ""),
+            "color": str(filters.get("color") or ""),
+            "minPrice": filters.get("minPrice"),
+            "maxPrice": filters.get("maxPrice"),
+            "searchText": str(filters.get("searchText") or ""),
+        },
+    }
 
 
 def sanitize_search_intent(raw_intent: dict[str, object] | None) -> dict[str, object]:
@@ -6753,7 +7586,24 @@ def heuristic_chat_reply_suggestions(
     viewer_user_id: int,
     conversation: sqlite3.Row | None,
     messages: list[sqlite3.Row],
+    draft_text: str = "",
 ) -> list[str]:
+    normalized_draft = re.sub(r"\s+", " ", str(draft_text or "").strip())[:500]
+    if normalized_draft:
+        draft_without_period = normalized_draft.rstrip(".!?")
+        if viewer_role == "business":
+            return [
+                f"Pershendetje! {draft_without_period}.",
+                f"Faleminderit qe na shkruat. {draft_without_period}.",
+                f"Po, me kenaqesi. {draft_without_period}.",
+            ]
+
+        return [
+            f"Pershendetje! {draft_without_period}.",
+            f"A mund te me ndihmoni me kete: {draft_without_period}?",
+            f"Doja te pyesja: {draft_without_period}?",
+        ]
+
     last_message_body = ""
     for message in reversed(messages):
         if int(message["sender_user_id"] or 0) != int(viewer_user_id):
@@ -6806,8 +7656,10 @@ def request_openai_chat_reply_suggestions(
     viewer_user_id: int,
     conversation: sqlite3.Row | None,
     messages: list[sqlite3.Row],
+    draft_text: str = "",
 ) -> list[str] | None:
-    if not OPENAI_API_KEY or not conversation or not messages:
+    normalized_draft = re.sub(r"\s+", " ", str(draft_text or "").strip())[:500]
+    if not OPENAI_API_KEY or not conversation or (not messages and not normalized_draft):
         return None
 
     schema = {
@@ -6845,6 +7697,8 @@ def request_openai_chat_reply_suggestions(
         "Ti gjeneron 3 pergjigje te shkurtra, natyrale dhe profesionale per nje chat marketplace ne shqip. "
         "Pergjigjet duhet te jene gati per t'u derguar, jo shpjegime. "
         "Ruaj tonin e sjellshem dhe praktik. "
+        "Nese ka tekst draft nga perdoruesi, perdore si baze kryesore: permiresoje, kompletoje ose beje me natyral pa ndryshuar kuptimin. "
+        "Nese drafti eshte bosh, sugjero pergjigje nga historia e bisedes. "
         "Nese perdoruesi qe po merr sugjerimet eshte biznes, pergjigjet duhet te ndihmojne klientin dhe te shtyjne qartesine per stokun, madhesite, ngjyrat ose porosine. "
         "Nese eshte klient, pergjigjet duhet te jene pyetje te qarta ose kerkesa per sqarim. "
         "Mos shpik cmime, stok ose detaje qe nuk shihen ne biseden ekzistuese."
@@ -6858,6 +7712,7 @@ def request_openai_chat_reply_suggestions(
                 "text": (
                     f"Roli i shikuesit: {viewer_role}\n"
                     f"Po flet me: {counterpart_name} ({counterpart_role})\n"
+                    f"Drafti aktual i perdoruesit: {normalized_draft or '(bosh)'}\n"
                     f"Historia e fundit e bisedes: {json.dumps(chat_history, ensure_ascii=False)}"
                 ),
             }
@@ -7226,6 +8081,282 @@ def request_openai_product_draft_suggestion(
     )
 
 
+def normalize_ai_product_text(value: object, max_length: int = 600) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())[:max(1, max_length)]
+
+
+def normalize_ai_product_tag(value: object) -> str:
+    normalized_value = normalize_smart_search_match_text(value)
+    normalized_value = re.sub(r"\s+", "-", normalized_value)
+    return normalized_value.strip("-")[:40]
+
+
+def build_product_ai_tags(
+    *,
+    title: str,
+    details: str,
+    category: str,
+    product_type: str,
+    colors: list[str],
+    extra_tags: list[object] | None = None,
+    max_tags: int = 8,
+) -> list[str]:
+    candidates: list[object] = []
+    if product_type:
+        candidates.extend([product_type, PRODUCT_TYPE_LABELS.get(product_type, "")])
+    if category:
+        candidates.extend([category, PRODUCT_CATEGORY_LABELS.get(category, "")])
+    for color in colors:
+        candidates.extend([color, PRODUCT_COLOR_LABELS.get(color, "")])
+
+    candidates.extend(extra_tags or [])
+    for token in tokenize_search_intent_text(f"{title} {details}"):
+        if len(token) >= 3 and token not in SMART_SEARCH_STOPWORDS and not token.isdigit():
+            candidates.append(token)
+
+    tags: list[str] = []
+    seen_tags: set[str] = set()
+    for candidate in candidates:
+        tag = normalize_ai_product_tag(candidate)
+        if not tag or tag in seen_tags:
+            continue
+        seen_tags.add(tag)
+        tags.append(tag)
+        if len(tags) >= max(1, max_tags):
+            break
+
+    return tags
+
+
+def heuristic_product_description_suggestion(
+    *,
+    product_name: str,
+    short_details: str,
+    category: str,
+    product_type: str,
+    colors: list[str],
+) -> dict[str, object]:
+    clean_name = normalize_ai_product_text(product_name, 120)
+    clean_details = normalize_ai_product_text(short_details, 420)
+    primary_color = colors[0] if colors else ""
+    type_label = PRODUCT_TYPE_LABELS.get(product_type, product_type)
+    color_label = PRODUCT_COLOR_LABELS.get(primary_color, primary_color)
+
+    if not clean_name:
+        title_parts = [type_label or "Produkt"]
+        if color_label:
+            title_parts.append(color_label)
+        clean_name = normalize_ai_product_text(" ".join(part for part in title_parts if part), 120)
+
+    if clean_details:
+        description = f"{clean_name}. {clean_details}"
+    else:
+        category_label = PRODUCT_CATEGORY_LABELS.get(category, PRODUCT_CATEGORY_LABELS.get(derive_category_group_from_category(category) or "", "katalog"))
+        detail_parts = [clean_name]
+        if type_label:
+            detail_parts.append(type_label.lower())
+        if color_label:
+            detail_parts.append(f"ngjyre {color_label.lower()}")
+        description = (
+            f"{', '.join(part for part in detail_parts if part)}. "
+            f"Pershkrim i qarte per {str(category_label or 'produkt').lower()}, i gatshem per katalog."
+        )
+
+    return {
+        "title": clean_name[:120],
+        "description": normalize_ai_product_text(description, 700),
+        "tags": build_product_ai_tags(
+            title=clean_name,
+            details=clean_details,
+            category=category,
+            product_type=product_type,
+            colors=colors,
+        ),
+    }
+
+
+def sanitize_product_ai_description_suggestion(
+    raw_suggestion: dict[str, object] | None,
+    *,
+    product_name: str,
+    short_details: str,
+    category: str,
+    product_type: str,
+    colors: list[str],
+) -> dict[str, object]:
+    fallback = heuristic_product_description_suggestion(
+        product_name=product_name,
+        short_details=short_details,
+        category=category,
+        product_type=product_type,
+        colors=colors,
+    )
+    if not isinstance(raw_suggestion, dict):
+        return fallback
+
+    title = normalize_ai_product_text(raw_suggestion.get("title") or fallback["title"], 120)
+    description = normalize_ai_product_text(raw_suggestion.get("description") or fallback["description"], 700)
+    tags = build_product_ai_tags(
+        title=title,
+        details=description,
+        category=category,
+        product_type=product_type,
+        colors=colors,
+        extra_tags=list(raw_suggestion.get("tags") or []) if isinstance(raw_suggestion.get("tags"), list) else [],
+    )
+
+    return {
+        "title": title or str(fallback["title"]),
+        "description": description or str(fallback["description"]),
+        "tags": tags or list(fallback["tags"] or []),
+    }
+
+
+def request_openai_product_description_suggestion(
+    *,
+    product_name: str,
+    short_details: str,
+    category: str,
+    product_type: str,
+    colors: list[str],
+) -> dict[str, object] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["title", "description", "tags"],
+    }
+    context_payload = json.dumps(
+        {
+            "productName": product_name,
+            "shortDetails": short_details,
+            "category": category,
+            "productType": product_type,
+            "colors": colors,
+            "productTypeLabels": PRODUCT_TYPE_LABELS,
+            "categoryLabels": PRODUCT_CATEGORY_LABELS,
+            "colorLabels": PRODUCT_COLOR_LABELS,
+        },
+        ensure_ascii=False,
+    )
+    instructions = (
+        "Ti je asistent per shitese ne marketplace. "
+        "Krijo nje titull te paster, pershkrim shitjeje dhe tags te shkurter. "
+        "Mos shpik material, garanci, marka ose specifika qe nuk jane ne input. "
+        "Kthe vetem sugjerime; shitese duhet t'i aprovoje manualisht."
+    )
+    return request_openai_structured_output(
+        model=OPENAI_PRODUCT_DRAFT_MODEL,
+        instructions=instructions,
+        input_payload=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"Konteksti i produktit:\n{context_payload}",
+                    }
+                ],
+            }
+        ],
+        schema_name="trego_product_description_assistant",
+        schema=schema,
+        max_output_tokens=550,
+        timeout_seconds=OPENAI_PRODUCT_DRAFT_TIMEOUT_SECONDS,
+    )
+
+
+def normalize_ai_selected_colors(raw_colors: object) -> list[str]:
+    colors: list[str] = []
+    if isinstance(raw_colors, (list, tuple, set)):
+        candidates = list(raw_colors)
+    else:
+        candidates = [raw_colors]
+
+    for candidate in candidates:
+        normalized_color = str(candidate or "").strip().lower()
+        if normalized_color in PRODUCT_COLORS and normalized_color not in colors:
+            colors.append(normalized_color)
+        if len(colors) >= 4:
+            break
+    return colors
+
+
+def build_product_ai_tag_suggestion(
+    *,
+    product_name: str,
+    short_details: str,
+    page_section: str,
+    audience: str,
+    product_type: str,
+    selected_colors: list[str],
+    raw_draft: dict[str, object] | None = None,
+) -> dict[str, object]:
+    draft = sanitize_ai_product_draft_suggestion(
+        raw_draft,
+        current_title=product_name,
+        current_description=short_details,
+        current_page_section=page_section,
+        current_audience=audience,
+        current_product_type=product_type,
+        image_search_text="",
+        image_color_terms=" ".join(selected_colors),
+    )
+    next_page_section = str(draft.get("pageSection") or page_section or "").strip().lower()
+    next_audience = str(draft.get("audience") or audience or "").strip().lower()
+    next_product_type = str(draft.get("productType") or product_type or "").strip().lower()
+    next_colors = normalize_ai_selected_colors(draft.get("selectedColors"))
+    if not next_colors:
+        next_colors = selected_colors[:4]
+
+    smart_filters = parse_smart_search_filters(f"{product_name} {short_details}")
+    smart_category = str(smart_filters.get("category") or "").strip().lower()
+    smart_category_group = str(smart_filters.get("categoryGroup") or "").strip().lower()
+    smart_product_type = str(smart_filters.get("productType") or "").strip().lower()
+    smart_color = str(smart_filters.get("color") or "").strip().lower()
+    if smart_category in PRODUCT_CATEGORIES:
+        next_page_section = derive_section_from_category(smart_category) or next_page_section
+        next_audience = derive_audience_from_category(smart_category) or next_audience
+    elif smart_category_group in {"clothing", "cosmetics"}:
+        next_page_section = smart_category_group
+    elif smart_category_group in {"home", "sport", "technology"}:
+        next_page_section = smart_category_group
+        next_audience = ""
+    if smart_product_type in PRODUCT_TYPES:
+        next_product_type = smart_product_type
+    if smart_color in PRODUCT_COLORS and smart_color not in next_colors:
+        next_colors = [smart_color, *next_colors][:4]
+
+    next_category = build_category_from_section_selection(next_page_section, next_audience)
+    tags = build_product_ai_tags(
+        title=product_name or str(draft.get("title") or ""),
+        details=short_details or str(draft.get("description") or ""),
+        category=next_category,
+        product_type=next_product_type,
+        colors=next_colors,
+    )
+
+    return {
+        "category": next_category,
+        "pageSection": next_page_section,
+        "audience": next_audience,
+        "productType": next_product_type,
+        "color": next_colors[0] if next_colors else "",
+        "selectedColors": next_colors,
+        "tags": tags,
+    }
+
+
 def parse_positive_quantity(
     data: dict[str, object],
     field_name: str = "quantity",
@@ -7470,6 +8601,44 @@ def validate_business_shipping_settings_payload(
                 errors.append("Linku i maps per pickup duhet te jete URL valide me http ose https.")
 
     return errors, normalize_business_shipping_settings(normalized_settings)
+
+
+def normalize_business_auto_reply_message(raw_message: object, *, fallback_to_default: bool = False) -> str:
+    message = re.sub(r"\s+", " ", str(raw_message or "").strip())
+    if fallback_to_default and not message:
+        message = DEFAULT_BUSINESS_AUTO_REPLY_MESSAGE
+    return message[:BUSINESS_AUTO_REPLY_MAX_LENGTH].strip()
+
+
+def validate_business_auto_reply_payload(
+    data: dict[str, object],
+) -> tuple[list[str], bool, str]:
+    raw_enabled = data.get("autoReplyEnabled", data.get("enabled", False))
+    errors: list[str] = []
+
+    if isinstance(raw_enabled, bool):
+        enabled = raw_enabled
+    else:
+        normalized_enabled = str(raw_enabled or "").strip().lower()
+        if normalized_enabled in {"1", "true", "po", "yes", "on"}:
+            enabled = True
+        elif normalized_enabled in {"", "0", "false", "jo", "no", "off"}:
+            enabled = False
+        else:
+            errors.append("Vlera autoReplyEnabled nuk eshte valide.")
+            enabled = False
+
+    raw_message = data.get("autoReplyMessage", data.get("message", ""))
+    message = re.sub(r"\s+", " ", str(raw_message or "").strip())
+    if len(message) > BUSINESS_AUTO_REPLY_MAX_LENGTH:
+        errors.append(
+            f"Auto-reply nuk duhet te kete me shume se {BUSINESS_AUTO_REPLY_MAX_LENGTH} karaktere."
+        )
+
+    if enabled and not message:
+        message = DEFAULT_BUSINESS_AUTO_REPLY_MESSAGE
+
+    return errors, enabled, message
 
 
 def normalize_city_lookup(value: object) -> str:
@@ -8134,6 +9303,17 @@ def serialize_business_profile(row: sqlite3.Row) -> dict[str, object]:
         "addressLine": row["address_line"],
         "shippingSettings": normalize_business_shipping_settings(
             row["shipping_settings"] if "shipping_settings" in row.keys() else None
+        ),
+        "autoReplyEnabled": (
+            str(row["auto_reply_enabled"] or "0").strip().lower()
+            in {"1", "true", "yes", "on", "po"}
+            if "auto_reply_enabled" in row.keys()
+            else False
+        ),
+        "autoReplyMessage": (
+            str(row["auto_reply_message"] or "").strip()
+            if "auto_reply_message" in row.keys()
+            else ""
         ),
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -9394,6 +10574,70 @@ def serialize_order(
     }
 
 
+def serialize_order_preview(row: sqlite3.Row) -> dict[str, object]:
+    row_keys = set(row.keys())
+    raw_titles = str(row["preview_item_titles"] or "") if "preview_item_titles" in row_keys else ""
+    raw_business_names = str(row["preview_business_names"] or "") if "preview_business_names" in row_keys else ""
+    titles = [
+        title.strip()
+        for title in raw_titles.split(" | ")
+        if title.strip()
+    ]
+    unique_titles = list(dict.fromkeys(titles))
+    item_summary = ", ".join(unique_titles[:3])
+    if len(unique_titles) > 3:
+        item_summary = f"{item_summary} +{len(unique_titles) - 3} more"
+
+    business_names = [
+        business_name.strip()
+        for business_name in raw_business_names.replace("|", ",").split(",")
+        if business_name.strip()
+    ]
+    unique_business_names = list(dict.fromkeys(business_names))
+    business_summary = ", ".join(unique_business_names[:2])
+    if len(unique_business_names) > 2:
+        business_summary = f"{business_summary} +{len(unique_business_names) - 2} more"
+
+    total_items = int(row["preview_total_items"] or 0) if "preview_total_items" in row_keys else 0
+    line_count = int(row["preview_line_count"] or 0) if "preview_line_count" in row_keys else 0
+    subtotal_amount = round(float(row["subtotal_amount"] or 0), 2) if "subtotal_amount" in row_keys else 0
+    discount_amount = round(float(row["discount_amount"] or 0), 2) if "discount_amount" in row_keys else 0
+    shipping_amount = round(float(row["shipping_amount"] or 0), 2) if "shipping_amount" in row_keys else 0
+    total_price = round(float(row["total_amount"] or 0), 2) if "total_amount" in row_keys else 0
+    fulfillment_status = str(row["status"] or "").strip().lower() or "pending_confirmation"
+
+    return {
+        "id": row["id"],
+        "userId": row["user_id"],
+        "customerName": row["customer_full_name"],
+        "customerEmail": row["customer_email"],
+        "paymentMethod": row["payment_method"],
+        "status": fulfillment_status,
+        "fulfillmentStatus": fulfillment_status,
+        "addressLine": row["address_line"],
+        "city": row["city"],
+        "country": row["country"],
+        "zipCode": row["zip_code"],
+        "phoneNumber": row["phone_number"],
+        "createdAt": row["created_at"],
+        "totalItems": total_items,
+        "itemLineCount": line_count,
+        "itemSummary": item_summary,
+        "businessSummary": business_summary,
+        "subtotalAmount": subtotal_amount,
+        "discountAmount": discount_amount,
+        "shippingAmount": shipping_amount,
+        "totalPrice": total_price,
+        "promoCode": str(row["promo_code"] or "").strip().upper() if "promo_code" in row_keys else "",
+        "deliveryMethod": str(row["delivery_method"] or "").strip().lower() if "delivery_method" in row_keys else "standard",
+        "deliveryLabel": str(row["delivery_label"] or "").strip() if "delivery_label" in row_keys else "",
+        "estimatedDeliveryText": str(row["estimated_delivery_text"] or "").strip()
+        if "estimated_delivery_text" in row_keys
+        else "",
+        "items": [],
+    }
+
+
 def serialize_notification(row: sqlite3.Row) -> dict[str, object]:
     try:
         metadata = json.loads(str(row["metadata"] or "{}"))
@@ -9493,6 +10737,44 @@ def get_chat_display_name(
     if normalized_role == "admin":
         return "Customer Support"
     return normalized_full_name or "Klient"
+
+
+def get_user_auto_reply_name(user: sqlite3.Row | dict[str, object] | None) -> str:
+    if not user:
+        return "there"
+
+    def read_user_value(key: str) -> str:
+        try:
+            return str(user[key] or "").strip()
+        except (KeyError, IndexError, TypeError):
+            return ""
+
+    full_name = read_user_value("full_name") or read_user_value("name")
+    first_name = read_user_value("first_name") or read_user_value("firstName")
+    last_name = read_user_value("last_name") or read_user_value("lastName")
+    email = read_user_value("email")
+    display_name = full_name or " ".join(part for part in (first_name, last_name) if part).strip()
+    if not display_name and "@" in email:
+        display_name = email.split("@", 1)[0]
+    return display_name or "there"
+
+
+def build_business_auto_reply_body(
+    template: object,
+    *,
+    client_user: sqlite3.Row | dict[str, object] | None,
+) -> str:
+    client_name = get_user_auto_reply_name(client_user)
+    body = normalize_business_auto_reply_message(template, fallback_to_default=True)
+    for token in ("@username", "{username}", "@name", "{name}"):
+        body = body.replace(token, client_name)
+    return normalize_business_auto_reply_message(body, fallback_to_default=True)
+
+
+def business_auto_reply_is_enabled(row: sqlite3.Row | None) -> bool:
+    if not row:
+        return False
+    return str(row["auto_reply_enabled"] or "0").strip().lower() in {"1", "true", "yes", "on", "po"}
 
 
 def extract_chat_participant(
@@ -9769,9 +11051,21 @@ def fetch_chat_conversation_for_user(
         ).fetchone()
 
 
-def fetch_chat_messages_for_conversation(conversation_id: int) -> list[sqlite3.Row]:
+def fetch_chat_messages_for_conversation(
+    conversation_id: int,
+    *,
+    before_id: int | None = None,
+    limit: int = CHAT_MESSAGES_DEFAULT_LIMIT,
+) -> tuple[list[sqlite3.Row], bool]:
+    safe_limit = max(1, min(CHAT_MESSAGES_MAX_LIMIT, int(limit or CHAT_MESSAGES_DEFAULT_LIMIT)))
+    conditions = ["m.conversation_id = ?"]
+    parameters: list[object] = [conversation_id]
+    if before_id is not None:
+        conditions.append("m.id < ?")
+        parameters.append(max(1, int(before_id)))
+
     with get_db_connection() as connection:
-        return connection.execute(
+        rows = connection.execute(
             """
             SELECT
                 m.id,
@@ -9792,11 +11086,44 @@ def fetch_chat_messages_for_conversation(conversation_id: int) -> list[sqlite3.R
             FROM chat_messages m
             LEFT JOIN users sender ON sender.id = m.sender_user_id
             LEFT JOIN business_profiles sender_business ON sender_business.user_id = m.sender_user_id
-            WHERE m.conversation_id = ?
-            ORDER BY m.id ASC
+            WHERE
+            """
+            + " AND ".join(conditions)
+            + """
+            ORDER BY m.id DESC
+            LIMIT ?
             """,
-            (conversation_id,),
+            [*parameters, safe_limit + 1],
         ).fetchall()
+
+    has_more = len(rows) > safe_limit
+    return list(reversed(rows[:safe_limit])), has_more
+
+
+def fetch_counterpart_typing_conversation_ids(
+    conversation_ids: list[int],
+    viewer_user_id: int,
+) -> set[int]:
+    normalized_ids = sorted({int(conversation_id) for conversation_id in conversation_ids if int(conversation_id) > 0})
+    if not normalized_ids:
+        return set()
+
+    cutoff_value = datetime_to_storage_text(
+        utc_now() - timedelta(seconds=CHAT_TYPING_WINDOW_SECONDS)
+    )
+    placeholders = ", ".join("?" for _ in normalized_ids)
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT DISTINCT conversation_id
+            FROM chat_typing_states
+            WHERE conversation_id IN ({placeholders})
+              AND user_id != ?
+              AND updated_at >= ?
+            """,
+            [*normalized_ids, viewer_user_id, cutoff_value],
+        ).fetchall()
+    return {int(row["conversation_id"]) for row in rows}
 
 
 def fetch_pending_chat_unread_reminder_rows(
@@ -10428,6 +11755,297 @@ def is_password_reset_expired(row: sqlite3.Row | None) -> bool:
     return expires_at < utc_now()
 
 
+def build_email_asset_data_uri(relative_path: str) -> str:
+    asset_path = BASE_DIR / relative_path
+    try:
+        file_bytes = asset_path.read_bytes()
+    except OSError:
+        return ""
+
+    content_type = guess_content_type_for_extension(asset_path.suffix)
+    encoded_content = base64.b64encode(file_bytes).decode("ascii")
+    return f"data:{content_type};base64,{encoded_content}"
+
+
+def build_tregio_email_logo_src() -> str:
+    if STRIPE_PUBLIC_APP_URL:
+        return f"{STRIPE_PUBLIC_APP_URL}/trego-logo.webp?v=20260410"
+    return build_email_asset_data_uri("public/trego-logo.webp")
+
+
+def build_code_email_html(
+    *,
+    greeting_name: str,
+    code: str,
+    ttl_minutes: int,
+    preview_text: str,
+    title: str,
+    eyebrow: str,
+    intro: str,
+    code_label: str,
+    security_note: str,
+    footer_note: str,
+) -> str:
+    safe_name = html.escape(str(greeting_name or "perdorues").strip() or "perdorues")
+    safe_code = html.escape(str(code or "").strip())
+    safe_ttl = html.escape(str(ttl_minutes))
+    safe_preview = html.escape(str(preview_text or "").strip())
+    safe_title = html.escape(str(title or "").strip())
+    safe_eyebrow = html.escape(str(eyebrow or "").strip())
+    safe_intro = html.escape(str(intro or "").strip())
+    safe_code_label = html.escape(str(code_label or "").strip())
+    safe_security_note = html.escape(str(security_note or "").strip())
+    safe_footer_note = html.escape(str(footer_note or "").strip())
+    logo_src = html.escape(build_tregio_email_logo_src(), quote=True)
+
+    return f"""
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light dark">
+        <meta name="supported-color-schemes" content="light dark">
+        <title>Kodi i sigurise TREGIO</title>
+        <style>
+          :root {{
+            color-scheme: light dark;
+            supported-color-schemes: light dark;
+          }}
+
+          .email-body,
+          .email-shell {{
+            background: #f5f5f5;
+            color: #111111;
+          }}
+
+          .email-card {{
+            background: #ffffff;
+            border-color: #fed7aa;
+          }}
+
+          .email-header {{
+            background: #111111;
+          }}
+
+          .email-title,
+          .email-code {{
+            color: #111111;
+          }}
+
+          .email-text,
+          .email-note-text {{
+            color: #4b5563;
+          }}
+
+          .email-muted {{
+            color: #6b7280;
+          }}
+
+          .email-code-box {{
+            background: #fff7ed;
+            border-color: #fed7aa;
+          }}
+
+          .email-note {{
+            background: #fffbf7;
+            border-color: #fed7aa;
+          }}
+
+          .email-footer {{
+            color: #9ca3af;
+          }}
+
+          @media (prefers-color-scheme: dark) {{
+            .email-body,
+            .email-shell {{
+              background: #0f1115 !important;
+              color: #f8fafc !important;
+            }}
+
+            .email-card {{
+              background: #171a21 !important;
+              border-color: #7c2d12 !important;
+            }}
+
+            .email-header {{
+              background: #020617 !important;
+            }}
+
+            .email-eyebrow {{
+              color: #fed7aa !important;
+            }}
+
+            .email-title,
+            .email-code {{
+              color: #f8fafc !important;
+            }}
+
+            .email-text,
+            .email-note-text {{
+              color: #d1d5db !important;
+            }}
+
+            .email-muted {{
+              color: #a7b0bd !important;
+            }}
+
+            .email-code-box {{
+              background: #241208 !important;
+              border-color: #f97316 !important;
+            }}
+
+            .email-note {{
+              background: #15110d !important;
+              border-color: #7c2d12 !important;
+            }}
+
+            .email-footer {{
+              color: #8993a3 !important;
+            }}
+          }}
+
+          [data-ogsc] .email-body,
+          [data-ogsc] .email-shell {{
+            background: #0f1115 !important;
+            color: #f8fafc !important;
+          }}
+
+          [data-ogsc] .email-card {{
+            background: #171a21 !important;
+            border-color: #7c2d12 !important;
+          }}
+
+          [data-ogsc] .email-header {{
+            background: #020617 !important;
+          }}
+
+          [data-ogsc] .email-eyebrow {{
+            color: #fed7aa !important;
+          }}
+
+          [data-ogsc] .email-title,
+          [data-ogsc] .email-code {{
+            color: #f8fafc !important;
+          }}
+
+          [data-ogsc] .email-text,
+          [data-ogsc] .email-note-text {{
+            color: #d1d5db !important;
+          }}
+
+          [data-ogsc] .email-muted {{
+            color: #a7b0bd !important;
+          }}
+
+          [data-ogsc] .email-code-box {{
+            background: #241208 !important;
+            border-color: #f97316 !important;
+          }}
+
+          [data-ogsc] .email-note {{
+            background: #15110d !important;
+            border-color: #7c2d12 !important;
+          }}
+
+          [data-ogsc] .email-footer {{
+            color: #8993a3 !important;
+          }}
+        </style>
+      </head>
+      <body class="email-body" style="margin:0; padding:0; background:#f5f5f5; font-family:Inter, Arial, sans-serif; color:#111111;">
+        <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+          {safe_preview}
+        </div>
+        <table class="email-shell" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; background:#f5f5f5;">
+          <tr>
+            <td align="center" style="padding:32px 16px;">
+              <table class="email-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:560px; background:#ffffff; border:1px solid #fed7aa; border-radius:18px; overflow:hidden;">
+                <tr>
+                  <td class="email-header" style="padding:22px 28px; background:#111111;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td>
+                          <img src="{logo_src}" alt="TREGIO" width="178" height="89" style="display:block; width:178px; max-width:178px; height:auto; border:0;">
+                        </td>
+                        <td class="email-eyebrow" align="right" style="color:#fff7ed; font-size:12px; font-weight:700; text-transform:uppercase;">{safe_eyebrow}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:30px 28px 8px;">
+                    <p class="email-muted" style="margin:0 0 10px; color:#6b7280; font-size:14px; line-height:1.6;">Pershendetje {safe_name},</p>
+                    <h1 class="email-title" style="margin:0; color:#111111; font-size:26px; line-height:1.2; font-weight:800;">{safe_title}</h1>
+                    <p class="email-text" style="margin:12px 0 0; color:#4b5563; font-size:15px; line-height:1.7;">
+                      {safe_intro}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:18px 28px 6px;">
+                    <div class="email-code-box" style="background:#fff7ed; border:1px solid #fed7aa; border-radius:16px; padding:22px; text-align:center;">
+                      <div style="color:#ea580c; font-size:12px; font-weight:800; letter-spacing:0; text-transform:uppercase;">{safe_code_label}</div>
+                      <div class="email-code" style="margin-top:10px; color:#111111; font-size:36px; line-height:1; font-weight:900; letter-spacing:8px;">{safe_code}</div>
+                      <div class="email-muted" style="margin-top:14px; color:#6b7280; font-size:13px; line-height:1.5;">Skadon per {safe_ttl} minuta</div>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 28px 28px;">
+                    <table class="email-note" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fffbf7; border:1px solid #fed7aa; border-radius:14px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <p class="email-note-text" style="margin:0; color:#4b5563; font-size:13px; line-height:1.7;">
+                            {safe_security_note}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    <p class="email-footer" style="margin:18px 0 0; color:#9ca3af; font-size:12px; line-height:1.6;">
+                      {safe_footer_note}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """.strip()
+
+
+def build_verification_code_email_html(greeting_name: str, code: str) -> str:
+    return build_code_email_html(
+        greeting_name=greeting_name,
+        code=code,
+        ttl_minutes=EMAIL_VERIFICATION_TTL_MINUTES,
+        preview_text="Kodi yt i verifikimit per TREGIO eshte gati.",
+        title="Konfirmo email-in tend",
+        eyebrow="Verifikim emaili",
+        intro="Perdore kodin me poshte per te aktivizuar llogarine tende ne TREGIO.",
+        code_label="Kodi i verifikimit",
+        security_note="Nese nuk e ke krijuar ti kete llogari, mund ta injorosh kete email. Kodi nuk duhet ndare me askend.",
+        footer_note="Ky email u dergua automatikisht nga TREGIO per sigurine e llogarise tende.",
+    )
+
+
+def build_password_reset_code_email_html(greeting_name: str, code: str) -> str:
+    return build_code_email_html(
+        greeting_name=greeting_name,
+        code=code,
+        ttl_minutes=PASSWORD_RESET_TTL_MINUTES,
+        preview_text=f"Kodi per ndryshim te fjalekalimit ne TREGIO: {code}",
+        title="Ndrysho fjalekalimin",
+        eyebrow="Reset password",
+        intro="Perdore kodin me poshte per te vazhduar ndryshimin e fjalekalimit.",
+        code_label="Kodi per ndryshim te fjalekalimit",
+        security_note="Nese nuk e ke kerkuar ti ndryshimin e fjalekalimit, injoroje kete email dhe mos e ndaj kodin me askend.",
+        footer_note="Ky email u dergua automatikisht nga TREGIO per sigurine e llogarise tende.",
+    )
+
+
 def build_email_verification_message(
     user: sqlite3.Row | dict[str, object],
     code: str,
@@ -10449,17 +12067,18 @@ def build_email_verification_message(
 
     body = (
         f"Pershendetje {greeting_name},\n\n"
-        f"Faleminderit qe krijove llogari ne TREGO.\n"
+        f"Faleminderit qe krijove llogari ne TREGIO.\n"
         f"Kodi yt i verifikimit eshte: {code}\n\n"
         f"Ky kod skadon per {EMAIL_VERIFICATION_TTL_MINUTES} minuta.\n"
         f"Nese nuk e ke kerkuar ti kete llogari, injoroje kete email.\n\n"
-        f"TREGO"
+        f"TREGIO"
     )
 
     return {
         "to_email": recipient_email,
-        "subject": "Kodi i verifikimit per TREGO",
+        "subject": "Kodi i verifikimit per TREGIO",
         "body": body,
+        "html_body": build_verification_code_email_html(greeting_name, code),
     }
 
 
@@ -10484,17 +12103,18 @@ def build_password_reset_message(
 
     body = (
         f"Pershendetje {greeting_name},\n\n"
-        f"Kerkuat ndryshim te fjalekalimit ne TREGO.\n"
-        f"Kodi yt per ndryshim te fjalekalimit eshte: {code}\n\n"
+        f"Kerkuat ndryshim te fjalekalimit ne TREGIO.\n"
+        f"Kodi per ndryshim te fjalekalimit ne TREGIO: {code}\n\n"
         f"Ky kod skadon per {PASSWORD_RESET_TTL_MINUTES} minuta.\n"
         f"Nese nuk e ke kerkuar ti, injoroje kete email.\n\n"
-        f"TREGO"
+        f"TREGIO"
     )
 
     return {
         "to_email": recipient_email,
-        "subject": "Kodi per ndryshim te fjalekalimit ne TREGO",
+        "subject": f"Kodi per ndryshim te fjalekalimit ne TREGIO: {code}",
         "body": body,
+        "html_body": build_password_reset_code_email_html(greeting_name, code),
     }
 
 
@@ -10681,8 +12301,984 @@ def send_email_messages(messages: list[dict[str, object]]) -> list[str]:
     return send_email_messages_via_brevo(messages)
 
 
+def print_email_warnings(warnings: list[str]) -> None:
+    for warning in warnings:
+        print(f"[TREGO] Email warning: {warning}", flush=True)
+
+
 def send_email_notifications(messages: list[dict[str, object]]) -> list[str]:
     return send_email_messages(messages)
+
+
+def base64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def normalize_push_provider(value: object) -> str:
+    provider = str(value or "").strip().lower()
+    if provider in {"fcm", "apns", "webpush"}:
+        return provider
+    if provider in {"web", "browser", "pwa"}:
+        return "webpush"
+    return "webpush"
+
+
+def normalize_push_platform(value: object) -> str:
+    platform = str(value or "").strip().lower()
+    if platform in {"ios", "android", "web", "desktop"}:
+        return platform
+    return "web"
+
+
+def get_push_public_config() -> dict[str, object]:
+    return {
+        "webPushConfigured": bool(WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY),
+        "vapidPublicKey": WEB_PUSH_VAPID_PUBLIC_KEY,
+        "fcmConfigured": bool((FCM_PROJECT_ID and (FCM_SERVICE_ACCOUNT_JSON or FCM_SERVICE_ACCOUNT_FILE)) or FCM_SERVER_KEY),
+        "apnsConfigured": bool(APNS_TEAM_ID and APNS_KEY_ID and APNS_BUNDLE_ID and (APNS_AUTH_KEY or APNS_AUTH_KEY_FILE)),
+    }
+
+
+def get_fcm_service_account() -> dict[str, object]:
+    if FCM_SERVICE_ACCOUNT_JSON:
+        try:
+            return json.loads(FCM_SERVICE_ACCOUNT_JSON)
+        except json.JSONDecodeError:
+            return {}
+
+    if FCM_SERVICE_ACCOUNT_FILE:
+        try:
+            return json.loads(Path(FCM_SERVICE_ACCOUNT_FILE).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    return {}
+
+
+def sign_rs256_jwt(payload: dict[str, object], private_key_pem: str) -> str:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    header = {"alg": "RS256", "typ": "JWT"}
+    signing_input = (
+        f"{base64url_encode(json.dumps(header, separators=(',', ':')).encode('utf-8'))}."
+        f"{base64url_encode(json.dumps(payload, separators=(',', ':')).encode('utf-8'))}"
+    )
+    private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    signature = private_key.sign(
+        signing_input.encode("ascii"),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    return f"{signing_input}.{base64url_encode(signature)}"
+
+
+def sign_es256_jwt(payload: dict[str, object], private_key_pem: str, *, key_id: str) -> str:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+    header = {"alg": "ES256", "kid": key_id, "typ": "JWT"}
+    signing_input = (
+        f"{base64url_encode(json.dumps(header, separators=(',', ':')).encode('utf-8'))}."
+        f"{base64url_encode(json.dumps(payload, separators=(',', ':')).encode('utf-8'))}"
+    )
+    private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+    der_signature = private_key.sign(signing_input.encode("ascii"), ec.ECDSA(hashes.SHA256()))
+    r_value, s_value = utils.decode_dss_signature(der_signature)
+    raw_signature = r_value.to_bytes(32, "big") + s_value.to_bytes(32, "big")
+    return f"{signing_input}.{base64url_encode(raw_signature)}"
+
+
+def get_fcm_access_token() -> tuple[str, str]:
+    if FCM_SERVER_KEY:
+        return "", ""
+
+    service_account = get_fcm_service_account()
+    client_email = str(service_account.get("client_email") or "").strip()
+    private_key = str(service_account.get("private_key") or "").strip()
+    if not client_email or not private_key:
+        return "", "FCM service account is not configured."
+
+    now_seconds = int(time.time())
+    with FCM_ACCESS_TOKEN_LOCK:
+        cached_token = str(FCM_ACCESS_TOKEN_CACHE.get("token") or "")
+        expires_at = float(FCM_ACCESS_TOKEN_CACHE.get("expires_at") or 0.0)
+        if cached_token and expires_at - 60 > time.time():
+            return cached_token, ""
+
+        assertion = sign_rs256_jwt(
+            {
+                "iss": client_email,
+                "scope": FCM_SCOPE,
+                "aud": FCM_TOKEN_URL,
+                "iat": now_seconds,
+                "exp": now_seconds + 3600,
+            },
+            private_key,
+        )
+        request_body = urlencode(
+            {
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+            }
+        ).encode("utf-8")
+        request = Request(
+            FCM_TOKEN_URL,
+            data=request_body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": "TREGO-FCM/1.0",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=PUSH_DELIVERY_TIMEOUT_SECONDS) as response:
+                token_payload = json.loads(response.read().decode("utf-8"))
+        except Exception as error:
+            return "", f"FCM auth failed: {error}"
+
+        access_token = str(token_payload.get("access_token") or "").strip()
+        expires_in = max(60, int(token_payload.get("expires_in") or 3600))
+        if access_token:
+            FCM_ACCESS_TOKEN_CACHE["token"] = access_token
+            FCM_ACCESS_TOKEN_CACHE["expires_at"] = time.time() + expires_in
+
+        return access_token, "" if access_token else "FCM auth did not return an access token."
+
+
+def get_apns_private_key() -> str:
+    if APNS_AUTH_KEY:
+        return APNS_AUTH_KEY.replace("\\n", "\n")
+    if APNS_AUTH_KEY_FILE:
+        try:
+            return Path(APNS_AUTH_KEY_FILE).read_text(encoding="utf-8")
+        except OSError:
+            return ""
+    return ""
+
+
+def get_apns_provider_token() -> tuple[str, str]:
+    private_key = get_apns_private_key()
+    if not (APNS_TEAM_ID and APNS_KEY_ID and private_key):
+        return "", "APNs provider credentials are not configured."
+
+    with APNS_PROVIDER_TOKEN_LOCK:
+        cached_token = str(APNS_PROVIDER_TOKEN_CACHE.get("token") or "")
+        expires_at = float(APNS_PROVIDER_TOKEN_CACHE.get("expires_at") or 0.0)
+        if cached_token and expires_at - 60 > time.time():
+            return cached_token, ""
+
+        issued_at = int(time.time())
+        token = sign_es256_jwt({"iss": APNS_TEAM_ID, "iat": issued_at}, private_key, key_id=APNS_KEY_ID)
+        APNS_PROVIDER_TOKEN_CACHE["token"] = token
+        APNS_PROVIDER_TOKEN_CACHE["expires_at"] = time.time() + 45 * 60
+        return token, ""
+
+
+def normalize_notification_payload(payload: dict[str, object]) -> dict[str, object]:
+    title = str(payload.get("title") or "TREGIO").strip() or "TREGIO"
+    body = str(payload.get("body") or payload.get("message") or "").strip()
+    href = str(payload.get("href") or payload.get("path") or "/").strip() or "/"
+    data = dict(payload.get("data") or payload.get("metadata") or {})
+    data.setdefault("href", href)
+    data.setdefault("path", href)
+    return {
+        "title": title,
+        "body": body,
+        "href": href,
+        "path": href,
+        "type": str(payload.get("type") or payload.get("notification_type") or "info").strip().lower() or "info",
+        "data": data,
+        "icon": "/trego-logo.png",
+        "badge": "/apple-touch-icon.png",
+        "tag": str(payload.get("tag") or data.get("type") or title).strip()[:64],
+    }
+
+
+def send_web_push_to_subscription(subscription_row: sqlite3.Row, payload: dict[str, object]) -> tuple[bool, str]:
+    if not (WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY):
+        return False, "Web Push VAPID keys are not configured."
+
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError:
+        return False, "Missing dependency pywebpush. Run pip install -r requirements.txt."
+
+    try:
+        subscription_info = json.loads(str(subscription_row["subscription_json"] or "{}"))
+    except json.JSONDecodeError:
+        subscription_info = {}
+
+    endpoint = str(subscription_row["endpoint"] or "").strip()
+    p256dh = str(subscription_row["p256dh"] or "").strip()
+    auth_secret = str(subscription_row["auth_secret"] or "").strip()
+    if not endpoint:
+        return False, "Web Push endpoint is missing."
+    if "endpoint" not in subscription_info:
+        subscription_info["endpoint"] = endpoint
+    if p256dh or auth_secret:
+        subscription_info["keys"] = {
+            "p256dh": p256dh or str(subscription_info.get("keys", {}).get("p256dh") or ""),
+            "auth": auth_secret or str(subscription_info.get("keys", {}).get("auth") or ""),
+        }
+
+    vapid_contact = WEB_PUSH_CONTACT
+    if vapid_contact and not re.match(r"^(mailto:|https?://)", vapid_contact, re.I):
+        vapid_contact = f"mailto:{vapid_contact}"
+
+    try:
+        webpush(
+            subscription_info=subscription_info,
+            data=json.dumps(payload, ensure_ascii=False),
+            vapid_private_key=WEB_PUSH_VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": vapid_contact},
+            timeout=PUSH_DELIVERY_TIMEOUT_SECONDS,
+        )
+        return True, ""
+    except WebPushException as error:
+        status_code = getattr(getattr(error, "response", None), "status_code", "")
+        return False, f"webpush:{status_code}:{error}"
+    except Exception as error:
+        return False, f"webpush:{error}"
+
+
+def send_fcm_to_subscription(subscription_row: sqlite3.Row, payload: dict[str, object]) -> tuple[bool, str]:
+    token = str(subscription_row["token"] or "").strip()
+    if not token:
+        return False, "FCM token is missing."
+
+    href = str(payload.get("href") or payload.get("path") or "/")
+    data_payload = {
+        str(key): str(value)
+        for key, value in dict(payload.get("data") or {}).items()
+        if value is not None
+    }
+    data_payload.setdefault("href", href)
+    data_payload.setdefault("path", href)
+
+    if FCM_SERVER_KEY:
+        request_payload = {
+            "to": token,
+            "priority": "high",
+            "notification": {
+                "title": str(payload.get("title") or "TREGIO"),
+                "body": str(payload.get("body") or ""),
+                "icon": "/trego-logo.png",
+                "click_action": href,
+            },
+            "data": data_payload,
+        }
+        request = Request(
+            "https://fcm.googleapis.com/fcm/send",
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"key={FCM_SERVER_KEY}",
+                "User-Agent": "TREGO-FCM/1.0",
+            },
+            method="POST",
+        )
+    else:
+        service_account = get_fcm_service_account()
+        project_id = FCM_PROJECT_ID or str(service_account.get("project_id") or "").strip()
+        access_token, auth_error = get_fcm_access_token()
+        if auth_error:
+            return False, auth_error
+        if not project_id:
+            return False, "FCM project id is not configured."
+        request_payload = {
+            "message": {
+                "token": token,
+                "notification": {
+                    "title": str(payload.get("title") or "TREGIO"),
+                    "body": str(payload.get("body") or ""),
+                },
+                "data": data_payload,
+                "android": {
+                    "priority": "HIGH",
+                    "notification": {
+                        "channel_id": "trego_orders",
+                        "click_action": "OPEN_TREGO",
+                    },
+                },
+                "webpush": {
+                    "fcm_options": {"link": href},
+                    "notification": {
+                        "icon": "/trego-logo.png",
+                        "badge": "/apple-touch-icon.png",
+                        "tag": str(payload.get("tag") or "trego"),
+                    },
+                },
+            }
+        }
+        request = Request(
+            f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {access_token}",
+                "User-Agent": "TREGO-FCM/1.0",
+            },
+            method="POST",
+        )
+
+    try:
+        with urlopen(request, timeout=PUSH_DELIVERY_TIMEOUT_SECONDS) as response:
+            response_body = response.read().decode("utf-8", errors="ignore")
+            if response.status >= 400:
+                return False, f"fcm:{response.status}:{response_body}"
+    except HTTPError as error:
+        body_text = error.read().decode("utf-8", errors="ignore") if error.fp else ""
+        return False, f"fcm:{error.code}:{body_text}"
+    except Exception as error:
+        return False, f"fcm:{error}"
+
+    return True, ""
+
+
+def send_apns_to_subscription(subscription_row: sqlite3.Row, payload: dict[str, object]) -> tuple[bool, str]:
+    token = str(subscription_row["token"] or "").strip()
+    if not token:
+        return False, "APNs token is missing."
+    if not (APNS_TEAM_ID and APNS_KEY_ID and APNS_BUNDLE_ID):
+        return False, "APNs is not configured."
+
+    provider_token, token_error = get_apns_provider_token()
+    if token_error:
+        return False, token_error
+
+    try:
+        import httpx
+    except ImportError:
+        return False, "Missing dependency httpx[http2]. Run pip install -r requirements.txt."
+
+    apns_host = "https://api.sandbox.push.apple.com" if APNS_USE_SANDBOX else "https://api.push.apple.com"
+    request_payload = {
+        "aps": {
+            "alert": {
+                "title": str(payload.get("title") or "TREGIO"),
+                "body": str(payload.get("body") or ""),
+            },
+            "sound": "default",
+            "badge": 1,
+        },
+        "href": str(payload.get("href") or payload.get("path") or "/"),
+        "data": dict(payload.get("data") or {}),
+    }
+    try:
+        with httpx.Client(http2=True, timeout=PUSH_DELIVERY_TIMEOUT_SECONDS) as client:
+            response = client.post(
+                f"{apns_host}/3/device/{token}",
+                headers={
+                    "authorization": f"bearer {provider_token}",
+                    "apns-topic": APNS_BUNDLE_ID,
+                    "apns-push-type": "alert",
+                    "apns-priority": "10",
+                    "content-type": "application/json",
+                },
+                json=request_payload,
+            )
+        if response.status_code >= 300:
+            return False, f"apns:{response.status_code}:{response.text}"
+    except Exception as error:
+        return False, f"apns:{error}"
+
+    return True, ""
+
+
+def send_push_to_subscription(subscription_row: sqlite3.Row, payload: dict[str, object]) -> tuple[bool, str]:
+    provider = normalize_push_provider(subscription_row["provider"])
+    if provider == "fcm":
+        return send_fcm_to_subscription(subscription_row, payload)
+    if provider == "apns":
+        return send_apns_to_subscription(subscription_row, payload)
+    return send_web_push_to_subscription(subscription_row, payload)
+
+
+def parse_push_subscription_payload(payload: dict[str, object]) -> dict[str, object]:
+    provider = normalize_push_provider(payload.get("provider"))
+    platform = normalize_push_platform(payload.get("platform"))
+    subscription = payload.get("subscription") if isinstance(payload.get("subscription"), dict) else {}
+    keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
+    endpoint = str(payload.get("endpoint") or subscription.get("endpoint") or "").strip()
+    token = str(payload.get("token") or "").strip()
+    p256dh = str(payload.get("p256dh") or keys.get("p256dh") or "").strip()
+    auth_secret = str(payload.get("auth") or payload.get("authSecret") or keys.get("auth") or "").strip()
+    device_id = str(payload.get("deviceId") or payload.get("device_id") or "").strip()
+    user_agent = str(payload.get("userAgent") or payload.get("user_agent") or "")[:500]
+    if not device_id:
+        device_id = hashlib.sha256(f"{provider}:{platform}:{token or endpoint}".encode("utf-8")).hexdigest()[:32]
+
+    if provider == "webpush" and not endpoint:
+        raise ValueError("Push endpoint mungon.")
+    if provider in {"fcm", "apns"} and not token:
+        raise ValueError("Push token mungon.")
+
+    return {
+        "provider": provider,
+        "platform": platform,
+        "token": token,
+        "endpoint": endpoint,
+        "p256dh": p256dh,
+        "auth_secret": auth_secret,
+        "subscription_json": json.dumps(subscription or {}, ensure_ascii=False),
+        "device_id": device_id,
+        "user_agent": user_agent,
+    }
+
+
+def upsert_push_subscription(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    payload: dict[str, object],
+) -> int:
+    cleaned_payload = parse_push_subscription_payload(payload)
+    lookup_value = cleaned_payload["token"] or cleaned_payload["endpoint"]
+    lookup_column = "token" if cleaned_payload["token"] else "endpoint"
+    existing_row = connection.execute(
+        f"""
+        SELECT id
+        FROM push_subscriptions
+        WHERE user_id = ?
+          AND provider = ?
+          AND {lookup_column} = ?
+        LIMIT 1
+        """,
+        (user_id, cleaned_payload["provider"], lookup_value),
+    ).fetchone()
+    timestamp = datetime_to_storage_text(utc_now())
+    if existing_row:
+        subscription_id = int(existing_row["id"])
+        connection.execute(
+            """
+            UPDATE push_subscriptions
+            SET
+                platform = ?,
+                token = ?,
+                endpoint = ?,
+                p256dh = ?,
+                auth_secret = ?,
+                subscription_json = ?,
+                device_id = ?,
+                user_agent = ?,
+                is_active = 1,
+                failure_count = 0,
+                last_error = '',
+                last_seen_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                cleaned_payload["platform"],
+                cleaned_payload["token"],
+                cleaned_payload["endpoint"],
+                cleaned_payload["p256dh"],
+                cleaned_payload["auth_secret"],
+                cleaned_payload["subscription_json"],
+                cleaned_payload["device_id"],
+                cleaned_payload["user_agent"],
+                timestamp,
+                timestamp,
+                subscription_id,
+            ),
+        )
+        return subscription_id
+
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO push_subscriptions (
+            user_id,
+            provider,
+            platform,
+            token,
+            endpoint,
+            p256dh,
+            auth_secret,
+            subscription_json,
+            device_id,
+            user_agent,
+            is_active,
+            failure_count,
+            last_error,
+            last_seen_at,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, '', ?, ?, ?)
+        """,
+        (
+            user_id,
+            cleaned_payload["provider"],
+            cleaned_payload["platform"],
+            cleaned_payload["token"],
+            cleaned_payload["endpoint"],
+            cleaned_payload["p256dh"],
+            cleaned_payload["auth_secret"],
+            cleaned_payload["subscription_json"],
+            cleaned_payload["device_id"],
+            cleaned_payload["user_agent"],
+            timestamp,
+            timestamp,
+            timestamp,
+        ),
+    )
+
+
+def deactivate_push_subscription(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    payload: dict[str, object],
+) -> None:
+    endpoint = str(payload.get("endpoint") or "").strip()
+    token = str(payload.get("token") or "").strip()
+    device_id = str(payload.get("deviceId") or payload.get("device_id") or "").strip()
+    filters = ["user_id = ?"]
+    params: list[object] = [user_id]
+    if token:
+        filters.append("token = ?")
+        params.append(token)
+    elif endpoint:
+        filters.append("endpoint = ?")
+        params.append(endpoint)
+    elif device_id:
+        filters.append("device_id = ?")
+        params.append(device_id)
+    else:
+        return
+
+    connection.execute(
+        f"""
+        UPDATE push_subscriptions
+        SET is_active = 0,
+            updated_at = ?
+        WHERE {" AND ".join(filters)}
+        """,
+        (datetime_to_storage_text(utc_now()), *params),
+    )
+
+
+def fetch_active_push_subscriptions(
+    connection: DatabaseConnection,
+    *,
+    user_ids: list[int],
+) -> dict[int, list[sqlite3.Row]]:
+    clean_user_ids = sorted({int(user_id) for user_id in user_ids if int(user_id or 0) > 0})
+    if not clean_user_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in clean_user_ids)
+    rows = connection.execute(
+        f"""
+        SELECT
+            id,
+            user_id,
+            provider,
+            platform,
+            token,
+            endpoint,
+            p256dh,
+            auth_secret,
+            subscription_json,
+            device_id,
+            failure_count
+        FROM push_subscriptions
+        WHERE is_active = 1
+          AND user_id IN ({placeholders})
+        ORDER BY updated_at DESC, id DESC
+        """,
+        tuple(clean_user_ids),
+    ).fetchall()
+    grouped: dict[int, list[sqlite3.Row]] = defaultdict(list)
+    for row in rows:
+        grouped[int(row["user_id"])].append(row)
+    return grouped
+
+
+def mark_push_subscription_success(connection: DatabaseConnection, subscription_id: int) -> None:
+    connection.execute(
+        """
+        UPDATE push_subscriptions
+        SET failure_count = 0,
+            last_error = '',
+            last_seen_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            datetime_to_storage_text(utc_now()),
+            datetime_to_storage_text(utc_now()),
+            int(subscription_id),
+        ),
+    )
+
+
+def mark_push_subscription_failure(
+    connection: DatabaseConnection,
+    subscription_id: int,
+    error_message: str,
+) -> None:
+    failure_text = str(error_message or "")[:1000]
+    deactivate = any(marker in failure_text.lower() for marker in ["webpush:404", "webpush:410", "fcm:404", "notregistered", "unregistered", "baddevicetoken", "apns:410"])
+    connection.execute(
+        """
+        UPDATE push_subscriptions
+        SET failure_count = failure_count + 1,
+            last_error = ?,
+            is_active = CASE
+                WHEN ? = 1 OR failure_count + 1 >= 5 THEN 0
+                ELSE is_active
+            END,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            failure_text,
+            1 if deactivate else 0,
+            datetime_to_storage_text(utc_now()),
+            int(subscription_id),
+        ),
+    )
+
+
+def queue_push_notification(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    title: str,
+    body: str,
+    href: str = "/",
+    notification_type: str = "info",
+    metadata: dict[str, object] | None = None,
+    idempotency_key: str = "",
+) -> int:
+    normalized_user_id = int(user_id or 0)
+    if normalized_user_id <= 0:
+        return 0
+
+    clean_key = str(idempotency_key or "").strip()
+    if clean_key:
+        existing_row = connection.execute(
+            """
+            SELECT id
+            FROM push_notification_queue
+            WHERE idempotency_key = ?
+              AND user_id = ?
+              AND status IN ('pending', 'processing', 'sent')
+            LIMIT 1
+            """,
+            (clean_key, normalized_user_id),
+        ).fetchone()
+        if existing_row:
+            return int(existing_row["id"])
+
+    timestamp = datetime_to_storage_text(utc_now())
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO push_notification_queue (
+            user_id,
+            title,
+            body,
+            href,
+            notification_type,
+            metadata,
+            idempotency_key,
+            status,
+            attempts,
+            max_attempts,
+            available_at,
+            created_at,
+            sent_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, '')
+        """,
+        (
+            normalized_user_id,
+            str(title or "").strip(),
+            str(body or "").strip(),
+            str(href or "/").strip() or "/",
+            str(notification_type or "info").strip().lower() or "info",
+            json.dumps(metadata or {}, ensure_ascii=False),
+            clean_key,
+            PUSH_QUEUE_MAX_ATTEMPTS,
+            timestamp,
+            timestamp,
+        ),
+    )
+
+
+def queue_push_message_payloads(messages: list[dict[str, object]]) -> int:
+    if not messages:
+        return 0
+    queued_count = 0
+    with get_db_connection() as connection:
+        for message_payload in messages:
+            external_id = str(message_payload.get("external_id") or message_payload.get("userId") or "").strip()
+            try:
+                user_id = int(external_id)
+            except (TypeError, ValueError):
+                continue
+            if user_id <= 0:
+                continue
+            data_payload = dict(message_payload.get("data") or {})
+            idempotency_key = str(message_payload.get("idempotencyKey") or "").strip()
+            if not idempotency_key:
+                idempotency_key = hashlib.sha1(
+                    json.dumps(
+                        {
+                            "user_id": user_id,
+                            "title": message_payload.get("title"),
+                            "body": message_payload.get("body"),
+                            "path": message_payload.get("path"),
+                            "data": data_payload,
+                        },
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                ).hexdigest()
+            queue_id = queue_push_notification(
+                connection,
+                user_id=user_id,
+                title=str(message_payload.get("title") or "TREGIO"),
+                body=str(message_payload.get("body") or ""),
+                href=str(message_payload.get("path") or message_payload.get("href") or "/"),
+                notification_type=str(data_payload.get("type") or message_payload.get("type") or "info"),
+                metadata=data_payload,
+                idempotency_key=idempotency_key,
+            )
+            if queue_id:
+                queued_count += 1
+    return queued_count
+
+
+def fetch_pending_push_queue_rows(connection: DatabaseConnection, limit: int) -> list[sqlite3.Row]:
+    now_text = datetime_to_storage_text(utc_now())
+    return connection.execute(
+        """
+        SELECT
+            id,
+            user_id,
+            title,
+            body,
+            href,
+            notification_type,
+            metadata,
+            attempts,
+            max_attempts
+        FROM push_notification_queue
+        WHERE status = 'pending'
+          AND available_at <= ?
+        ORDER BY available_at ASC, id ASC
+        LIMIT ?
+        """,
+        (now_text, max(1, int(limit))),
+    ).fetchall()
+
+
+def send_push_fallback_for_queue_row(
+    queue_row: sqlite3.Row,
+    *,
+    public_app_origin: str = "",
+) -> list[str]:
+    user = fetch_user_by_id(int(queue_row["user_id"] or 0))
+    if not user:
+        return []
+
+    warnings: list[str] = []
+    recipient_email = str(user["email"] or "").strip()
+    if recipient_email:
+        href = str(queue_row["href"] or "/").strip() or "/"
+        notification_url = f"{public_app_origin.rstrip('/')}{href}" if public_app_origin else href
+        body = (
+            f"{str(queue_row['title'] or 'TREGIO').strip()}\n\n"
+            f"{str(queue_row['body'] or '').strip()}\n\n"
+            f"Hape ne TREGIO: {notification_url}"
+        )
+        warnings.extend(
+            send_email_notifications(
+                [
+                    {
+                        "to_email": recipient_email,
+                        "subject": str(queue_row["title"] or "Njoftim nga TREGIO"),
+                        "body": body,
+                        "html_body": convert_email_body_to_html(body),
+                    }
+                ]
+            )
+        )
+
+    sms_warning = send_sms_fallback_notification(
+        phone_number=str(user["phone_number"] or ""),
+        body=f"{str(queue_row['title'] or 'TREGIO').strip()}: {str(queue_row['body'] or '').strip()}",
+    )
+    if sms_warning:
+        warnings.append(sms_warning)
+
+    return warnings
+
+
+def send_sms_fallback_notification(*, phone_number: str, body: str) -> str:
+    account_sid = str(os.environ.get("TWILIO_ACCOUNT_SID", "")).strip()
+    auth_token = str(os.environ.get("TWILIO_AUTH_TOKEN", "")).strip()
+    from_number = str(os.environ.get("TWILIO_FROM_NUMBER", "")).strip()
+    to_number = str(phone_number or "").strip()
+    if not (account_sid and auth_token and from_number and to_number):
+        return ""
+
+    request_body = urlencode(
+        {
+            "From": from_number,
+            "To": to_number,
+            "Body": str(body or "")[:1500],
+        }
+    ).encode("utf-8")
+    auth_header = base64.b64encode(f"{account_sid}:{auth_token}".encode("utf-8")).decode("ascii")
+    request = Request(
+        f"https://api.twilio.com/2010-04-01/Accounts/{quote(account_sid)}/Messages.json",
+        data=request_body,
+        headers={
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=PUSH_DELIVERY_TIMEOUT_SECONDS) as response:
+            if response.status >= 400:
+                return f"SMS fallback failed with status {response.status}."
+    except Exception as error:
+        return f"SMS fallback failed: {error}"
+    return ""
+
+
+def process_push_notification_queue(limit: int = PUSH_QUEUE_BATCH_SIZE, *, public_app_origin: str = "") -> list[str]:
+    warnings: list[str] = []
+    with get_db_connection() as connection:
+        rows = fetch_pending_push_queue_rows(connection, limit)
+        if not rows:
+            return warnings
+
+        queue_ids = [int(row["id"]) for row in rows]
+        placeholders = ", ".join("?" for _ in queue_ids)
+        connection.execute(
+            f"""
+            UPDATE push_notification_queue
+            SET status = 'processing',
+                attempts = attempts + 1
+            WHERE id IN ({placeholders})
+              AND status = 'pending'
+            """,
+            tuple(queue_ids),
+        )
+        connection.commit()
+        subscriptions_by_user = fetch_active_push_subscriptions(
+            connection,
+            user_ids=[int(row["user_id"]) for row in rows],
+        )
+
+        for row in rows:
+            queue_id = int(row["id"])
+            user_id = int(row["user_id"] or 0)
+            metadata = {}
+            try:
+                metadata = json.loads(str(row["metadata"] or "{}"))
+            except json.JSONDecodeError:
+                metadata = {}
+            payload = normalize_notification_payload(
+                {
+                    "title": row["title"],
+                    "body": row["body"],
+                    "href": row["href"],
+                    "type": row["notification_type"],
+                    "metadata": metadata,
+                }
+            )
+            delivered = False
+            delivery_errors: list[str] = []
+            for subscription_row in subscriptions_by_user.get(user_id, []):
+                ok, error_message = send_push_to_subscription(subscription_row, payload)
+                if ok:
+                    delivered = True
+                    mark_push_subscription_success(connection, int(subscription_row["id"]))
+                else:
+                    delivery_errors.append(error_message)
+                    mark_push_subscription_failure(connection, int(subscription_row["id"]), error_message)
+
+            if delivered:
+                connection.execute(
+                    """
+                    UPDATE push_notification_queue
+                    SET status = 'sent',
+                        sent_at = ?,
+                        last_error = ''
+                    WHERE id = ?
+                    """,
+                    (datetime_to_storage_text(utc_now()), queue_id),
+                )
+                continue
+
+            current_attempt = int(row["attempts"] or 0) + 1
+            max_attempts = max(1, int(row["max_attempts"] or PUSH_QUEUE_MAX_ATTEMPTS))
+            error_text = "; ".join(error for error in delivery_errors if error)[:1000] or "No active push subscriptions."
+            if current_attempt >= max_attempts:
+                fallback_warnings = send_push_fallback_for_queue_row(row, public_app_origin=public_app_origin)
+                warnings.extend(fallback_warnings)
+                connection.execute(
+                    """
+                    UPDATE push_notification_queue
+                    SET status = 'failed',
+                        last_error = ?,
+                        available_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        error_text,
+                        datetime_to_storage_text(utc_now()),
+                        queue_id,
+                    ),
+                )
+            else:
+                retry_delay_seconds = min(60, 2 ** current_attempt)
+                connection.execute(
+                    """
+                    UPDATE push_notification_queue
+                    SET status = 'pending',
+                        last_error = ?,
+                        available_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        error_text,
+                        datetime_to_storage_text(utc_now() + timedelta(seconds=retry_delay_seconds)),
+                        queue_id,
+                    ),
+                )
+
+    return warnings
+
+
+def dispatch_push_queue_async(*, public_app_origin: str = "") -> None:
+    if not PUSH_QUEUE_WORKER_LOCK.acquire(blocking=False):
+        return
+
+    def _worker() -> None:
+        try:
+            warnings = process_push_notification_queue(public_app_origin=public_app_origin)
+            for warning in warnings:
+                print(f"[TREGO] Push fallback warning: {warning}", flush=True)
+        finally:
+            PUSH_QUEUE_WORKER_LOCK.release()
+
+    try:
+        threading.Thread(target=_worker, name="trego-push-queue", daemon=True).start()
+    except Exception:
+        PUSH_QUEUE_WORKER_LOCK.release()
+        raise
 
 
 def is_onesignal_configured() -> bool:
@@ -10759,10 +13355,22 @@ def send_push_notifications_via_onesignal(messages: list[dict[str, object]]) -> 
 
 
 def send_push_notifications(messages: list[dict[str, object]]) -> list[str]:
-    if not messages or not is_onesignal_configured():
+    if not messages:
         return []
 
-    return send_push_notifications_via_onesignal(messages)
+    warnings: list[str] = []
+    try:
+        queued_count = queue_push_message_payloads(messages)
+        if queued_count:
+            dispatch_push_queue_async(public_app_origin=STRIPE_PUBLIC_APP_URL or "")
+    except Exception as error:
+        warnings.append(f"First-party push queue failed: {error}")
+
+    if is_onesignal_configured():
+        warnings.extend(send_push_notifications_via_onesignal(messages))
+
+    return warnings
+
 
 
 def get_order_status_notification_copy(normalized_status: str) -> tuple[str, str]:
@@ -11341,6 +13949,7 @@ def send_email_verification_code(
     warnings = send_email_messages([message_payload])
 
     if warnings:
+        print_email_warnings(warnings)
         recipient_email = str(
             user["email"] if isinstance(user, sqlite3.Row) else user.get("email", "")
         ).strip()
@@ -11360,6 +13969,7 @@ def send_password_reset_code(
     warnings = send_email_messages([message_payload])
 
     if warnings:
+        print_email_warnings(warnings)
         recipient_email = str(
             user["email"] if isinstance(user, sqlite3.Row) else user.get("email", "")
         ).strip()
@@ -11432,6 +14042,8 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 bp.profile_edit_approved_at,
                 bp.profile_edit_notes,
                 bp.shipping_settings,
+                bp.auto_reply_enabled,
+                bp.auto_reply_message,
                 bp.phone_number,
                 bp.city,
                 bp.address_line,
@@ -11479,6 +14091,24 @@ def fetch_business_profile_for_user(user_id: int) -> sqlite3.Row | None:
                 GROUP BY business_user_id
             ) review_totals ON review_totals.business_user_id = bp.user_id
             WHERE bp.user_id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+
+
+def fetch_business_auto_reply_settings_for_user(user_id: int) -> sqlite3.Row | None:
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                business_name,
+                auto_reply_enabled,
+                auto_reply_message
+            FROM business_profiles
+            WHERE user_id = ?
             LIMIT 1
             """,
             (user_id,),
@@ -12187,9 +14817,9 @@ def normalize_catalog_sort_value(raw_sort: object) -> str:
 def build_product_order_clause(sort: str) -> str:
     normalized_sort = normalize_catalog_sort_value(sort)
     if normalized_sort == "price-asc":
-        return "CAST(products.price AS REAL) ASC, products.id DESC"
+        return "products.price ASC, products.id DESC"
     if normalized_sort == "price-desc":
-        return "CAST(products.price AS REAL) DESC, products.id DESC"
+        return "products.price DESC, products.id DESC"
     if normalized_sort == "rating":
         return "COALESCE(average_rating, 0) DESC, COALESCE(review_count, 0) DESC, products.id DESC"
     if normalized_sort == "newest":
@@ -12296,11 +14926,11 @@ def build_product_query_filters(
         )
 
     if min_price is not None:
-        conditions.append("CAST(price AS REAL) >= ?")
+        conditions.append("price >= ?")
         parameters.append(float(min_price))
 
     if max_price is not None:
-        conditions.append("CAST(price AS REAL) <= ?")
+        conditions.append("price <= ?")
         parameters.append(float(max_price))
 
     if not include_hidden:
@@ -12427,8 +15057,9 @@ def build_product_catalog_facets(
             + where_clause
             + """
             ORDER BY products.id DESC
+            LIMIT ?
             """,
-            parameters,
+            [*parameters, CATALOG_FACETS_SCAN_LIMIT],
         ).fetchall()
 
     page_sections: dict[str, dict[str, object]] = {}
@@ -12781,6 +15412,124 @@ def safe_json_loads_list(raw_value: object) -> list[object]:
     return parsed_value if isinstance(parsed_value, list) else []
 
 
+CATALOG_IMPORT_PROFILE_SELECT_COLUMNS = """
+    id,
+    business_user_id,
+    profile_name,
+    source_type,
+    field_mapping,
+    category_mapping_rules,
+    attribute_mapping_rules,
+    normalization_rules,
+    ai_preferences,
+    created_at,
+    updated_at
+"""
+
+CATALOG_IMPORT_SOURCE_SELECT_COLUMNS = """
+    id,
+    business_user_id,
+    profile_id,
+    source_name,
+    source_type,
+    source_config,
+    sync_enabled,
+    sync_interval_minutes,
+    last_synced_at,
+    created_at,
+    updated_at
+"""
+
+CATALOG_IMPORT_JOB_SELECT_COLUMNS = """
+    id,
+    business_user_id,
+    source_id,
+    profile_id,
+    source_type,
+    adapter_kind,
+    original_filename,
+    status,
+    source_digest,
+    headers_json,
+    field_mapping_json,
+    category_mapping_rules_json,
+    ai_suggestions_json,
+    summary_json,
+    preview_payload_json,
+    created_at,
+    updated_at,
+    committed_at
+"""
+
+CATALOG_IMPORT_JOB_RECORD_SELECT_COLUMNS = """
+    id,
+    job_id,
+    source_row_id,
+    row_index,
+    raw_data_json,
+    mapped_data_json,
+    normalized_data_json,
+    parent_data_json,
+    variant_data_json,
+    warnings_json,
+    errors_json,
+    group_key,
+    created_at,
+    updated_at
+"""
+
+PROMO_CODE_SELECT_COLUMNS = """
+    id,
+    business_user_id,
+    code,
+    title,
+    description,
+    discount_type,
+    discount_value,
+    minimum_subtotal,
+    usage_limit,
+    per_user_limit,
+    is_active,
+    page_section,
+    category,
+    starts_at,
+    ends_at,
+    created_at,
+    updated_at
+"""
+
+LAUNCH_AD_SELECT_COLUMNS = """
+    id,
+    badge,
+    title,
+    subtitle,
+    image_path,
+    cta_label,
+    sort_order,
+    is_active,
+    starts_at,
+    ends_at,
+    created_by_user_id,
+    created_at,
+    updated_at
+"""
+
+RETURN_REQUEST_SELECT_COLUMNS = """
+    rr.id,
+    rr.order_id,
+    rr.order_item_id,
+    rr.user_id,
+    rr.business_user_id,
+    rr.reason,
+    rr.details,
+    rr.status,
+    rr.resolution_notes,
+    rr.resolved_at,
+    rr.created_at,
+    rr.updated_at
+"""
+
+
 def fetch_catalog_import_profile_for_business(
     business_user_id: int,
     profile_id: int,
@@ -12788,7 +15537,10 @@ def fetch_catalog_import_profile_for_business(
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_PROFILE_SELECT_COLUMNS
+            + """
             FROM catalog_import_profiles
             WHERE id = ? AND business_user_id = ?
             LIMIT 1
@@ -12801,7 +15553,10 @@ def fetch_catalog_import_profiles_for_business(business_user_id: int) -> list[sq
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_PROFILE_SELECT_COLUMNS
+            + """
             FROM catalog_import_profiles
             WHERE business_user_id = ?
             ORDER BY updated_at DESC, id DESC
@@ -12817,7 +15572,10 @@ def fetch_catalog_import_source_for_business(
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_SOURCE_SELECT_COLUMNS
+            + """
             FROM catalog_import_sources
             WHERE id = ? AND business_user_id = ?
             LIMIT 1
@@ -12830,7 +15588,10 @@ def fetch_catalog_import_sources_for_business(business_user_id: int) -> list[sql
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_SOURCE_SELECT_COLUMNS
+            + """
             FROM catalog_import_sources
             WHERE business_user_id = ?
             ORDER BY updated_at DESC, id DESC
@@ -12846,7 +15607,10 @@ def fetch_catalog_import_job_for_business(
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_JOB_SELECT_COLUMNS
+            + """
             FROM catalog_import_jobs
             WHERE id = ? AND business_user_id = ?
             LIMIT 1
@@ -12859,7 +15623,10 @@ def fetch_catalog_import_jobs_for_business(business_user_id: int, *, limit: int 
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + CATALOG_IMPORT_JOB_SELECT_COLUMNS
+            + """
             FROM catalog_import_jobs
             WHERE business_user_id = ?
             ORDER BY updated_at DESC, id DESC
@@ -12875,7 +15642,10 @@ def fetch_catalog_import_job_records(
 ) -> list[sqlite3.Row]:
     return connection.execute(
         """
-        SELECT *
+        SELECT
+        """
+        + CATALOG_IMPORT_JOB_RECORD_SELECT_COLUMNS
+        + """
         FROM catalog_import_job_records
         WHERE job_id = ?
         ORDER BY row_index ASC, id ASC
@@ -13786,6 +16556,51 @@ def fetch_cart_items(user_id: int) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def fetch_guest_cart_items(visitor_token: str) -> list[sqlite3.Row]:
+    normalized_visitor_token = normalize_tracking_visitor_token(visitor_token)
+    if not normalized_visitor_token:
+        return []
+
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                cl.id AS cart_line_id,
+                p.id,
+                p.title,
+                p.description,
+                p.price,
+                p.image_path,
+                p.image_gallery,
+                p.category,
+                p.product_type,
+                p.size,
+                p.color,
+                p.variant_inventory,
+                p.package_amount_value,
+                p.package_amount_unit,
+                p.stock_quantity,
+                p.is_public,
+                p.show_stock_public,
+                p.created_by_user_id,
+                cl.created_at,
+                cl.quantity,
+                cl.variant_key,
+                cl.variant_label,
+                cl.selected_size,
+                cl.selected_color,
+                COALESCE(bp.business_name, '') AS business_name
+            FROM guest_cart_lines cl
+            INNER JOIN products p ON p.id = cl.product_id
+            LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+            WHERE cl.visitor_token = ?
+              AND p.is_public = 1
+            ORDER BY cl.updated_at DESC
+            """,
+            (normalized_visitor_token,),
+        ).fetchall()
+
+
 def fetch_cart_items_for_checkout(
     connection: DatabaseConnection,
     user_id: int,
@@ -13829,6 +16644,60 @@ def fetch_cart_items_for_checkout(
         INNER JOIN products p ON p.id = cl.product_id
         LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
         WHERE cl.user_id = ?
+          AND cl.id IN ("""
+        + placeholders
+        + """)
+          AND p.is_public = 1
+        ORDER BY cl.updated_at DESC, cl.id DESC
+        """,
+        parameters,
+    ).fetchall()
+
+
+def fetch_guest_cart_items_for_checkout(
+    connection: DatabaseConnection,
+    visitor_token: str,
+    cart_line_ids: list[int],
+) -> list[sqlite3.Row]:
+    normalized_visitor_token = normalize_tracking_visitor_token(visitor_token)
+    if not cart_line_ids or not normalized_visitor_token:
+        return []
+
+    placeholders = ", ".join("?" for _ in cart_line_ids)
+    parameters: list[object] = [normalized_visitor_token, *cart_line_ids]
+
+    return connection.execute(
+        """
+        SELECT
+            cl.id AS cart_line_id,
+            p.id,
+            p.title,
+            p.description,
+            p.price,
+            p.image_path,
+            p.image_gallery,
+            p.category,
+            p.product_type,
+            p.size,
+            p.color,
+            p.variant_inventory,
+            p.package_amount_value,
+            p.package_amount_unit,
+            p.stock_quantity,
+            p.is_public,
+            p.show_stock_public,
+            p.created_by_user_id,
+            cl.created_at,
+            cl.quantity,
+            cl.variant_key,
+            cl.variant_label,
+            cl.selected_size,
+            cl.selected_color,
+            COALESCE(bp.business_name, '') AS business_name
+        FROM guest_cart_lines cl
+        INNER JOIN products p ON p.id = cl.product_id
+        LEFT JOIN business_profiles bp ON bp.user_id = p.created_by_user_id
+        WHERE cl.visitor_token = ?
           AND cl.id IN ("""
         + placeholders
         + """)
@@ -13908,6 +16777,66 @@ def load_checkout_items_for_order_or_raise(
         exclude_reserved_for_user_id=user_id,
     )
     return checkout_items
+
+
+def load_checkout_items_for_guest_or_raise(
+    connection: DatabaseConnection,
+    *,
+    visitor_token: str,
+    cart_line_ids: list[int],
+) -> list[dict[str, object]]:
+    checkout_rows = fetch_guest_cart_items_for_checkout(connection, visitor_token, cart_line_ids)
+    if not checkout_rows:
+        raise CheckoutProcessError(
+            message="Produktet e zgjedhura nuk u gjeten ne shporte."
+        )
+
+    available_cart_line_ids = {int(item["cart_line_id"]) for item in checkout_rows}
+    missing_cart_line_ids = [
+        cart_line_id
+        for cart_line_id in cart_line_ids
+        if cart_line_id not in available_cart_line_ids
+    ]
+    if missing_cart_line_ids:
+        raise CheckoutProcessError(
+            message="Disa produkte nuk jane me te disponueshme per kete porosi."
+        )
+
+    checkout_items = [normalize_checkout_item_record(item) for item in checkout_rows]
+    validate_checkout_stock_or_raise(connection, checkout_items)
+    return checkout_items
+
+
+def validate_guest_checkout_contact(
+    data: dict[str, object],
+) -> tuple[list[str], dict[str, object]]:
+    errors: list[str] = []
+    full_name = re.sub(
+        r"\s+",
+        " ",
+        str(data.get("customerName") or data.get("fullName") or "").strip(),
+    )
+    email = normalize_optional_email(
+        data.get("customerEmail")
+        or data.get("guestEmail")
+        or data.get("email")
+        or ""
+    )
+
+    if len(full_name) < 2:
+        errors.append("Shkruaj emrin dhe mbiemrin per porosine.")
+
+    if not email or not EMAIL_RE.match(email):
+        errors.append("Shkruaj nje email valid per porosine.")
+
+    name_parts = full_name.split(" ", 1)
+    return errors, {
+        "id": None,
+        "full_name": full_name,
+        "first_name": name_parts[0] if name_parts else "",
+        "last_name": name_parts[1] if len(name_parts) > 1 else "",
+        "email": email,
+    }
 
 
 def serialize_checkout_items_snapshot(checkout_items: list[object]) -> str:
@@ -14084,17 +17013,20 @@ def create_order_from_checkout_items(
     checkout_items: list[dict[str, object]],
     cart_line_ids: list[int] | None = None,
     pricing_summary: dict[str, object] | None = None,
+    guest_visitor_token: str = "",
 ) -> tuple[int, sqlite3.Row | None, list[sqlite3.Row]]:
+    raw_user_id = user["id"] if "id" in user.keys() else None
+    order_user_id = int(raw_user_id) if raw_user_id else None
     validate_checkout_stock_or_raise(
         connection,
         checkout_items,
-        exclude_reserved_for_user_id=int(user["id"]),
+        exclude_reserved_for_user_id=order_user_id,
     )
     product_rows_by_id = fetch_products_for_checkout_records(connection, checkout_items)
     normalized_pricing_summary = pricing_summary or build_checkout_pricing_summary(
         connection,
         checkout_items=checkout_items,
-        user_id=int(user["id"]),
+        user_id=order_user_id,
         destination_city=str(cleaned_address.get("city") or "").strip(),
     )
     subtotal_amount = round(float(normalized_pricing_summary.get("subtotal") or 0), 2)
@@ -14145,7 +17077,7 @@ def create_order_from_checkout_items(
         VALUES (?, ?, ?, ?, 'pending_confirmation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            user["id"],
+            order_user_id,
             customer_full_name,
             str(user["email"] or "").strip(),
             payment_method,
@@ -14267,10 +17199,10 @@ def create_order_from_checkout_items(
             if stock_errors:
                 raise CheckoutProcessError(errors=stock_errors)
 
-    if cart_line_ids:
+    if cart_line_ids and order_user_id:
         clear_stock_reservations_for_user(
             connection,
-            user_id=int(user["id"]),
+            user_id=order_user_id,
             cart_line_ids=cart_line_ids,
         )
         placeholders = ", ".join("?" for _ in cart_line_ids)
@@ -14282,7 +17214,19 @@ def create_order_from_checkout_items(
             + placeholders
             + """)
             """,
-            [user["id"], *cart_line_ids],
+            [order_user_id, *cart_line_ids],
+        )
+    elif cart_line_ids and guest_visitor_token:
+        placeholders = ", ".join("?" for _ in cart_line_ids)
+        connection.execute(
+            """
+            DELETE FROM guest_cart_lines
+            WHERE visitor_token = ?
+              AND id IN ("""
+            + placeholders
+            + """)
+            """,
+            [normalize_tracking_visitor_token(guest_visitor_token), *cart_line_ids],
         )
 
     bump_public_cache_revision(connection)
@@ -15264,6 +18208,96 @@ def fetch_business_orders_for_user(business_user_id: int) -> list[dict[str, obje
     return build_orders_payload(order_rows, order_items)
 
 
+def build_order_preview_aggregate_columns(connection: DatabaseConnection) -> str:
+    if is_postgres_connection(connection):
+        return """
+                COALESCE(SUM(oi.quantity), 0) AS preview_total_items,
+                COUNT(oi.id) AS preview_line_count,
+                STRING_AGG(oi.product_title, ' | ') AS preview_item_titles,
+                STRING_AGG(oi.tracking_code, ' | ') AS preview_tracking_codes,
+                STRING_AGG(oi.business_name_snapshot, ' | ') AS preview_business_names
+        """
+
+    return """
+                COALESCE(SUM(oi.quantity), 0) AS preview_total_items,
+                COUNT(oi.id) AS preview_line_count,
+                GROUP_CONCAT(oi.product_title, ' | ') AS preview_item_titles,
+                GROUP_CONCAT(oi.tracking_code, ' | ') AS preview_tracking_codes,
+                GROUP_CONCAT(oi.business_name_snapshot, ' | ') AS preview_business_names
+    """
+
+
+def fetch_business_order_previews_for_user(business_user_id: int) -> list[dict[str, object]]:
+    with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
+        rows = connection.execute(
+            """
+            SELECT
+            """
+            + qualify_order_select_columns("orders")
+            + ","
+            + build_order_preview_aggregate_columns(connection)
+            + """
+            FROM orders
+            INNER JOIN order_items oi
+                ON oi.order_id = orders.id
+               AND oi.business_user_id = ?
+            GROUP BY orders.id
+            ORDER BY orders.id DESC
+            """,
+            (business_user_id,),
+        ).fetchall()
+
+    return [serialize_order_preview(row) for row in rows]
+
+
+def fetch_business_order_for_user(
+    business_user_id: int,
+    order_id: int,
+) -> dict[str, object] | None:
+    with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
+        order_row = connection.execute(
+            """
+            SELECT
+            """
+            + ORDER_SELECT_COLUMNS
+            + """
+            FROM orders
+            WHERE id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM order_items oi
+                  WHERE oi.order_id = orders.id
+                    AND oi.business_user_id = ?
+              )
+            LIMIT 1
+            """,
+            (order_id, business_user_id),
+        ).fetchone()
+        if not order_row:
+            return None
+
+        order_items = connection.execute(
+            """
+            SELECT
+            """
+            + ORDER_ITEM_SELECT_COLUMNS
+            + """
+            FROM order_items
+            WHERE order_id = ?
+              AND business_user_id = ?
+            ORDER BY id DESC
+            """,
+            (order_id, business_user_id),
+        ).fetchall()
+
+    return serialize_order(
+        order_row,
+        [serialize_order_item(item) for item in order_items],
+    )
+
+
 def fetch_all_orders_for_admin() -> list[dict[str, object]]:
     with get_db_connection() as connection:
         process_expired_order_confirmations(connection)
@@ -15289,6 +18323,43 @@ def fetch_all_orders_for_admin() -> list[dict[str, object]]:
         ).fetchall()
 
     return build_orders_payload(order_rows, order_items)
+
+
+def fetch_all_order_previews_for_admin() -> list[dict[str, object]]:
+    with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
+        rows = connection.execute(
+            """
+            SELECT
+            """
+            + qualify_order_select_columns("orders")
+            + ","
+            + build_order_preview_aggregate_columns(connection)
+            + """
+            FROM orders
+            LEFT JOIN order_items oi
+                ON oi.order_id = orders.id
+            GROUP BY orders.id
+            ORDER BY orders.id DESC
+            """
+        ).fetchall()
+
+    return [serialize_order_preview(row) for row in rows]
+
+
+def fetch_order_for_admin(order_id: int) -> dict[str, object] | None:
+    with get_db_connection() as connection:
+        process_expired_order_confirmations(connection)
+        order_row = fetch_order_row_by_id(connection, order_id)
+        if not order_row:
+            return None
+
+        order_items = fetch_order_items_for_order_id(connection, order_id)
+
+    return serialize_order(
+        order_row,
+        [serialize_order_item(item) for item in order_items],
+    )
 
 
 def fetch_product_reviews(product_id: int, *, limit: int = 12) -> list[sqlite3.Row]:
@@ -15448,7 +18519,10 @@ def fetch_return_requests_for_user(user: sqlite3.Row) -> list[sqlite3.Row]:
             return connection.execute(
                 """
                 SELECT
-                    rr.*,
+                """
+                + RETURN_REQUEST_SELECT_COLUMNS
+                + """
+                    ,
                     oi.product_title,
                     oi.product_image_path,
                     oi.business_name_snapshot,
@@ -15464,7 +18538,10 @@ def fetch_return_requests_for_user(user: sqlite3.Row) -> list[sqlite3.Row]:
             return connection.execute(
                 """
                 SELECT
-                    rr.*,
+                """
+                + RETURN_REQUEST_SELECT_COLUMNS
+                + """
+                    ,
                     oi.product_title,
                     oi.product_image_path,
                     oi.business_name_snapshot,
@@ -15481,7 +18558,10 @@ def fetch_return_requests_for_user(user: sqlite3.Row) -> list[sqlite3.Row]:
         return connection.execute(
             """
             SELECT
-                rr.*,
+            """
+            + RETURN_REQUEST_SELECT_COLUMNS
+            + """
+                ,
                 oi.product_title,
                 oi.product_image_path,
                 oi.business_name_snapshot,
@@ -15619,7 +18699,20 @@ def fetch_reports_for_admin() -> list[sqlite3.Row]:
         return connection.execute(
             """
             SELECT
-                r.*,
+                r.id,
+                r.reporter_user_id,
+                r.reported_user_id,
+                r.business_user_id,
+                r.target_type,
+                r.target_id,
+                r.target_label,
+                r.reason,
+                r.details,
+                r.status,
+                r.admin_notes,
+                r.created_at,
+                r.updated_at,
+                r.resolved_at,
                 reporter.full_name AS reporter_name,
                 reported.full_name AS reported_name
             FROM reports r
@@ -15657,14 +18750,20 @@ def fetch_business_promotions(user: sqlite3.Row) -> list[sqlite3.Row]:
         if normalized_role == "admin":
             return connection.execute(
                 """
-                SELECT *
+                SELECT
+                """
+                + PROMO_CODE_SELECT_COLUMNS
+                + """
                 FROM promo_codes
                 ORDER BY created_at DESC, id DESC
                 """
             ).fetchall()
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + PROMO_CODE_SELECT_COLUMNS
+            + """
             FROM promo_codes
             WHERE COALESCE(business_user_id, 0) = ?
             ORDER BY created_at DESC, id DESC
@@ -15696,7 +18795,10 @@ def serialize_promo_code(row: sqlite3.Row) -> dict[str, object]:
 def fetch_launch_ad_by_id(connection: DatabaseConnection, launch_ad_id: int) -> sqlite3.Row | None:
     return connection.execute(
         """
-        SELECT *
+        SELECT
+        """
+        + LAUNCH_AD_SELECT_COLUMNS
+        + """
         FROM launch_ads
         WHERE id = ?
         LIMIT 1
@@ -15741,7 +18843,10 @@ def fetch_public_launch_ads() -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         rows = connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + LAUNCH_AD_SELECT_COLUMNS
+            + """
             FROM launch_ads
             WHERE COALESCE(is_active, 0) = 1
             ORDER BY COALESCE(sort_order, 0) ASC, updated_at DESC, id DESC
@@ -15756,7 +18861,10 @@ def fetch_admin_launch_ads() -> list[sqlite3.Row]:
     with get_db_connection() as connection:
         return connection.execute(
             """
-            SELECT *
+            SELECT
+            """
+            + LAUNCH_AD_SELECT_COLUMNS
+            + """
             FROM launch_ads
             ORDER BY COALESCE(sort_order, 0) ASC, updated_at DESC, id DESC
             """
@@ -15786,7 +18894,10 @@ def fetch_promo_code_by_code(connection: DatabaseConnection, promo_code: str) ->
         return None
     return connection.execute(
         """
-        SELECT *
+        SELECT
+        """
+        + PROMO_CODE_SELECT_COLUMNS
+        + """
         FROM promo_codes
         WHERE UPPER(code) = ?
         LIMIT 1
@@ -16156,7 +19267,10 @@ def fetch_return_request_by_id(return_request_id: int) -> sqlite3.Row | None:
         return connection.execute(
             """
             SELECT
-                rr.*,
+            """
+            + RETURN_REQUEST_SELECT_COLUMNS
+            + """
+                ,
                 oi.product_title,
                 oi.product_image_path,
                 oi.business_name_snapshot,
@@ -16366,6 +19480,179 @@ def escape_pdf_text(value: object) -> str:
     )
 
 
+def pdf_rgb(color: tuple[float, float, float]) -> str:
+    return " ".join(f"{max(0, min(1, channel)):.3f}" for channel in color)
+
+
+def pdf_text_width(value: object, font_size: float, *, font_name: str = "F1") -> float:
+    normalized_value = normalize_pdf_text(value)
+    width_factor = 0.6 if font_name == "F3" else 0.54
+    if font_name == "F2":
+        width_factor = 0.57
+    return len(normalized_value) * font_size * width_factor
+
+
+def pdf_text_command(
+    x: float,
+    y: float,
+    value: object,
+    *,
+    font_name: str = "F1",
+    font_size: float = 10,
+    color: tuple[float, float, float] = (0.07, 0.07, 0.07),
+    align: str = "left",
+) -> str:
+    text_x = x
+    if align == "right":
+        text_x = x - pdf_text_width(value, font_size, font_name=font_name)
+    elif align == "center":
+        text_x = x - (pdf_text_width(value, font_size, font_name=font_name) / 2)
+
+    return (
+        "q\n"
+        f"{pdf_rgb(color)} rg\n"
+        "BT\n"
+        f"/{font_name} {font_size:.2f} Tf\n"
+        f"1 0 0 1 {text_x:.2f} {y:.2f} Tm\n"
+        f"({escape_pdf_text(value)}) Tj\n"
+        "ET\n"
+        "Q"
+    )
+
+
+def pdf_rect_command(
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    *,
+    fill: tuple[float, float, float] | None = None,
+    stroke: tuple[float, float, float] | None = None,
+    stroke_width: float = 1,
+) -> str:
+    commands = ["q"]
+    if fill:
+        commands.append(f"{pdf_rgb(fill)} rg")
+    if stroke:
+        commands.append(f"{pdf_rgb(stroke)} RG")
+        commands.append(f"{stroke_width:.2f} w")
+    commands.append(f"{x:.2f} {y:.2f} {width:.2f} {height:.2f} re")
+    if fill and stroke:
+        commands.append("B")
+    elif fill:
+        commands.append("f")
+    else:
+        commands.append("S")
+    commands.append("Q")
+    return "\n".join(commands)
+
+
+def pdf_line_command(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    *,
+    color: tuple[float, float, float] = (0.88, 0.88, 0.88),
+    width: float = 1,
+) -> str:
+    return (
+        "q\n"
+        f"{pdf_rgb(color)} RG\n"
+        f"{width:.2f} w\n"
+        f"{x1:.2f} {y1:.2f} m\n"
+        f"{x2:.2f} {y2:.2f} l\n"
+        "S\n"
+        "Q"
+    )
+
+
+def pdf_wrapped_lines(value: object, max_width: float, *, font_size: float = 9.5) -> list[str]:
+    normalized_value = normalize_pdf_text(value)
+    if not normalized_value:
+        return [""]
+    max_chars = max(12, int(max_width / max(font_size * 0.52, 1)))
+    return textwrap.wrap(
+        normalized_value,
+        width=max_chars,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [normalized_value]
+
+
+def build_pdf_document(
+    content_streams: list[str],
+    *,
+    page_width: int = 595,
+    page_height: int = 842,
+) -> bytes:
+    objects: list[bytes] = []
+
+    def add_object(payload: str | bytes) -> int:
+        payload_bytes = payload.encode("latin-1") if isinstance(payload, str) else payload
+        objects.append(payload_bytes)
+        return len(objects)
+
+    pages_object_number = add_object(b"<< /Type /Pages /Count 0 /Kids [] >>")
+    font_regular_object_number = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    font_bold_object_number = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+    font_mono_object_number = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>")
+    page_object_numbers: list[int] = []
+
+    for content_stream in content_streams or [""]:
+        content_bytes = str(content_stream or "").encode("latin-1", errors="ignore")
+        content_object_number = add_object(
+            b"<< /Length "
+            + str(len(content_bytes)).encode("ascii")
+            + b" >>\nstream\n"
+            + content_bytes
+            + b"\nendstream"
+        )
+        page_object_number = add_object(
+            (
+                f"<< /Type /Page /Parent {pages_object_number} 0 R "
+                f"/MediaBox [0 0 {page_width} {page_height}] "
+                f"/Resources << /Font << "
+                f"/F1 {font_regular_object_number} 0 R "
+                f"/F2 {font_bold_object_number} 0 R "
+                f"/F3 {font_mono_object_number} 0 R "
+                f">> >> "
+                f"/Contents {content_object_number} 0 R >>"
+            ).encode("latin-1")
+        )
+        page_object_numbers.append(page_object_number)
+
+    objects[pages_object_number - 1] = (
+        f"<< /Type /Pages /Count {len(page_object_numbers)} /Kids "
+        f"[{' '.join(f'{page_number} 0 R' for page_number in page_object_numbers)}] >>"
+    ).encode("latin-1")
+    catalog_object_number = add_object(
+        f"<< /Type /Catalog /Pages {pages_object_number} 0 R >>".encode("latin-1")
+    )
+
+    payload = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    offsets = [0]
+    for object_number, object_payload in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload += (
+            f"{object_number} 0 obj\n".encode("ascii")
+            + object_payload
+            + b"\nendobj\n"
+        )
+
+    xref_offset = len(payload)
+    payload += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+    payload += b"0000000000 65535 f \n"
+    for offset in offsets[1:]:
+        payload += f"{offset:010d} 00000 n \n".encode("ascii")
+
+    payload += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root {catalog_object_number} 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF"
+    ).encode("ascii")
+    return payload
+
+
 def build_simple_text_pdf(lines: list[str]) -> bytes:
     page_width = 595
     page_height = 842
@@ -16460,66 +19747,251 @@ def format_invoice_price(amount: object) -> str:
 
 def build_order_invoice_pdf(order_payload: dict[str, object]) -> bytes:
     order_items = list(order_payload.get("items") or [])
-    lines: list[str] = [
-        "TREGO",
-        "Fature / Invoice",
-        f"Porosia #{int(order_payload.get('id') or 0)}",
-        "",
-        "Te dhenat e klientit",
-        f"Emri: {order_payload.get('customerName') or '-'}",
-        f"Email: {order_payload.get('customerEmail') or '-'}",
-        f"Telefoni: {order_payload.get('phoneNumber') or '-'}",
-        "",
-        "Adresa e dergeses",
-        f"Adresa: {order_payload.get('addressLine') or '-'}",
-        f"Qyteti: {order_payload.get('city') or '-'}",
-        f"Shteti: {order_payload.get('country') or '-'}",
-        f"ZIP: {order_payload.get('zipCode') or '-'}",
-        "",
-        "Pagesa dhe dergesa",
-        f"Pagesa: {format_notification_payment_method(str(order_payload.get('paymentMethod') or ''))}",
-        f"Dergesa: {order_payload.get('deliveryLabel') or 'Dergese standard'}",
-        f"Afati: {order_payload.get('estimatedDeliveryText') or '-'}",
-        f"Data e porosise: {order_payload.get('createdAt') or '-'}",
-        "",
-        "Artikujt",
+    page_width = 595
+    page_height = 842
+    margin_x = 42
+    content_width = page_width - (margin_x * 2)
+    dark = (0.07, 0.07, 0.07)
+    muted = (0.38, 0.41, 0.46)
+    soft = (0.97, 0.98, 1)
+    line = (0.90, 0.91, 0.93)
+    accent = (0.15, 0.39, 0.92)
+    accent_soft = (0.86, 0.92, 1)
+    success_soft = (0.90, 0.98, 0.94)
+    pages: list[list[str]] = []
+    current_page: list[str] = []
+
+    def add(command: str) -> None:
+        current_page.append(command)
+
+    def draw_text(
+        x: float,
+        y: float,
+        value: object,
+        *,
+        font_name: str = "F1",
+        font_size: float = 10,
+        color: tuple[float, float, float] = dark,
+        align: str = "left",
+    ) -> None:
+        add(
+            pdf_text_command(
+                x,
+                y,
+                value,
+                font_name=font_name,
+                font_size=font_size,
+                color=color,
+                align=align,
+            )
+        )
+
+    def draw_rect(
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        *,
+        fill: tuple[float, float, float] | None = None,
+        stroke: tuple[float, float, float] | None = None,
+        stroke_width: float = 1,
+    ) -> None:
+        add(
+            pdf_rect_command(
+                x,
+                y,
+                width,
+                height,
+                fill=fill,
+                stroke=stroke,
+                stroke_width=stroke_width,
+            )
+        )
+
+    def draw_line(
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        *,
+        color: tuple[float, float, float] = line,
+        width: float = 1,
+    ) -> None:
+        add(pdf_line_command(x1, y1, x2, y2, color=color, width=width))
+
+    def draw_page_header() -> None:
+        order_id = int(order_payload.get("id") or 0)
+        total_label = format_invoice_price(order_payload.get("totalPrice") or 0)
+        draw_rect(0, page_height - 92, page_width, 92, fill=dark)
+        draw_rect(0, page_height - 96, page_width, 4, fill=accent)
+        draw_text(margin_x, 802, "TREGO", font_name="F2", font_size=28, color=(1, 1, 1))
+        draw_text(margin_x, 782, "Marketplace invoice", font_size=10.5, color=(0.76, 0.82, 0.90))
+        draw_text(page_width - margin_x, 805, "INVOICE", font_name="F2", font_size=18, color=(1, 1, 1), align="right")
+        draw_text(page_width - margin_x, 786, f"Order #{order_id}", font_size=10.5, color=(0.76, 0.82, 0.90), align="right")
+        draw_text(page_width - margin_x, 767, total_label, font_name="F2", font_size=16, color=(1, 1, 1), align="right")
+
+    def start_page() -> float:
+        nonlocal current_page
+        current_page = []
+        pages.append(current_page)
+        draw_page_header()
+        return 724
+
+    def draw_info_card(
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        title: str,
+        rows: list[tuple[str, object]],
+    ) -> None:
+        draw_rect(x, y - height, width, height, fill=(1, 1, 1), stroke=line)
+        draw_rect(x, y - 26, width, 26, fill=soft, stroke=line)
+        draw_text(x + 14, y - 17, title, font_name="F2", font_size=10.5, color=dark)
+        row_y = y - 45
+        for label, value in rows:
+            draw_text(x + 14, row_y, label, font_size=8.5, color=muted)
+            draw_text(x + 88, row_y, value or "-", font_name="F2", font_size=9.5, color=dark)
+            row_y -= 16
+
+    def draw_table_header(y: float) -> float:
+        draw_rect(margin_x, y - 28, content_width, 28, fill=dark)
+        draw_text(margin_x + 14, y - 18, "Product", font_name="F2", font_size=9.5, color=(1, 1, 1))
+        draw_text(margin_x + 310, y - 18, "Qty", font_name="F2", font_size=9.5, color=(1, 1, 1), align="center")
+        draw_text(margin_x + 410, y - 18, "Unit", font_name="F2", font_size=9.5, color=(1, 1, 1), align="right")
+        draw_text(margin_x + content_width - 14, y - 18, "Total", font_name="F2", font_size=9.5, color=(1, 1, 1), align="right")
+        return y - 34
+
+    def draw_footer() -> None:
+        draw_line(margin_x, 58, page_width - margin_x, 58, color=line)
+        draw_text(margin_x, 38, "Faleminderit qe perdorni TREGO.", font_name="F2", font_size=9.5, color=dark)
+        draw_text(page_width - margin_x, 38, "trego marketplace", font_size=9, color=muted, align="right")
+
+    y = start_page()
+    customer_rows = [
+        ("Name", order_payload.get("customerName") or "-"),
+        ("Email", order_payload.get("customerEmail") or "-"),
+        ("Phone", order_payload.get("phoneNumber") or "-"),
     ]
+    address_parts = [
+        str(order_payload.get("addressLine") or "").strip(),
+        str(order_payload.get("city") or "").strip(),
+        str(order_payload.get("country") or "").strip(),
+        str(order_payload.get("zipCode") or "").strip(),
+    ]
+    address_label = ", ".join(part for part in address_parts if part) or "-"
+    detail_rows = [
+        ("Date", order_payload.get("createdAt") or "-"),
+        ("Payment", format_notification_payment_method(str(order_payload.get("paymentMethod") or ""))),
+        ("Delivery", order_payload.get("deliveryLabel") or "Dergese standard"),
+        ("ETA", order_payload.get("estimatedDeliveryText") or "-"),
+    ]
+    draw_info_card(margin_x, y, 246, 98, "Bill to", customer_rows)
+    draw_info_card(margin_x + 266, y, 245, 98, "Order details", detail_rows)
+    y -= 122
+    address_lines = pdf_wrapped_lines(address_label, content_width - 156, font_size=9.5)[:3]
+    shipping_height = 36 + max(0, len(address_lines) - 1) * 12
+    draw_rect(margin_x, y - shipping_height, content_width, shipping_height, fill=success_soft, stroke=(0.74, 0.91, 0.80))
+    draw_text(margin_x + 14, y - 15, "Shipping address", font_name="F2", font_size=10, color=dark)
+    for line_index, address_line in enumerate(address_lines):
+        draw_text(margin_x + 136, y - 15 - (line_index * 12), address_line, font_size=9.5, color=muted)
+    y -= shipping_height + 22
+    draw_text(margin_x, y, "Items", font_name="F2", font_size=15, color=dark)
+    y -= 14
+    y = draw_table_header(y)
 
     if not order_items:
-        lines.append("Nuk ka artikuj te ruajtur ne kete fature.")
+        draw_rect(margin_x, y - 42, content_width, 42, fill=(1, 1, 1), stroke=line)
+        draw_text(margin_x + 14, y - 25, "No saved items for this invoice.", font_size=10, color=muted)
+        y -= 52
     else:
-        for item in order_items:
+        for index, item in enumerate(order_items):
             quantity = max(1, int(item.get("quantity") or 1))
             title = str(item.get("title") or "Produkt").strip()
             variant_label = str(item.get("variantLabel") or "").strip()
             business_name = str(item.get("businessName") or "").strip()
-            details = f"{title} x{quantity} - {format_invoice_price(item.get('totalPrice') or 0)}"
-            lines.extend(textwrap.wrap(details, width=84) or [details])
-            if variant_label:
-                lines.append(f"  Varianti: {variant_label}")
-            if business_name:
-                lines.append(f"  Biznesi: {business_name}")
+            line_total = round(float(item.get("totalPrice") or 0), 2)
+            unit_price = round(float(item.get("unitPrice") or 0), 2)
+            if unit_price <= 0 and quantity > 0:
+                unit_price = round(line_total / quantity, 2)
+            product_lines = pdf_wrapped_lines(title, 245, font_size=9.8)
+            meta_bits = [bit for bit in [variant_label, business_name] if bit]
+            meta_lines = pdf_wrapped_lines(" | ".join(meta_bits), 245, font_size=8.4) if meta_bits else []
+            row_height = max(44, 18 + (len(product_lines) * 12) + (len(meta_lines) * 10))
+            if y - row_height < 112:
+                y = start_page()
+                draw_text(margin_x, y, "Items continued", font_name="F2", font_size=15, color=dark)
+                y -= 14
+                y = draw_table_header(y)
 
-    lines.extend(
-        [
-            "",
-            "Permbledhja",
-            f"Nentotali: {format_invoice_price(order_payload.get('subtotalAmount') or 0)}",
-            f"Zbritja: {format_invoice_price(order_payload.get('discountAmount') or 0)}",
-            f"Transporti: {format_invoice_price(order_payload.get('shippingAmount') or 0)}",
-            f"Totali: {format_invoice_price(order_payload.get('totalPrice') or 0)}",
-        ]
-    )
-    promo_code = str(order_payload.get("promoCode") or "").strip()
+            row_fill = (1, 1, 1) if index % 2 == 0 else (0.98, 0.98, 0.98)
+            draw_rect(margin_x, y - row_height, content_width, row_height, fill=row_fill, stroke=line)
+            text_y = y - 18
+            for line_index, product_line in enumerate(product_lines):
+                draw_text(
+                    margin_x + 14,
+                    text_y - (line_index * 12),
+                    product_line,
+                    font_name="F2" if line_index == 0 else "F1",
+                    font_size=9.8,
+                    color=dark,
+                )
+            meta_y = text_y - (len(product_lines) * 12)
+            for meta_line in meta_lines:
+                draw_text(margin_x + 14, meta_y, meta_line, font_size=8.4, color=muted)
+                meta_y -= 10
+            draw_text(margin_x + 310, y - 24, str(quantity), font_name="F2", font_size=9.5, color=dark, align="center")
+            draw_text(margin_x + 410, y - 24, format_invoice_price(unit_price), font_size=9.5, color=dark, align="right")
+            draw_text(margin_x + content_width - 14, y - 24, format_invoice_price(line_total), font_name="F2", font_size=9.5, color=dark, align="right")
+            y -= row_height
+
+    promo_code = str(order_payload.get("promoCode") or "").strip().upper()
+    summary_rows = [
+        ("Subtotal", format_invoice_price(order_payload.get("subtotalAmount") or 0)),
+        ("Discount", format_invoice_price(order_payload.get("discountAmount") or 0)),
+        ("Shipping", format_invoice_price(order_payload.get("shippingAmount") or 0)),
+    ]
+    summary_height = 142 + (18 if promo_code else 0)
+    if y - summary_height < 92:
+        y = start_page()
+
+    summary_x = page_width - margin_x - 230
+    note_width = content_width - 250
+    draw_rect(margin_x, y - 96, note_width, 96, fill=soft, stroke=line)
+    draw_text(margin_x + 14, y - 20, "Payment note", font_name="F2", font_size=11, color=dark)
+    draw_text(margin_x + 14, y - 40, "Invoice generated automatically by TREGO.", font_size=9.5, color=muted)
+    draw_text(margin_x + 14, y - 56, "Keep this PDF for your purchase records.", font_size=9.5, color=muted)
+    draw_text(margin_x + 14, y - 74, f"Order #{int(order_payload.get('id') or 0)}", font_name="F3", font_size=10, color=accent)
+
+    draw_rect(summary_x, y - summary_height, 230, summary_height, fill=(1, 1, 1), stroke=line)
+    draw_rect(summary_x, y - 32, 230, 32, fill=dark)
+    draw_text(summary_x + 14, y - 21, "Summary", font_name="F2", font_size=11, color=(1, 1, 1))
+    row_y = y - 54
+    for label, value in summary_rows:
+        draw_text(summary_x + 14, row_y, label, font_size=9.5, color=muted)
+        draw_text(summary_x + 216, row_y, value, font_size=9.5, color=dark, align="right")
+        row_y -= 18
     if promo_code:
-        lines.append(f"Kuponi: {promo_code}")
-    lines.extend(
-        [
-            "",
-            "Faleminderit qe perdorni TREGO.",
-        ]
+        draw_text(summary_x + 14, row_y, "Promo code", font_size=9.5, color=muted)
+        draw_text(summary_x + 216, row_y, promo_code, font_name="F2", font_size=9.5, color=accent, align="right")
+        row_y -= 18
+    draw_line(summary_x + 14, row_y + 4, summary_x + 216, row_y + 4, color=line)
+    draw_text(summary_x + 14, row_y - 17, "Total", font_name="F2", font_size=12, color=dark)
+    draw_text(
+        summary_x + 216,
+        row_y - 17,
+        format_invoice_price(order_payload.get("totalPrice") or 0),
+        font_name="F2",
+        font_size=14,
+        color=accent,
+        align="right",
     )
-    return build_simple_text_pdf(lines)
+
+    for page in pages:
+        current_page = page
+        draw_footer()
+
+    return build_pdf_document(["\n".join(page) for page in pages], page_width=page_width, page_height=page_height)
 
 
 def fetch_stats() -> dict[str, object]:
@@ -16738,431 +20210,133 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
 
     def do_GET(self) -> None:
-        ensure_database_initialized()
-        parsed_url = urlparse(self.path)
-        path = parsed_url.path
-        query_params = parse_qs(parsed_url.query)
-        maybe_dispatch_due_sale_notifications()
+        try:
+            ensure_database_initialized()
+            parsed_url = urlparse(self.path)
+            path = parsed_url.path
+            query_params = parse_qs(parsed_url.query)
+            maybe_dispatch_due_sale_notifications()
 
-        if path == "/robots.txt":
-            self.send_bytes(
-                200,
-                build_robots_txt(self.get_public_app_origin()),
-                content_type="text/plain; charset=utf-8",
-            )
-            return
-
-        if path == "/sitemap.xml":
-            self.send_bytes(
-                200,
-                build_sitemap_xml(self.get_public_app_origin()),
-                content_type="application/xml; charset=utf-8",
-            )
-            return
-
-        if path.startswith("/uploads/"):
-            self.handle_uploaded_file(path)
-            return
-
-        if path == "/api/chat/unread-reminders":
-            self.handle_chat_unread_reminders()
-            return
-        if path == "/api/stats":
-            self.handle_stats()
-            return
-        if path == "/api/me":
-            self.handle_me()
-            return
-        if path == "/api/admin/users":
-            self.handle_admin_users_list()
-            return
-        if path == "/api/admin/businesses":
-            self.handle_admin_businesses_list()
-            return
-        if path == "/api/businesses/public":
-            self.handle_public_businesses_list()
-            return
-        if path == "/api/search/autocomplete":
-            self.handle_search_autocomplete(query_params)
-            return
-        if path == "/api/address":
-            self.handle_default_address()
-            return
-        if path == "/api/business-profile":
-            self.handle_business_profile()
-            return
-        if path == "/api/launch-ads":
-            self.handle_launch_ads_list()
-            return
-        if path == "/api/business/products":
-            self.handle_business_products_list()
-            return
-        if path == "/api/business/products/import-template":
-            self.handle_business_products_import_template()
-            return
-        if path == "/api/business/catalog-import/config":
-            self.handle_business_catalog_import_config()
-            return
-        if path == "/api/business/public":
-            self.handle_public_business_detail(query_params)
-            return
-        if path == "/api/business/public-products":
-            self.handle_public_business_products(query_params)
-            return
-        if path == "/api/chat/conversations":
-            self.handle_chat_conversations()
-            return
-        if path == "/api/chat/messages":
-            self.handle_chat_messages(query_params)
-            return
-        if path == "/api/chat/reply-suggestions":
-            self.handle_chat_reply_suggestions(query_params)
-            return
-        if path == "/api/products/search":
-            self.handle_products_search(query_params)
-            return
-        if path == "/api/recommendations/home":
-            self.handle_home_recommendations(query_params)
-            return
-        if path == "/api/recommendations/product":
-            self.handle_product_recommendations(query_params)
-            return
-        if path == "/api/product":
-            self.handle_product_detail(query_params)
-            return
-        if path == "/api/product/reviews":
-            self.handle_product_reviews_list(query_params)
-            return
-        if path == "/api/products":
-            self.handle_products_list(query_params)
-            return
-        if path == "/api/admin/products":
-            self.handle_admin_products_list()
-            return
-        if path == "/api/wishlist":
-            self.handle_wishlist()
-            return
-        if path == "/api/cart":
-            self.handle_cart()
-            return
-        if path == "/api/orders":
-            self.handle_orders_list()
-            return
-        if path == "/api/orders/invoice":
-            self.handle_order_invoice(query_params)
-            return
-        if path == "/api/business/orders":
-            self.handle_business_orders_list()
-            return
-        if path == "/api/business/analytics":
-            self.handle_business_analytics()
-            return
-        if path == "/api/business/promotions":
-            self.handle_business_promotions_list()
-            return
-        if path == "/api/admin/orders":
-            self.handle_admin_orders_list()
-            return
-        if path == "/api/admin/reports":
-            self.handle_admin_reports_list()
-            return
-        if path == "/api/admin/launch-ads":
-            self.handle_admin_launch_ads_list()
-            return
-        if path == "/api/returns":
-            self.handle_returns_list()
-            return
-        if path == "/api/notifications":
-            self.handle_notifications_list()
-            return
-        if path == "/api/notifications/count":
-            self.handle_notifications_count()
-            return
-
-        if path in {"/admin-products", "/bizneset-e-regjistruara"}:
-            user = self.get_current_user()
-            if not user:
-                self.send_redirect("/login")
+            if path == "/robots.txt":
+                self.send_bytes(
+                    200,
+                    build_robots_txt(self.get_public_app_origin()),
+                    content_type="text/plain; charset=utf-8",
+                )
                 return
 
-            if user["role"] != "admin":
-                self.send_redirect("/")
+            if path == "/sitemap.xml":
+                self.send_bytes(
+                    200,
+                    build_sitemap_xml(self.get_public_app_origin()),
+                    content_type="application/xml; charset=utf-8",
+                )
                 return
 
-        if path == "/biznesi-juaj":
-            user = self.get_current_user()
-            if not user:
-                self.send_redirect("/login")
+            if path.startswith("/uploads/"):
+                self.handle_uploaded_file(path)
                 return
 
-            if user["role"] == "admin":
-                self.send_redirect("/admin-products")
+            api_route = GET_API_ROUTES.get(path)
+            if api_route:
+                handler_name, include_query_params = api_route
+                handler = getattr(self, handler_name)
+                if include_query_params:
+                    handler(query_params)
+                else:
+                    handler()
                 return
 
-            if user["role"] != "business":
-                self.send_redirect("/")
-                return
-
-        if path == "/porosite-e-biznesit":
-            user = self.get_current_user()
-            if not user:
-                self.send_redirect("/login")
-                return
-
-            if user["role"] == "admin":
-                self.send_redirect("/admin-products")
-                return
-
-            if user["role"] != "business":
-                self.send_redirect("/")
-                return
-
-        if path == "/mesazhet":
-            user = self.get_current_user()
-            if not user:
-                self.send_redirect("/login")
-                return
-
-            if not can_use_chat(user):
-                self.send_redirect("/admin-products" if user["role"] == "admin" else "/")
-                return
-
-        if path in {
-            "/llogaria",
-            "/te-dhenat-personale",
-            "/adresat",
-            "/adresa-e-porosise",
-            "/menyra-e-pageses",
-            "/porosite",
-            "/njoftimet",
-            "/ndrysho-fjalekalimin",
-        }:
-            is_password_reset_mode = (
-                path == "/ndrysho-fjalekalimin"
-                and str(query_params.get("mode", [""])[0]).strip().lower() == "reset"
-            )
-            if not is_password_reset_mode:
+            if path in ADMIN_PAGE_ROUTES:
                 user = self.get_current_user()
                 if not user:
                     self.send_redirect("/login")
                     return
 
-        if path in PAGE_ROUTES:
-            self.path = PAGE_ROUTES[path]
+                if user["role"] != "admin":
+                    self.send_redirect("/")
+                    return
 
-        super().do_GET()
+            if path in BUSINESS_PAGE_ROUTES:
+                user = self.get_current_user()
+                if not user:
+                    self.send_redirect("/login")
+                    return
+
+                if user["role"] == "admin":
+                    self.send_redirect("/admin-products")
+                    return
+
+                if user["role"] != "business":
+                    self.send_redirect("/")
+                    return
+
+            if path == CHAT_PAGE_ROUTE:
+                user = self.get_current_user()
+                if not user:
+                    self.send_redirect("/login")
+                    return
+
+                if not can_use_chat(user):
+                    self.send_redirect("/admin-products" if user["role"] == "admin" else "/")
+                    return
+
+            if path in AUTHENTICATED_PAGE_ROUTES:
+                is_password_reset_mode = (
+                    path == PASSWORD_RESET_ROUTE
+                    and str(query_params.get("mode", [""])[0]).strip().lower() == "reset"
+                )
+                if not is_password_reset_mode:
+                    user = self.get_current_user()
+                    if not user:
+                        self.send_redirect("/login")
+                        return
+
+            if path in PAGE_ROUTES:
+                self.path = PAGE_ROUTES[path]
+
+            super().do_GET()
+        except DatabaseUnavailableError as error:
+            if "/api/" in self.path:
+                self.send_json(
+                    503,
+                    {"ok": False, "retryable": True, "message": str(error) or "Serveri eshte i zene. Provoje perseri pas pak."},
+                    headers={"Retry-After": "2"},
+                )
+            else:
+                self.send_error(503, "Service Unavailable")
+        except Exception as error:
+            print(f"[TREGO] Error ne do_GET {self.path}: {error}", flush=True)
+            import traceback
+            traceback.print_exc()
+            if "/api/" in self.path:
+                self.send_json(500, {"ok": False, "message": "Gabim i brendshem i serverit."})
+            else:
+                self.send_error(500, "Internal Server Error")
 
     def do_POST(self) -> None:
-        ensure_database_initialized()
-        path = urlparse(self.path).path
-        maybe_dispatch_due_sale_notifications()
+        try:
+            ensure_database_initialized()
+            path = urlparse(self.path).path
+            maybe_dispatch_due_sale_notifications()
 
-        if path == "/api/register":
-            self.handle_register()
-            return
-        if path == "/api/login":
-            self.handle_login()
-            return
-        if path == "/api/auth/google":
-            self.handle_google_auth()
-            return
-        if path == "/api/email/verify":
-            self.handle_email_verification()
-            return
-        if path == "/api/email/resend":
-            self.handle_email_verification_resend()
-            return
-        if path == "/api/forgot-password":
-            self.handle_forgot_password()
-            return
-        if path == "/api/password-reset/confirm":
-            self.handle_password_reset_confirm()
-            return
-        if path == "/api/logout":
-            self.handle_logout()
-            return
-        if path == "/api/change-password":
-            self.handle_change_password()
-            return
-        if path == "/api/profile":
-            self.handle_profile_update()
-            return
-        if path == "/api/profile/photo":
-            self.handle_profile_photo_upload()
-            return
-        if path == "/api/account/delete":
-            self.handle_delete_own_account()
-            return
-        if path == "/api/address":
-            self.handle_save_default_address()
-            return
-        if path == "/api/address/geocode":
-            self.handle_reverse_geocode_address()
-            return
-        if path == "/api/business-profile":
-            self.handle_save_business_profile()
-            return
-        if path == "/api/business-profile/shipping":
-            self.handle_save_business_shipping_settings()
-            return
-        if path == "/api/business-profile/verification-request":
-            self.handle_business_verification_request()
-            return
-        if path == "/api/business-profile/edit-request":
-            self.handle_business_profile_edit_request()
-            return
-        if path == "/api/admin/users/role":
-            self.handle_admin_user_role()
-            return
-        if path == "/api/admin/users/delete":
-            self.handle_admin_delete_user()
-            return
-        if path == "/api/admin/users/set-password":
-            self.handle_admin_set_user_password()
-            return
-        if path == "/api/admin/businesses/create":
-            self.handle_admin_create_business_account()
-            return
-        if path == "/api/admin/businesses/update":
-            self.handle_admin_update_business()
-            return
-        if path == "/api/admin/businesses/verification":
-            self.handle_admin_update_business_verification()
-            return
-        if path == "/api/admin/businesses/edit-access":
-            self.handle_admin_update_business_edit_access()
-            return
-        if path == "/api/admin/businesses/logo":
-            self.handle_admin_update_business_logo()
-            return
-        if path == "/api/admin/launch-ads":
-            self.handle_save_admin_launch_ad()
-            return
-        if path == "/api/uploads":
-            self.handle_image_uploads()
-            return
-        if path == "/api/products/visual-search":
-            self.handle_products_visual_search()
-            return
-        if path == "/api/products/ai-draft":
-            self.handle_product_ai_draft()
-            return
-        if path == "/api/products/share":
-            self.handle_product_share()
-            return
-        if path == "/api/products":
-            self.handle_create_product()
-            return
-        if path == "/api/products/update":
-            self.handle_update_product()
-            return
-        if path == "/api/products/delete":
-            self.handle_delete_product()
-            return
-        if path == "/api/products/public-visibility":
-            self.handle_product_public_visibility()
-            return
-        if path == "/api/products/public-stock":
-            self.handle_product_public_stock()
-            return
-        if path == "/api/products/restock":
-            self.handle_restock_product()
-            return
-        if path == "/api/products/reduce-stock":
-            self.handle_reduce_stock_product()
-            return
-        if path == "/api/business/products/import":
-            self.handle_business_products_import()
-            return
-        if path == "/api/business/catalog-import/preview":
-            self.handle_business_catalog_import_preview()
-            return
-        if path == "/api/business/catalog-import/commit":
-            self.handle_business_catalog_import_commit()
-            return
-        if path == "/api/business/catalog-import/profile":
-            self.handle_business_catalog_import_profile_save()
-            return
-        if path == "/api/business/catalog-import/source":
-            self.handle_business_catalog_import_source_save()
-            return
-        if path == "/api/business/catalog-import/sync":
-            self.handle_business_catalog_import_sync()
-            return
-        if path == "/api/chat/open":
-            self.handle_chat_open()
-            return
-        if path == "/api/chat/typing":
-            self.handle_chat_typing()
-            return
-        if path == "/api/chat/messages":
-            self.handle_chat_send_message()
-            return
-        if path == "/api/chat/messages/update":
-            self.handle_chat_update_message()
-            return
-        if path == "/api/chat/messages/delete":
-            self.handle_chat_delete_message()
-            return
-        if path == "/api/payments/stripe/checkout":
-            self.handle_create_stripe_checkout_session()
-            return
-        if path == "/api/payments/stripe/confirm":
-            self.handle_confirm_stripe_checkout_session()
-            return
-        if path == "/api/wishlist/toggle":
-            self.handle_toggle_wishlist()
-            return
-        if path == "/api/cart/add":
-            self.handle_add_to_cart()
-            return
-        if path == "/api/cart/quantity":
-            self.handle_update_cart_quantity()
-            return
-        if path == "/api/cart/remove":
-            self.handle_remove_from_cart()
-            return
-        if path == "/api/checkout/reserve":
-            self.handle_checkout_reserve_stock()
-            return
-        if path == "/api/business/follow-toggle":
-            self.handle_business_follow_toggle()
-            return
-        if path == "/api/promotions/apply":
-            self.handle_apply_promotion()
-            return
-        if path == "/api/business/promotions":
-            self.handle_save_business_promotion()
-            return
-        if path == "/api/orders/create":
-            self.handle_create_order()
-            return
-        if path == "/api/orders/track":
-            self.handle_track_order_lookup()
-            return
-        if path == "/api/orders/status":
-            self.handle_update_order_status()
-            return
-        if path == "/api/reports":
-            self.handle_create_report()
-            return
-        if path == "/api/admin/reports/status":
-            self.handle_admin_update_report_status()
-            return
-        if path == "/api/product/reviews":
-            self.handle_create_product_review()
-            return
-        if path == "/api/returns/request":
-            self.handle_create_return_request()
-            return
-        if path == "/api/returns/status":
-            self.handle_update_return_request_status()
-            return
-        if path == "/api/notifications/read":
-            self.handle_mark_notifications_read()
-            return
+            api_handler_name = POST_API_ROUTES.get(path)
+            if api_handler_name:
+                getattr(self, api_handler_name)()
+                return
 
-        self.send_json(404, {"ok": False, "message": "Rruga nuk u gjet."})
+            self.send_json(404, {"ok": False, "message": "Rruga nuk u gjet."})
+        except DatabaseUnavailableError as error:
+            self.send_json(
+                503,
+                {"ok": False, "retryable": True, "message": str(error) or "Serveri eshte i zene. Provoje perseri pas pak."},
+                headers={"Retry-After": "2"},
+            )
+        except Exception as error:
+            print(f"[TREGO] Error ne do_POST {self.path}: {error}", flush=True)
+            import traceback
+            traceback.print_exc()
+            self.send_json(500, {"ok": False, "message": "Gabim i brendshem i serverit."})
 
     def handle_stats(self) -> None:
         self.send_json(
@@ -17201,6 +20375,8 @@ class AppHandler(SimpleHTTPRequestHandler):
         password_hash = hash_password(str(payload.get("password", "")))
         birth_date = str(payload.get("birthDate", "")).strip()
         gender = normalize_gender_value(payload.get("gender", ""))
+        marketing_emails_opt_in = 1 if coerce_consent_flag(payload.get("marketingEmailsOptIn")) else 0
+        terms_accepted_at = datetime_to_storage_text(utc_now())
         verification_code = generate_email_verification_code()
 
         try:
@@ -17243,9 +20419,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                         gender,
                         role,
                         is_email_verified,
-                        email_verified_at
+                        email_verified_at,
+                        marketing_emails_opt_in,
+                        terms_accepted_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         full_name,
@@ -17260,6 +20438,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "client",
                         0,
                         "",
+                        marketing_emails_opt_in,
+                        terms_accepted_at,
                     ),
                 )
                 save_email_verification_code(connection, user_id, verification_code)
@@ -17693,7 +20873,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         if email_warnings:
             message = (
                 "Kodi u krijua, por email-i nuk u dergua. "
-                "Kontrollo SMTP-ne ose terminalin lokal te serverit."
+                "Kontrollo Brevo email settings ose terminalin lokal te serverit."
             )
 
         self.send_json(
@@ -17710,6 +20890,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             query_params
         )
         include_facets = parse_include_facets_query(query_params)
+        include_total = parse_include_total_query(query_params)
         category = query_params.get("category", [""])[0].strip().lower() or None
         category_group = query_params.get("categoryGroup", [""])[0].strip().lower() or None
         pagination_errors, limit, offset = parse_products_pagination_query(query_params)
@@ -17760,6 +20941,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "limit": limit,
                 "offset": offset,
                 "includeFacets": bool(include_facets),
+                "includeTotal": bool(include_total),
             },
         )
         cached_payload = read_runtime_public_cache(cache_key)
@@ -17780,15 +20962,19 @@ class AppHandler(SimpleHTTPRequestHandler):
             limit=limit,
             offset=offset,
         )
-        total = count_products(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-            business_names=brand_names,
-            min_price=min_price,
-            max_price=max_price,
+        total = (
+            count_products(
+                category,
+                category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+                business_names=brand_names,
+                min_price=min_price,
+                max_price=max_price,
+            )
+            if include_total
+            else offset + len(product_rows) + (1 if has_more else 0)
         )
         products = [
             serialize_product(row)
@@ -17823,6 +21009,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             "limit": limit,
             "offset": offset,
             "total": total,
+            "totalIsEstimate": not include_total,
             "hasMore": has_more,
         }
         write_runtime_public_cache(
@@ -17932,6 +21119,7 @@ class AppHandler(SimpleHTTPRequestHandler):
     def handle_products_search(self, query_params: dict[str, list[str]]) -> None:
         raw_search_text = query_params.get("q", [""])[0].strip()
         include_facets = parse_include_facets_query(query_params)
+        include_total = parse_include_total_query(query_params)
         scope_errors, scoped_page_section, scoped_audience, scoped_category, scoped_category_group = parse_catalog_scope_query(
             query_params
         )
@@ -17967,13 +21155,22 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         interpreted_intent = interpret_search_query(raw_search_text) if raw_search_text else sanitize_search_intent({})
-        category = explicit_category or scoped_category or interpreted_intent.get("category")
-        category_group = explicit_category_group or scoped_category_group or interpreted_intent.get("categoryGroup")
-        product_type = explicit_product_type or interpreted_intent.get("productType")
+        smart_filters = parse_smart_search_filters(raw_search_text) if raw_search_text else parse_smart_search_filters("")
+        category = explicit_category or scoped_category or smart_filters.get("category") or interpreted_intent.get("category")
+        category_group = explicit_category_group or scoped_category_group or smart_filters.get("categoryGroup") or interpreted_intent.get("categoryGroup")
+        product_type = explicit_product_type or smart_filters.get("productType") or interpreted_intent.get("productType")
         size = explicit_size or interpreted_intent.get("size")
-        color = explicit_color or interpreted_intent.get("color")
+        color = explicit_color or smart_filters.get("color") or interpreted_intent.get("color")
         business_name = str(interpreted_intent.get("businessName") or "").strip() or None
-        search_text = str(interpreted_intent.get("searchText", "") or raw_search_text).strip()
+        if min_price is None and smart_filters.get("minPrice") is not None:
+            min_price = float(smart_filters["minPrice"])
+        if max_price is None and smart_filters.get("maxPrice") is not None:
+            max_price = float(smart_filters["maxPrice"])
+
+        if bool(smart_filters.get("matched")):
+            search_text = str(smart_filters.get("searchText") or "").strip()
+        else:
+            search_text = str(interpreted_intent.get("searchText", "") or raw_search_text).strip()
 
         cache_key = build_runtime_public_cache_key(
             "products:search",
@@ -17995,6 +21192,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "limit": limit,
                 "offset": offset,
                 "includeFacets": bool(include_facets),
+                "includeTotal": bool(include_total),
             },
         )
 
@@ -18006,6 +21204,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "products": [],
                     "query": "",
                     "interpretedQuery": "",
+                    "smartFilters": serialize_smart_search_filters(smart_filters),
                     "facets": {
                         "pageSections": [],
                         "categories": [],
@@ -18023,10 +21222,13 @@ class AppHandler(SimpleHTTPRequestHandler):
                         "size": "",
                         "color": "",
                         "sort": sort,
+                        "minPrice": min_price,
+                        "maxPrice": max_price,
                     },
                     "limit": limit,
                     "offset": offset,
                     "total": 0,
+                    "totalIsEstimate": False,
                     "hasMore": False,
                 },
             )
@@ -18052,17 +21254,21 @@ class AppHandler(SimpleHTTPRequestHandler):
             limit=limit,
             offset=offset,
         )
-        total = count_products(
-            category,
-            category_group=category_group,
-            product_type=product_type,
-            size=size,
-            color=color,
-            business_name_search=business_name,
-            business_names=brand_names,
-            search_text=search_text,
-            min_price=min_price,
-            max_price=max_price,
+        total = (
+            count_products(
+                category,
+                category_group=category_group,
+                product_type=product_type,
+                size=size,
+                color=color,
+                business_name_search=business_name,
+                business_names=brand_names,
+                search_text=search_text,
+                min_price=min_price,
+                max_price=max_price,
+            )
+            if include_total
+            else offset + len(product_rows) + (1 if has_more else 0)
         )
         products = [
             serialize_product(row)
@@ -18087,6 +21293,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             "products": products,
             "query": raw_search_text,
             "interpretedQuery": search_text,
+            "smartFilters": serialize_smart_search_filters(smart_filters),
             "searchIntent": {
                 "category": category,
                 "categoryGroup": category_group,
@@ -18105,10 +21312,13 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "size": size or "",
                 "color": color or "",
                 "sort": sort,
+                "minPrice": min_price,
+                "maxPrice": max_price,
             },
             "limit": limit,
             "offset": offset,
             "total": total,
+            "totalIsEstimate": not include_total,
             "hasMore": has_more,
         }
         write_runtime_public_cache(
@@ -19119,7 +22329,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 with get_db_connection() as connection:
                     job_row = connection.execute(
                         """
-                        SELECT *
+                        SELECT
+                        """
+                        + CATALOG_IMPORT_JOB_SELECT_COLUMNS
+                        + """
                         FROM catalog_import_jobs
                         WHERE id = ? AND business_user_id = ?
                         LIMIT 1
@@ -19315,7 +22528,10 @@ class AppHandler(SimpleHTTPRequestHandler):
         with get_db_connection() as connection:
             job_row = connection.execute(
                 """
-                SELECT *
+                SELECT
+                """
+                + CATALOG_IMPORT_JOB_SELECT_COLUMNS
+                + """
                 FROM catalog_import_jobs
                 WHERE id = ? AND business_user_id = ?
                 LIMIT 1
@@ -19610,13 +22826,15 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        conversation_rows = fetch_chat_conversations_for_user(int(user["id"]))
+        typing_conversation_ids = fetch_counterpart_typing_conversation_ids(
+            [int(row["id"]) for row in conversation_rows],
+            int(user["id"]),
+        )
         conversations = []
-        for row in fetch_chat_conversations_for_user(int(user["id"])):
+        for row in conversation_rows:
             serialized_conversation = serialize_chat_conversation(row, viewer_user_id=int(user["id"]))
-            serialized_conversation["counterpartTyping"] = is_counterpart_typing(
-                int(row["id"]),
-                int(user["id"]),
-            )
+            serialized_conversation["counterpartTyping"] = int(row["id"]) in typing_conversation_ids
             conversations.append(serialized_conversation)
         unread_count = sum(max(0, int(item.get("unreadCount", 0) or 0)) for item in conversations)
         self.send_json(
@@ -19648,9 +22866,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        errors, conversation_id = parse_conversation_id_query(query_params)
-        if errors or conversation_id is None:
-            self.send_json(400, {"ok": False, "errors": errors})
+        id_errors, conversation_id = parse_conversation_id_query(query_params)
+        pagination_errors, before_id, limit = parse_chat_messages_pagination_query(query_params)
+        if id_errors or pagination_errors or conversation_id is None:
+            self.send_json(400, {"ok": False, "errors": id_errors + pagination_errors})
             return
 
         conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
@@ -19659,16 +22878,18 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         mark_chat_messages_as_read(conversation_id, int(user["id"]))
-        updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
-        message_rows = fetch_chat_messages_for_conversation(conversation_id)
-        counterpart_typing = is_counterpart_typing(conversation_id, int(user["id"]))
-        serialized_conversation = (
-            serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
-            if updated_conversation_row
-            else None
+        message_rows, has_more_messages = fetch_chat_messages_for_conversation(
+            conversation_id,
+            before_id=before_id,
+            limit=limit,
         )
+        counterpart_typing = is_counterpart_typing(conversation_id, int(user["id"]))
+        serialized_conversation = serialize_chat_conversation(conversation_row, viewer_user_id=int(user["id"]))
         if serialized_conversation is not None:
             serialized_conversation["counterpartTyping"] = counterpart_typing
+            serialized_conversation["unreadCount"] = 0
+
+        next_before_id = int(message_rows[0]["id"]) if has_more_messages and message_rows else None
 
         self.send_json(
             200,
@@ -19679,6 +22900,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                     serialize_chat_message(row, viewer_user_id=int(user["id"]))
                     for row in message_rows
                 ],
+                "messagePage": {
+                    "limit": limit,
+                    "hasMore": has_more_messages,
+                    "nextBeforeId": next_before_id,
+                },
                 "counterpartTyping": counterpart_typing,
             },
         )
@@ -19772,13 +22998,22 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"ok": False, "message": "Biseda nuk u gjet."})
             return
 
-        message_rows = fetch_chat_messages_for_conversation(conversation_id)
+        message_rows, _ = fetch_chat_messages_for_conversation(
+            conversation_id,
+            limit=30,
+        )
         viewer_role = str(user["role"] or "").strip()
+        draft_text = re.sub(
+            r"\s+",
+            " ",
+            str((query_params.get("draftText") or query_params.get("draft") or [""])[0] or "").strip(),
+        )[:500]
         suggestions = request_openai_chat_reply_suggestions(
             viewer_role=viewer_role,
             viewer_user_id=int(user["id"]),
             conversation=conversation_row,
             messages=message_rows,
+            draft_text=draft_text,
         )
         if not suggestions:
             suggestions = heuristic_chat_reply_suggestions(
@@ -19786,6 +23021,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 viewer_user_id=int(user["id"]),
                 conversation=conversation_row,
                 messages=message_rows,
+                draft_text=draft_text,
             )
 
         self.send_json(
@@ -19998,6 +23234,12 @@ class AppHandler(SimpleHTTPRequestHandler):
         else:
             recipient_user_id = int(conversation_row["client_user_id"])
 
+        is_first_client_text = (
+            int(conversation_row["client_user_id"]) == int(user["id"])
+            and int(conversation_row["messages_count"] or 0) == 0
+            and bool(message_body.strip())
+        )
+
         attachment_path = ""
         attachment_content_type = ""
         attachment_file_name = ""
@@ -20025,6 +23267,24 @@ class AppHandler(SimpleHTTPRequestHandler):
         )
         set_chat_typing_state(conversation_id, int(user["id"]), is_typing=False)
         message_row = fetch_chat_message_by_id(message_id)
+        auto_reply_row = None
+        if is_first_client_text:
+            auto_reply_settings = fetch_business_auto_reply_settings_for_user(recipient_user_id)
+            if business_auto_reply_is_enabled(auto_reply_settings):
+                auto_reply_body = build_business_auto_reply_body(
+                    auto_reply_settings["auto_reply_message"],
+                    client_user=user,
+                )
+                if auto_reply_body:
+                    auto_reply_message_id = insert_chat_message(
+                        conversation_id,
+                        recipient_user_id,
+                        int(user["id"]),
+                        auto_reply_body,
+                    )
+                    mark_chat_messages_as_read(conversation_id, int(user["id"]))
+                    auto_reply_row = fetch_chat_message_by_id(auto_reply_message_id)
+
         updated_conversation_row = fetch_chat_conversation_for_user(conversation_id, int(user["id"]))
         serialized_conversation = (
             serialize_chat_conversation(updated_conversation_row, viewer_user_id=int(user["id"]))
@@ -20064,6 +23324,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "message": (
                     serialize_chat_message(message_row, viewer_user_id=int(user["id"]))
                     if message_row
+                    else None
+                ),
+                "autoReplyMessage": (
+                    serialize_chat_message(auto_reply_row, viewer_user_id=int(user["id"]))
+                    if auto_reply_row
                     else None
                 ),
                 "conversation": serialized_conversation,
@@ -20450,6 +23715,73 @@ class AppHandler(SimpleHTTPRequestHandler):
             {
                 "ok": True,
                 "message": "Rregullat e transportit u ruajten me sukses.",
+                "profile": serialize_business_profile(updated_profile) if updated_profile else None,
+            },
+        )
+
+    def handle_save_business_auto_reply_settings(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(
+                401,
+                {"ok": False, "message": "Duhet te kyçesh para se ta ruash auto-reply."},
+            )
+            return
+
+        if user["role"] != "business":
+            self.send_json(
+                403,
+                {"ok": False, "message": "Vetem bizneset mund ta ndryshojne auto-reply."},
+            )
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        errors, enabled, message = validate_business_auto_reply_payload(payload)
+        if errors:
+            self.send_json(400, {"ok": False, "errors": errors})
+            return
+
+        with get_db_connection() as connection:
+            business_profile = connection.execute(
+                """
+                SELECT id
+                FROM business_profiles
+                WHERE user_id = ?
+                LIMIT 1
+                """,
+                (user["id"],),
+            ).fetchone()
+            if not business_profile:
+                self.send_json(404, {"ok": False, "message": "Ruaje fillimisht profilin e biznesit."})
+                return
+
+            connection.execute(
+                """
+                UPDATE business_profiles
+                SET
+                    auto_reply_enabled = ?,
+                    auto_reply_message = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    1 if enabled else 0,
+                    message,
+                    int(business_profile["id"]),
+                ),
+            )
+
+        updated_profile = fetch_business_profile_for_user(int(user["id"]))
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "message": "Auto-reply u ruajt me sukses.",
                 "profile": serialize_business_profile(updated_profile) if updated_profile else None,
             },
         )
@@ -21152,6 +24484,179 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def handle_product_ai_description(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kycesh per te perdorur gjeneratorin AI."})
+            return
+
+        if not can_create_products(user):
+            self.send_json(
+                403,
+                {
+                    "ok": False,
+                    "message": "Vetem admin ose biznes mund ta perdorin gjeneratorin AI per produkte.",
+                },
+            )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        product_name = normalize_ai_product_text(
+            payload.get("productName") or payload.get("title") or "",
+            120,
+        )
+        short_details = normalize_ai_product_text(
+            payload.get("shortDetails") or payload.get("details") or payload.get("description") or "",
+            500,
+        )
+        if not product_name and not short_details:
+            self.send_json(400, {"ok": False, "message": "Shto emrin ose disa detaje te produktit."})
+            return
+
+        page_section = str(payload.get("pageSection") or "").strip().lower()
+        audience = str(payload.get("audience") or "").strip().lower()
+        category = str(payload.get("category") or "").strip().lower()
+        if category not in PRODUCT_CATEGORIES:
+            category = build_category_from_section_selection(page_section, audience)
+        if category not in PRODUCT_CATEGORIES:
+            interpreted_intent = interpret_search_query(f"{product_name} {short_details}")
+            category = str(interpreted_intent.get("category") or "").strip().lower()
+        if category not in PRODUCT_CATEGORIES:
+            category = build_category_from_section_selection(page_section or "clothing", audience or "men")
+
+        product_type = normalize_product_type_for_category(
+            category,
+            payload.get("productType") or "",
+        )
+        if not product_type:
+            interpreted_intent = interpret_search_query(f"{product_name} {short_details}")
+            product_type = normalize_product_type_for_category(
+                category,
+                interpreted_intent.get("productType") or "",
+            )
+
+        selected_colors = normalize_ai_selected_colors(payload.get("selectedColors") or payload.get("colors") or [])
+        if not selected_colors:
+            interpreted_intent = interpret_search_query(f"{product_name} {short_details}")
+            inferred_color = str(interpreted_intent.get("color") or "").strip().lower()
+            selected_colors = normalize_ai_selected_colors([inferred_color])
+
+        raw_suggestion = request_openai_product_description_suggestion(
+            product_name=product_name,
+            short_details=short_details,
+            category=category,
+            product_type=product_type,
+            colors=selected_colors,
+        )
+        suggestion = sanitize_product_ai_description_suggestion(
+            raw_suggestion,
+            product_name=product_name,
+            short_details=short_details,
+            category=category,
+            product_type=product_type,
+            colors=selected_colors,
+        )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "suggestion": suggestion,
+                "message": (
+                    "AI pergatiti sugjerimin e pershkrimit."
+                    if raw_suggestion
+                    else "Sugjerimi u pergatit me rregulla automatike."
+                ),
+            },
+        )
+
+    def handle_product_ai_tag_suggestions(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kycesh per te perdorur sugjerimet AI."})
+            return
+
+        if not can_create_products(user):
+            self.send_json(
+                403,
+                {
+                    "ok": False,
+                    "message": "Vetem admin ose biznes mund te perdorin sugjerimet AI per produkte.",
+                },
+            )
+            return
+
+        catalog_errors, _ = require_verified_business_catalog_profile(user)
+        if catalog_errors:
+            self.send_json(403, {"ok": False, "message": catalog_errors[0]})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        product_name = normalize_ai_product_text(
+            payload.get("productName") or payload.get("title") or "",
+            120,
+        )
+        short_details = normalize_ai_product_text(
+            payload.get("shortDetails") or payload.get("details") or payload.get("description") or "",
+            500,
+        )
+        if not product_name and not short_details:
+            self.send_json(400, {"ok": False, "message": "Shto emrin ose disa detaje te produktit."})
+            return
+
+        page_section = str(payload.get("pageSection") or "").strip().lower()
+        audience = str(payload.get("audience") or "").strip().lower()
+        product_type = str(payload.get("productType") or "").strip().lower()
+        selected_colors = normalize_ai_selected_colors(payload.get("selectedColors") or payload.get("colors") or [])
+
+        raw_draft = request_openai_product_draft_suggestion(
+            title=product_name,
+            description=short_details,
+            page_section=page_section,
+            audience=audience,
+            product_type=product_type,
+            image_urls=[],
+            image_search_text="",
+            image_color_terms=" ".join(selected_colors),
+        )
+        suggestion = build_product_ai_tag_suggestion(
+            product_name=product_name,
+            short_details=short_details,
+            page_section=page_section,
+            audience=audience,
+            product_type=product_type,
+            selected_colors=selected_colors,
+            raw_draft=raw_draft,
+        )
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "suggestion": suggestion,
+                "message": (
+                    "AI pergatiti sugjerimet e kategorise dhe tags."
+                    if raw_draft
+                    else "Sugjerimet u pergatiten me rregulla automatike."
+                ),
+            },
+        )
+
     def handle_create_product(self) -> None:
         user = self.get_current_user()
         if not user:
@@ -21443,18 +24948,24 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_cart(self) -> None:
         user = self.get_current_user()
-        if not user:
+        if user:
+            items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
+            self.send_json(200, {"ok": True, "items": items, "guest": False})
+            return
+
+        visitor_token = self.get_tracking_visitor_token()
+        if not visitor_token:
             self.send_json(
-                401,
+                400,
                 {
                     "ok": False,
-                    "message": "Duhet te kyçesh ose te krijosh llogari per shporten.",
+                    "message": "Shporta guest nuk mund te identifikohet ne kete browser.",
                 },
             )
             return
 
-        items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
-        self.send_json(200, {"ok": True, "items": items})
+        items = [serialize_cart_item(row) for row in fetch_guest_cart_items(visitor_token)]
+        self.send_json(200, {"ok": True, "items": items, "guest": True})
 
     def handle_create_stripe_checkout_session(self) -> None:
         user = self.get_current_user()
@@ -21950,7 +25461,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             },
         )
 
-    def handle_business_orders_list(self) -> None:
+    def handle_business_orders_list(self, query_params: dict[str, list[str]] | None = None) -> None:
+        query_params = query_params or {}
         user = self.get_current_user()
         if not user:
             self.send_json(
@@ -21966,10 +25478,29 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        orders = fetch_business_orders_for_user(user["id"])
+        if has_order_id_query(query_params):
+            errors, order_id = parse_order_id_query(query_params)
+            if errors or order_id is None:
+                self.send_json(400, {"ok": False, "errors": errors})
+                return
+
+            order = fetch_business_order_for_user(user["id"], order_id)
+            if not order:
+                self.send_json(404, {"ok": False, "message": "Porosia nuk u gjet per kete biznes."})
+                return
+
+            self.send_json(200, {"ok": True, "order": order})
+            return
+
+        orders = (
+            fetch_business_order_previews_for_user(user["id"])
+            if parse_truthy_query_flag(query_params, "preview")
+            else fetch_business_orders_for_user(user["id"])
+        )
         self.send_json(200, {"ok": True, "orders": orders})
 
-    def handle_admin_orders_list(self) -> None:
+    def handle_admin_orders_list(self, query_params: dict[str, list[str]] | None = None) -> None:
+        query_params = query_params or {}
         user = self.get_current_user()
         if not user:
             self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin."})
@@ -21979,7 +25510,26 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(403, {"ok": False, "message": "Vetem admini mund t'i shohë te gjitha porosite."})
             return
 
-        self.send_json(200, {"ok": True, "orders": fetch_all_orders_for_admin()})
+        if has_order_id_query(query_params):
+            errors, order_id = parse_order_id_query(query_params)
+            if errors or order_id is None:
+                self.send_json(400, {"ok": False, "errors": errors})
+                return
+
+            order = fetch_order_for_admin(order_id)
+            if not order:
+                self.send_json(404, {"ok": False, "message": "Porosia nuk u gjet."})
+                return
+
+            self.send_json(200, {"ok": True, "order": order})
+            return
+
+        orders = (
+            fetch_all_order_previews_for_admin()
+            if parse_truthy_query_flag(query_params, "preview")
+            else fetch_all_orders_for_admin()
+        )
+        self.send_json(200, {"ok": True, "orders": orders})
 
     def handle_notifications_list(self) -> None:
         user = self.get_current_user()
@@ -22013,6 +25563,167 @@ class AppHandler(SimpleHTTPRequestHandler):
             mark_notifications_as_read(connection, user_id=int(user["id"]))
 
         self.send_json(200, {"ok": True, "message": "Njoftimet u shenuan si te lexuara."})
+
+    def handle_push_public_key(self) -> None:
+        self.send_json(
+            200,
+            {"ok": True, "push": get_push_public_config()},
+            headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=300"},
+        )
+
+    def handle_push_subscribe(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te aktivizuar njoftimet."})
+            return
+
+        try:
+            payload = self.read_json()
+            with get_db_connection() as connection:
+                subscription_id = upsert_push_subscription(
+                    connection,
+                    user_id=int(user["id"]),
+                    payload={**payload, "userAgent": self.headers.get("User-Agent", "")},
+                )
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        self.send_json(
+            200,
+            {
+                "ok": True,
+                "subscriptionId": subscription_id,
+                "message": "Njoftimet u aktivizuan per kete pajisje.",
+            },
+        )
+
+    def handle_push_unsubscribe(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per t'i ndalur njoftimet."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        with get_db_connection() as connection:
+            deactivate_push_subscription(connection, user_id=int(user["id"]), payload=payload)
+
+        self.send_json(200, {"ok": True, "message": "Njoftimet u ndalen per kete pajisje."})
+
+    def handle_push_test(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh per te testuar njoftimet."})
+            return
+
+        with get_db_connection() as connection:
+            create_notification(
+                connection,
+                user_id=int(user["id"]),
+                notification_type="test",
+                title="Njoftimet jane aktive",
+                body="Kjo pajisje mund te marre njoftime nga TREGIO.",
+                href="/notifications",
+                metadata={"type": "push_test"},
+            )
+            queue_id = queue_push_notification(
+                connection,
+                user_id=int(user["id"]),
+                title="Njoftimet jane aktive",
+                body="Kjo pajisje mund te marre njoftime nga TREGIO.",
+                href="/notifications",
+                notification_type="test",
+                metadata={"type": "push_test"},
+                idempotency_key=f"push-test:{int(user['id'])}:{int(time.time())}",
+            )
+
+        dispatch_push_queue_async(public_app_origin=self.get_public_app_origin())
+        self.send_json(200, {"ok": True, "queued": bool(queue_id), "message": "Njoftimi test u dergua."})
+
+    def handle_send_notification(self) -> None:
+        user = self.get_current_user()
+        if not user:
+            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh si admin per te derguar njoftime."})
+            return
+
+        if user["role"] != "admin":
+            self.send_json(403, {"ok": False, "message": "Vetem admin mund te dergoje njoftime manuale."})
+            return
+
+        try:
+            payload = self.read_json()
+        except ValueError as error:
+            self.send_json(400, {"ok": False, "message": str(error)})
+            return
+
+        title = str(payload.get("title") or "").strip()
+        body = str(payload.get("body") or payload.get("message") or "").strip()
+        if not title or not body:
+            self.send_json(400, {"ok": False, "message": "Titulli dhe mesazhi jane te detyrueshem."})
+            return
+
+        raw_user_ids = payload.get("userIds")
+        if raw_user_ids is None:
+            raw_user_ids = [payload.get("userId")]
+        if not isinstance(raw_user_ids, list):
+            raw_user_ids = [raw_user_ids]
+
+        user_ids: list[int] = []
+        for raw_user_id in raw_user_ids:
+            try:
+                normalized_user_id = int(raw_user_id)
+            except (TypeError, ValueError):
+                continue
+            if normalized_user_id > 0 and normalized_user_id not in user_ids:
+                user_ids.append(normalized_user_id)
+
+        if not user_ids:
+            self.send_json(400, {"ok": False, "message": "Zgjidh te pakten nje userId valid."})
+            return
+
+        href = str(payload.get("href") or payload.get("path") or "/notifications").strip() or "/notifications"
+        notification_type = str(payload.get("type") or payload.get("notificationType") or "admin").strip().lower() or "admin"
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        queued_ids: list[int] = []
+        with get_db_connection() as connection:
+            for user_id in user_ids:
+                create_notification(
+                    connection,
+                    user_id=user_id,
+                    notification_type=notification_type,
+                    title=title,
+                    body=body,
+                    href=href,
+                    metadata=metadata,
+                )
+                queue_id = queue_push_notification(
+                    connection,
+                    user_id=user_id,
+                    title=title,
+                    body=body,
+                    href=href,
+                    notification_type=notification_type,
+                    metadata=metadata,
+                    idempotency_key=str(payload.get("idempotencyKey") or ""),
+                )
+                if queue_id:
+                    queued_ids.append(queue_id)
+
+        dispatch_push_queue_async(public_app_origin=self.get_public_app_origin())
+        self.send_json(
+            202,
+            {
+                "ok": True,
+                "queued": len(queued_ids),
+                "queueIds": queued_ids,
+                "message": "Njoftimi u vendos ne radhe per dergim.",
+            },
+        )
 
     def handle_business_analytics(self) -> None:
         user = self.get_current_user()
@@ -22075,8 +25786,9 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_checkout_reserve_stock(self) -> None:
         user = self.get_current_user()
-        if not user:
-            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para checkout-it."})
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
+            self.send_json(400, {"ok": False, "message": "Shporta guest nuk mund te identifikohet ne kete browser."})
             return
 
         try:
@@ -22092,17 +25804,27 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         try:
             with get_db_connection() as connection:
-                checkout_items = load_checkout_items_for_order_or_raise(
-                    connection,
-                    user_id=int(user["id"]),
-                    cart_line_ids=cart_line_ids,
-                )
-                reserved_until = reserve_checkout_stock(
-                    connection,
-                    user_id=int(user["id"]),
-                    cart_line_ids=cart_line_ids,
-                    checkout_items=checkout_items,
-                )
+                if user:
+                    checkout_items = load_checkout_items_for_order_or_raise(
+                        connection,
+                        user_id=int(user["id"]),
+                        cart_line_ids=cart_line_ids,
+                    )
+                    reserved_until = reserve_checkout_stock(
+                        connection,
+                        user_id=int(user["id"]),
+                        cart_line_ids=cart_line_ids,
+                        checkout_items=checkout_items,
+                    )
+                    message = f"Stoku u rezervua per {STOCK_RESERVATION_HOLD_MINUTES} minuta."
+                else:
+                    load_checkout_items_for_guest_or_raise(
+                        connection,
+                        visitor_token=visitor_token,
+                        cart_line_ids=cart_line_ids,
+                    )
+                    reserved_until = ""
+                    message = "Stoku u kontrollua. Porosia do te konfirmohet kur ta dergosh."
         except CheckoutProcessError as error:
             self.send_json(
                 409,
@@ -22118,15 +25840,17 @@ class AppHandler(SimpleHTTPRequestHandler):
             200,
             {
                 "ok": True,
-                "message": f"Stoku u rezervua per {STOCK_RESERVATION_HOLD_MINUTES} minuta.",
+                "message": message,
                 "reservedUntil": reserved_until,
+                "guest": not bool(user),
             },
         )
 
     def handle_apply_promotion(self) -> None:
         user = self.get_current_user()
-        if not user:
-            self.send_json(401, {"ok": False, "message": "Duhet te kyçesh para checkout-it."})
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
+            self.send_json(400, {"ok": False, "message": "Shporta guest nuk mund te identifikohet ne kete browser."})
             return
 
         try:
@@ -22145,16 +25869,25 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         try:
             with get_db_connection() as connection:
-                checkout_items = load_checkout_items_for_order_or_raise(
-                    connection,
-                    user_id=int(user["id"]),
-                    cart_line_ids=cart_line_ids,
-                )
+                if user:
+                    checkout_items = load_checkout_items_for_order_or_raise(
+                        connection,
+                        user_id=int(user["id"]),
+                        cart_line_ids=cart_line_ids,
+                    )
+                    pricing_user_id = int(user["id"])
+                else:
+                    checkout_items = load_checkout_items_for_guest_or_raise(
+                        connection,
+                        visitor_token=visitor_token,
+                        cart_line_ids=cart_line_ids,
+                    )
+                    pricing_user_id = None
                 pricing = build_checkout_pricing_summary(
                     connection,
                     checkout_items=checkout_items,
                     promo_code=promo_code,
-                    user_id=int(user["id"]),
+                    user_id=pricing_user_id,
                     delivery_method=delivery_method or "standard",
                     destination_city=str(payload.get("city", "") or "").strip(),
                 )
@@ -22175,6 +25908,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "message": pricing.get("message") or "Kuponi u aplikua.",
                 "pricing": pricing,
+                "guest": not bool(user),
             },
         )
 
@@ -22211,7 +25945,10 @@ class AppHandler(SimpleHTTPRequestHandler):
                 if promotion_id > 0:
                     promo_row = connection.execute(
                         """
-                        SELECT *
+                        SELECT
+                        """
+                        + PROMO_CODE_SELECT_COLUMNS
+                        + """
                         FROM promo_codes
                         WHERE id = ?
                         LIMIT 1
@@ -22666,7 +26403,10 @@ class AppHandler(SimpleHTTPRequestHandler):
         with get_db_connection() as connection:
             report_row = connection.execute(
                 """
-                SELECT *
+                SELECT
+                    id,
+                    reporter_user_id,
+                    target_label
                 FROM reports
                 WHERE id = ?
                 LIMIT 1
@@ -23485,12 +27225,13 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def handle_add_to_cart(self) -> None:
         user = self.get_current_user()
-        if not user:
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
             self.send_json(
-                401,
+                400,
                 {
                     "ok": False,
-                    "message": "Duhet te kyçesh ose te krijosh llogari per shporten.",
+                    "message": "Shporta guest nuk mund te identifikohet ne kete browser.",
                 },
             )
             return
@@ -23520,15 +27261,26 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         updated_at_value = datetime_to_storage_text(utc_now())
         with get_db_connection() as connection:
-            existing_row = connection.execute(
-                """
-                SELECT quantity
-                FROM cart_lines
-                WHERE user_id = ? AND product_id = ? AND variant_key = ?
-                LIMIT 1
-                """,
-                (user["id"], product_id, selected_variant["key"]),
-            ).fetchone()
+            if user:
+                existing_row = connection.execute(
+                    """
+                    SELECT quantity
+                    FROM cart_lines
+                    WHERE user_id = ? AND product_id = ? AND variant_key = ?
+                    LIMIT 1
+                    """,
+                    (user["id"], product_id, selected_variant["key"]),
+                ).fetchone()
+            else:
+                existing_row = connection.execute(
+                    """
+                    SELECT quantity
+                    FROM guest_cart_lines
+                    WHERE visitor_token = ? AND product_id = ? AND variant_key = ?
+                    LIMIT 1
+                    """,
+                    (visitor_token, product_id, selected_variant["key"]),
+                ).fetchone()
             existing_quantity = max(0, int(existing_row["quantity"] or 0)) if existing_row else 0
             available_quantity = max(0, int(selected_variant.get("quantity") or 0))
             if existing_quantity + quantity > available_quantity:
@@ -23541,57 +27293,94 @@ class AppHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
-            connection.execute(
-                """
-                INSERT INTO cart_lines (
-                    user_id,
-                    product_id,
-                    variant_key,
-                    variant_label,
-                    selected_size,
-                    selected_color,
-                    quantity,
-                    created_at,
-                    updated_at
+            if user:
+                connection.execute(
+                    """
+                    INSERT INTO cart_lines (
+                        user_id,
+                        product_id,
+                        variant_key,
+                        variant_label,
+                        selected_size,
+                        selected_color,
+                        quantity,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, product_id, variant_key)
+                    DO UPDATE SET
+                        quantity = cart_lines.quantity + EXCLUDED.quantity,
+                        updated_at = ?
+                    """,
+                    (
+                        user["id"],
+                        product_id,
+                        selected_variant["key"],
+                        selected_variant["label"],
+                        selected_variant["size"],
+                        selected_variant["color"],
+                        quantity,
+                        updated_at_value,
+                        updated_at_value,
+                        updated_at_value,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, product_id, variant_key)
-                DO UPDATE SET
-                    quantity = cart_lines.quantity + EXCLUDED.quantity,
-                    updated_at = ?
-                """,
-                (
-                    user["id"],
-                    product_id,
-                    selected_variant["key"],
-                    selected_variant["label"],
-                    selected_variant["size"],
-                    selected_variant["color"],
-                    quantity,
-                    updated_at_value,
-                    updated_at_value,
-                    updated_at_value,
-                ),
-            )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO guest_cart_lines (
+                        visitor_token,
+                        product_id,
+                        variant_key,
+                        variant_label,
+                        selected_size,
+                        selected_color,
+                        quantity,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(visitor_token, product_id, variant_key)
+                    DO UPDATE SET
+                        quantity = guest_cart_lines.quantity + EXCLUDED.quantity,
+                        updated_at = ?
+                    """,
+                    (
+                        visitor_token,
+                        product_id,
+                        selected_variant["key"],
+                        selected_variant["label"],
+                        selected_variant["size"],
+                        selected_variant["color"],
+                        quantity,
+                        updated_at_value,
+                        updated_at_value,
+                        updated_at_value,
+                    ),
+                )
 
-        items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
+        cart_rows = fetch_cart_items(user["id"]) if user else fetch_guest_cart_items(visitor_token)
+        items = [serialize_cart_item(row) for row in cart_rows]
         self.send_json(
             200,
             {
                 "ok": True,
                 "message": "Produkti u shtua ne shporte.",
                 "items": items,
+                "guest": not bool(user),
             },
         )
 
     def handle_remove_from_cart(self) -> None:
         user = self.get_current_user()
-        if not user:
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
             self.send_json(
-                401,
+                400,
                 {
                     "ok": False,
-                    "message": "Duhet te kyçesh ose te krijosh llogari per shporten.",
+                    "message": "Shporta guest nuk mund te identifikohet ne kete browser.",
                 },
             )
             return
@@ -23608,32 +27397,44 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         with get_db_connection() as connection:
-            connection.execute(
-                """
-                DELETE FROM cart_lines
-                WHERE user_id = ? AND id = ?
-                """,
-                (user["id"], cart_line_id),
-            )
+            if user:
+                connection.execute(
+                    """
+                    DELETE FROM cart_lines
+                    WHERE user_id = ? AND id = ?
+                    """,
+                    (user["id"], cart_line_id),
+                )
+            else:
+                connection.execute(
+                    """
+                    DELETE FROM guest_cart_lines
+                    WHERE visitor_token = ? AND id = ?
+                    """,
+                    (visitor_token, cart_line_id),
+                )
 
-        items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
+        cart_rows = fetch_cart_items(user["id"]) if user else fetch_guest_cart_items(visitor_token)
+        items = [serialize_cart_item(row) for row in cart_rows]
         self.send_json(
             200,
             {
                 "ok": True,
                 "message": "Produkti u hoq nga shporta.",
                 "items": items,
+                "guest": not bool(user),
             },
         )
 
     def handle_update_cart_quantity(self) -> None:
         user = self.get_current_user()
-        if not user:
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
             self.send_json(
-                401,
+                400,
                 {
                     "ok": False,
-                    "message": "Duhet te kyçesh ose te krijosh llogari per shporten.",
+                    "message": "Shporta guest nuk mund te identifikohet ne kete browser.",
                 },
             )
             return
@@ -23653,24 +27454,44 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         updated_at_value = datetime_to_storage_text(utc_now())
         with get_db_connection() as connection:
-            existing_row = connection.execute(
-                """
-                SELECT
-                    cl.id,
-                    cl.product_id,
-                    cl.variant_key,
-                    p.variant_inventory,
-                    p.category,
-                    p.size,
-                    p.color,
-                    p.stock_quantity
-                FROM cart_lines cl
-                INNER JOIN products p ON p.id = cl.product_id
-                WHERE cl.user_id = ? AND cl.id = ?
-                LIMIT 1
-                """,
-                (user["id"], cart_line_id),
-            ).fetchone()
+            if user:
+                existing_row = connection.execute(
+                    """
+                    SELECT
+                        cl.id,
+                        cl.product_id,
+                        cl.variant_key,
+                        p.variant_inventory,
+                        p.category,
+                        p.size,
+                        p.color,
+                        p.stock_quantity
+                    FROM cart_lines cl
+                    INNER JOIN products p ON p.id = cl.product_id
+                    WHERE cl.user_id = ? AND cl.id = ?
+                    LIMIT 1
+                    """,
+                    (user["id"], cart_line_id),
+                ).fetchone()
+            else:
+                existing_row = connection.execute(
+                    """
+                    SELECT
+                        cl.id,
+                        cl.product_id,
+                        cl.variant_key,
+                        p.variant_inventory,
+                        p.category,
+                        p.size,
+                        p.color,
+                        p.stock_quantity
+                    FROM guest_cart_lines cl
+                    INNER JOIN products p ON p.id = cl.product_id
+                    WHERE cl.visitor_token = ? AND cl.id = ?
+                    LIMIT 1
+                    """,
+                    (visitor_token, cart_line_id),
+                ).fetchone()
 
             if not existing_row:
                 self.send_json(
@@ -23705,32 +27526,42 @@ class AppHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
-            connection.execute(
-                """
-                UPDATE cart_lines
-                SET quantity = ?, updated_at = ?
-                WHERE user_id = ? AND id = ?
-                """,
-                (quantity, updated_at_value, user["id"], cart_line_id),
-            )
+            if user:
+                connection.execute(
+                    """
+                    UPDATE cart_lines
+                    SET quantity = ?, updated_at = ?
+                    WHERE user_id = ? AND id = ?
+                    """,
+                    (quantity, updated_at_value, user["id"], cart_line_id),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE guest_cart_lines
+                    SET quantity = ?, updated_at = ?
+                    WHERE visitor_token = ? AND id = ?
+                    """,
+                    (quantity, updated_at_value, visitor_token, cart_line_id),
+                )
 
-        items = [serialize_cart_item(row) for row in fetch_cart_items(user["id"])]
+        cart_rows = fetch_cart_items(user["id"]) if user else fetch_guest_cart_items(visitor_token)
+        items = [serialize_cart_item(row) for row in cart_rows]
         self.send_json(
             200,
             {
                 "ok": True,
                 "message": "Sasia e produktit u perditesua.",
                 "items": items,
+                "guest": not bool(user),
             },
         )
 
     def handle_create_order(self) -> None:
         user = self.get_current_user()
-        if not user:
-            self.send_json(
-                401,
-                {"ok": False, "message": "Duhet te kyçesh para se ta konfirmosh porosine."},
-            )
+        visitor_token = "" if user else self.get_tracking_visitor_token()
+        if not user and not visitor_token:
+            self.send_json(400, {"ok": False, "message": "Shporta guest nuk mund te identifikohet ne kete browser."})
             return
 
         try:
@@ -23744,12 +27575,17 @@ class AppHandler(SimpleHTTPRequestHandler):
         address_errors, cleaned_address = validate_address_payload(payload)
         promo_code_errors, promo_code = parse_promo_code(payload)
         delivery_method_errors, delivery_method = parse_delivery_method(payload)
+        guest_contact_errors: list[str] = []
+        guest_user: dict[str, object] | None = None
+        if not user:
+            guest_contact_errors, guest_user = validate_guest_checkout_contact(payload)
         combined_errors = (
             cart_line_ids_errors
             + payment_method_errors
             + address_errors
             + promo_code_errors
             + delivery_method_errors
+            + guest_contact_errors
         )
 
         if combined_errors or payment_method is None:
@@ -23768,27 +27604,41 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         try:
             with get_db_connection() as connection:
-                checkout_items = load_checkout_items_for_order_or_raise(
-                    connection,
-                    user_id=int(user["id"]),
-                    cart_line_ids=cart_line_ids,
-                )
+                if user:
+                    checkout_items = load_checkout_items_for_order_or_raise(
+                        connection,
+                        user_id=int(user["id"]),
+                        cart_line_ids=cart_line_ids,
+                    )
+                    order_user = user
+                    pricing_user_id = int(user["id"])
+                    guest_order_token = ""
+                else:
+                    checkout_items = load_checkout_items_for_guest_or_raise(
+                        connection,
+                        visitor_token=visitor_token,
+                        cart_line_ids=cart_line_ids,
+                    )
+                    order_user = guest_user or {}
+                    pricing_user_id = None
+                    guest_order_token = visitor_token
                 pricing_summary = build_checkout_pricing_summary(
                     connection,
                     checkout_items=checkout_items,
                     promo_code=promo_code,
-                    user_id=int(user["id"]),
+                    user_id=pricing_user_id,
                     delivery_method=delivery_method or "standard",
                     destination_city=str(cleaned_address.get("city") or "").strip(),
                 )
                 order_id, saved_order, saved_items = create_order_from_checkout_items(
                     connection,
-                    user=user,
+                    user=order_user,
                     payment_method=payment_method,
                     cleaned_address=cleaned_address,
                     checkout_items=checkout_items,
                     cart_line_ids=cart_line_ids,
                     pricing_summary=pricing_summary,
+                    guest_visitor_token=guest_order_token,
                 )
                 create_order_notifications(
                     connection,
@@ -24309,7 +28159,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                     "ok": False,
                     "message": (
                         "Kodi u krijua, por email-i nuk u dergua. "
-                        "Kontrollo SMTP-ne ose terminalin lokal te serverit."
+                        "Kontrollo Brevo email settings ose terminalin lokal te serverit."
                     ),
                     "warnings": email_warnings,
                 },
@@ -25236,15 +29086,38 @@ class AppHandler(SimpleHTTPRequestHandler):
         payload: dict[str, object],
         headers: dict[str, str] | None = None,
     ) -> None:
-        response = json.dumps(payload).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(response)))
-        if headers:
-            for header_name, header_value in headers.items():
-                self.send_header(header_name, header_value)
-        self.end_headers()
-        self.wfile.write(response)
+        try:
+            import gzip
+            response_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            
+            accept_encoding = str(self.headers.get("Accept-Encoding", "")).lower()
+            if "gzip" in accept_encoding and len(response_bytes) > 1024:
+                compressed_bytes = gzip.compress(response_bytes)
+                if len(compressed_bytes) < len(response_bytes):
+                    self.send_response(status_code)
+                    self.send_header("Content-Encoding", "gzip")
+                    response_bytes = compressed_bytes
+                else:
+                    self.send_response(status_code)
+            else:
+                self.send_response(status_code)
+
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response_bytes)))
+            if headers:
+                for header_name, header_value in headers.items():
+                    self.send_header(header_name, header_value)
+            self.end_headers()
+            self.wfile.write(response_bytes)
+        except Exception as error:
+            print(f"[TREGO] Error ne send_json: {error}", flush=True)
+            # Fallback per te mos crashtuar plotesisht nese gzip dështon
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            fallback_response = json.dumps({"ok": False, "message": "Gabim i brendshem gjate pergatitjes se pergjigjes."}).encode("utf-8")
+            self.send_header("Content-Length", str(len(fallback_response)))
+            self.end_headers()
+            self.wfile.write(fallback_response)
 
     def send_bytes(
         self,

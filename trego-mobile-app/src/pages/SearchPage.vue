@@ -286,31 +286,29 @@ async function handleLoadMore(event: CustomEvent) {
         <IonRefresherContent />
       </IonRefresher>
 
-      <div>
-        <section>
-          <form @submit.prevent="runSearch(query)">
+      <div class="trego-mobile-screen">
+        <section class="trego-search-card">
+          <form class="trego-search-form" @submit.prevent="runSearch(query)">
             <IonInput
               v-model="query"
-             
               placeholder="Search"
             />
-            <div>
+            <div class="trego-search-actions">
               <button
                 v-if="query.trim()"
-               
+                class="trego-icon-button"
                 type="button"
                 @click="query = ''"
               >
                 <IonIcon :icon="closeOutline" />
               </button>
 
-              <button type="button" @click="cameraSheetOpen = true">
+              <button class="trego-icon-button" type="button" @click="cameraSheetOpen = true">
                 <IonIcon :icon="cameraOutline" />
               </button>
 
               <button
-               
-               
+                class="trego-icon-button"
                 type="button"
                 @click="startVoiceSearch"
               >
@@ -321,11 +319,11 @@ async function handleLoadMore(event: CustomEvent) {
         </section>
 
         <section>
-          <div v-if="loading">
+          <div v-if="loading" class="trego-product-grid">
             <ProductCardSkeleton v-for="index in 6" :key="index" />
           </div>
 
-          <div v-else-if="visibleProducts.length">
+          <div v-else-if="visibleProducts.length" class="trego-product-grid">
             <ProductCardMobile
               v-for="product in visibleProducts"
               :key="product.id"
@@ -356,7 +354,7 @@ async function handleLoadMore(event: CustomEvent) {
 
         <input
           ref="cameraInputRef"
-         
+          class="trego-sr-only"
           type="file"
           accept="image/*"
           capture="environment"
@@ -384,4 +382,3 @@ async function handleLoadMore(event: CustomEvent) {
     </IonContent>
   </IonPage>
 </template>
-

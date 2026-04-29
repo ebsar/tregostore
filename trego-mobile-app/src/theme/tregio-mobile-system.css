@@ -1,0 +1,1077 @@
+:root {
+  --ion-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ion-color-primary: #ff6f18;
+  --ion-color-primary-rgb: 255, 111, 24;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-background-color: #f6f7f8;
+  --ion-text-color: #111827;
+  --trego-accent: #ff6f18;
+  --trego-accent-strong: #f26522;
+  --trego-accent-soft: #fff3ea;
+  --trego-blue: #2563eb;
+  --trego-bg: #f6f7f8;
+  --trego-surface: #ffffff;
+  --trego-surface-muted: #fbfbfb;
+  --trego-border: #e5e7eb;
+  --trego-text: #111827;
+  --trego-muted: #6b7280;
+  --trego-radius: 14px;
+  --trego-radius-sm: 10px;
+  --trego-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ion-background-color: #0f1115;
+    --ion-text-color: #f8fafc;
+    --trego-bg: #0f1115;
+    --trego-surface: #171a21;
+    --trego-surface-muted: #1d222b;
+    --trego-border: rgba(255, 255, 255, 0.1);
+    --trego-text: #f8fafc;
+    --trego-muted: #a0a8b5;
+    --trego-accent-soft: rgba(255, 111, 24, 0.14);
+    --trego-shadow: none;
+  }
+}
+
+html,
+body,
+ion-app {
+  background: var(--trego-bg);
+  color: var(--trego-text);
+}
+
+ion-content {
+  --background: var(--trego-bg);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img {
+  display: block;
+}
+
+.trego-mobile-screen {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: calc(12px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom));
+}
+
+.trego-mobile-screen > * + * {
+  margin-top: 12px;
+}
+
+.trego-mobile-screen > section:not(.trego-top-actions):not(.trego-filter-row):not(.trego-rail-section):not(.trego-search-card):not(.trego-product-grid):not(.trego-business-list):not(.trego-function-list):not(.trego-segment-row):not(.trego-studio-actions):not(.trego-studio-focus):not(.trego-flow-steps) {
+  padding: 12px;
+  background: var(--trego-surface);
+  border: 1px solid var(--trego-border);
+  border-radius: var(--trego-radius);
+  box-shadow: var(--trego-shadow);
+}
+
+.trego-mobile-screen h1,
+.trego-mobile-screen h2,
+.trego-mobile-screen h3 {
+  margin-top: 0;
+  letter-spacing: 0;
+}
+
+.trego-mobile-screen p {
+  line-height: 1.35;
+}
+
+.trego-card,
+.trego-page-header,
+.trego-home-hero,
+.trego-search-card,
+.trego-account-hero,
+.trego-business-card,
+.trego-studio-card,
+.trego-empty-card {
+  background: var(--trego-surface);
+  border: 1px solid var(--trego-border);
+  border-radius: var(--trego-radius);
+  box-shadow: var(--trego-shadow);
+}
+
+.trego-page-header {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.trego-page-header__back {
+  min-height: 32px;
+}
+
+.trego-page-header__body {
+  display: grid;
+  gap: 4px;
+}
+
+.trego-page-header__kicker,
+.trego-kicker {
+  margin: 0;
+  color: var(--trego-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.trego-page-header h1,
+.trego-home-hero h1,
+.trego-account-hero h1,
+.trego-studio-card h2,
+.trego-section-title {
+  margin: 0;
+  color: var(--trego-text);
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.trego-page-header p,
+.trego-home-hero p,
+.trego-account-hero p,
+.trego-studio-card p {
+  margin: 0;
+  color: var(--trego-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.trego-status-banner {
+  position: fixed;
+  z-index: 1000;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--trego-text);
+  background: var(--trego-surface);
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.12);
+}
+
+.trego-status-banner > span:first-child {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--trego-accent);
+}
+
+.trego-status-banner span,
+.trego-status-banner small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trego-status-banner span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-status-banner small {
+  color: var(--trego-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.trego-tab-shell {
+  position: fixed;
+  z-index: 50;
+  left: 12px;
+  right: 12px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 8px;
+  width: min(100% - 24px, 680px);
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+.trego-tab-shell__group {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 58px;
+  padding: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(229, 231, 235, 0.92);
+  border-radius: 999px;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.12);
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.trego-tab-shell__indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 4);
+  border-radius: 999px;
+  background: var(--trego-accent-soft);
+  border: 1px solid rgba(255, 111, 24, 0.22);
+  transition: transform 180ms ease;
+}
+
+.trego-tab-shell__item,
+.trego-tab-shell__search {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  border: 0;
+  color: var(--trego-muted);
+  background: transparent;
+}
+
+.trego-tab-shell__item {
+  min-width: 0;
+  min-height: 50px;
+  padding: 6px 2px;
+}
+
+.trego-tab-shell__item ion-icon {
+  font-size: 19px;
+}
+
+.trego-tab-shell__item span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.trego-tab-shell__item.is-active {
+  color: var(--trego-text);
+}
+
+.trego-tab-shell__badge {
+  position: absolute;
+  top: 4px;
+  right: 16%;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--trego-accent);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.trego-tab-shell__search {
+  width: 54px;
+  height: 58px;
+  color: #fff;
+  background: var(--trego-accent);
+  border-radius: 999px;
+  box-shadow: 0 14px 28px rgba(255, 111, 24, 0.24);
+  pointer-events: auto;
+}
+
+.trego-tab-shell__search span {
+  display: grid;
+  place-items: center;
+}
+
+.trego-tab-shell__search ion-icon {
+  font-size: 22px;
+}
+
+.trego-top-actions,
+.trego-account-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trego-search-button,
+.trego-icon-button,
+.trego-ghost-button,
+.trego-chip,
+.trego-primary-button,
+.trego-secondary-button {
+  min-height: 38px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface);
+  color: var(--trego-text);
+}
+
+.trego-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.trego-search-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  text-align: left;
+}
+
+.trego-search-button strong,
+.trego-search-button span {
+  display: block;
+}
+
+.trego-search-button strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.trego-search-button span span {
+  margin-top: 2px;
+  color: var(--trego-muted);
+  font-size: 11px;
+}
+
+.trego-icon-button {
+  width: 40px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.trego-icon-button ion-icon {
+  font-size: 19px;
+}
+
+.trego-home-hero,
+.trego-account-hero,
+.trego-studio-card {
+  padding: 12px;
+}
+
+.trego-home-hero {
+  display: grid;
+  gap: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 111, 24, 0.12), rgba(255, 243, 234, 0.2)),
+    var(--trego-surface);
+}
+
+.trego-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-stats-row article {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  background: var(--trego-surface-muted);
+  border: 1px solid var(--trego-border);
+  border-radius: var(--trego-radius-sm);
+}
+
+.trego-stats-row strong {
+  color: var(--trego-text);
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.trego-stats-row span {
+  color: var(--trego-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.trego-chip-row,
+.trego-filter-row,
+.trego-segment-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.trego-chip-row::-webkit-scrollbar,
+.trego-filter-row::-webkit-scrollbar,
+.trego-segment-row::-webkit-scrollbar,
+.trego-product-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.trego-chip {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: var(--trego-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-chip.is-active,
+.trego-segment-row button.is-active {
+  color: var(--trego-accent);
+  border-color: rgba(255, 111, 24, 0.42);
+  background: var(--trego-accent-soft);
+}
+
+.trego-rail-section {
+  padding: 12px 0 2px;
+}
+
+.trego-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.trego-rail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--trego-text);
+  padding: 0;
+  text-align: left;
+}
+
+.trego-rail-title ion-icon {
+  color: var(--trego-accent);
+  font-size: 18px;
+}
+
+.trego-rail-title p {
+  margin: 0;
+  color: var(--trego-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.trego-rail-title h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.trego-product-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(156px, 170px);
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding: 2px 2px 6px;
+}
+
+.trego-product-rail__item {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.trego-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trego-product-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding: 8px;
+  background: var(--trego-surface);
+  border: 1px solid var(--trego-border);
+  border-radius: var(--trego-radius);
+  box-shadow: var(--trego-shadow);
+}
+
+.trego-product-card--compact {
+  width: 100%;
+}
+
+.trego-product-card__media {
+  position: relative;
+  aspect-ratio: 1 / 0.88;
+  overflow: hidden;
+  background: #f1f5f9;
+  border-radius: 12px;
+}
+
+.trego-product-card__media img,
+.trego-product-card__media picture,
+.trego-product-card__media .smart-image-mobile,
+.trego-product-card__media > *:first-child {
+  width: 100%;
+  height: 100%;
+}
+
+.trego-product-card__open {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.trego-product-card__badge {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  padding: 3px 7px;
+  color: #fff;
+  background: var(--trego-accent);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.trego-product-card__actions {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  gap: 6px;
+}
+
+.trego-product-card__icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  color: var(--trego-text);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.trego-product-card__body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.trego-product-card__business,
+.trego-product-card__meta {
+  color: var(--trego-muted);
+  font-size: 10.5px;
+  line-height: 1.15;
+}
+
+.trego-product-card__business {
+  margin: 0;
+  font-weight: 700;
+}
+
+.trego-product-card__title {
+  display: -webkit-box;
+  min-height: 32px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  border: 0;
+  background: transparent;
+  color: var(--trego-text);
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.trego-product-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.trego-product-card__price strong {
+  color: var(--trego-accent);
+  font-size: 14px;
+}
+
+.trego-product-card__price span {
+  color: var(--trego-muted);
+  font-size: 11px;
+  text-decoration: line-through;
+}
+
+.trego-product-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trego-product-card__rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--trego-accent);
+}
+
+.trego-product-card__analytics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.trego-product-card__metric {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px;
+  background: var(--trego-surface-muted);
+  border-radius: 9px;
+}
+
+.trego-product-card__metric small {
+  color: var(--trego-muted);
+  font-size: 9px;
+}
+
+.trego-product-card__metric strong {
+  font-size: 12px;
+}
+
+.trego-section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.trego-section-toolbar span {
+  color: var(--trego-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trego-reset-button {
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--trego-accent);
+  border: 1px solid rgba(255, 111, 24, 0.22);
+  border-radius: 999px;
+  background: var(--trego-accent-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-business-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.trego-business-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trego-business-card__identity {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--trego-text);
+  padding: 0;
+  text-align: left;
+}
+
+.trego-business-card__logo {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--trego-accent);
+  background: var(--trego-accent-soft);
+  border-radius: 12px;
+}
+
+.trego-business-card__logo ion-icon {
+  font-size: 22px;
+}
+
+.trego-business-card__verified {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  color: #16a34a;
+  background: var(--trego-surface);
+  border-radius: 999px;
+}
+
+.trego-business-card h3 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.trego-business-card p {
+  margin: 2px 0 0;
+  color: var(--trego-muted);
+  font-size: 12px;
+}
+
+.trego-business-card__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.trego-business-card__follow {
+  min-height: 34px;
+  padding: 0 11px;
+  color: var(--trego-accent);
+  border: 1px solid rgba(255, 111, 24, 0.28);
+  border-radius: 999px;
+  background: var(--trego-accent-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-business-card__message {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  background: var(--trego-accent);
+}
+
+.trego-business-card__products {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 74px;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.trego-business-card__product {
+  position: relative;
+  height: 74px;
+  overflow: hidden;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-business-card__product span {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 2px 5px;
+  color: var(--trego-accent);
+  background: var(--trego-surface);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.trego-list-stack,
+.trego-business-list,
+.trego-search-results {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-search-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.trego-search-card form,
+.trego-search-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trego-search-card input,
+.trego-search-card ion-input,
+.trego-account-search input,
+.trego-studio-card input,
+.trego-studio-card textarea,
+.trego-studio-card select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--trego-border);
+  border-radius: 10px;
+  background: var(--trego-surface-muted);
+  color: var(--trego-text);
+  padding: 0 10px;
+  outline: none;
+}
+
+.trego-search-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.trego-account-topbar {
+  margin-bottom: 8px;
+}
+
+.trego-account-hero {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.trego-account-hero__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trego-account-avatar {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #fff;
+  background: var(--trego-accent);
+  border-radius: 16px;
+  font-weight: 900;
+}
+
+.trego-account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.trego-role-row {
+  display: flex;
+  gap: 6px;
+}
+
+.trego-role-row span {
+  padding: 4px 8px;
+  color: var(--trego-accent);
+  background: var(--trego-accent-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.trego-function-list {
+  display: grid;
+  gap: 8px;
+}
+
+.trego-function-item {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface);
+  color: var(--trego-text);
+  text-align: left;
+}
+
+.trego-function-item ion-icon {
+  width: 34px;
+  height: 34px;
+  padding: 8px;
+  color: var(--trego-accent);
+  background: var(--trego-accent-soft);
+  border-radius: 10px;
+}
+
+.trego-function-item strong,
+.trego-function-item small {
+  min-width: 0;
+}
+
+.trego-function-item strong {
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.trego-function-item small {
+  color: var(--trego-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.trego-studio-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-studio-summary article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface);
+}
+
+.trego-studio-summary ion-icon {
+  color: var(--trego-accent);
+}
+
+.trego-studio-actions,
+.trego-studio-focus {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-studio-action,
+.trego-studio-focus button,
+.trego-flow-step {
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface);
+  color: var(--trego-text);
+  text-align: left;
+}
+
+.trego-studio-action ion-icon {
+  color: var(--trego-accent);
+  font-size: 18px;
+}
+
+.trego-studio-action strong,
+.trego-flow-step strong {
+  font-size: 13px;
+}
+
+.trego-studio-action span,
+.trego-studio-focus span,
+.trego-flow-step span {
+  color: var(--trego-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.trego-segment-row button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--trego-muted);
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.trego-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-form-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.trego-form-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--trego-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.trego-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 360px) {
+  .trego-mobile-screen {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .trego-product-grid,
+  .trego-studio-actions,
+  .trego-studio-focus,
+  .trego-flow-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 560px) {
+  .trego-product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

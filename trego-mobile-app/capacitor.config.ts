@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: "dist",
   bundledWebRuntime: false,
   ios: {
-    handleApplicationNotifications: false,
+    handleApplicationNotifications: true,
   },
   server: {
     androidScheme: "https",

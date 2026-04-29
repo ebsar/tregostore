@@ -115,7 +115,7 @@ async function scrollToSelectedOrder() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <AppPageHeader
           kicker="Porosite"
           title="Historiku i porosive nga i njejti account."
@@ -244,4 +244,3 @@ async function scrollToSelectedOrder() {
     </IonContent>
   </IonPage>
 </template>
-

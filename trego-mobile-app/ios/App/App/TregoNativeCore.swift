@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import UIKit
+import UserNotifications
 
 struct TregoUploadedImagesPayload: Equatable {
     let paths: [String]
@@ -1010,6 +1012,20 @@ final class TregoAPIClient {
 
     func markNotificationsRead() async -> TregoStatusResponse {
         await sendStatusRequest(path: "/api/notifications/read", method: "POST")
+    }
+
+    func savePushSubscription(provider: String, platform: String, token: String, deviceId: String) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/push/subscribe",
+            method: "POST",
+            body: [
+                "provider": provider,
+                "platform": platform,
+                "token": token,
+                "deviceId": deviceId,
+                "userAgent": "TREGIO SwiftUI iOS",
+            ]
+        )
     }
 
     func fetchReturnRequests() async -> [TregoReturnRequest] {
@@ -2116,7 +2132,10 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     private static let viewedHistoryStorageKey = "trego-ios-native-viewed-history"
+    private static let apnsTokenStorageKey = "trego-ios-native-apns-token"
+    private static let apnsDeviceIdStorageKey = "trego-ios-native-push-device-id"
     private let sessionRefreshThrottleSeconds: TimeInterval = 12
+    private let workspaceRefreshThrottleSeconds: TimeInterval = 24
 
     @Published var selectedTab: LiquidGlassTab = .home
     @Published var user: TregoSessionUser?
@@ -2174,11 +2193,15 @@ final class TregoNativeAppStore: ObservableObject {
     private var hasLoadedHome = false
     private var toastTask: Task<Void, Never>?
     private var lastSessionRefreshAt: Date?
+    private var lastPublicBusinessesLoadAt: Date?
+    private var lastBusinessWorkspaceLoadAt: Date?
+    private var lastAdminWorkspaceLoadAt: Date?
     private var homeOffset = 0
     private var searchOffset = 0
     private var lastSearchTerm = ""
     private var activeSearchRequestID = UUID()
     private var productDetailCache: [Int: TregoProductDetailCacheEntry] = [:]
+    private var pushTokenObserver: NSObjectProtocol?
     private let homePageSize = 16
     private let searchPageSize = 16
     private let homeRecommendationLimit = 8
@@ -2190,6 +2213,22 @@ final class TregoNativeAppStore: ObservableObject {
         viewedHistory = history
         recentlyViewedProducts = history.map(\.product)
         rebuildHomeFeedSnapshot()
+        pushTokenObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("TregoAPNsDeviceToken"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let token = notification.userInfo?["token"] as? String else { return }
+            Task { @MainActor in
+                await self?.saveAPNsDeviceToken(token)
+            }
+        }
+    }
+
+    deinit {
+        if let pushTokenObserver {
+            NotificationCenter.default.removeObserver(pushTokenObserver)
+        }
     }
 
     var tabBadges: [LiquidGlassTab: String] {
@@ -2209,6 +2248,7 @@ final class TregoNativeAppStore: ObservableObject {
         let launchAdsTask = Task { await self.api.fetchLaunchAds() }
         let homeTask = Task { await self.loadHomeIfNeeded(force: true) }
         await refreshSession(force: true)
+        await syncStoredAPNsDeviceToken()
         _ = await homeTask.value
         launchAds = await launchAdsTask.value
         if user != nil {
@@ -2218,6 +2258,57 @@ final class TregoNativeAppStore: ObservableObject {
                 _ = await (wishlistTask, cartTask)
             }
         }
+    }
+
+    func enableNativePushNotifications() async -> TregoStatusResponse {
+        guard user != nil else {
+            return TregoStatusResponse(ok: false, message: "Kyçu ne llogari per te aktivizuar njoftimet.", errors: nil)
+        }
+
+        let granted = await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+                continuation.resume(returning: granted)
+            }
+        }
+
+        guard granted else {
+            return TregoStatusResponse(ok: false, message: "Njoftimet nuk u lejuan nga iOS.", errors: nil)
+        }
+
+        await MainActor.run {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+        await syncStoredAPNsDeviceToken()
+        return TregoStatusResponse(ok: true, message: "Push notifications u aktivizuan.", errors: nil)
+    }
+
+    private static func nativePushDeviceId() -> String {
+        if let existing = UserDefaults.standard.string(forKey: apnsDeviceIdStorageKey), !existing.isEmpty {
+            return existing
+        }
+        let generated = "ios-\(UUID().uuidString.lowercased())"
+        UserDefaults.standard.set(generated, forKey: apnsDeviceIdStorageKey)
+        return generated
+    }
+
+    private func saveAPNsDeviceToken(_ token: String) async {
+        let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanToken.isEmpty else { return }
+        UserDefaults.standard.set(cleanToken, forKey: Self.apnsTokenStorageKey)
+        await syncStoredAPNsDeviceToken()
+    }
+
+    private func syncStoredAPNsDeviceToken() async {
+        guard user != nil else { return }
+        guard let token = UserDefaults.standard.string(forKey: Self.apnsTokenStorageKey), !token.isEmpty else {
+            return
+        }
+        _ = await api.savePushSubscription(
+            provider: "apns",
+            platform: "ios",
+            token: token,
+            deviceId: Self.nativePushDeviceId()
+        )
     }
 
     func refreshSession(force: Bool = false) async {
@@ -2374,6 +2465,12 @@ final class TregoNativeAppStore: ObservableObject {
     @discardableResult
     func loadPublicBusinesses(force: Bool = false) async -> Bool {
         if publicBusinessesLoading && !force { return false }
+        if !force,
+           !publicBusinesses.isEmpty,
+           let lastPublicBusinessesLoadAt,
+           Date().timeIntervalSince(lastPublicBusinessesLoadAt) < workspaceRefreshThrottleSeconds {
+            return true
+        }
         publicBusinessesLoading = true
         defer { publicBusinessesLoading = false }
 
@@ -2386,6 +2483,7 @@ final class TregoNativeAppStore: ObservableObject {
         }
 
         publicBusinesses = result.items
+        lastPublicBusinessesLoadAt = Date()
         return true
     }
 
@@ -2614,6 +2712,12 @@ final class TregoNativeAppStore: ObservableObject {
         }
 
         if businessWorkspaceLoading && !force { return }
+        if !force,
+           (businessProfile != nil || !businessProducts.isEmpty || !businessOrders.isEmpty),
+           let lastBusinessWorkspaceLoadAt,
+           Date().timeIntervalSince(lastBusinessWorkspaceLoadAt) < workspaceRefreshThrottleSeconds {
+            return
+        }
 
         businessWorkspaceLoading = true
         async let profile = api.fetchBusinessProfile()
@@ -2627,6 +2731,7 @@ final class TregoNativeAppStore: ObservableObject {
         businessProducts = await products
         businessOrders = await orders
         businessPromotions = await promotions
+        lastBusinessWorkspaceLoadAt = Date()
         businessWorkspaceLoading = false
     }
 
@@ -2645,6 +2750,12 @@ final class TregoNativeAppStore: ObservableObject {
         }
 
         if adminWorkspaceLoading && !force { return }
+        if !force,
+           (!adminUsers.isEmpty || !adminBusinesses.isEmpty || !adminOrders.isEmpty),
+           let lastAdminWorkspaceLoadAt,
+           Date().timeIntervalSince(lastAdminWorkspaceLoadAt) < workspaceRefreshThrottleSeconds {
+            return
+        }
 
         adminWorkspaceLoading = true
         async let users = api.fetchAdminUsers()
@@ -2658,6 +2769,7 @@ final class TregoNativeAppStore: ObservableObject {
         adminReports = await reports
         adminOrders = await orders
         adminLaunchAds = await launchAds
+        lastAdminWorkspaceLoadAt = Date()
         adminWorkspaceLoading = false
     }
 
@@ -3043,6 +3155,9 @@ final class TregoNativeAppStore: ObservableObject {
         clearRoleScopedData(for: sessionUser)
         authenticationPrompt = nil
         authRoute = nil
+        Task {
+            await syncStoredAPNsDeviceToken()
+        }
     }
 
     private func clearRoleScopedData(for sessionUser: TregoSessionUser?) {

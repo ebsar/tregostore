@@ -11,7 +11,9 @@ import {
   createBusinessCatalogImportPreview,
   downloadBusinessProductsImportTemplate,
   fetchBusinessCatalogImportConfig,
+  requestProductAIDescription,
   requestProductAIDraft,
+  requestProductAITagSuggestions,
   requestJson,
   resolveApiMessage,
   saveBusinessCatalogImportProfile,
@@ -35,6 +37,8 @@ import {
   formatCategoryLabel,
   formatCount,
   formatDateLabel,
+  formatProductColorLabel,
+  formatProductTypeLabel,
   formatPrice,
   formatStockQuantity,
   formatVerificationStatusLabel,
@@ -53,6 +57,8 @@ const productSearchQuery = ref(readRouteSearchQuery(route.query.q));
 const logoFile = ref(null);
 const logoPreviewUrl = ref("");
 const productMediaItems = ref([]);
+const productAiDescriptionSuggestion = ref(null);
+const productAiTagSuggestion = ref(null);
 const editingProduct = ref(null);
 const productFormCollapsed = ref(false);
 const productTitleInput = ref(null);
@@ -148,6 +154,8 @@ function createEmptyCityRate(rate = null) {
   };
 }
 
+const DEFAULT_AUTO_REPLY_MESSAGE = "Hey @username, hope you're doing great. We will text you as soon as possible.";
+
 const profileForm = reactive({
   businessName: "",
   businessDescription: "",
@@ -162,6 +170,10 @@ const profileForm = reactive({
   businessLogoPath: "",
 });
 const shippingForm = reactive(createDefaultShippingForm());
+const autoReplyForm = reactive({
+  enabled: false,
+  message: DEFAULT_AUTO_REPLY_MESSAGE,
+});
 
 const productForm = reactive(createEmptyProductFormState());
 const ui = reactive({
@@ -175,10 +187,15 @@ const ui = reactive({
   importMessage: "",
   importType: "",
   productAiBusy: false,
+  productDescriptionAiBusy: false,
+  productTagAiBusy: false,
   promotionMessage: "",
   promotionType: "",
   shippingMessage: "",
   shippingType: "",
+  autoReplyMessage: "",
+  autoReplyType: "",
+  savingAutoReply: false,
 });
 const importSummary = reactive({
   totalRows: 0,
@@ -509,6 +526,12 @@ const dashboardSections = computed(() => ([
     visible: canManageCatalog.value,
   },
   {
+    key: "auto-reply",
+    label: "Auto reply",
+    navLabel: "Auto Reply",
+    visible: Boolean(businessProfile.value),
+  },
+  {
     key: "products",
     label: "Add product",
     navLabel: "Add Product",
@@ -549,21 +572,22 @@ const activeSectionMeta = computed(() =>
   dashboardSections.value.find((section) => section.key === activeSection.value) || dashboardSections.value[0] || null,
 );
 const dashboardSidebarSections = computed(() => dashboardSections.value.filter((section) =>
-  ["analytics", "products", "inventory", "stock", "import", "offers", "payouts", "profile"].includes(section.key),
+  ["analytics", "products", "inventory", "stock", "import", "offers", "payouts", "auto-reply", "profile"].includes(section.key),
 ));
 const businessShellNavItems = computed(() => {
   const routeItems = [
-    { key: "analytics", label: "Overview", icon: "dashboard", to: "/biznesi-juaj?view=analytics", group: "Core" },
+    { key: "analytics", label: "Overview", icon: "overview", to: "/biznesi-juaj?view=analytics", local: true, group: "Core" },
     { key: "orders", label: "Orders", icon: "orders", to: "/porosite-e-biznesit", group: "Core" },
-    { key: "inventory", label: "Products", icon: "products", to: "/biznesi-juaj?view=inventory", badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
-    { key: "products", label: "Add Product", icon: "bag", to: "/biznesi-juaj?view=products", group: "Inventory" },
-    { key: "stock", label: "Stock", icon: "stock", to: "/biznesi-juaj?view=stock", badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
-    { key: "import", label: "Import", icon: "import", to: "/biznesi-juaj?view=import", group: "Inventory" },
-    { key: "offers", label: "Discounts", icon: "offers", to: "/biznesi-juaj?view=offers", group: "Growth" },
-    { key: "payouts", label: "Payouts", icon: "shipping", to: "/biznesi-juaj?view=payouts", group: "Growth" },
-    { key: "shipping", label: "Shipping", icon: "shipping", to: "/biznesi-juaj?view=shipping", group: "Store" },
-    { key: "profile", label: "Store Settings", icon: "settings", to: "/biznesi-juaj?view=profile", group: "Store" },
-    { key: "support", label: "Support", icon: "messages", to: "/mesazhet", group: "Store" },
+    { key: "inventory", label: "Products", icon: "products", to: "/biznesi-juaj?view=inventory", local: true, badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
+    { key: "products", label: "Add Product", icon: "add-product", to: "/biznesi-juaj?view=products", local: true, group: "Inventory" },
+    { key: "stock", label: "Stock", icon: "stock", to: "/biznesi-juaj?view=stock", local: true, badge: stockAlertCount.value > 0 ? String(stockAlertCount.value) : "", group: "Inventory" },
+    { key: "import", label: "Import", icon: "import", to: "/biznesi-juaj?view=import", local: true, group: "Inventory" },
+    { key: "offers", label: "Discounts", icon: "offers", to: "/biznesi-juaj?view=offers", local: true, group: "Growth" },
+    { key: "payouts", label: "Payouts", icon: "wallet", to: "/biznesi-juaj?view=payouts", local: true, group: "Growth" },
+    { key: "shipping", label: "Shipping", icon: "shipping", to: "/biznesi-juaj?view=shipping", local: true, group: "Store" },
+    { key: "auto-reply", label: "Auto Reply", icon: "auto-reply", to: "/biznesi-juaj?view=auto-reply", local: true, group: "Store" },
+    { key: "profile", label: "Store Settings", icon: "settings", to: "/biznesi-juaj?view=profile", local: true, group: "Store" },
+    { key: "support", label: "Support", icon: "support", to: "/mesazhet", group: "Store" },
   ];
 
   return routeItems.filter((item) => {
@@ -572,6 +596,9 @@ const businessShellNavItems = computed(() => {
     }
     if (item.key === "profile") {
       return shouldShowProfileCard.value;
+    }
+    if (item.key === "auto-reply") {
+      return Boolean(businessProfile.value);
     }
     return canManageCatalog.value;
   });
@@ -816,13 +843,13 @@ function handleDashboardQuickAction(actionKey) {
   setActiveSection(actionKey);
 }
 
-function handleBusinessDashboardSearch() {
+async function handleBusinessDashboardSearch() {
   const query = String(productSearchQuery.value || "").trim();
   productSearchQuery.value = query;
-  syncRouteSearchQuery(query);
   if (canManageCatalog.value) {
     setActiveSection("inventory");
   }
+  await syncRouteSearchQuery(query);
 }
 
 function readRouteSearchQuery(value) {
@@ -846,6 +873,14 @@ function setActiveSection(sectionKey) {
     return;
   }
   activeSection.value = sectionKey;
+}
+
+function handleBusinessShellNavSelect(item) {
+  const sectionKey = String(item?.key || "").trim();
+  if (!sectionKey) {
+    return;
+  }
+  setActiveSection(sectionKey);
 }
 
 onMounted(async () => {
@@ -1065,6 +1100,7 @@ async function loadBusinessProfile() {
   businessProfile.value = data.profile || null;
   hydrateProfileForm(businessProfile.value);
   hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
+  hydrateAutoReplyForm(businessProfile.value);
   if (!isBusinessVerified.value || profileEditAccessStatus.value !== "approved") {
     showVerifiedProfileEditor.value = false;
   }
@@ -1095,6 +1131,7 @@ async function requestVerificationReview() {
   if (businessProfile.value) {
     hydrateProfileForm(businessProfile.value);
     hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
+    hydrateAutoReplyForm(businessProfile.value);
   }
   ui.profileMessage = data.message || "Kerkesa per verifikim u dergua.";
   ui.profileType = "success";
@@ -1115,6 +1152,7 @@ async function requestBusinessProfileEditAccess() {
   if (businessProfile.value) {
     hydrateProfileForm(businessProfile.value);
     hydrateShippingForm(businessProfile.value?.shippingSettings || null, businessProfile.value);
+    hydrateAutoReplyForm(businessProfile.value);
   }
   ui.profileMessage = data.message || "Kerkesa per editim u dergua te admini.";
   ui.profileType = "success";
@@ -1151,6 +1189,11 @@ function hydrateProfileForm(profile) {
   profileForm.businessLogoPath = String(profile?.logoPath || "");
   logoFile.value = null;
   revokeLogoPreview();
+}
+
+function hydrateAutoReplyForm(profile) {
+  autoReplyForm.enabled = Boolean(profile?.autoReplyEnabled);
+  autoReplyForm.message = String(profile?.autoReplyMessage || DEFAULT_AUTO_REPLY_MESSAGE);
 }
 
 function hydrateShippingForm(settings, profile = null) {
@@ -1225,6 +1268,7 @@ async function saveBusinessProfile() {
   businessProfile.value = data.profile;
   hydrateProfileForm(data.profile);
   hydrateShippingForm(data.profile?.shippingSettings || null, data.profile);
+  hydrateAutoReplyForm(data.profile);
   showVerifiedProfileEditor.value = false;
   ui.profileMessage = data.message || "Biznesi u ruajt me sukses.";
   ui.profileType = "success";
@@ -1269,8 +1313,40 @@ async function saveShippingSettings() {
 
   businessProfile.value = data.profile;
   hydrateShippingForm(data.profile?.shippingSettings || null, data.profile);
+  hydrateAutoReplyForm(data.profile);
   ui.shippingMessage = data.message || "Transporti u ruajt.";
   ui.shippingType = "success";
+}
+
+async function saveAutoReplySettings() {
+  ui.autoReplyMessage = "";
+  ui.autoReplyType = "";
+  ui.savingAutoReply = true;
+
+  const payload = {
+    autoReplyEnabled: Boolean(autoReplyForm.enabled),
+    autoReplyMessage: String(autoReplyForm.message || "").trim(),
+  };
+
+  try {
+    const { response, data } = await requestJson("/api/business-profile/auto-reply", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok || !data?.ok || !data.profile) {
+      ui.autoReplyMessage = resolveApiMessage(data, "Auto-reply nuk u ruajt.");
+      ui.autoReplyType = "error";
+      return;
+    }
+
+    businessProfile.value = data.profile;
+    hydrateAutoReplyForm(data.profile);
+    ui.autoReplyMessage = data.message || "Auto-reply u ruajt.";
+    ui.autoReplyType = "success";
+  } finally {
+    ui.savingAutoReply = false;
+  }
 }
 
 function handleLogoChange(event) {
@@ -1337,8 +1413,12 @@ function resetProductForm() {
   editingProduct.value = null;
   revokePreviewUrls();
   productMediaItems.value = [];
+  productAiDescriptionSuggestion.value = null;
+  productAiTagSuggestion.value = null;
   ui.productMessage = "";
   ui.productTypeMessage = "";
+  ui.productDescriptionAiBusy = false;
+  ui.productTagAiBusy = false;
 }
 
 function changeProductQuantity(delta) {
@@ -1401,6 +1481,8 @@ function beginProductEdit(product) {
   syncProductMediaItemsFromGallery(getProductImageGallery(product));
   syncProductFormCatalogState(productForm);
   productFormCollapsed.value = false;
+  productAiDescriptionSuggestion.value = null;
+  productAiTagSuggestion.value = null;
   ui.productMessage = `Po editon artikullin "${product.title}".`;
   ui.productTypeMessage = "success";
 }
@@ -1830,6 +1912,146 @@ function clearImportSelection({ preserveSourceType = false, preserveProfiles = f
 function triggerImportPicker() {
   setActiveSection("import");
   importFileInput.value?.click?.();
+}
+
+function buildProductAiSuggestionPayload() {
+  return {
+    productName: String(productForm.title || "").trim(),
+    shortDetails: String(productForm.metaDescription || productForm.description || "").trim(),
+    title: String(productForm.title || "").trim(),
+    description: String(productForm.description || productForm.metaDescription || "").trim(),
+    pageSection: productForm.pageSection,
+    audience: productForm.audience,
+    category: productForm.category,
+    productType: productForm.productType,
+    selectedColors: Array.isArray(productForm.selectedColors) ? productForm.selectedColors : [],
+  };
+}
+
+async function generateProductDescriptionSuggestion() {
+  if (!canManageCatalog.value) {
+    ui.productMessage = "Biznesi duhet te verifikohet nga admini para se te shtosh produkte.";
+    ui.productTypeMessage = "error";
+    return;
+  }
+
+  const payload = buildProductAiSuggestionPayload();
+  if (!payload.productName && !payload.shortDetails) {
+    ui.productMessage = "Shto titullin ose disa detaje te shkurtra para gjenerimit.";
+    ui.productTypeMessage = "error";
+    return;
+  }
+
+  ui.productMessage = "";
+  ui.productTypeMessage = "";
+  ui.productDescriptionAiBusy = true;
+
+  try {
+    const result = await requestProductAIDescription(payload);
+    if (!result.ok || !result.suggestion) {
+      ui.productMessage = result.message;
+      ui.productTypeMessage = "error";
+      return;
+    }
+
+    productAiDescriptionSuggestion.value = result.suggestion;
+    ui.productMessage = result.message;
+    ui.productTypeMessage = "success";
+  } catch (error) {
+    console.error(error);
+    ui.productMessage = "Pershkrimi AI nuk u pergatit. Provoje perseri.";
+    ui.productTypeMessage = "error";
+  } finally {
+    ui.productDescriptionAiBusy = false;
+  }
+}
+
+function applyProductDescriptionSuggestion(part = "all") {
+  const suggestion = productAiDescriptionSuggestion.value;
+  if (!suggestion) {
+    return;
+  }
+
+  if ((part === "title" || part === "all") && String(suggestion.title || "").trim()) {
+    productForm.title = String(suggestion.title || "").trim();
+  }
+  if ((part === "description" || part === "all") && String(suggestion.description || "").trim()) {
+    productForm.description = String(suggestion.description || "").trim();
+    if (!String(productForm.metaDescription || "").trim()) {
+      productForm.metaDescription = String(suggestion.description || "").trim().slice(0, 160);
+    }
+  }
+
+  ui.productMessage = "Sugjerimi u vendos ne forme. Mund ta ndryshosh para ruajtjes.";
+  ui.productTypeMessage = "success";
+}
+
+async function generateProductTagSuggestion() {
+  if (!canManageCatalog.value) {
+    ui.productMessage = "Biznesi duhet te verifikohet nga admini para se te shtosh produkte.";
+    ui.productTypeMessage = "error";
+    return;
+  }
+
+  const payload = buildProductAiSuggestionPayload();
+  if (!payload.productName && !payload.shortDetails) {
+    ui.productMessage = "Shto titullin ose disa detaje per te marre sugjerime.";
+    ui.productTypeMessage = "error";
+    return;
+  }
+
+  ui.productMessage = "";
+  ui.productTypeMessage = "";
+  ui.productTagAiBusy = true;
+
+  try {
+    const result = await requestProductAITagSuggestions(payload);
+    if (!result.ok || !result.suggestion) {
+      ui.productMessage = result.message;
+      ui.productTypeMessage = "error";
+      return;
+    }
+
+    productAiTagSuggestion.value = result.suggestion;
+    ui.productMessage = result.message;
+    ui.productTypeMessage = "success";
+  } catch (error) {
+    console.error(error);
+    ui.productMessage = "Sugjerimet AI nuk u pergatiten. Provoje perseri.";
+    ui.productTypeMessage = "error";
+  } finally {
+    ui.productTagAiBusy = false;
+  }
+}
+
+function applyProductTagSuggestion() {
+  const suggestion = productAiTagSuggestion.value;
+  if (!suggestion) {
+    return;
+  }
+
+  const nextPageSection = String(suggestion.pageSection || "").trim().toLowerCase();
+  const nextAudience = String(suggestion.audience || "").trim().toLowerCase();
+  const nextProductType = String(suggestion.productType || "").trim().toLowerCase();
+  const nextColors = Array.isArray(suggestion.selectedColors)
+    ? suggestion.selectedColors.map((color) => String(color || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+
+  if (nextPageSection) {
+    productForm.pageSection = nextPageSection;
+  }
+  productForm.audience = nextAudience;
+  syncProductFormCatalogState(productForm);
+  if (nextProductType) {
+    productForm.productType = nextProductType;
+  }
+  if (nextColors.length > 0) {
+    productForm.selectedColors = nextColors;
+  }
+  syncProductFormCatalogState(productForm);
+
+  ui.productMessage = "Sugjerimet e kategorise u aplikuan. Tags mbeten vetem per reference.";
+  ui.productTypeMessage = "success";
 }
 
 async function suggestProductWithAi() {
@@ -2354,6 +2576,7 @@ async function applyBulkStockUpdate() {
       :notification-count="businessNotificationCount"
       @update:search-query="productSearchQuery = $event"
       @submit-search="handleBusinessDashboardSearch"
+      @nav-select="handleBusinessShellNavSelect"
     >
       <template #sidebar-footer>
         <RouterLink to="/llogaria">
@@ -2664,18 +2887,24 @@ async function applyBulkStockUpdate() {
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'shipping'"
-      class="market-card dashboard-section"
+      class="market-card dashboard-section business-shipping-card"
       aria-label="Transporti i biznesit"
     >
-      <div class="dashboard-section__head">
+      <div class="business-tool-header business-tool-header--compact">
         <div>
-          <p class="market-page__eyebrow">Shipping</p>
+          <span class="business-tool-header__eyebrow">Shipping</span>
           <h2>Transport</h2>
+          <p>Choose the delivery methods clients can use, then set clear fees, delivery times, and city rules.</p>
+        </div>
+        <div class="business-tool-steps" aria-label="Shipping setup">
+          <span><strong>1</strong> Methods</span>
+          <span><strong>2</strong> Discounts</span>
+          <span><strong>3</strong> Cities</span>
         </div>
       </div>
 
-      <form @submit.prevent="saveShippingSettings">
-        <div>
+      <form class="business-shipping-form" @submit.prevent="saveShippingSettings">
+        <div class="business-shipping-method-grid">
           <article>
             <div>
               <div>
@@ -2764,7 +2993,7 @@ async function applyBulkStockUpdate() {
           </article>
         </div>
 
-        <div>
+        <div class="business-shipping-thresholds">
           <label>
             <span>Pragu per 50% zbritje transporti (€)</span>
             <input v-model="shippingForm.halfOffThreshold" type="number" min="0" step="0.10" placeholder="120">
@@ -2776,21 +3005,22 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <div>
-          <div>
+        <div class="business-shipping-city-card">
+          <div class="business-panel-head">
             <div>
               <strong>Tarifa sipas qytetit</strong>
+              <p>Shto kosto ekstra vetem per qytetet qe kane transport me te shtrenjte.</p>
             </div>
-            <button type="button" @click="addShippingCityRate">
+            <button class="business-secondary-button" type="button" @click="addShippingCityRate">
               Shto qytet
             </button>
           </div>
 
-          <div>
+          <div class="business-city-rate-list">
             <div
               v-for="(cityRate, index) in shippingForm.cityRates"
               :key="`shipping-city-rate-${index}`"
-             
+              class="business-city-rate-row"
             >
               <label>
                 <span>Qyteti</span>
@@ -2812,20 +3042,87 @@ async function applyBulkStockUpdate() {
                 >
               </label>
 
-              <button type="button" @click="removeShippingCityRate(index)">
+              <button class="business-secondary-button" type="button" @click="removeShippingCityRate(index)">
                 Hiq
               </button>
+            </div>
+            <div v-if="shippingForm.cityRates.length === 0" class="business-empty-note">
+              Nuk ka tarifa qyteti. Shto vetem nese nje qytet ka kosto ekstra.
             </div>
           </div>
         </div>
 
-        <div>
-          <button type="submit">Ruaj</button>
+        <div class="business-action-row business-action-row--end">
+          <button type="submit">Ruaj transportin</button>
         </div>
       </form>
 
-      <div role="status" aria-live="polite">
+      <div v-if="ui.shippingMessage" class="business-inline-alert" role="status" aria-live="polite">
         {{ ui.shippingMessage }}
+      </div>
+    </section>
+
+    <section
+      v-if="businessProfile"
+      v-show="activeSection === 'auto-reply'"
+      class="market-card dashboard-section business-auto-reply-card"
+      aria-label="Auto reply i mesazheve"
+    >
+      <div class="business-tool-header business-tool-header--compact">
+        <div>
+          <span class="business-tool-header__eyebrow">Messages</span>
+          <h2>Auto reply</h2>
+          <p>Send one automatic answer when a client starts a new conversation, then continue manually when you are ready.</p>
+        </div>
+        <span class="business-pill">{{ autoReplyForm.enabled ? "Active" : "Off" }}</span>
+      </div>
+
+      <form class="business-auto-reply-form" @submit.prevent="saveAutoReplySettings">
+        <label class="business-toggle-card">
+          <input v-model="autoReplyForm.enabled" type="checkbox">
+          <span>
+            <strong>Aktivizo auto-reply</strong>
+            <small>Dergohet vetem kur klienti nis nje bisede te re.</small>
+          </span>
+        </label>
+
+        <label class="business-message-field">
+          <span>Mesazhi automatik</span>
+          <textarea
+            v-model="autoReplyForm.message"
+            rows="5"
+            maxlength="500"
+            placeholder="Hey @username, hope you're doing great. We will text you as soon as possible."
+          ></textarea>
+        </label>
+
+        <div class="business-auto-reply-tips">
+          <span>@username vendos automatikisht emrin e klientit.</span>
+          <span>Mbaje mesazhin te shkurter dhe thuaj kur do pergjigjesh.</span>
+        </div>
+
+        <div class="business-action-row business-action-row--end">
+          <button type="submit" :disabled="ui.savingAutoReply">
+            {{ ui.savingAutoReply ? "Duke ruajtur..." : "Ruaj auto-reply" }}
+          </button>
+        </div>
+      </form>
+
+      <aside class="business-auto-reply-preview" aria-label="Auto reply preview">
+        <div class="business-auto-reply-preview__head">
+          <span></span>
+          <div>
+            <strong>Preview</strong>
+            <small>Si do ta shoh klienti</small>
+          </div>
+        </div>
+        <div class="business-auto-reply-bubble">
+          {{ autoReplyForm.message || "Hey @username, hope you're doing great. We will text you as soon as possible." }}
+        </div>
+      </aside>
+
+      <div v-if="ui.autoReplyMessage" class="business-inline-alert" role="status" aria-live="polite">
+        {{ ui.autoReplyMessage }}
       </div>
     </section>
 
@@ -2980,6 +3277,14 @@ async function applyBulkStockUpdate() {
                 <h3>Basic information</h3>
                 <p>Keep the essentials compact and aligned so you can add products faster.</p>
               </div>
+              <button
+                type="button"
+                class="market-button market-button--ghost product-ai-inline-button"
+                :disabled="ui.productTagAiBusy"
+                @click="generateProductTagSuggestion"
+              >
+                {{ ui.productTagAiBusy ? "Suggesting..." : "Suggest tags" }}
+              </button>
             </div>
 
             <div class="product-form-card__grid product-form-card__grid--basic">
@@ -3045,6 +3350,35 @@ async function applyBulkStockUpdate() {
                 >
               </label>
             </div>
+
+            <div v-if="productAiTagSuggestion" class="product-ai-suggestion-panel">
+              <div class="product-ai-suggestion-panel__head">
+                <div>
+                  <strong>Category suggestions</strong>
+                  <span>Review before applying.</span>
+                </div>
+                <button type="button" class="market-button market-button--secondary" @click="applyProductTagSuggestion">
+                  Apply category
+                </button>
+              </div>
+              <div class="product-ai-suggestion-grid">
+                <span>
+                  <small>Category</small>
+                  <strong>{{ formatCategoryLabel(productAiTagSuggestion.category) || "No suggestion" }}</strong>
+                </span>
+                <span>
+                  <small>Type</small>
+                  <strong>{{ formatProductTypeLabel(productAiTagSuggestion.productType) || "No suggestion" }}</strong>
+                </span>
+                <span>
+                  <small>Color</small>
+                  <strong>{{ formatProductColorLabel(productAiTagSuggestion.color) || "No suggestion" }}</strong>
+                </span>
+              </div>
+              <div v-if="productAiTagSuggestion.tags?.length" class="product-ai-tag-list" aria-label="AI tags">
+                <span v-for="tag in productAiTagSuggestion.tags" :key="tag">{{ tag }}</span>
+              </div>
+            </div>
           </article>
 
           <CompactProductConfigurator :form="productForm" />
@@ -3102,6 +3436,14 @@ async function applyBulkStockUpdate() {
                 <h3>Description</h3>
                 <p>Keep the preview short, then add the full product details below.</p>
               </div>
+              <button
+                type="button"
+                class="market-button market-button--ghost product-ai-inline-button"
+                :disabled="ui.productDescriptionAiBusy"
+                @click="generateProductDescriptionSuggestion"
+              >
+                {{ ui.productDescriptionAiBusy ? "Generating..." : "Generate Description" }}
+              </button>
             </div>
 
             <div class="product-form-card__grid">
@@ -3114,6 +3456,24 @@ async function applyBulkStockUpdate() {
                   required
                 ></textarea>
               </label>
+            </div>
+
+            <div v-if="productAiDescriptionSuggestion" class="product-ai-suggestion-panel">
+              <div class="product-ai-suggestion-panel__head">
+                <div>
+                  <strong>{{ productAiDescriptionSuggestion.title }}</strong>
+                  <span>AI text suggestion. Manual fields stay editable.</span>
+                </div>
+                <div class="product-ai-suggestion-actions">
+                  <button type="button" @click="applyProductDescriptionSuggestion('title')">Use title</button>
+                  <button type="button" @click="applyProductDescriptionSuggestion('description')">Use text</button>
+                  <button type="button" @click="applyProductDescriptionSuggestion('all')">Use all</button>
+                </div>
+              </div>
+              <p>{{ productAiDescriptionSuggestion.description }}</p>
+              <div v-if="productAiDescriptionSuggestion.tags?.length" class="product-ai-tag-list" aria-label="AI description tags">
+                <span v-for="tag in productAiDescriptionSuggestion.tags" :key="tag">{{ tag }}</span>
+              </div>
             </div>
           </article>
 
@@ -3191,25 +3551,33 @@ async function applyBulkStockUpdate() {
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'import'"
-      class="market-card dashboard-section"
+      class="market-card dashboard-section business-import-card"
       aria-label="Flexible catalog import"
     >
-      <div>
+      <div class="business-tool-header">
         <div>
-          <h2>Import</h2>
+          <span class="business-tool-header__eyebrow">Catalog import</span>
+          <h2>Import products</h2>
+          <p>Upload a supplier file, paste JSON, or connect a feed. Preview first, then import only approved products.</p>
+        </div>
+        <div class="business-tool-steps" aria-label="Import steps">
+          <span><strong>1</strong> Choose source</span>
+          <span><strong>2</strong> Map fields</span>
+          <span><strong>3</strong> Import</span>
         </div>
       </div>
 
-      <div>
-        <article>
-          <div>
+      <div class="business-import-layout">
+        <article class="business-import-panel business-import-panel--setup">
+          <div class="business-panel-head">
             <div>
               <h3>Source setup</h3>
+              <p>Pick where the product data comes from and save the setup if you will reuse it.</p>
             </div>
-            <span>{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
+            <span class="business-pill">{{ importIsConfigLoading ? "Loading..." : `${importProfiles.length} profiles • ${importSources.length} sources` }}</span>
           </div>
 
-          <div>
+          <div class="business-form-grid business-form-grid--three">
             <label>
               <span>Source type</span>
               <select v-model="importSourceType" @change="handleImportSourceTypeChange">
@@ -3249,8 +3617,8 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-if="importSourceType === 'csv' || importSourceType === 'xlsx'">
-            <label>
+          <div v-if="importSourceType === 'csv' || importSourceType === 'xlsx'" class="business-import-source-box">
+            <label class="business-file-dropzone">
               <input
                 ref="importFileInput"
                 type="file"
@@ -3262,7 +3630,7 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-else-if="importSourceType === 'json'">
+          <div v-else-if="importSourceType === 'json'" class="business-import-source-box">
             <label>
               <span>Record path</span>
               <input v-model="importJsonRecordPath" type="text" placeholder="products.items" />
@@ -3277,8 +3645,8 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div v-else>
-            <div>
+          <div v-else class="business-import-source-box">
+            <div class="business-form-grid business-form-grid--three">
               <label>
                 <span>Source name</span>
                 <input v-model="importApiSource.sourceName" type="text" placeholder="Wholesale feed" />
@@ -3302,7 +3670,7 @@ async function applyBulkStockUpdate() {
               <input v-model="importApiSource.url" type="url" placeholder="https://supplier.example.com/feed.json" />
             </label>
 
-            <div>
+            <div class="business-form-grid business-form-grid--two">
               <label>
                 <span>Headers JSON</span>
                 <textarea v-model="importApiSource.headersText" rows="5" placeholder='{"Authorization":"Bearer token"}' />
@@ -3313,7 +3681,7 @@ async function applyBulkStockUpdate() {
               </label>
             </div>
 
-            <div>
+            <div class="business-form-grid business-form-grid--two business-form-grid--compact">
               <label>
                 <span>Sync interval (minutes)</span>
                 <input v-model="importApiSource.syncIntervalMinutes" type="number" min="15" step="15" />
@@ -3325,7 +3693,7 @@ async function applyBulkStockUpdate() {
             </div>
           </div>
 
-          <div>
+          <div class="business-form-grid business-form-grid--two business-form-grid--compact">
             <label>
               <span>Profile name</span>
               <input v-model="importProfileDraftName" type="text" placeholder="Boutique CSV profile" />
@@ -3336,7 +3704,7 @@ async function applyBulkStockUpdate() {
             </label>
           </div>
 
-          <div>
+          <div class="business-action-row business-action-row--wrap">
             <button type="button" :disabled="importIsPreviewLoading" @click="prepareImportPreview">
               {{ importIsPreviewLoading ? "..." : "Preview" }}
             </button>
@@ -3374,15 +3742,16 @@ async function applyBulkStockUpdate() {
           </div>
         </article>
 
-        <aside>
-          <article>
-            <div>
+        <aside class="business-import-aside">
+          <article class="business-import-panel business-import-panel--summary">
+            <div class="business-panel-head">
               <div>
                 <h3>Summary</h3>
+                <p>Preview results before importing products.</p>
               </div>
             </div>
 
-            <div>
+            <div class="business-stat-grid">
               <div>
                 <span>Total rows</span>
                 <strong>{{ importSummary.totalRows }}</strong>
@@ -3410,21 +3779,22 @@ async function applyBulkStockUpdate() {
             </div>
           </article>
 
-          <article>
-            <div>
+          <article class="business-import-panel business-import-panel--jobs">
+            <div class="business-panel-head">
               <div>
                 <h3>Recent jobs</h3>
+                <p>Open a previous preview to continue.</p>
               </div>
             </div>
 
-            <div v-if="importRecentJobs.length === 0">
+            <div v-if="importRecentJobs.length === 0" class="business-empty-note">
               Ende nuk ka import jobs te ruajtur.
             </div>
-            <div v-else>
+            <div v-else class="business-job-list">
               <button
                 v-for="job in importRecentJobs.slice(0, 6)"
                 :key="`import-job-${job.id}`"
-               
+                class="business-job-button"
                 type="button"
                 @click="loadImportJobPreview(job.id)"
               >
@@ -3437,18 +3807,19 @@ async function applyBulkStockUpdate() {
         </aside>
       </div>
 
-      <article v-if="importDetectedHeaders.length > 0">
-        <div>
+      <article v-if="importDetectedHeaders.length > 0" class="business-import-panel business-import-panel--mapping">
+        <div class="business-panel-head">
           <div>
             <h3>Field mapping</h3>
+            <p>Match supplier columns with the product fields used in your store.</p>
           </div>
         </div>
 
-        <div>
+        <div class="business-form-grid business-form-grid--mapping">
           <label
             v-for="fieldName in importFieldList"
             :key="`mapping-${fieldName}`"
-           
+            class="business-field-map"
           >
             <span>{{ formatImportFieldLabel(fieldName) }}</span>
             <select v-model="importMapping[fieldName]">
@@ -3465,29 +3836,30 @@ async function applyBulkStockUpdate() {
         </div>
       </article>
 
-      <div v-if="importSummary.warnings.length > 0" role="status" aria-live="polite">
+      <div v-if="importSummary.warnings.length > 0" class="business-inline-alert business-inline-alert--warning" role="status" aria-live="polite">
         {{ importSummary.warnings.join(" ") }}
       </div>
 
-      <article>
-        <div>
-          <div>
+      <article class="business-import-preview-grid">
+        <div class="business-import-panel">
+          <div class="business-panel-head">
             <div>
               <h3>Grouping preview</h3>
+              <p>Approve product groups that should become products with variants.</p>
             </div>
           </div>
 
-          <div v-if="importIsPreviewLoading">Duke pergatitur preview...</div>
-          <div v-else-if="importPreviewGroups.length === 0">
+          <div v-if="importIsPreviewLoading" class="business-empty-note">Duke pergatitur preview...</div>
+          <div v-else-if="importPreviewGroups.length === 0" class="business-empty-note">
             Krijo nje preview per te pare grouping-un e varianteve.
           </div>
-          <div v-else>
+          <div v-else class="business-preview-list">
             <article
               v-for="group in importPreviewGroups.slice(0, 8)"
               :key="`import-group-${group.groupKey}`"
-             
+              class="business-preview-card"
             >
-              <div>
+              <div class="business-preview-card__head">
                 <div>
                   <h4>{{ group.parent?.title || "Untitled group" }}</h4>
                   <p>{{ group.parent?.canonicalCategory || "uncategorized" }} · {{ group.variants?.length || 0 }} variants</p>
@@ -3502,20 +3874,20 @@ async function applyBulkStockUpdate() {
                 </label>
               </div>
 
-              <div>
+              <div class="business-preview-meta">
                 <span>Group key: {{ group.groupKey }}</span>
                 <span>Price: {{ formatPrice(group.parent?.priceRange?.min || 0) }}</span>
                 <span>Stock: {{ group.parent?.stock || 0 }}</span>
               </div>
 
-              <p v-if="group.warnings?.length">{{ group.warnings.join(" ") }}</p>
-              <p v-if="group.errors?.length">{{ group.errors.join(" ") }}</p>
+              <p v-if="group.warnings?.length" class="business-inline-alert business-inline-alert--warning">{{ group.warnings.join(" ") }}</p>
+              <p v-if="group.errors?.length" class="business-inline-alert business-inline-alert--error">{{ group.errors.join(" ") }}</p>
 
-              <div>
+              <div class="business-variant-strip">
                 <div
                   v-for="variant in group.variants?.slice(0, 4)"
                   :key="`${group.groupKey}-${variant.key}`"
-                 
+                  class="business-variant-chip"
                 >
                   <strong>{{ variant.label || variant.key }}</strong>
                   <span>{{ variant.sku || "No SKU" }}</span>
@@ -3526,25 +3898,25 @@ async function applyBulkStockUpdate() {
           </div>
         </div>
 
-        <div>
-          <div>
+        <div class="business-import-panel">
+          <div class="business-panel-head">
             <div>
               <h3>Row preview</h3>
+              <p>Review individual rows and skip anything that should not be imported.</p>
             </div>
           </div>
 
-          <div v-if="importIsPreviewLoading">Duke pergatitur rreshtat...</div>
-          <div v-else-if="importPreviewRecords.length === 0">
+          <div v-if="importIsPreviewLoading" class="business-empty-note">Duke pergatitur rreshtat...</div>
+          <div v-else-if="importPreviewRecords.length === 0" class="business-empty-note">
             Ende nuk ka rreshta preview.
           </div>
-          <div v-else>
+          <div v-else class="business-preview-list">
             <article
               v-for="record in importPreviewRecords.slice(0, 10)"
               :key="`import-record-${record.sourceRowId}`"
-             
-             
+              class="business-preview-card business-preview-card--row"
             >
-              <div>
+              <div class="business-preview-card__head">
                 <div>
                   <strong>#{{ record.sourceRowId }}</strong>
                   <span>{{ record.normalizedData?.title || record.mappedData?.title || "Untitled row" }}</span>
@@ -3559,14 +3931,14 @@ async function applyBulkStockUpdate() {
                 </label>
               </div>
 
-              <div>
+              <div class="business-preview-meta">
                 <span>Category: {{ record.normalizedData?.category || "—" }}</span>
                 <span>Group: {{ record.normalizedData?.groupKey || "—" }}</span>
                 <span>Price: {{ formatPrice(record.normalizedData?.price || 0) }}</span>
                 <span>Stock: {{ record.normalizedData?.stock || 0 }}</span>
               </div>
 
-              <div>
+              <div class="business-row-details">
                 <div>
                   <h5>Mapped</h5>
                   <p>{{ record.mappedData?.title || "—" }}</p>
@@ -3581,15 +3953,15 @@ async function applyBulkStockUpdate() {
                 </div>
               </div>
 
-              <p v-if="record.warnings?.length">{{ record.warnings.join(" ") }}</p>
-              <p v-if="record.errors?.length">{{ record.errors.join(" ") }}</p>
+              <p v-if="record.warnings?.length" class="business-inline-alert business-inline-alert--warning">{{ record.warnings.join(" ") }}</p>
+              <p v-if="record.errors?.length" class="business-inline-alert business-inline-alert--error">{{ record.errors.join(" ") }}</p>
             </article>
           </div>
         </div>
       </article>
 
-      <form @submit.prevent="submitImportProducts">
-        <div>
+      <form class="business-import-submit" @submit.prevent="submitImportProducts">
+        <div class="business-action-row business-action-row--end">
           <button type="submit" :disabled="importIsCommitLoading || !importCurrentJob?.id">
             {{ importIsCommitLoading ? "..." : "Import" }}
           </button>
@@ -3598,7 +3970,7 @@ async function applyBulkStockUpdate() {
         </div>
       </form>
 
-      <div role="status" aria-live="polite">
+      <div v-if="ui.importMessage" class="business-inline-alert" role="status" aria-live="polite">
         {{ ui.importMessage }}
       </div>
     </section>
@@ -3606,17 +3978,24 @@ async function applyBulkStockUpdate() {
     <section
       v-if="canManageCatalog"
       v-show="activeSection === 'offers'"
-      class="market-card dashboard-section"
+      class="market-card dashboard-section business-discounts-card"
       aria-label="Promocionet e biznesit"
     >
-      <div>
+      <div class="business-tool-header business-tool-header--compact">
         <div>
-          <h2>Discounts</h2>
+          <span class="business-tool-header__eyebrow">Promotions</span>
+          <h2>Create discount</h2>
+          <p>Make a checkout code for clients. Set the value, rules, dates, and save it when it is ready.</p>
+        </div>
+        <div class="business-tool-steps" aria-label="Discount setup">
+          <span><strong>1</strong> Code</span>
+          <span><strong>2</strong> Rules</span>
+          <span><strong>3</strong> Dates</span>
         </div>
       </div>
 
-      <form @submit.prevent="savePromotion">
-        <div>
+      <form class="business-promo-form" @submit.prevent="savePromotion">
+        <div class="business-form-grid business-form-grid--three">
           <label>
             <span>Kodi</span>
             <input v-model="promotionForm.code" type="text" placeholder="p.sh. TREGO10" required>
@@ -3634,7 +4013,7 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <div>
+        <div class="business-form-grid business-form-grid--three">
           <label>
             <span>Titulli</span>
             <input v-model="promotionForm.title" type="text" placeholder="Oferta e javes">
@@ -3649,7 +4028,7 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <div>
+        <div class="business-form-grid business-form-grid--three">
           <label>
             <span>Limit per user</span>
             <input v-model="promotionForm.perUserLimit" type="number" min="1" step="1" placeholder="1">
@@ -3682,7 +4061,7 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <div>
+        <div class="business-form-grid business-form-grid--three">
           <label>
             <span>Aktiv nga</span>
             <input v-model="promotionForm.startsAt" type="datetime-local">
@@ -3700,23 +4079,23 @@ async function applyBulkStockUpdate() {
           </label>
         </div>
 
-        <label>
+        <label class="business-form-field business-form-field--wide">
           <span>Pershkrimi</span>
           <input v-model="promotionForm.description" type="text" placeholder="Pershkrim i shkurter per kete oferte">
         </label>
 
-        <div>
+        <div class="business-action-row business-action-row--end">
           <button type="submit">Ruaj</button>
         </div>
       </form>
 
-      <div role="status" aria-live="polite">
+      <div v-if="ui.promotionMessage" class="business-inline-alert" role="status" aria-live="polite">
         {{ ui.promotionMessage }}
       </div>
 
-      <div v-if="promotions.length > 0">
-        <article v-for="promotion in promotions" :key="promotion.id">
-          <div>
+      <div v-if="promotions.length > 0" class="business-promo-list">
+        <article v-for="promotion in promotions" :key="promotion.id" class="business-promo-card">
+          <div class="business-promo-card__head">
             <div>
               <h2>{{ promotion.title || "Promocion" }}</h2>
             </div>
@@ -3724,7 +4103,7 @@ async function applyBulkStockUpdate() {
               {{ promotion.discountType === "percent" ? `${promotion.discountValue}%` : formatPrice(promotion.discountValue) }}
             </strong>
           </div>
-          <div>
+          <div class="business-promo-card__metrics">
             <span>
               <span>Statusi</span>
               <strong>{{ promotion.isActive ? "Aktiv" : "Pauzuar" }}</strong>
@@ -3738,7 +4117,7 @@ async function applyBulkStockUpdate() {
               <strong>{{ promotion.perUserLimit || 1 }}</strong>
             </span>
           </div>
-          <div>
+          <div class="business-promo-card__meta">
             <span v-if="promotion.pageSection">
               Seksioni: <strong>{{ formatPromotionSectionLabel(promotion.pageSection) }}</strong>
             </span>

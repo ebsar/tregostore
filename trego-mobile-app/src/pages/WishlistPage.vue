@@ -38,7 +38,7 @@ async function handleAddToCart(productId: number) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <section v-if="!sessionState.sessionLoaded">
           <IonSpinner name="crescent" />
         </section>
@@ -85,4 +85,3 @@ async function handleAddToCart(productId: number) {
     </IonContent>
   </IonPage>
 </template>
-

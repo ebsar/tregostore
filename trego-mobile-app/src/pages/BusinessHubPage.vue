@@ -129,7 +129,7 @@ async function handleOpenProduct(productId: number) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <AppPageHeader
           kicker="Insights"
           :title="headerTitle"
@@ -244,4 +244,3 @@ async function handleOpenProduct(productId: number) {
     </IonContent>
   </IonPage>
 </template>
-

@@ -1,17 +1,10 @@
 import { reactive } from "vue";
 import {
-  clearDebugSessionToken,
-  fetchCurrentUserSession,
-  fetchProtectedCollection,
-  getAuthInvalidationEventName,
-  requestJson,
-} from "../lib/api";
-import {
   APP_LOADER_MIN_DURATION_MS,
   calculateCartItemsCount,
   clearTrackedOrderLookup,
   consumeLoginGreeting,
-} from "../lib/shop";
+} from "../lib/app-session";
 
 export const appState = reactive({
   user: null,
@@ -30,6 +23,7 @@ let cartWarmupPromise = null;
 let sessionLoadRequestId = 0;
 let sessionEnrichmentRequestId = 0;
 const AUTH_INVALIDATION_LISTENER_KEY = "__tregioAuthInvalidationListenerBound__";
+const AUTH_INVALIDATION_EVENT_NAME = "tregio:auth-invalidated";
 
 function clearActiveSessionState({ clearTracking = false } = {}) {
   appState.user = null;
@@ -54,7 +48,7 @@ if (
   && !window[AUTH_INVALIDATION_LISTENER_KEY]
 ) {
   window[AUTH_INVALIDATION_LISTENER_KEY] = true;
-  window.addEventListener(getAuthInvalidationEventName(), handleAuthInvalidation);
+  window.addEventListener(AUTH_INVALIDATION_EVENT_NAME, handleAuthInvalidation);
 }
 
 export function beginRouteLoading() {
@@ -105,6 +99,7 @@ async function warmCartForActiveSession(user) {
   }
 
   const nextCartWarmupPromise = (async () => {
+    const { fetchProtectedCollection } = await import("../lib/api");
     const cartItems = await fetchProtectedCollection("/api/cart");
     setCartItems(cartItems);
   })();
@@ -126,6 +121,7 @@ export function bumpCatalogRevision() {
 
 async function fetchBusinessSessionData() {
   try {
+    const { requestJson } = await import("../lib/api");
     const { response, data } = await requestJson("/api/business-profile");
     if (!response.ok || !data?.ok || !data.profile) {
       return null;
@@ -204,6 +200,7 @@ export async function ensureSessionLoaded(options = {}) {
 
   const nextSessionLoadPromise = (async () => {
     const requestId = ++sessionLoadRequestId;
+    const { fetchCurrentUserSession } = await import("../lib/api");
     const currentSession = await fetchCurrentUserSession();
     if (requestId !== sessionLoadRequestId) {
       return appState.user;
@@ -237,6 +234,7 @@ export async function refreshSession() {
 }
 
 export async function logoutUser() {
+  const { clearDebugSessionToken, requestJson } = await import("../lib/api");
   const { response, data } = await requestJson("/api/logout", { method: "POST" });
   if ((response.ok && data?.ok) || response.status === 401 || response.status === 403) {
     clearActiveSessionState({ clearTracking: true });

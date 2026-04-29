@@ -10,10 +10,13 @@ import {
   normalizeAddress,
   persistCheckoutAddressDraft,
   persistCheckoutDeliveryMethod,
+  persistCheckoutGuestContact,
+  persistCheckoutGuestMode,
   persistCheckoutPaymentMethod,
   persistOrderSuccessSnapshot,
   readCheckoutAddressDraft,
   readCheckoutDeliveryMethod,
+  readCheckoutGuestContact,
   readCheckoutPaymentMethod,
   readCheckoutSelectedCartIds,
 } from "../lib/shop";
@@ -46,6 +49,8 @@ const shippingConfirmed = ref(false);
 const confirmedAddressSignature = ref("");
 const confirmedDeliveryMethod = ref("");
 const customerName = ref("");
+const customerEmail = ref("");
+const isGuestCheckout = ref(false);
 const formState = reactive(createEmptyAddress());
 const ui = reactive({
   message: "",
@@ -78,9 +83,19 @@ const shippingAmount = computed(() => {
   return Number(matchedOption?.shippingAmount || 0);
 });
 const totalAmount = computed(() => Math.max(0, subtotalAmount.value - discountAmount.value + shippingAmount.value));
+const guestContactReady = computed(() => {
+  if (!isGuestCheckout.value) {
+    return true;
+  }
+
+  const nameReady = String(customerName.value || "").trim().length >= 2;
+  const emailReady = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customerEmail.value || "").trim());
+  return nameReady && emailReady;
+});
 const addressReady = computed(() =>
   Boolean(
-    String(formState.addressLine || "").trim()
+    guestContactReady.value
+    && String(formState.addressLine || "").trim()
     && String(formState.city || "").trim()
     && String(formState.country || "").trim()
     && String(formState.zipCode || "").trim()
@@ -88,6 +103,17 @@ const addressReady = computed(() =>
   ),
 );
 const availablePaymentMethods = computed(() => {
+  if (isGuestCheckout.value) {
+    return [
+      {
+        value: "cash",
+        title: "Cash on delivery",
+        copy: "Pay when the order reaches you. Create an account later if you want saved order history.",
+        status: "Guest",
+      },
+    ];
+  }
+
   if (selectedDeliveryMethod.value === "pickup") {
     return [
       {
@@ -177,8 +203,36 @@ const primarySubmitLabel = computed(() => {
   return "Place order";
 });
 
+function filterDeliveryOptionsForCheckout(options) {
+  const sourceOptions = Array.isArray(options) && options.length > 0
+    ? options
+    : DELIVERY_METHOD_OPTIONS;
+  if (!isGuestCheckout.value) {
+    return sourceOptions;
+  }
+
+  return sourceOptions.filter((option) => String(option.value || "").trim().toLowerCase() !== "pickup");
+}
+
 function syncPaymentMethodAvailability() {
+  if (
+    isGuestCheckout.value
+    && selectedDeliveryMethod.value === "pickup"
+  ) {
+    selectedDeliveryMethod.value = "";
+    persistCheckoutDeliveryMethod("");
+  }
+
   if (selectedDeliveryMethod.value === "pickup" && selectedMethod.value === "cash") {
+    selectedMethod.value = "";
+    persistCheckoutPaymentMethod("");
+  }
+
+  if (
+    isGuestCheckout.value
+    && selectedMethod.value
+    && !availablePaymentMethods.value.some((option) => option.value === selectedMethod.value)
+  ) {
     selectedMethod.value = "";
     persistCheckoutPaymentMethod("");
   }
@@ -191,6 +245,8 @@ function currentAddressSignature() {
     country: String(formState.country || "").trim().toLowerCase(),
     zipCode: String(formState.zipCode || "").trim().toLowerCase(),
     phoneNumber: String(formState.phoneNumber || "").trim(),
+    customerName: isGuestCheckout.value ? String(customerName.value || "").trim().toLowerCase() : "",
+    customerEmail: isGuestCheckout.value ? String(customerEmail.value || "").trim().toLowerCase() : "",
   });
 }
 
@@ -230,9 +286,11 @@ function invalidateAddressConfirmationIfNeeded() {
 onMounted(async () => {
   try {
     const user = await ensureSessionLoaded();
+    isGuestCheckout.value = !user;
     if (!user) {
-      router.replace("/login");
-      return;
+      persistCheckoutGuestMode(true);
+    } else {
+      persistCheckoutGuestMode(false);
     }
 
     checkoutSelectedIds.value = readCheckoutSelectedCartIds();
@@ -241,23 +299,36 @@ onMounted(async () => {
       return;
     }
 
-    customerName.value = String(
-      user.fullName || [user.firstName, user.lastName].filter(Boolean).join(" "),
-    ).trim();
+    if (user) {
+      customerName.value = String(
+        user.fullName || [user.firstName, user.lastName].filter(Boolean).join(" "),
+      ).trim();
+    } else {
+      const guestContact = readCheckoutGuestContact();
+      customerName.value = guestContact.customerName;
+      customerEmail.value = guestContact.customerEmail;
+    }
+    deliveryOptions.value = filterDeliveryOptionsForCheckout(DELIVERY_METHOD_OPTIONS);
+    syncPaymentMethodAvailability();
 
-    await loadSavedAddress();
+    await loadSavedAddress({ skipRemote: isGuestCheckout.value });
     await loadCheckoutPreview({ silent: true });
   } finally {
     markRouteReady();
   }
 });
 
-async function loadSavedAddress() {
+async function loadSavedAddress({ skipRemote = false } = {}) {
   const draftAddress = readCheckoutAddressDraft();
   const fallbackAddress = draftAddress || createEmptyAddress();
   Object.assign(formState, fallbackAddress);
   if (!formState.country) {
     formState.country = "Kosove";
+  }
+
+  if (skipRemote) {
+    savedAddress.value = null;
+    return;
   }
 
   const { response, data } = await requestJson("/api/address");
@@ -276,10 +347,11 @@ async function loadSavedAddress() {
 }
 
 function syncDeliveryOptions(pricingPayload) {
-  const nextOptions = Array.isArray(pricingPayload?.availableDeliveryMethods)
+  const rawOptions = Array.isArray(pricingPayload?.availableDeliveryMethods)
     && pricingPayload.availableDeliveryMethods.length > 0
     ? pricingPayload.availableDeliveryMethods
     : DELIVERY_METHOD_OPTIONS;
+  const nextOptions = filterDeliveryOptionsForCheckout(rawOptions);
 
   deliveryOptions.value = nextOptions;
   const normalizedSelected = String(selectedDeliveryMethod.value || "").trim().toLowerCase();
@@ -383,6 +455,10 @@ function handlePaymentSelection(method) {
     return;
   }
 
+  if (isGuestCheckout.value && nextMethod !== "cash") {
+    return;
+  }
+
   selectedMethod.value = nextMethod;
   persistCheckoutPaymentMethod(nextMethod);
   editingPayment.value = false;
@@ -394,7 +470,25 @@ function handleAddressContextBlur() {
   void loadCheckoutPreview({ silent: true });
 }
 
+function persistGuestContactDraft() {
+  if (!isGuestCheckout.value) {
+    return;
+  }
+
+  persistCheckoutGuestContact({
+    customerName: customerName.value,
+    customerEmail: customerEmail.value,
+  });
+  invalidateAddressConfirmationIfNeeded();
+}
+
 function confirmAddressStep() {
+  if (!guestContactReady.value) {
+    ui.message = "Shkruaj emrin dhe email-in per te vazhduar si guest.";
+    ui.type = "error";
+    return;
+  }
+
   if (!addressReady.value) {
     ui.message = "Ploteso adresen dhe numrin e telefonit perpara se ta konfirmosh.";
     ui.type = "error";
@@ -441,6 +535,14 @@ async function continueToPayment() {
   ui.type = "";
 
   persistCheckoutAddressDraft(formState);
+  if (isGuestCheckout.value) {
+    persistCheckoutGuestContact({
+      customerName: customerName.value,
+      customerEmail: customerEmail.value,
+    });
+    await handleCheckoutAction();
+    return;
+  }
 
   if (!saveForLater.value) {
     await handleCheckoutAction();
@@ -489,6 +591,8 @@ async function submitCashOrder() {
     paymentMethod: "cash",
     deliveryMethod: selectedDeliveryMethod.value,
     promoCode: promoCode.value,
+    customerName: customerName.value,
+    customerEmail: customerEmail.value,
     ...formState,
   };
 
@@ -534,6 +638,8 @@ async function startStripeCheckout() {
     paymentMethod: "card-online",
     deliveryMethod: selectedDeliveryMethod.value,
     promoCode: promoCode.value,
+    customerName: customerName.value,
+    customerEmail: customerEmail.value,
     ...formState,
   };
 
@@ -561,6 +667,12 @@ async function startStripeCheckout() {
 async function handleCheckoutAction() {
   if (!canSubmitCheckout.value) {
     ui.message = "Ploteso adresen, zgjidh transportin dhe menyrën e pageses.";
+    ui.type = "error";
+    return;
+  }
+
+  if (isGuestCheckout.value && selectedMethod.value !== "cash") {
+    ui.message = "Guest checkout mund te vazhdoje me pagese ne dore.";
     ui.type = "error";
     return;
   }
@@ -621,6 +733,10 @@ function backToCart() {
         aria-live="polite"
       >
         {{ ui.message }}
+      </div>
+
+      <div v-if="isGuestCheckout" class="checkout-review__notice checkout-review__notice--guest">
+        Guest checkout: vendos email-in qe te marresh konfirmimin e porosise. Llogaria nuk eshte e detyrueshme.
       </div>
 
       <form class="checkout-review__layout" @submit.prevent="continueToPayment">
@@ -711,7 +827,7 @@ function backToCart() {
               <div class="checkout-review__editor-head">
                 <strong>Address details</strong>
                 <button
-                  v-if="savedAddress"
+                  v-if="savedAddress && !isGuestCheckout"
                   class="checkout-review__text-button"
                   type="button"
                   @click="applySavedAddress"
@@ -728,6 +844,18 @@ function backToCart() {
                     type="text"
                     placeholder="Your full name"
                     autocomplete="name"
+                    @blur="persistGuestContactDraft"
+                  >
+                </label>
+
+                <label v-if="isGuestCheckout" class="checkout-review__field">
+                  <span>Email</span>
+                  <input
+                    v-model="customerEmail"
+                    type="email"
+                    placeholder="you@example.com"
+                    autocomplete="email"
+                    @blur="persistGuestContactDraft"
                   >
                 </label>
 
@@ -783,7 +911,7 @@ function backToCart() {
               </div>
 
               <div class="checkout-review__editor-actions">
-                <label class="checkout-review__checkbox">
+                <label v-if="!isGuestCheckout" class="checkout-review__checkbox">
                   <input v-model="saveForLater" type="checkbox">
                   <span>Save this address for next time</span>
                 </label>
@@ -1037,6 +1165,12 @@ function backToCart() {
 .checkout-review__notice--success {
   border-color: #cae4d4;
   color: #2d7f4f;
+}
+
+.checkout-review__notice--guest {
+  border-color: #d8dde6;
+  background: #f8fafc;
+  color: #445060;
 }
 
 .checkout-review__layout {

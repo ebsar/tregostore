@@ -45,6 +45,8 @@ const signupForm = reactive({
   birthDate: "",
   gender: "",
   password: "",
+  marketingEmailsOptIn: false,
+  termsAccepted: false,
 });
 const forgotForm = reactive({
   email: "",
@@ -304,6 +306,13 @@ async function submitSignupForm() {
     return;
   }
 
+  if (!signupForm.termsAccepted) {
+    ui.message = "Please accept the Terms & Conditions to create your account.";
+    ui.type = "error";
+    ui.loading = false;
+    return;
+  }
+
   try {
     const { response, data } = await requestJson("/api/register", {
       method: "POST",
@@ -314,6 +323,8 @@ async function submitSignupForm() {
         birthDate: signupForm.birthDate,
         gender: signupForm.gender,
         password: signupForm.password,
+        marketingEmailsOptIn: signupForm.marketingEmailsOptIn,
+        termsAccepted: signupForm.termsAccepted,
       }),
     });
 
@@ -338,6 +349,8 @@ async function submitSignupForm() {
     signupForm.birthDate = "";
     signupForm.gender = "";
     signupForm.password = "";
+    signupForm.marketingEmailsOptIn = false;
+    signupForm.termsAccepted = false;
 
     emit("close");
     await router.push(data.redirectTo || getVerifyEmailUrl(submittedEmail));
@@ -646,6 +659,27 @@ async function openRoute(target) {
               </label>
             </div>
 
+            <div class="auth-panel__consents">
+              <label class="auth-panel__choice">
+                <input
+                  v-model="signupForm.marketingEmailsOptIn"
+                  name="marketingEmailsOptIn"
+                  type="checkbox"
+                >
+                <span>Send me emails with ads, offers, and promotions.</span>
+              </label>
+
+              <label class="auth-panel__choice">
+                <input
+                  v-model="signupForm.termsAccepted"
+                  name="termsAccepted"
+                  type="checkbox"
+                  required
+                >
+                <span>I accept the Terms & Conditions.</span>
+              </label>
+            </div>
+
             <button class="market-button market-button--primary" type="submit" :disabled="ui.loading">
               <span>{{ ui.loading ? "LOADING..." : "CREATE ACCOUNT" }}</span>
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -864,3 +898,27 @@ async function openRoute(target) {
     </template>
   </div>
 </template>
+
+<style scoped>
+.auth-panel__consents {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-panel__choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: #525252;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auth-panel__choice input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: #111111;
+}
+</style>

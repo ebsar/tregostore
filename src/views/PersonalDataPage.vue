@@ -9,8 +9,11 @@ import { appState, ensureSessionLoaded, markRouteReady, refreshSession } from ".
 
 const router = useRouter();
 const profileImageInput = ref(null);
+const avatarMenuRef = ref(null);
 const previewUrl = ref("");
 const fileName = ref("Nuk eshte zgjedhur asnje foto.");
+const avatarMenuOpen = ref(false);
+const avatarMarkedForRemoval = ref(false);
 const initialProfile = ref(null);
 const savedAddress = ref(createEmptyAddress());
 const formState = reactive({
@@ -41,6 +44,9 @@ const previewImage = computed(() => previewUrl.value || formState.profileImagePa
 const placeholderInitials = computed(() => getBusinessInitials(formState.fullName || formState.displayName || "User"));
 
 onMounted(async () => {
+  window.addEventListener("click", handleAvatarOutsideClick);
+  window.addEventListener("keydown", handleAvatarKeydown);
+
   try {
     const user = await ensureSessionLoaded();
     if (!user) {
@@ -56,6 +62,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("click", handleAvatarOutsideClick);
+  window.removeEventListener("keydown", handleAvatarKeydown);
+
   if (previewUrl.value) {
     URL.revokeObjectURL(previewUrl.value);
   }
@@ -95,6 +104,8 @@ function hydrateForm(user) {
     ...formState,
   };
   clearPickedFile();
+  avatarMarkedForRemoval.value = false;
+  avatarMenuOpen.value = false;
 }
 
 function clearPickedFile() {
@@ -106,6 +117,45 @@ function clearPickedFile() {
   if (profileImageInput.value) {
     profileImageInput.value.value = "";
   }
+}
+
+function toggleAvatarMenu() {
+  avatarMenuOpen.value = !avatarMenuOpen.value;
+}
+
+function closeAvatarMenu() {
+  avatarMenuOpen.value = false;
+}
+
+function handleAvatarOutsideClick(event) {
+  if (!avatarMenuOpen.value) {
+    return;
+  }
+
+  if (avatarMenuRef.value?.contains(event.target)) {
+    return;
+  }
+
+  closeAvatarMenu();
+}
+
+function handleAvatarKeydown(event) {
+  if (event.key === "Escape") {
+    closeAvatarMenu();
+  }
+}
+
+function openProfileImagePicker() {
+  closeAvatarMenu();
+  profileImageInput.value?.click();
+}
+
+function clearProfilePhoto() {
+  clearPickedFile();
+  formState.profileImagePath = "";
+  avatarMarkedForRemoval.value = true;
+  fileName.value = "Foto do te hiqet pas ruajtjes.";
+  closeAvatarMenu();
 }
 
 function handleImageChange(event) {
@@ -120,6 +170,8 @@ function handleImageChange(event) {
   }
   previewUrl.value = URL.createObjectURL(file);
   fileName.value = `Foto e zgjedhur: ${file.name}`;
+  avatarMarkedForRemoval.value = false;
+  closeAvatarMenu();
 }
 
 function cancelChanges() {
@@ -129,6 +181,8 @@ function cancelChanges() {
 
   Object.assign(formState, initialProfile.value);
   clearPickedFile();
+  avatarMarkedForRemoval.value = false;
+  closeAvatarMenu();
   ui.message = "";
   ui.type = "";
 }
@@ -137,7 +191,7 @@ async function handleSave() {
   ui.message = "";
   ui.type = "";
 
-  let profileImagePath = initialProfile.value?.profileImagePath || "";
+  let profileImagePath = avatarMarkedForRemoval.value ? "" : initialProfile.value?.profileImagePath || "";
   const selectedFile = profileImageInput.value?.files?.[0];
 
   if (selectedFile) {
@@ -253,55 +307,70 @@ async function handleDelete() {
         </div>
 
         <form class="account-form" @submit.prevent="handleSave">
-          <div class="account-avatar-field">
-            <div class="account-avatar-field__preview">
-              <img v-if="previewImage" :src="previewImage" alt="Profile preview">
-              <span v-else>{{ placeholderInitials }}</span>
-            </div>
-
-            <div class="account-avatar-field__controls">
-              <div class="account-card__copy">
-                <h2>Profile photo</h2>
-                <p>Upload a clear image so your dashboard and messages feel more personal.</p>
-              </div>
-              <div class="account-form__actions">
-                <label class="market-button market-button--secondary" for="settings-profile-image">
-                  Change photo
-                </label>
-                <button class="market-button market-button--ghost" type="button" @click="clearPickedFile">
-                  Clear
+          <div class="account-profile-head">
+            <div class="account-avatar-field">
+              <div ref="avatarMenuRef" class="account-avatar-field__shell">
+                <button
+                  class="account-avatar-field__preview-button"
+                  type="button"
+                  aria-label="Open profile photo menu"
+                  @click.stop="toggleAvatarMenu"
+                >
+                  <span class="account-avatar-field__preview">
+                    <img v-if="previewImage" :src="previewImage" alt="Profile preview">
+                    <span v-else>{{ placeholderInitials }}</span>
+                  </span>
                 </button>
-              </div>
-              <input
-                id="settings-profile-image"
-                ref="profileImageInput"
-                class="account-avatar-field__file"
-                name="profileImage"
-                type="file"
-                accept="image/*"
-                @change="handleImageChange"
-              >
-              <p class="account-avatar-field__hint">{{ fileName }}</p>
-            </div>
-          </div>
 
-          <div class="account-form__grid">
-            <div class="account-form__row">
+                <button
+                  class="account-avatar-field__menu-button"
+                  type="button"
+                  aria-label="Profile photo options"
+                  :aria-expanded="avatarMenuOpen"
+                  @click.stop="toggleAvatarMenu"
+                >
+                  <span aria-hidden="true"></span>
+                </button>
+
+                <div v-if="avatarMenuOpen" class="account-avatar-field__menu" role="menu">
+                  <button class="account-avatar-field__menu-item" type="button" role="menuitem" @click="openProfileImagePicker">
+                    Change photo
+                  </button>
+                  <button class="account-avatar-field__menu-item" type="button" role="menuitem" @click="clearProfilePhoto">
+                    Clear photo
+                  </button>
+                </div>
+
+                <input
+                  id="settings-profile-image"
+                  ref="profileImageInput"
+                  class="account-avatar-field__file"
+                  name="profileImage"
+                  type="file"
+                  accept="image/*"
+                  @change="handleImageChange"
+                >
+              </div>
+            </div>
+
+            <div class="account-profile-head__fields">
               <label>
                 <span>Display name</span>
                 <input v-model="formState.displayName" type="text" placeholder="Display name" required>
               </label>
 
               <label>
-                <span>Username</span>
-                <input v-model="formState.userName" type="text" readonly>
-              </label>
-            </div>
-
-            <div class="account-form__row">
-              <label>
                 <span>Full name</span>
                 <input v-model="formState.fullName" type="text" placeholder="Full name" required>
+              </label>
+            </div>
+          </div>
+
+          <div class="account-form__grid">
+            <div class="account-form__row">
+              <label>
+                <span>Username</span>
+                <input v-model="formState.userName" type="text" readonly>
               </label>
 
               <label>

@@ -281,9 +281,9 @@ watch([selectedSpotlight, selectedCategory], async () => {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
-        <section>
-          <button type="button" @click="openSearch">
+      <div class="trego-mobile-screen trego-home-screen">
+        <section class="trego-top-actions">
+          <button class="trego-search-button" type="button" @click="openSearch">
             <span>
               <strong>Kerko produkte dhe biznese</strong>
               <span>Katalogu, kategorite dhe ofertat aktive</span>
@@ -293,23 +293,23 @@ watch([selectedSpotlight, selectedCategory], async () => {
             </span>
           </button>
 
-          <div>
-            <button type="button" aria-label="Visual search" @click="openSearch">
+          <div class="trego-top-actions">
+            <button class="trego-icon-button" type="button" aria-label="Visual search" @click="openSearch">
               <span>
                 <IonIcon :icon="colorWandOutline" />
               </span>
             </button>
 
-            <button type="button" aria-label="Mesazhet" @click="openMessages">
-              <span v-if="homeMessageBadge">{{ homeMessageBadge }}</span>
+            <button class="trego-icon-button" type="button" aria-label="Mesazhet" @click="openMessages">
+              <span v-if="homeMessageBadge" class="trego-tab-shell__badge">{{ homeMessageBadge }}</span>
               <IonIcon :icon="chatbubbleEllipsesOutline" />
             </button>
           </div>
         </section>
 
-        <section>
+        <section class="trego-home-hero">
           <div>
-            <p>TREGIO mobile</p>
+            <p class="trego-kicker">TREGIO mobile</p>
             <h1>Me pak padding, me shume fokus te blerja.</h1>
             <p>
               {{
@@ -320,19 +320,18 @@ watch([selectedSpotlight, selectedCategory], async () => {
             </p>
           </div>
 
-          <div>
+          <div class="trego-stats-row">
             <article v-for="stat in heroStats" :key="stat.label">
               <strong>{{ stat.value }}</strong>
               <span>{{ stat.label }}</span>
             </article>
           </div>
 
-          <div>
+          <div class="trego-chip-row">
             <button
               v-for="option in spotlightOptions"
               :key="option.key"
-             
-             
+              :class="['trego-chip', { 'is-active': selectedSpotlight === option.key }]"
               type="button"
               @click="setSpotlight(option.key)"
             >
@@ -341,21 +340,20 @@ watch([selectedSpotlight, selectedCategory], async () => {
           </div>
         </section>
 
-        <section v-if="loading">
+        <section v-if="loading" class="trego-list-stack">
           <RailSkeleton title="For You" />
           <RailSkeleton title="Trending" />
           <RailSkeleton title="Sales" />
         </section>
 
-        <section v-else-if="railSections.length">
+        <section v-else-if="railSections.length" class="trego-list-stack">
           <article
             v-for="section in railSections"
             :key="section.key"
-           
-           
+            class="trego-rail-section"
           >
-            <div>
-              <button type="button" @click="setSpotlight(section.key)">
+            <div class="trego-rail-header">
+              <button class="trego-rail-title" type="button" @click="setSpotlight(section.key)">
                 <span>
                   <IonIcon :icon="section.icon" />
                 </span>
@@ -364,16 +362,16 @@ watch([selectedSpotlight, selectedCategory], async () => {
                   <h2>{{ section.subtitle }}</h2>
                 </span>
               </button>
-              <button type="button" @click="setSpotlight(section.key)">
+              <button class="trego-icon-button" type="button" @click="setSpotlight(section.key)">
                 <IonIcon :icon="arrowForwardOutline" />
               </button>
             </div>
 
-            <div>
+            <div class="trego-product-rail">
               <div
                 v-for="product in section.products"
                 :key="`${section.key}-${product.id}`"
-               
+                class="trego-product-rail__item"
               >
                 <ProductCardMobile
                   :product="product"
@@ -387,14 +385,13 @@ watch([selectedSpotlight, selectedCategory], async () => {
           </article>
         </section>
 
-        <section v-if="categories.length > 1">
+        <section v-if="categories.length > 1" class="trego-filter-row">
           <span />
-          <div>
+          <div class="trego-chip-row">
             <button
               v-for="category in categories"
               :key="category"
-             
-             
+              :class="['trego-chip', { 'is-active': selectedCategory === category }]"
               type="button"
               @click="selectedCategory = category"
             >
@@ -405,11 +402,11 @@ watch([selectedSpotlight, selectedCategory], async () => {
         </section>
 
         <section>
-          <div>
+          <div class="trego-section-toolbar">
             <span>Te gjitha</span>
             <button
               v-if="selectedSpotlight !== 'all' || selectedCategory !== 'all'"
-             
+              class="trego-reset-button"
               type="button"
               @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
             >
@@ -417,11 +414,11 @@ watch([selectedSpotlight, selectedCategory], async () => {
             </button>
           </div>
 
-          <div v-if="loading">
+          <div v-if="loading" class="trego-product-grid">
             <ProductCardSkeleton v-for="index in 6" :key="index" />
           </div>
 
-          <div v-else-if="filteredProducts.length">
+          <div v-else-if="filteredProducts.length" class="trego-product-grid">
             <ProductCardMobile
               v-for="product in filteredProducts"
               :key="product.id"
@@ -453,4 +450,3 @@ watch([selectedSpotlight, selectedCategory], async () => {
     </IonContent>
   </IonPage>
 </template>
-

@@ -82,13 +82,13 @@ const segments = computed(() => {
 <style scoped>
 .dashboard-donut-chart {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .dashboard-donut-chart__visual {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: 116px;
+  height: 116px;
 }
 
 svg {
@@ -100,7 +100,7 @@ svg {
 .dashboard-donut-chart__track,
 .dashboard-donut-chart__segment {
   fill: none;
-  stroke-width: 12;
+  stroke-width: 10;
 }
 
 .dashboard-donut-chart__track {
@@ -121,7 +121,7 @@ svg {
 
 .dashboard-donut-chart__center strong {
   color: #111111;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
 }
@@ -129,25 +129,25 @@ svg {
 .dashboard-donut-chart__center span,
 .dashboard-donut-chart__legend-item span {
   color: #808080;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .dashboard-donut-chart__legend {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard-donut-chart__legend-item {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard-donut-chart__legend-item strong {
   color: #111111;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 

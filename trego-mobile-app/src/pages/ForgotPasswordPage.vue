@@ -51,7 +51,7 @@ async function submit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div>
+      <div class="trego-mobile-screen">
         <section>
           <div>
             <AppBackButton back-to="/login" />
@@ -77,4 +77,3 @@ async function submit() {
     </IonContent>
   </IonPage>
 </template>
-

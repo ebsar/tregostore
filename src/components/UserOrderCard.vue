@@ -28,10 +28,12 @@ const props = defineProps({
 
 const emit = defineEmits(["request-return"]);
 
+const orderItems = computed(() => (Array.isArray(props.order?.items) ? props.order.items : []));
+
 const vendorGroups = computed(() => {
   const groupedItems = new Map();
 
-  (Array.isArray(props.order?.items) ? props.order.items : []).forEach((item, index) => {
+  orderItems.value.forEach((item, index) => {
     const businessName = String(item?.businessName || "").trim() || "Marketplace seller";
     const key = `${businessName.toLowerCase()}-${index}`;
     const existingEntry = Array.from(groupedItems.values()).find((entry) => entry.businessName === businessName);
@@ -52,13 +54,73 @@ const vendorGroups = computed(() => {
   return Array.from(groupedItems.values());
 });
 
-function timelineFor(item) {
-  return buildFulfillmentTimeline(item);
-}
+const orderProductCount = computed(() => {
+  const explicitTotal = Number(props.order?.totalItems);
+  if (Number.isFinite(explicitTotal) && explicitTotal > 0) {
+    return explicitTotal;
+  }
 
-function terminalEventFor(item) {
-  return getFulfillmentTerminalEvent(item);
-}
+  return orderItems.value.reduce((total, item) => total + Math.max(1, Number(item?.quantity) || 1), 0);
+});
+
+const productsLabel = computed(() => `${orderProductCount.value} item${orderProductCount.value === 1 ? "" : "s"}`);
+
+const sellersLabel = computed(() => {
+  const totalSellers = vendorGroups.value.length;
+  return `${totalSellers} seller${totalSellers === 1 ? "" : "s"}`;
+});
+
+const orderStatusValue = computed(() => props.order?.fulfillmentStatus || props.order?.status || orderItems.value[0]?.fulfillmentStatus || "pending_confirmation");
+
+const orderStatusSourceItem = computed(() => {
+  const normalizedOrderStatus = String(orderStatusValue.value || "").trim().toLowerCase();
+
+  return (
+    orderItems.value.find((item) => String(item?.fulfillmentStatus || "").trim().toLowerCase() === normalizedOrderStatus)
+    || orderItems.value.find((item) => item?.trackingCode || item?.trackingUrl || item?.shippedAt || item?.deliveredAt)
+    || orderItems.value[0]
+    || {}
+  );
+});
+
+const orderFulfillmentSnapshot = computed(() => {
+  const sourceItem = orderStatusSourceItem.value || {};
+
+  return {
+    ...sourceItem,
+    status: orderStatusValue.value,
+    fulfillmentStatus: orderStatusValue.value,
+    confirmationDueAt: props.order?.confirmationDueAt || sourceItem.confirmationDueAt,
+    confirmedAt: props.order?.confirmedAt || sourceItem.confirmedAt || props.order?.createdAt,
+    createdAt: props.order?.createdAt || sourceItem.createdAt,
+    shippedAt: props.order?.shippedAt || sourceItem.shippedAt,
+    deliveredAt: props.order?.deliveredAt || sourceItem.deliveredAt,
+    cancelledAt: props.order?.cancelledAt || sourceItem.cancelledAt,
+  };
+});
+
+const orderTimeline = computed(() => buildFulfillmentTimeline(orderFulfillmentSnapshot.value));
+
+const orderTerminalEvent = computed(() => getFulfillmentTerminalEvent(orderFulfillmentSnapshot.value));
+
+const trackingItems = computed(() => orderItems.value.filter((item) => item?.trackingCode || item?.trackingUrl));
+
+const primaryTrackingItem = computed(() => trackingItems.value[0] || null);
+
+const returnableItems = computed(() => orderItems.value.filter((item) => (
+  String(item?.fulfillmentStatus || "").trim().toLowerCase() === "delivered"
+  && !item?.returnRequestStatus
+)));
+
+const returnedItems = computed(() => orderItems.value.filter((item) => item?.returnRequestStatus));
+
+const refundNoticeItems = computed(() => orderItems.value
+  .map((item) => ({
+    id: item?.id,
+    title: item?.title || "Product",
+    notice: getAutomaticRefundNotice(item),
+  }))
+  .filter((item) => item.notice));
 </script>
 
 <template>
@@ -66,12 +128,12 @@ function terminalEventFor(item) {
     <header class="user-order-card__header">
       <div class="user-order-card__header-copy">
         <p>Order #{{ order.id || "-" }}</p>
-        <h2>{{ formatFulfillmentStatusLabel(order.fulfillmentStatus || order.status) }}</h2>
+        <h2>{{ formatFulfillmentStatusLabel(orderStatusValue) }}</h2>
         <span
-          v-if="formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status)"
+          v-if="formatOrderStatusBadgeLabel(orderStatusValue)"
           class="dashboard-badge dashboard-badge--warning"
         >
-          {{ formatOrderStatusBadgeLabel(order.fulfillmentStatus || order.status) }}
+          {{ formatOrderStatusBadgeLabel(orderStatusValue) }}
         </span>
       </div>
 
@@ -84,7 +146,7 @@ function terminalEventFor(item) {
     <div class="user-order-card__summary">
       <div class="user-order-card__summary-item">
         <span>Items</span>
-        <strong>{{ order.totalItems || 0 }}</strong>
+        <strong>{{ orderProductCount }}</strong>
       </div>
       <div class="user-order-card__summary-item">
         <span>Shipping</span>
@@ -102,89 +164,112 @@ function terminalEventFor(item) {
 
     <div class="user-order-card__body">
       <div class="user-order-card__items">
-        <article
-          v-for="vendor in vendorGroups"
-          :key="vendor.key"
-          class="user-order-card__vendor"
-        >
-          <header class="user-order-card__vendor-header">
+        <section class="user-order-card__products">
+          <header class="user-order-card__products-head">
             <div>
-              <p>Seller</p>
-              <h3>{{ vendor.businessName }}</h3>
+              <p>Products</p>
+              <h3>{{ productsLabel }}</h3>
             </div>
-            <strong>{{ formatPrice(vendor.total) }}</strong>
+            <strong>{{ sellersLabel }}</strong>
           </header>
 
-          <div class="user-order-card__vendor-items">
+          <div
+            v-if="orderItems.length"
+            class="user-order-card__product-slider"
+            tabindex="0"
+            aria-label="Products in this order"
+          >
             <div
-              v-for="item in vendor.items"
-              :key="item.id"
-              class="user-order-card__vendor-item"
+              v-for="(item, index) in orderItems"
+              :key="item.id || `${item.title || 'product'}-${index}`"
+              class="user-order-card__product-slide"
             >
-              <OrderItemCard :item="item" :show-business-name="false" />
-
-              <div class="user-order-card__timeline" aria-label="Order timeline">
-                <div
-                  v-for="step in timelineFor(item)"
-                  :key="`${item.id}-${step.key}`"
-                  class="user-order-card__timeline-step"
-                >
-                  <span></span>
-                  <span>
-                    <strong>{{ step.label }}</strong>
-                    <span v-if="step.meta">{{ step.meta }}</span>
-                  </span>
-                </div>
-              </div>
-
-              <div
-                v-if="terminalEventFor(item)"
-                class="user-order-card__terminal"
-              >
-                <strong>{{ terminalEventFor(item).label }}</strong>
-                <span v-if="terminalEventFor(item).meta">{{ terminalEventFor(item).meta }}</span>
-              </div>
-
-              <div class="user-order-card__facts">
-                <span class="user-order-card__fact">
-                  <span>Status</span>
-                  <strong>{{ formatFulfillmentStatusLabel(item.fulfillmentStatus) }}</strong>
-                </span>
-                <span v-if="item.trackingCode" class="user-order-card__fact">
-                  <span>Tracking</span>
-                  <strong>{{ item.trackingCode }}</strong>
-                </span>
-                <a
-                  v-if="item.trackingUrl"
-                  class="market-button market-button--ghost"
-                  :href="item.trackingUrl"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Track shipment
-                </a>
-                <button
-                  v-if="item.fulfillmentStatus === 'delivered' && !item.returnRequestStatus"
-                  class="market-button market-button--secondary"
-                  type="button"
-                  :disabled="busyOrderItemId === Number(item.id)"
-                  @click="emit('request-return', item)"
-                >
-                  {{ busyOrderItemId === Number(item.id) ? "Sending..." : "Request return" }}
-                </button>
-                <span v-else-if="item.returnRequestStatus" class="user-order-card__fact">
-                  <span>Return</span>
-                  <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
-                </span>
-              </div>
-
-              <div v-if="getAutomaticRefundNotice(item)" class="user-order-card__refund-note">
-                <strong>Automatic refund</strong>
-                <span>{{ getAutomaticRefundNotice(item) }}</span>
-              </div>
+              <OrderItemCard :item="item" />
             </div>
           </div>
-        </article>
+
+          <p v-else class="dashboard-note">No products found for this order.</p>
+        </section>
+
+        <section class="user-order-card__order-status">
+          <header class="user-order-card__order-status-head">
+            <div>
+              <p>Order status</p>
+              <h3>{{ formatFulfillmentStatusLabel(orderStatusValue) }}</h3>
+            </div>
+            <strong>{{ formatOrderStatusBadgeLabel(orderStatusValue) || "Active" }}</strong>
+          </header>
+
+          <div class="user-order-card__timeline" aria-label="Order timeline">
+            <div
+              v-for="step in orderTimeline"
+              :key="`order-${order.id || 'active'}-${step.key}`"
+              class="user-order-card__timeline-step"
+            >
+              <span></span>
+              <span>
+                <strong>{{ step.label }}</strong>
+                <span v-if="step.meta">{{ step.meta }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="orderTerminalEvent"
+            class="user-order-card__terminal"
+          >
+            <strong>{{ orderTerminalEvent.label }}</strong>
+            <span v-if="orderTerminalEvent.meta">{{ orderTerminalEvent.meta }}</span>
+          </div>
+
+          <div class="user-order-card__facts">
+            <span class="user-order-card__fact">
+              <span>Status</span>
+              <strong>{{ formatFulfillmentStatusLabel(orderStatusValue) }}</strong>
+            </span>
+            <span v-if="primaryTrackingItem" class="user-order-card__fact">
+              <span>Tracking</span>
+              <strong>{{ primaryTrackingItem.trackingCode || "Available" }}</strong>
+              <a
+                v-if="primaryTrackingItem.trackingUrl"
+                class="user-order-card__fact-link"
+                :href="primaryTrackingItem.trackingUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Track shipment
+              </a>
+              <span v-if="trackingItems.length > 1">{{ trackingItems.length }} tracking numbers</span>
+            </span>
+            <button
+              v-for="item in returnableItems"
+              :key="`return-${item.id}`"
+              class="market-button market-button--secondary"
+              type="button"
+              :disabled="busyOrderItemId === Number(item.id)"
+              @click="emit('request-return', item)"
+            >
+              {{ busyOrderItemId === Number(item.id) ? "Sending..." : `Return ${item.title || "item"}` }}
+            </button>
+            <span
+              v-for="item in returnedItems"
+              :key="`returned-${item.id}`"
+              class="user-order-card__fact"
+            >
+              <span>Return: {{ item.title || "Product" }}</span>
+              <strong>{{ formatReturnRequestStatusLabel(item.returnRequestStatus) }}</strong>
+            </span>
+          </div>
+
+          <div
+            v-for="item in refundNoticeItems"
+            :key="`refund-${item.id}`"
+            class="user-order-card__refund-note"
+          >
+            <strong>Automatic refund: {{ item.title }}</strong>
+            <span>{{ item.notice }}</span>
+          </div>
+        </section>
       </div>
 
       <aside class="user-order-card__aside">
