@@ -1,6 +1,7 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
+import { useQuery } from "@tanstack/vue-query";
 import MarketSectionTitle from "../components/MarketSectionTitle.vue";
 import HomeProductCard from "../components/HomeProductCard.vue";
 import SplitProductHero from "../components/SplitProductHero.vue";
@@ -11,6 +12,7 @@ import {
   requestJson,
   resolveApiMessage,
 } from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 import { PRODUCT_PAGE_SECTION_OPTIONS, deriveSectionFromCategory } from "../lib/product-catalog";
 import { getProductsPageSize, subscribeProductsPageSize } from "../lib/product-pagination";
 import { readRecentlyViewedProducts } from "../lib/recently-viewed";
@@ -1509,7 +1511,6 @@ async function handleWishlist(productId) {
       detail: { message: "Artikulli eshte shtuar ne wishlist." },
     }));
   }
-  void loadHomeRecommendations();
 }
 
 async function handleCart(productId) {
@@ -1871,6 +1872,20 @@ async function handleCart(productId) {
 }
 
 @media (max-width: 400px) {
+  .home-product-grid {
+    column-gap: 10px;
+    row-gap: 14px;
+  }
+}
+
+@media (max-width: 340px) {
+  .home-product-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+</style>
+dth: 400px) {
   .home-product-grid {
     column-gap: 10px;
     row-gap: 14px;

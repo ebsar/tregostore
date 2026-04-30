@@ -1,10 +1,12 @@
-import { reactive } from "vue";
+import { reactive, watch } from "vue";
 import {
   APP_LOADER_MIN_DURATION_MS,
   calculateCartItemsCount,
   clearTrackedOrderLookup,
   consumeLoginGreeting,
 } from "../lib/app-session";
+import { queryClient } from "../lib/query-client";
+import { queryKeys } from "../lib/query-keys";
 
 export const appState = reactive({
   user: null,
@@ -18,21 +20,16 @@ export const appState = reactive({
 
 let routeLoaderToken = 0;
 let greetingTimeoutId = 0;
-let sessionLoadPromise = null;
-let cartWarmupPromise = null;
-let sessionLoadRequestId = 0;
-let sessionEnrichmentRequestId = 0;
 const AUTH_INVALIDATION_LISTENER_KEY = "__tregioAuthInvalidationListenerBound__";
 const AUTH_INVALIDATION_EVENT_NAME = "tregio:auth-invalidated";
 
 function clearActiveSessionState({ clearTracking = false } = {}) {
   appState.user = null;
   appState.sessionLoaded = true;
-  setCartCount(0);
-  sessionLoadPromise = null;
-  cartWarmupPromise = null;
-  sessionLoadRequestId += 1;
-  sessionEnrichmentRequestId += 1;
+  appState.cartCount = 0;
+  
+  // Clear TanStack Query Cache
+  queryClient.clear();
 
   if (clearTracking) {
     clearTrackedOrderLookup();
@@ -88,32 +85,20 @@ export function setCartItems(items = []) {
   setCartCount(calculateCartItemsCount(items));
 }
 
-async function warmCartForActiveSession(user) {
-  if (!user || user.role !== "client") {
-    setCartCount(0);
-    return;
-  }
-
-  if (cartWarmupPromise) {
-    return cartWarmupPromise;
-  }
-
-  const nextCartWarmupPromise = (async () => {
-    const { fetchProtectedCollection } = await import("../lib/api");
-    const cartItems = await fetchProtectedCollection("/api/cart");
-    setCartItems(cartItems);
-  })();
-
-  cartWarmupPromise = nextCartWarmupPromise;
-
-  try {
-    await nextCartWarmupPromise;
-  } finally {
-    if (cartWarmupPromise === nextCartWarmupPromise) {
-      cartWarmupPromise = null;
+// Subscribe to Cart query to sync cartCount
+queryClient.getQueryCache().subscribe((event) => {
+  if (
+    event?.query?.queryKey?.[0] === "cart" &&
+    (event.type === "updated" || event.type === "removed")
+  ) {
+    const cartData = queryClient.getQueryData(queryKeys.cart.main());
+    if (Array.isArray(cartData)) {
+      setCartItems(cartData);
+    } else if (cartData === null || cartData === undefined) {
+      setCartCount(0);
     }
   }
-}
+});
 
 export function bumpCatalogRevision() {
   appState.catalogRevision += 1;
@@ -138,13 +123,18 @@ async function fetchBusinessSessionData() {
   }
 }
 
-async function enrichBusinessUserSessionInBackground(user, requestId) {
+async function enrichBusinessUserSessionInBackground(user) {
   if (!user || user.role !== "business") {
     return;
   }
 
-  const businessSessionData = await fetchBusinessSessionData();
-  if (!businessSessionData || requestId !== sessionEnrichmentRequestId) {
+  const businessSessionData = await queryClient.fetchQuery({
+    queryKey: queryKeys.user.profile(),
+    queryFn: fetchBusinessSessionData,
+    staleTime: Infinity,
+  });
+
+  if (!businessSessionData) {
     return;
   }
 
@@ -158,10 +148,7 @@ async function enrichBusinessUserSessionInBackground(user, requestId) {
   };
 }
 
-function setAuthenticatedUser(user) {
-  sessionEnrichmentRequestId += 1;
-  const enrichmentRequestId = sessionEnrichmentRequestId;
-
+async function setAuthenticatedUser(user) {
   if (!user) {
     appState.user = null;
     appState.sessionLoaded = true;
@@ -171,12 +158,20 @@ function setAuthenticatedUser(user) {
 
   appState.user = user;
   appState.sessionLoaded = true;
-  void warmCartForActiveSession(user).catch((error) => {
-    console.error(error);
-  });
+
+  // Prefetch cart
+  if (user.role === "client") {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.cart.main(),
+      queryFn: async () => {
+        const { fetchProtectedCollection } = await import("../lib/api");
+        return fetchProtectedCollection("/api/cart");
+      },
+    });
+  }
 
   if (user.role === "business") {
-    void enrichBusinessUserSessionInBackground(user, enrichmentRequestId).catch((error) => {
+    void enrichBusinessUserSessionInBackground(user).catch((error) => {
       console.error(error);
     });
   }
@@ -189,44 +184,27 @@ export async function applyAuthenticatedSession(user) {
 }
 
 export async function ensureSessionLoaded(options = {}) {
-  const { force = false, preserveAuthenticatedUser = false } = options;
+  const { force = false } = options;
+  
   if (appState.sessionLoaded && !force) {
     return appState.user;
   }
 
-  if (sessionLoadPromise && !force) {
-    return sessionLoadPromise;
-  }
-
-  const nextSessionLoadPromise = (async () => {
-    const requestId = ++sessionLoadRequestId;
-    const { fetchCurrentUserSession } = await import("../lib/api");
-    const currentSession = await fetchCurrentUserSession();
-    if (requestId !== sessionLoadRequestId) {
-      return appState.user;
-    }
-
-    if (currentSession.status === "unreachable") {
-      if (preserveAuthenticatedUser && appState.user) {
-        appState.sessionLoaded = true;
-        return appState.user;
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.user.session(),
+    queryFn: async () => {
+      const { fetchCurrentUserSession } = await import("../lib/api");
+      const currentSession = await fetchCurrentUserSession();
+      
+      if (currentSession.status === "unreachable") {
+         appState.sessionLoaded = true;
+         return appState.user;
       }
 
-      return setAuthenticatedUser(null);
-    }
-
-    return setAuthenticatedUser(currentSession.user);
-  })();
-
-  sessionLoadPromise = nextSessionLoadPromise;
-
-  try {
-    return await nextSessionLoadPromise;
-  } finally {
-    if (sessionLoadPromise === nextSessionLoadPromise) {
-      sessionLoadPromise = null;
-    }
-  }
+      return setAuthenticatedUser(currentSession.user);
+    },
+    staleTime: force ? 0 : Infinity,
+  });
 }
 
 export async function refreshSession() {

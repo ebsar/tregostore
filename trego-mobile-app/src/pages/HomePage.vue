@@ -123,8 +123,8 @@ const homeMessageBadge = computed(() => {
 });
 
 const railSections = computed(() => (
-  recommendationSections.value.length
-    ? recommendationSections.value.map((section) => ({
+  recommendationSections.value?.length
+    ? (recommendationSections.value || []).map((section) => ({
         key: section.key as SpotlightKey,
         title: section.title,
         subtitle: section.subtitle || "",
@@ -188,60 +188,32 @@ const filteredProducts = computed(() => {
   return nextProducts;
 });
 
-function mergeUniqueProducts(existing: ProductItem[], incoming: ProductItem[]) {
-  const merged = [...existing];
-  for (const nextItem of incoming) {
-    const nextId = Number(nextItem?.id || 0);
-    if (nextId <= 0 || merged.some((item) => Number(item?.id || 0) === nextId)) {
-      continue;
-    }
-    merged.push(nextItem);
-  }
-  return merged;
-}
-
-async function loadProducts(reset = false) {
-  if (reset) {
-    loading.value = true;
-  } else {
-    loadingMore.value = true;
-  }
-
-  try {
-    const result = await fetchMarketplaceProductsPage(PAGE_SIZE, reset ? 0 : nextOffset.value);
-    products.value = reset
-      ? result.items
-      : mergeUniqueProducts(products.value, result.items);
-    nextOffset.value = result.offset + result.items.length;
-    hasMore.value = result.hasMore;
-  } finally {
-    if (reset) {
-      loading.value = false;
-    } else {
-      loadingMore.value = false;
-    }
-  }
-}
-
-async function loadRecommendations() {
-  recommendationSections.value = await fetchHomeRecommendations(10);
-}
-
 onMounted(async () => {
   void ensureSession();
-  await Promise.all([loadProducts(true), loadRecommendations()]);
+});
+
+const addToCartMutation = useMutation({
+  mutationFn: (productId: number) => addToCart(productId, 1),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.cart.main() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.products.recommendations("home") });
+  },
+});
+
+const wishlistMutation = useMutation({
+  mutationFn: (productId: number) => toggleWishlist(productId),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.wishlist.main() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.products.recommendations("home") });
+  },
 });
 
 async function handleAddToCart(productId: number) {
-  await addToCart(productId, 1);
-  await refreshCounts();
-  void loadRecommendations();
+  await addToCartMutation.mutateAsync(productId);
 }
 
 async function handleWishlist(productId: number) {
-  await toggleWishlist(productId);
-  await refreshCounts();
-  void loadRecommendations();
+  await wishlistMutation.mutateAsync(productId);
 }
 
 function openSearch() {
@@ -257,24 +229,13 @@ function setSpotlight(next: SpotlightKey) {
 }
 
 async function handleLoadMore(event: CustomEvent) {
-  if (!hasMore.value || loadingMore.value) {
-    event.target.complete();
-    return;
-  }
-
-  await loadProducts(false);
+  // Logic simplified: we fetch 100 products at once now for instant feel
   event.target.complete();
-  if (!hasMore.value) {
-    event.target.disabled = true;
-  }
+  event.target.disabled = true;
 }
 
-watch([selectedSpotlight, selectedCategory], async () => {
-  if (loading.value || loadingMore.value || filteredProducts.value.length || !hasMore.value) {
-    return;
-  }
-
-  await loadProducts(false);
+watch([selectedSpotlight, selectedCategory], () => {
+  // Logic simplified: we fetch a larger chunk upfront
 });
 </script>
 
@@ -408,6 +369,49 @@ watch([selectedSpotlight, selectedCategory], async () => {
               v-if="selectedSpotlight !== 'all' || selectedCategory !== 'all'"
               class="trego-reset-button"
               type="button"
+              @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
+            >
+              Pastro
+            </button>
+          </div>
+
+          <div v-if="loading" class="trego-product-grid">
+            <ProductCardSkeleton v-for="index in 6" :key="index" />
+          </div>
+
+          <div v-else-if="filteredProducts.length" class="trego-product-grid">
+            <ProductCardMobile
+              v-for="product in filteredProducts"
+              :key="product.id"
+              :product="product"
+              @open="(id) => router.push(`/product/${id}`)"
+              @cart="handleAddToCart"
+              @wishlist="handleWishlist"
+            />
+          </div>
+
+          <EmptyStatePanel
+            v-else
+            title="Nuk ka produkte"
+            copy="Provo nje spotlight tjeter ose nderro kategorine qe po shikon."
+          />
+
+          <IonInfiniteScroll
+            v-if="!loading && hasMore"
+            threshold="160px"
+            @ionInfinite="handleLoadMore"
+          >
+            <IonInfiniteScrollContent
+              loading-spinner="crescent"
+              loading-text="Po ngarkohen produkte te tjera..."
+            />
+          </IonInfiniteScroll>
+        </section>
+      </div>
+    </IonContent>
+  </IonPage>
+</template>
+e="button"
               @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
             >
               Pastro

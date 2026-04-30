@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import { IonButton, IonContent, IonIcon, IonPage, IonSpinner } from "@ionic/vue";
 import { arrowForwardOutline, heartOutline, trashOutline } from "ionicons/icons";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { useQuery, useMutation } from "@tanstack/vue-query";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
 import { persistCheckoutSelectedCartIds } from "../lib/checkout";
 import { fetchCart, removeFromCart } from "../lib/api";
 import { formatPrice, getProductImage } from "../lib/format";
+import { queryKeys } from "../lib/query-keys";
+import { queryClient } from "../lib/query-client";
 import type { CartItem } from "../types/models";
-import { ensureSession, refreshCounts, sessionState } from "../stores/session";
+import { ensureSession, sessionState } from "../stores/session";
 
 const router = useRouter();
-const items = ref<CartItem[]>([]);
+
+const { data: itemsData, isLoading } = useQuery({
+  queryKey: queryKeys.cart.main(),
+  queryFn: fetchCart,
+  enabled: computed(() => !!sessionState.user),
+  staleTime: Infinity,
+});
+
+const items = computed(() => itemsData.value || []);
 
 const subtotal = computed(() =>
   items.value.reduce(
@@ -21,16 +32,18 @@ const subtotal = computed(() =>
 );
 
 onMounted(async () => {
-  await ensureSession();
-  if (sessionState.user) {
-    items.value = await fetchCart();
-  }
+  void ensureSession();
+});
+
+const removeMutation = useMutation({
+  mutationFn: (cartLineId: number) => removeFromCart(cartLineId),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.cart.main() });
+  },
 });
 
 async function handleRemove(cartLineId: number) {
-  await removeFromCart(cartLineId);
-  items.value = await fetchCart();
-  await refreshCounts();
+  await removeMutation.mutateAsync(cartLineId);
 }
 
 function handleCheckout() {

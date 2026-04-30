@@ -54,7 +54,6 @@ function createPaginatedResult<T>(
   };
 }
 
-const GET_REQUEST_CACHE = new Map<string, { expiresAt: number; response: ResponseMeta; data: any }>();
 const INFLIGHT_GET_REQUESTS = new Map<string, Promise<JsonResult<any>>>();
 const VISITOR_TOKEN_STORAGE_KEY = "trego-mobile-visitor-token";
 const REQUEST_TIMEOUT_MS = 15000;
@@ -123,10 +122,8 @@ export async function requestJson<T = any>(
   const config: RequestInit = { ...options };
   const headers = new Headers(options.headers || {});
   const method = normalizeMethod(config);
-  const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
   const cacheKey = runtime.cacheKey || `${method}:${path}`;
-  const canUseCache = method === "GET" && cacheTtlMs > 0 && !config.body;
-  const staleCache = canUseCache ? GET_REQUEST_CACHE.get(cacheKey) : null;
+  const canDedupeGet = method === "GET" && !config.body;
 
   if (config.body && !(config.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -139,15 +136,7 @@ export async function requestJson<T = any>(
 
   config.headers = headers;
 
-  if (canUseCache) {
-    const cached = GET_REQUEST_CACHE.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return {
-        response: { ...cached.response },
-        data: cloneJsonData(cached.data),
-      };
-    }
-
+  if (canDedupeGet) {
     const inflight = INFLIGHT_GET_REQUESTS.get(cacheKey);
     if (inflight) {
       const result = await inflight;
@@ -234,42 +223,26 @@ export async function requestJson<T = any>(
       }
     }
 
-    if (!response?.ok && staleCache) {
-      return {
-        response: { ...staleCache.response },
-        data: cloneJsonData(staleCache.data),
-      };
-    }
-
     const result = {
       response: createResponseMeta(response),
       data,
     };
 
-    if (canUseCache && result.response.ok) {
-      GET_REQUEST_CACHE.set(cacheKey, {
-        expiresAt: Date.now() + cacheTtlMs,
-        response: result.response,
-        data: cloneJsonData(result.data),
-      });
-    }
-
     if (method !== "GET" && result.response.ok) {
-      GET_REQUEST_CACHE.clear();
       INFLIGHT_GET_REQUESTS.clear();
     }
 
     return result;
   })();
 
-  if (canUseCache) {
+  if (canDedupeGet) {
     INFLIGHT_GET_REQUESTS.set(cacheKey, pendingRequest);
   }
 
   try {
     return await pendingRequest;
   } finally {
-    if (canUseCache) {
+    if (canDedupeGet) {
       INFLIGHT_GET_REQUESTS.delete(cacheKey);
     }
   }

@@ -2,9 +2,11 @@ import { createApp } from "vue";
 import { IonicVue } from "@ionic/vue";
 import { Capacitor } from "@capacitor/core";
 import { StatusBar } from "@capacitor/status-bar";
+import { VueQueryPlugin } from "@tanstack/vue-query";
 import App from "./App.vue";
 import router from "./router";
 import { initTheme } from "./composables/useTheme";
+import { queryClient } from "./lib/query-client";
 import "./theme/tregio-mobile-system.css";
 
 async function setupNativeChrome() {

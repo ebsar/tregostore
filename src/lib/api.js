@@ -1,4 +1,3 @@
-const GET_REQUEST_CACHE = new Map();
 const INFLIGHT_GET_REQUESTS = new Map();
 const VISITOR_TOKEN_STORAGE_KEY = "trego-visitor-token";
 const DEBUG_SESSION_TOKEN_STORAGE_KEY = "tregio-debug-session-token";
@@ -7,7 +6,6 @@ const MIN_REQUEST_TIMEOUT_MS = 1200;
 const DEFAULT_GET_TIMEOUT_MS = 12000;
 const DEFAULT_MUTATION_TIMEOUT_MS = 15000;
 const DEFAULT_RETRY_TIMEOUT_MS = 12000;
-const DEFAULT_STALE_IF_ERROR_MS = 5 * 60 * 1000;
 const AUTH_INVALIDATION_EXCLUDED_PATHS = new Set([
   "/api/login",
   "/api/signup",
@@ -71,11 +69,6 @@ function normalizeMethod(options = {}) {
   return String(options.method || "GET").trim().toUpperCase();
 }
 
-function invalidateRequestCache() {
-  GET_REQUEST_CACHE.clear();
-  INFLIGHT_GET_REQUESTS.clear();
-}
-
 function getRequestPathname(url) {
   const rawUrl = String(url || "").trim();
   if (!rawUrl) {
@@ -103,7 +96,7 @@ function maybeDispatchAuthInvalidation(url, method, response) {
   }
 
   clearDebugSessionToken();
-  invalidateRequestCache();
+  INFLIGHT_GET_REQUESTS.clear();
 
   if (typeof window === "undefined") {
     return;
@@ -177,8 +170,6 @@ export async function requestJson(url, options = {}, runtime = {}) {
     config.credentials = "same-origin";
   }
   const method = normalizeMethod(config);
-  const cacheTtlMs = Math.max(0, Number(runtime.cacheTtlMs || 0));
-  const staleIfErrorMs = Math.max(0, Number(runtime.staleIfErrorMs ?? DEFAULT_STALE_IF_ERROR_MS));
   const allowRetry = runtime.allowRetry !== false;
   const timeoutMs = Math.max(
     MIN_REQUEST_TIMEOUT_MS,
@@ -193,7 +184,6 @@ export async function requestJson(url, options = {}, runtime = {}) {
   );
   const cacheKey = runtime.cacheKey || `${method}:${url}`;
   const canDedupeGet = method === "GET" && !config.body;
-  const canUseCache = canDedupeGet && cacheTtlMs > 0;
 
   if (
     config.body &&
@@ -214,19 +204,6 @@ export async function requestJson(url, options = {}, runtime = {}) {
   }
 
   if (canDedupeGet) {
-    if (canUseCache) {
-      const cachedEntry = GET_REQUEST_CACHE.get(cacheKey);
-      if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
-        return {
-          response: { ...cachedEntry.response },
-          data: cloneJsonPayload(cachedEntry.data),
-        };
-      }
-      if (cachedEntry && cachedEntry.expiresAt + staleIfErrorMs <= Date.now()) {
-        GET_REQUEST_CACHE.delete(cacheKey);
-      }
-    }
-
     const inflightRequest = INFLIGHT_GET_REQUESTS.get(cacheKey);
     if (inflightRequest) {
       const result = await inflightRequest;
@@ -306,37 +283,11 @@ export async function requestJson(url, options = {}, runtime = {}) {
       result = await performRequestOnce(retryTimeoutMs);
     }
 
-    if (canUseCache && result.response.ok) {
-      GET_REQUEST_CACHE.set(cacheKey, {
-        expiresAt: Date.now() + cacheTtlMs,
-        response: result.response,
-        data: cloneJsonPayload(result.data),
-      });
-    }
-
-    if (canUseCache && !result.response.ok) {
-      const cachedEntry = GET_REQUEST_CACHE.get(cacheKey);
-      if (cachedEntry && cachedEntry.expiresAt + staleIfErrorMs > Date.now()) {
-        return {
-          response: { ...cachedEntry.response, stale: true },
-          data: {
-            ...cloneJsonPayload(cachedEntry.data),
-            stale: true,
-            warning: result.data?.message || "Serveri po vonon shume. Po shfaqen te dhenat e fundit.",
-          },
-        };
-      }
-    }
-
     if (result.response.ok && String(result.data?.sessionToken || "").trim()) {
       persistDebugSessionToken(result.data.sessionToken);
     }
 
     maybeDispatchAuthInvalidation(url, method, result.response);
-
-    if (method !== "GET" && result.response.ok) {
-      invalidateRequestCache();
-    }
 
     return result;
   })();

@@ -8,6 +8,8 @@ import {
   logoutUser,
 } from "../lib/api";
 import type { SessionUser } from "../types/models";
+import { queryClient } from "../lib/query-client";
+import { queryKeys } from "../lib/query-keys";
 
 const state = reactive({
   user: null as SessionUser | null,
@@ -18,9 +20,6 @@ const state = reactive({
   notificationUnreadCount: 0,
 });
 
-let sessionPromise: Promise<SessionUser | null> | null = null;
-let countsPromise: Promise<void> | null = null;
-
 export const sessionState = state;
 
 export const isAuthenticated = computed(() => Boolean(state.user));
@@ -29,47 +28,67 @@ export const activityBadgeCount = computed(
   () => Math.max(0, Number(state.messageUnreadCount || 0)) + Math.max(0, Number(state.notificationUnreadCount || 0)),
 );
 
+// Helper to update counts from cached data
+function updateCountsFromCache() {
+  const wishlist = queryClient.getQueryData<any[]>(queryKeys.wishlist.main()) || [];
+  const cart = queryClient.getQueryData<any[]>(queryKeys.cart.main()) || [];
+  const conversations = queryClient.getQueryData<any[]>(queryKeys.messages.conversations()) || [];
+  const notificationCount = queryClient.getQueryData<number>(["notifications", "count"]) || 0;
+
+  state.wishlistCount = wishlist.length;
+  state.cartCount = cart.reduce((total, item) => total + Math.max(0, Number(item.quantity || 0)), 0);
+  state.messageUnreadCount = conversations.reduce(
+    (total, item) => total + Math.max(0, Number(item.unreadCount || 0)),
+    0,
+  );
+  state.notificationUnreadCount = notificationCount;
+}
+
+// Subscribe to relevant queries to sync counts
+queryClient.getQueryCache().subscribe((event) => {
+  const key = event?.query?.queryKey?.[0];
+  if (["cart", "wishlist", "messages", "notifications"].includes(String(key)) && 
+      (event.type === "updated" || event.type === "removed")) {
+    updateCountsFromCache();
+  }
+});
+
 export async function ensureSession() {
   if (state.sessionLoaded) {
     return state.user;
   }
 
-  if (sessionPromise) {
-    return sessionPromise;
-  }
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.user.session(),
+    queryFn: async () => {
+      const session = await fetchCurrentUserSessionState();
+      if (session.status === "authenticated") {
+        state.user = session.user;
+        state.sessionLoaded = true;
+        void refreshCounts();
+        return session.user;
+      }
 
-  sessionPromise = (async () => {
-    const session = await fetchCurrentUserSessionState();
-    if (session.status === "authenticated") {
-      state.user = session.user;
+      if (session.status === "unreachable" && state.user) {
+        state.sessionLoaded = true;
+        return state.user;
+      }
+
+      state.user = null;
       state.sessionLoaded = true;
-      void refreshCounts();
-      return session.user;
-    }
-
-    if (session.status === "unreachable" && state.user) {
-      state.sessionLoaded = true;
-      return state.user;
-    }
-
-    state.user = null;
-    state.sessionLoaded = true;
-    state.wishlistCount = 0;
-    state.cartCount = 0;
-    state.messageUnreadCount = 0;
-    state.notificationUnreadCount = 0;
-    return null;
-  })();
-
-  try {
-    return await sessionPromise;
-  } finally {
-    sessionPromise = null;
-  }
+      state.wishlistCount = 0;
+      state.cartCount = 0;
+      state.messageUnreadCount = 0;
+      state.notificationUnreadCount = 0;
+      return null;
+    },
+    staleTime: Infinity,
+  });
 }
 
 export async function refreshSession() {
   state.sessionLoaded = false;
+  queryClient.invalidateQueries({ queryKey: queryKeys.user.session() });
   return ensureSession();
 }
 
@@ -82,31 +101,15 @@ export async function refreshCounts() {
     return;
   }
 
-  if (countsPromise) {
-    return countsPromise;
-  }
-
-  countsPromise = (async () => {
-    const [wishlist, cart, conversations, notificationUnreadCount] = await Promise.all([
-      fetchWishlist(),
-      fetchCart(),
-      fetchConversations(),
-      fetchNotificationsCount(),
-    ]);
-    state.wishlistCount = wishlist.length;
-    state.cartCount = cart.reduce((total, item) => total + Math.max(0, Number(item.quantity || 0)), 0);
-    state.messageUnreadCount = conversations.reduce(
-      (total, item) => total + Math.max(0, Number(item.unreadCount || 0)),
-      0,
-    );
-    state.notificationUnreadCount = Math.max(0, Number(notificationUnreadCount || 0));
-  })();
-
-  try {
-    await countsPromise;
-  } finally {
-    countsPromise = null;
-  }
+  // Use prefetch/fetch to populate TanStack cache
+  await Promise.all([
+    queryClient.fetchQuery({ queryKey: queryKeys.wishlist.main(), queryFn: fetchWishlist }),
+    queryClient.fetchQuery({ queryKey: queryKeys.cart.main(), queryFn: fetchCart }),
+    queryClient.fetchQuery({ queryKey: queryKeys.messages.conversations(), queryFn: fetchConversations }),
+    queryClient.fetchQuery({ queryKey: ["notifications", "count"], queryFn: fetchNotificationsCount }),
+  ]);
+  
+  updateCountsFromCache();
 }
 
 export async function clearSession() {
@@ -117,4 +120,5 @@ export async function clearSession() {
   state.cartCount = 0;
   state.messageUnreadCount = 0;
   state.notificationUnreadCount = 0;
+  queryClient.clear();
 }
