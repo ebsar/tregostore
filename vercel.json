@@ -4,7 +4,10 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.py": {
-      "includeFiles": "catalog_import.py"
+      "includeFiles": [
+        "catalog_import.py",
+        "app_routes.py"
+      ]
     }
   },
   "crons": [
