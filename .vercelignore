@@ -7,6 +7,8 @@
 !/vite.config.mjs
 !/requirements.txt
 !/app.py
+!/app_routes.py
+!/catalog_import.py
 !/schema.sql
 !/schema_postgres.sql
 !/api
