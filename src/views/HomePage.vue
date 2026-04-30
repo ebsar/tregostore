@@ -1126,21 +1126,6 @@ async function loadProducts(options = {}) {
       : "Nuk ka produkte publike ende.";
 }
 
-async function loadHomeRecommendations() {
-  if (isBusinessUser.value) {
-    homeRecommendationSections.value = [];
-    return;
-  }
-
-  const requestId = ++homeRecommendationsRequestId;
-  const payload = await fetchHomeRecommendations(16);
-  if (requestId !== homeRecommendationsRequestId) {
-    return;
-  }
-
-  homeRecommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
-}
-
 async function loadMoreProducts() {
   if (loadingMoreProducts.value || !hasMoreProducts.value) {
     return;
@@ -1551,7 +1536,6 @@ async function handleCart(productId) {
   cartIds.value = items.map((item) => item.productId || item.id);
   setCartItems(items);
   setMessage(data.message || "Produkti u shtua ne shporte.", "success");
-  void loadHomeRecommendations();
 }
 </script>
 
@@ -1872,20 +1856,6 @@ async function handleCart(productId) {
 }
 
 @media (max-width: 400px) {
-  .home-product-grid {
-    column-gap: 10px;
-    row-gap: 14px;
-  }
-}
-
-@media (max-width: 340px) {
-  .home-product-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-</style>
-dth: 400px) {
   .home-product-grid {
     column-gap: 10px;
     row-gap: 14px;
