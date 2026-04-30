@@ -14821,13 +14821,13 @@ def build_product_order_clause(sort: str) -> str:
     if normalized_sort == "price-desc":
         return "products.price DESC, products.id DESC"
     if normalized_sort == "rating":
-        return "COALESCE(average_rating, 0) DESC, COALESCE(review_count, 0) DESC, products.id DESC"
+        return "average_rating DESC, review_count DESC, products.id DESC"
     if normalized_sort == "newest":
         return "products.created_at DESC, products.id DESC"
     return (
-        "COALESCE(buyers_count, 0) DESC, "
-        "COALESCE(review_count, 0) DESC, "
-        "COALESCE(average_rating, 0) DESC, "
+        "buyers_count DESC, "
+        "review_count DESC, "
+        "average_rating DESC, "
         "products.id DESC"
     )
 
