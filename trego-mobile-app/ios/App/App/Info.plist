@@ -41,10 +41,12 @@
 	<string>https://www.tregos.store</string>
 	<key>TregoDebugAPIBaseURL</key>
 	<string>https://www.tregos.store</string>
-	<key>TregoDebugSimulatorAPIBaseURL</key>
-	<string>https://www.tregos.store</string>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
+		<key>TregoDebugSimulatorAPIBaseURL</key>
+		<string>https://www.tregos.store</string>
+		<key>TregoEnableRemotePush</key>
+		<false/>
+		<key>UIApplicationSceneManifest</key>
+		<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 		<key>UISceneConfigurations</key>

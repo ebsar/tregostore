@@ -443,6 +443,7 @@ struct TregoLaunchAd: Codable, Identifiable, Equatable {
 
 struct TregoConversation: Codable, Identifiable, Equatable {
     let id: Int
+    let businessProfileId: Int?
     let businessName: String?
     let clientName: String?
     let counterpartName: String?
@@ -457,6 +458,10 @@ struct TregoConversation: Codable, Identifiable, Equatable {
     let updatedAt: String?
     let lastMessageAt: String?
     let counterpartTyping: Bool?
+}
+
+enum TregoChatMessageLocalDeliveryState: Equatable {
+    case sending
 }
 
 struct TregoChatMessage: Codable, Identifiable, Equatable {
@@ -475,6 +480,25 @@ struct TregoChatMessage: Codable, Identifiable, Equatable {
     let senderName: String?
     let senderRole: String?
     let isOwn: Bool?
+    var localDeliveryState: TregoChatMessageLocalDeliveryState? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case conversationId
+        case senderUserId
+        case recipientUserId
+        case body
+        case attachmentPath
+        case attachmentContentType
+        case attachmentFileName
+        case createdAt
+        case editedAt
+        case deletedAt
+        case readAt
+        case senderName
+        case senderRole
+        case isOwn
+    }
 }
 
 struct TregoConversationDetail: Codable {
@@ -753,6 +777,20 @@ struct TregoNotificationsPayload: Equatable {
     let unreadCount: Int
 }
 
+struct TregoNativePresentedScreen: Identifiable, Equatable {
+    enum Kind: String, Equatable {
+        case notifications
+        case orders
+        case messages
+        case returns
+        case businessHub
+        case adminControl
+    }
+
+    let id = UUID()
+    let kind: Kind
+}
+
 struct TregoCheckoutReservePayload: Equatable {
     let reservedUntil: String
     let message: String?
@@ -1008,6 +1046,13 @@ final class TregoAPIClient {
         let notifications: [TregoNotificationItem] = decodeArray(json.object["notifications"]) ?? []
         let unreadCount = Int(json.object["unreadCount"] as? Int ?? 0)
         return TregoNotificationsPayload(notifications: notifications, unreadCount: unreadCount)
+    }
+
+    func fetchNotificationsCount() async -> Int {
+        guard let json = await sendJSONRequest(path: "/api/notifications/count"), json.ok else {
+            return 0
+        }
+        return Int(json.object["unreadCount"] as? Int ?? 0)
     }
 
     func markNotificationsRead() async -> TregoStatusResponse {
@@ -1786,6 +1831,14 @@ final class TregoAPIClient {
         return (response, message)
     }
 
+    func deleteConversation(conversationId: Int) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/chat/conversations/delete",
+            method: "POST",
+            body: ["conversationId": conversationId]
+        )
+    }
+
     private enum ListKeyPreference {
         case items
         case products
@@ -2142,6 +2195,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var sessionLoaded = false
     @Published var sessionRefreshing = false
     @Published var appSettings = TregoAppSettings.load()
+    @Published var notificationUnreadCount = 0
     @Published var homeProducts: [TregoProduct] = []
     @Published var homeRecommendationSections: [TregoRecommendationSection] = []
     @Published private(set) var homeFeedSnapshot = TregoHomeFeedSnapshot.empty
@@ -2185,6 +2239,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var pendingEmailVerificationMessage: String?
     @Published var selectedProduct: TregoProduct?
     @Published var selectedConversation: TregoConversation?
+    @Published var presentedScreen: TregoNativePresentedScreen?
     @Published var toastMessage: String?
     @Published var globalMessage: String?
     @Published var authenticationPrompt: TregoAuthenticationPrompt?
@@ -2202,11 +2257,15 @@ final class TregoNativeAppStore: ObservableObject {
     private var activeSearchRequestID = UUID()
     private var productDetailCache: [Int: TregoProductDetailCacheEntry] = [:]
     private var pushTokenObserver: NSObjectProtocol?
+    private var pushRegistrationFailureObserver: NSObjectProtocol?
+    private var remoteNotificationReceivedObserver: NSObjectProtocol?
+    private var remoteNotificationOpenedObserver: NSObjectProtocol?
     private let homePageSize = 16
     private let searchPageSize = 16
     private let homeRecommendationLimit = 8
     private let homeRailLimit = 12
     private let productDetailCacheTTL: TimeInterval = 180
+    private let supportsRemotePush = Bundle.main.object(forInfoDictionaryKey: "TregoEnableRemotePush") as? Bool ?? false
 
     init() {
         let history = Self.loadViewedHistory()
@@ -2223,11 +2282,51 @@ final class TregoNativeAppStore: ObservableObject {
                 await self?.saveAPNsDeviceToken(token)
             }
         }
+        pushRegistrationFailureObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("TregoAPNsRegistrationFailed"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let message = String(notification.userInfo?["message"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !message.isEmpty else { return }
+            Task { @MainActor in
+                self?.globalMessage = "Push registration failed: \(message)"
+            }
+        }
+        remoteNotificationReceivedObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("TregoRemoteNotificationReceived"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let userInfo = notification.userInfo else { return }
+            Task { @MainActor in
+                await self?.handleRemoteNotification(userInfo: userInfo, openedFromSystem: false)
+            }
+        }
+        remoteNotificationOpenedObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("TregoRemoteNotificationOpened"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let userInfo = notification.userInfo else { return }
+            Task { @MainActor in
+                await self?.handleRemoteNotification(userInfo: userInfo, openedFromSystem: true)
+            }
+        }
     }
 
     deinit {
         if let pushTokenObserver {
             NotificationCenter.default.removeObserver(pushTokenObserver)
+        }
+        if let pushRegistrationFailureObserver {
+            NotificationCenter.default.removeObserver(pushRegistrationFailureObserver)
+        }
+        if let remoteNotificationReceivedObserver {
+            NotificationCenter.default.removeObserver(remoteNotificationReceivedObserver)
+        }
+        if let remoteNotificationOpenedObserver {
+            NotificationCenter.default.removeObserver(remoteNotificationOpenedObserver)
         }
     }
 
@@ -2236,6 +2335,9 @@ final class TregoNativeAppStore: ObservableObject {
         let cartCount = cart.reduce(0) { $0 + max(1, $1.quantity ?? 1) }
         if cartCount > 0 {
             map[.cart] = badgeText(for: cartCount)
+        }
+        if notificationUnreadCount > 0 {
+            map[.llogaria] = badgeText(for: notificationUnreadCount)
         }
         return map
     }
@@ -2248,6 +2350,7 @@ final class TregoNativeAppStore: ObservableObject {
         let launchAdsTask = Task { await self.api.fetchLaunchAds() }
         let homeTask = Task { await self.loadHomeIfNeeded(force: true) }
         await refreshSession(force: true)
+        await registerForRemoteNotificationsIfAuthorized()
         await syncStoredAPNsDeviceToken()
         _ = await homeTask.value
         launchAds = await launchAdsTask.value
@@ -2257,6 +2360,9 @@ final class TregoNativeAppStore: ObservableObject {
                 async let cartTask: Void = loadCart()
                 _ = await (wishlistTask, cartTask)
             }
+            await refreshNotificationBadgeCount()
+        } else {
+            await updateNotificationUnreadCount(0)
         }
     }
 
@@ -2265,14 +2371,18 @@ final class TregoNativeAppStore: ObservableObject {
             return TregoStatusResponse(ok: false, message: "Kyçu ne llogari per te aktivizuar njoftimet.", errors: nil)
         }
 
-        let granted = await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-                continuation.resume(returning: granted)
-            }
-        }
+        let granted = await requestNotificationAuthorization()
 
         guard granted else {
             return TregoStatusResponse(ok: false, message: "Njoftimet nuk u lejuan nga iOS.", errors: nil)
+        }
+
+        guard supportsRemotePush else {
+            return TregoStatusResponse(
+                ok: true,
+                message: "Njoftimet lokale u aktivizuan per testim. Ky build nuk regjistrohet ne APNs.",
+                errors: nil
+            )
         }
 
         await MainActor.run {
@@ -2280,6 +2390,46 @@ final class TregoNativeAppStore: ObservableObject {
         }
         await syncStoredAPNsDeviceToken()
         return TregoStatusResponse(ok: true, message: "Push notifications u aktivizuan.", errors: nil)
+    }
+
+    func scheduleDebugLocalNotification() async -> TregoStatusResponse {
+        guard user != nil else {
+            return TregoStatusResponse(ok: false, message: "Kyçu ne llogari per te testuar njoftimet.", errors: nil)
+        }
+
+        let granted = await requestNotificationAuthorization()
+        guard granted else {
+            return TregoStatusResponse(ok: false, message: "Njoftimet lokale nuk u lejuan nga iOS.", errors: nil)
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Test notification"
+        content.body = "Hape per te testuar routimin e njoftimeve brenda app-it."
+        content.sound = .default
+        content.badge = 1
+        content.userInfo = [
+            "type": "order_status",
+            "path": "/orders",
+            "data": [
+                "type": "order_status",
+                "path": "/orders",
+                "orderId": 1,
+                "status": "processing"
+            ]
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: "trego-debug-local-push",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            return TregoStatusResponse(ok: true, message: "Njoftimi lokal do te shfaqet pas 1 sekonde.", errors: nil)
+        } catch {
+            return TregoStatusResponse(ok: false, message: "Njoftimi lokal nuk u planifikua.", errors: [error.localizedDescription])
+        }
     }
 
     private static func nativePushDeviceId() -> String {
@@ -2299,6 +2449,7 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     private func syncStoredAPNsDeviceToken() async {
+        guard supportsRemotePush else { return }
         guard user != nil else { return }
         guard let token = UserDefaults.standard.string(forKey: Self.apnsTokenStorageKey), !token.isEmpty else {
             return
@@ -2309,6 +2460,51 @@ final class TregoNativeAppStore: ObservableObject {
             token: token,
             deviceId: Self.nativePushDeviceId()
         )
+    }
+
+    private func registerForRemoteNotificationsIfAuthorized() async {
+        guard supportsRemotePush else { return }
+        guard user != nil else { return }
+        let authorizationStatus = await notificationAuthorizationStatus()
+        guard authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral else {
+            return
+        }
+        await MainActor.run {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    private func requestNotificationAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
+        }
+    }
+
+    func refreshNotificationBadgeCount() async {
+        guard user != nil else {
+            await updateNotificationUnreadCount(0)
+            return
+        }
+        let unreadCount = await api.fetchNotificationsCount()
+        await updateNotificationUnreadCount(unreadCount)
+    }
+
+    private func updateNotificationUnreadCount(_ count: Int) async {
+        let normalizedCount = max(0, count)
+        notificationUnreadCount = normalizedCount
+        await MainActor.run {
+            UIApplication.shared.applicationIconBadgeNumber = normalizedCount
+        }
     }
 
     func refreshSession(force: Bool = false) async {
@@ -2350,6 +2546,14 @@ final class TregoNativeAppStore: ObservableObject {
             Task { [weak self] in
                 await self?.loadHomeRecommendations()
             }
+        }
+
+        if user != nil {
+            await registerForRemoteNotificationsIfAuthorized()
+            await syncStoredAPNsDeviceToken()
+            await refreshNotificationBadgeCount()
+        } else {
+            await updateNotificationUnreadCount(0)
         }
     }
 
@@ -2649,8 +2853,31 @@ final class TregoNativeAppStore: ObservableObject {
         conversationsLoading = false
     }
 
+    func deleteConversation(_ conversation: TregoConversation) async -> String? {
+        let response = await api.deleteConversation(conversationId: conversation.id)
+        guard response.ok == true else {
+            return response.message ?? "Biseda nuk u fshi."
+        }
+
+        conversations.removeAll { $0.id == conversation.id }
+        if selectedConversation?.id == conversation.id {
+            selectedConversation = nil
+        }
+        showToast(response.message ?? "Biseda u fshi.")
+        return nil
+    }
+
     func openConversation(with conversation: TregoConversation) {
         selectedConversation = conversation
+    }
+
+    func openNotificationItem(_ notification: TregoNotificationItem) async {
+        let payload = buildNotificationPayload(
+            rawPath: notification.href,
+            rawType: notification.type,
+            data: [:]
+        )
+        await routeNotificationPayload(payload, openedFromSystem: true)
     }
 
     func startConversationWithBusiness(businessId: Int) async {
@@ -3103,6 +3330,7 @@ final class TregoNativeAppStore: ObservableObject {
 
     func resetSessionState() {
         user = nil
+        notificationUnreadCount = 0
         sessionLoaded = true
         sessionRefreshing = false
         wishlist = []
@@ -3126,8 +3354,12 @@ final class TregoNativeAppStore: ObservableObject {
         authRoute = nil
         accountAuthRoute = .login
         selectedConversation = nil
+        presentedScreen = nil
         productDetailCache.removeAll()
         rebuildHomeFeedSnapshot()
+        Task { @MainActor in
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
     }
 
     private func clearAuthenticatedData() {
@@ -3199,6 +3431,309 @@ final class TregoNativeAppStore: ObservableObject {
     func dismissPresentedNativeFlow() {
         selectedProduct = nil
         selectedConversation = nil
+        presentedScreen = nil
+    }
+
+    private struct TregoNotificationPayload {
+        let type: String
+        let path: String
+        let conversationId: Int?
+        let messageId: Int?
+        let orderId: Int?
+        let orderItemId: Int?
+        let productId: Int?
+        let status: String
+        let alertKind: String
+    }
+
+    private func handleRemoteNotification(
+        userInfo: [AnyHashable: Any],
+        openedFromSystem: Bool
+    ) async {
+        let payload = buildNotificationPayload(from: userInfo)
+        await refreshNotificationBadgeCount()
+        if openedFromSystem {
+            await routeNotificationPayload(payload, openedFromSystem: true)
+        } else {
+            await refreshLocalDataForNotificationPayload(payload)
+        }
+    }
+
+    private func buildNotificationPayload(from userInfo: [AnyHashable: Any]) -> TregoNotificationPayload {
+        let topLevel = stringKeyDictionary(from: userInfo)
+        var data = stringKeyDictionary(from: topLevel["data"])
+
+        let custom = stringKeyDictionary(from: topLevel["custom"])
+        let customAdditionalData = stringKeyDictionary(from: custom["a"])
+        data.merge(customAdditionalData) { current, _ in current }
+
+        let additionalData = stringKeyDictionary(from: topLevel["additionalData"])
+        data.merge(additionalData) { current, _ in current }
+
+        return buildNotificationPayload(
+            rawPath: stringValue(from: data["path"]).isEmpty ? stringValue(from: topLevel["path"]) : stringValue(from: data["path"]),
+            fallbackHref: stringValue(from: data["href"]).isEmpty ? stringValue(from: topLevel["href"]) : stringValue(from: data["href"]),
+            rawType: stringValue(from: data["type"]).isEmpty ? stringValue(from: topLevel["type"]) : stringValue(from: data["type"]),
+            data: data
+        )
+    }
+
+    private func buildNotificationPayload(
+        rawPath: String?,
+        fallbackHref: String? = nil,
+        rawType: String?,
+        data: [String: Any]
+    ) -> TregoNotificationPayload {
+        let normalizedPath = normalizeNotificationPath(rawPath) != "/"
+            ? normalizeNotificationPath(rawPath)
+            : normalizeNotificationPath(fallbackHref)
+        return TregoNotificationPayload(
+            type: stringValue(from: rawType).lowercased(),
+            path: normalizedPath,
+            conversationId: notificationIntValue(keys: ["conversationId"], in: data) ?? conversationId(from: normalizedPath),
+            messageId: notificationIntValue(keys: ["messageId"], in: data),
+            orderId: notificationIntValue(keys: ["orderId"], in: data),
+            orderItemId: notificationIntValue(keys: ["orderItemId"], in: data),
+            productId: notificationIntValue(keys: ["productId"], in: data) ?? productId(from: normalizedPath),
+            status: stringValue(from: data["status"]).lowercased(),
+            alertKind: stringValue(from: data["alertKind"]).lowercased()
+        )
+    }
+
+    private func routeNotificationPayload(
+        _ payload: TregoNotificationPayload,
+        openedFromSystem: Bool
+    ) async {
+        guard user != nil else {
+            if openedFromSystem {
+                openAccountAuth(.login)
+            }
+            return
+        }
+
+        dismissPresentedNativeFlow()
+
+        if payload.type == "chat_message", let conversationId = payload.conversationId {
+            if await openConversationFromNotification(conversationId: conversationId) {
+                return
+            }
+            openPresentedScreen(.messages)
+            return
+        }
+
+        if payload.type == "order_status" {
+            openPresentedScreen(.orders)
+            return
+        }
+
+        if payload.type == "order_created" {
+            if user?.role == "business" {
+                openPresentedScreen(.businessHub)
+            } else {
+                openPresentedScreen(.orders)
+            }
+            return
+        }
+
+        if (payload.type == "sale_product" || payload.type == "sale_ending"), let productId = payload.productId {
+            if await openProductFromNotification(productId: productId) {
+                return
+            }
+        }
+
+        if payload.path.contains("/messages"), let conversationId = payload.conversationId {
+            if await openConversationFromNotification(conversationId: conversationId) {
+                return
+            }
+        }
+
+        if payload.path.contains("/messages") || payload.path.contains("/mesazhet") {
+            openPresentedScreen(.messages)
+            return
+        }
+
+        if payload.path.contains("/product/") || payload.path.contains("/produkti"), let productId = payload.productId {
+            if await openProductFromNotification(productId: productId) {
+                return
+            }
+        }
+
+        if payload.path.contains("/orders") || payload.path.contains("/porosite") {
+            openPresentedScreen(.orders)
+            return
+        }
+
+        if payload.path.contains("/refund-returne") || payload.path.contains("/returns") {
+            openPresentedScreen(.returns)
+            return
+        }
+
+        if payload.path.contains("/business") || payload.path.contains("/biznesi-juaj") {
+            if user?.role == "admin" {
+                openPresentedScreen(.adminControl)
+            } else {
+                openPresentedScreen(.businessHub)
+            }
+            return
+        }
+
+        if payload.path.contains("/bizneset-e-regjistruara") || payload.path.contains("/admin") {
+            openPresentedScreen(.adminControl)
+            return
+        }
+
+        openPresentedScreen(.notifications)
+    }
+
+    private func refreshLocalDataForNotificationPayload(_ payload: TregoNotificationPayload) async {
+        switch payload.type {
+        case "chat_message":
+            await loadConversations()
+        case "order_status":
+            await loadOrders()
+        case "order_created":
+            if user?.role == "business" {
+                await loadBusinessWorkspace(force: true)
+            } else {
+                await loadOrders()
+            }
+        default:
+            break
+        }
+    }
+
+    private func openPresentedScreen(_ kind: TregoNativePresentedScreen.Kind) {
+        selectedTab = .llogaria
+        presentedScreen = TregoNativePresentedScreen(kind: kind)
+    }
+
+    private func openProductFromNotification(productId: Int) async -> Bool {
+        guard productId > 0 else { return false }
+        guard let product = await api.fetchProductDetail(id: productId) else { return false }
+        selectedProduct = product
+        return true
+    }
+
+    private func openConversationFromNotification(conversationId: Int) async -> Bool {
+        guard conversationId > 0 else { return false }
+        if let existing = conversations.first(where: { $0.id == conversationId }) {
+            selectedConversation = existing
+            return true
+        }
+        await loadConversations()
+        if let refreshed = conversations.first(where: { $0.id == conversationId }) {
+            selectedConversation = refreshed
+            return true
+        }
+        guard let detail = await api.fetchConversationDetail(id: conversationId) else {
+            return false
+        }
+        if let conversation = detail.conversation {
+            if !conversations.contains(where: { $0.id == conversation.id }) {
+                conversations = [conversation] + conversations
+            }
+            selectedConversation = conversation
+            return true
+        }
+        return false
+    }
+
+    private func stringKeyDictionary(from value: Any?) -> [String: Any] {
+        if let dictionary = value as? [String: Any] {
+            return dictionary
+        }
+        if let dictionary = value as? [AnyHashable: Any] {
+            var normalized: [String: Any] = [:]
+            for (key, nestedValue) in dictionary {
+                normalized[String(describing: key)] = nestedValue
+            }
+            return normalized
+        }
+        if let text = value as? String,
+           let data = text.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return object
+        }
+        return [:]
+    }
+
+    private func stringValue(from value: Any?) -> String {
+        if let value = value as? String {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return ""
+    }
+
+    private func notificationIntValue(keys: [String], in dictionary: [String: Any]) -> Int? {
+        for key in keys {
+            let rawValue = dictionary[key]
+            if let intValue = rawValue as? Int, intValue > 0 {
+                return intValue
+            }
+            if let number = rawValue as? NSNumber {
+                let intValue = number.intValue
+                if intValue > 0 {
+                    return intValue
+                }
+            }
+            let textValue = stringValue(from: rawValue)
+            if let intValue = Int(textValue), intValue > 0 {
+                return intValue
+            }
+        }
+        return nil
+    }
+
+    private func normalizeNotificationPath(_ rawValue: String?) -> String {
+        let trimmed = stringValue(from: rawValue)
+        guard !trimmed.isEmpty else { return "/" }
+        if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+            let query = url.query.map { "?\($0)" } ?? ""
+            let fragment = url.fragment.map { "#\($0)" } ?? ""
+            return "\(url.path.isEmpty ? "/" : url.path)\(query)\(fragment)"
+        }
+        return trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
+    }
+
+    private func conversationId(from path: String) -> Int? {
+        guard !path.isEmpty else { return nil }
+        if let components = URLComponents(string: "https://tregio.local\(path)") {
+            if let queryId = components.queryItems?.first(where: { $0.name == "conversationId" || $0.name == "id" })?.value,
+               let intValue = Int(queryId),
+               intValue > 0 {
+                return intValue
+            }
+            let pathComponents = components.path.split(separator: "/")
+            if let messagesIndex = pathComponents.firstIndex(of: "messages"),
+               messagesIndex + 1 < pathComponents.count,
+               let intValue = Int(pathComponents[messagesIndex + 1]),
+               intValue > 0 {
+                return intValue
+            }
+        }
+        return nil
+    }
+
+    private func productId(from path: String) -> Int? {
+        guard !path.isEmpty else { return nil }
+        if let components = URLComponents(string: "https://tregio.local\(path)") {
+            if let queryId = components.queryItems?.first(where: { $0.name == "id" || $0.name == "productId" })?.value,
+               let intValue = Int(queryId),
+               intValue > 0 {
+                return intValue
+            }
+            let pathComponents = components.path.split(separator: "/")
+            if let productIndex = pathComponents.firstIndex(of: "product"),
+               productIndex + 1 < pathComponents.count,
+               let intValue = Int(pathComponents[productIndex + 1]),
+               intValue > 0 {
+                return intValue
+            }
+        }
+        return nil
     }
 
     func openEmailVerification(email: String, fallbackIdentifier: String = "", message: String? = nil) {
@@ -3550,11 +4085,9 @@ final class TregoNativeAppStore: ObservableObject {
     private func rebuildHomeFeedSnapshot() {
         let railSections = resolvedHomeRailSections()
         let excludedIDs = Set(railSections.flatMap(\.products).map(\.id))
-        let personalized = personalizedHomeProducts(from: homeProducts)
-        let merged = personalized + homeProducts
 
         var seen = Set<Int>()
-        let gridProducts = merged.filter { product in
+        let gridProducts = homeProducts.filter { product in
             guard !excludedIDs.contains(product.id) else { return false }
             return seen.insert(product.id).inserted
         }

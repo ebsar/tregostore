@@ -11,7 +11,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        true
+        if let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any], !userInfo.isEmpty {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Notification.Name("TregoRemoteNotificationOpened"),
+                    object: nil,
+                    userInfo: userInfo
+                )
+            }
+        }
+        return true
     }
 
     func application(
@@ -42,6 +51,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        NotificationCenter.default.post(
+            name: Notification.Name("TregoRemoteNotificationReceived"),
+            object: nil,
+            userInfo: notification.request.content.userInfo
+        )
         completionHandler([.banner, .sound, .badge])
     }
 
@@ -56,6 +70,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
             userInfo: response.notification.request.content.userInfo
         )
         completionHandler()
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable : Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        NotificationCenter.default.post(
+            name: Notification.Name("TregoRemoteNotificationReceived"),
+            object: nil,
+            userInfo: userInfo
+        )
+        completionHandler(.newData)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
