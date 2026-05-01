@@ -129,7 +129,7 @@ async function handleOpenProduct(productId: number) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-business-hub-screen">
         <AppPageHeader
           kicker="Insights"
           :title="headerTitle"
@@ -162,7 +162,7 @@ async function handleOpenProduct(productId: number) {
             </p>
           </section>
 
-          <section>
+          <section class="trego-business-hub-overview">
             <p>{{ isAdmin ? "Admin" : "Profili" }}</p>
             <h2>{{ profile?.businessName || sessionState.user.businessName || "Dashboard" }}</h2>
             <p>
@@ -174,7 +174,7 @@ async function handleOpenProduct(productId: number) {
             </div>
           </section>
 
-          <section>
+          <section class="trego-business-hub-insights">
             <div>
               <div>
                 <p>Insights</p>
@@ -194,7 +194,7 @@ async function handleOpenProduct(productId: number) {
             </div>
           </section>
 
-          <section>
+          <section class="trego-business-hub-actions">
             <div>
               <div>
                 <p>Operacionet</p>
@@ -215,7 +215,7 @@ async function handleOpenProduct(productId: number) {
             </div>
           </section>
 
-          <section>
+          <section class="trego-business-hub-products">
             <div>
               <div>
                 <p>Produktet</p>

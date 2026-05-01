@@ -16,6 +16,7 @@ import {
 } from "ionicons/icons";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useQuery, useMutation } from "@tanstack/vue-query";
 import EmptyStatePanel from "../components/EmptyStatePanel.vue";
 import ProductCardMobile from "../components/ProductCardMobile.vue";
 import ProductCardSkeleton from "../components/ProductCardSkeleton.vue";
@@ -26,6 +27,8 @@ import {
   fetchMarketplaceProductsPage,
   toggleWishlist,
 } from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
+import { queryClient } from "../lib/query-client";
 import type { ProductItem, RecommendationSection } from "../types/models";
 import { activityBadgeCount, ensureSession, refreshCounts } from "../stores/session";
 
@@ -39,14 +42,28 @@ const spotlightOptions: Array<{ key: SpotlightKey; label: string }> = [
 ];
 
 const router = useRouter();
-const loading = ref(true);
 const loadingMore = ref(false);
-const hasMore = ref(false);
 const nextOffset = ref(0);
-const products = ref<ProductItem[]>([]);
-const recommendationSections = ref<RecommendationSection[]>([]);
 const selectedSpotlight = ref<SpotlightKey>("all");
 const selectedCategory = ref("all");
+
+// Query for products
+const { data: productsData, isLoading: productsLoading } = useQuery({
+  queryKey: queryKeys.products.list({ limit: 100 }), // Fetch a good chunk for filtering
+  queryFn: () => fetchMarketplaceProductsPage(100, 0),
+  staleTime: 1000 * 60 * 5,
+});
+
+const products = computed(() => productsData.value?.items || []);
+
+// Query for recommendations
+const { data: recommendationSections, isLoading: recommendationsLoading } = useQuery({
+  queryKey: queryKeys.products.recommendations("home"),
+  queryFn: () => fetchHomeRecommendations(10),
+  staleTime: 1000 * 60 * 10,
+});
+
+const loading = computed(() => productsLoading.value || recommendationsLoading.value);
 
 const trendingProducts = computed(() =>
   [...products.value]
@@ -254,7 +271,7 @@ watch([selectedSpotlight, selectedCategory], () => {
             </span>
           </button>
 
-          <div class="trego-top-actions">
+          <div class="trego-top-actions__icons">
             <button class="trego-icon-button" type="button" aria-label="Visual search" @click="openSearch">
               <span>
                 <IonIcon :icon="colorWandOutline" />
@@ -271,12 +288,12 @@ watch([selectedSpotlight, selectedCategory], () => {
         <section class="trego-home-hero">
           <div>
             <p class="trego-kicker">TREGIO mobile</p>
-            <h1>Me pak padding, me shume fokus te blerja.</h1>
+            <h1>Bli me shpejt dhe gjej produkte me lehte.</h1>
             <p>
               {{
                 heroStory
-                  ? `${heroStory.businessName || "Marketplace"} po shtyn aktualisht produktet me me shume interes dhe stok real.`
-                  : "Eksploro produktet, ofertat dhe bizneset lokale me nje home screen me te paster."
+                  ? `${heroStory.businessName || "Marketplace"} po sjell produktet me te kerkuara dhe me stok aktiv tani.`
+                  : "Shfleto ofertat, kategorite dhe bizneset lokale ne nje home screen me te qarte."
               }}
             </p>
           </div>
@@ -369,49 +386,6 @@ watch([selectedSpotlight, selectedCategory], () => {
               v-if="selectedSpotlight !== 'all' || selectedCategory !== 'all'"
               class="trego-reset-button"
               type="button"
-              @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
-            >
-              Pastro
-            </button>
-          </div>
-
-          <div v-if="loading" class="trego-product-grid">
-            <ProductCardSkeleton v-for="index in 6" :key="index" />
-          </div>
-
-          <div v-else-if="filteredProducts.length" class="trego-product-grid">
-            <ProductCardMobile
-              v-for="product in filteredProducts"
-              :key="product.id"
-              :product="product"
-              @open="(id) => router.push(`/product/${id}`)"
-              @cart="handleAddToCart"
-              @wishlist="handleWishlist"
-            />
-          </div>
-
-          <EmptyStatePanel
-            v-else
-            title="Nuk ka produkte"
-            copy="Provo nje spotlight tjeter ose nderro kategorine qe po shikon."
-          />
-
-          <IonInfiniteScroll
-            v-if="!loading && hasMore"
-            threshold="160px"
-            @ionInfinite="handleLoadMore"
-          >
-            <IonInfiniteScrollContent
-              loading-spinner="crescent"
-              loading-text="Po ngarkohen produkte te tjera..."
-            />
-          </IonInfiniteScroll>
-        </section>
-      </div>
-    </IonContent>
-  </IonPage>
-</template>
-e="button"
               @click="() => { selectedSpotlight = 'all'; selectedCategory = 'all'; }"
             >
               Pastro

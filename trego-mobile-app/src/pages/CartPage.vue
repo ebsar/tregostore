@@ -59,8 +59,8 @@ function handleCheckout() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-cart-screen">
+        <section class="trego-cart-header">
           <div>
             <p>Cart</p>
             <h1>Shporta juaj ne format mobile.</h1>
@@ -93,8 +93,8 @@ function handleCheckout() {
         </EmptyStatePanel>
 
         <template v-else-if="items.length">
-          <section>
-            <article v-for="item in items" :key="item.id">
+          <section class="trego-cart-list">
+            <article v-for="item in items" :key="item.id" class="trego-cart-item">
               <img :src="getProductImage(item)" :alt="item.title">
 
               <div>
@@ -110,8 +110,8 @@ function handleCheckout() {
             </article>
           </section>
 
-          <section>
-            <div>
+          <section class="trego-cart-summary">
+            <div class="trego-cart-summary__totals">
               <p>Subtotal</p>
               <h2>{{ formatPrice(subtotal) }}</h2>
             </div>

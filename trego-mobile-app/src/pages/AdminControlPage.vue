@@ -190,7 +190,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-admin-screen">
         <AppPageHeader
           kicker="Admin"
           title="Kontroll qendror per users, biznese dhe raportime."
@@ -215,7 +215,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
         />
 
         <template v-else>
-          <section>
+          <section class="trego-admin-stats">
             <div>
               <article v-for="item in statCards" :key="item.label">
                 <IonIcon :icon="item.icon" />
@@ -225,21 +225,26 @@ async function handleReportUpdate(report: ReportItem, status: string) {
             </div>
           </section>
 
-          <section>
+          <section class="trego-admin-tabs">
             <button type="button" @click="activeSection = 'users'">Users</button>
             <button type="button" @click="activeSection = 'businesses'">Biznese</button>
             <button type="button" @click="activeSection = 'reports'">Reports</button>
             <button type="button" @click="activeSection = 'products'">Produkte</button>
           </section>
 
-          <p v-if="ui.message">{{ ui.message }}</p>
+          <p
+            v-if="ui.message"
+            :class="['trego-form-message', ui.type === 'error' ? 'trego-form-message--error' : 'trego-form-message--success']"
+          >
+            {{ ui.message }}
+          </p>
 
           <section v-if="loading">
             <p>Po ngarkohet paneli admin...</p>
           </section>
 
           <template v-else-if="activeSection === 'users'">
-            <section>
+            <section class="trego-admin-users">
               <article v-for="user in users" :key="user.id">
                 <div>
                   <div>
@@ -278,7 +283,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           </template>
 
           <template v-else-if="activeSection === 'businesses'">
-            <section>
+            <section class="trego-admin-create-business">
               <div>
                 <p>Biznes i ri</p>
                 <h2>Krijo llogari biznesi</h2>
@@ -305,7 +310,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
               <IonButton @click="handleCreateBusiness">Krijo biznesin</IonButton>
             </section>
 
-            <section>
+            <section class="trego-admin-businesses">
               <article v-for="business in businesses" :key="business.id">
                 <div>
                   <div>
@@ -345,7 +350,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           </template>
 
           <template v-else-if="activeSection === 'reports'">
-            <section>
+            <section class="trego-admin-reports">
               <article v-for="report in reports" :key="report.id">
                 <div>
                   <div>
@@ -371,7 +376,7 @@ async function handleReportUpdate(report: ReportItem, status: string) {
           </template>
 
           <template v-else>
-            <section>
+            <section class="trego-admin-products">
               <div>
                 <div>
                   <p>Produktet</p>

@@ -100,7 +100,7 @@ async function handleSubmit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-checkout-screen">
         <AppPageHeader
           kicker="Checkout"
           title="Vendos adresen e porosise."
@@ -129,7 +129,7 @@ async function handleSubmit() {
             <IonInput v-model="form.addressLine" placeholder="Rruga, hyrja, numri" />
           </label>
 
-          <div>
+          <div class="trego-checkout-row">
             <label>
               <span>Qyteti</span>
               <IonInput v-model="form.city" placeholder="Qyteti" />
@@ -140,7 +140,7 @@ async function handleSubmit() {
             </label>
           </div>
 
-          <div>
+          <div class="trego-checkout-row">
             <label>
               <span>Zip code</span>
               <IonInput v-model="form.zipCode" placeholder="10000" />

@@ -1152,6 +1152,24 @@ async function loadBusinesses() {
   businesses.value = Array.isArray(data.businesses) ? data.businesses : [];
 }
 
+async function loadHomeRecommendations() {
+  const requestId = ++homeRecommendationsRequestId;
+
+  try {
+    const payload = await fetchHomeRecommendations(12);
+    if (requestId !== homeRecommendationsRequestId) {
+      return;
+    }
+
+    homeRecommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
+  } catch (error) {
+    if (requestId === homeRecommendationsRequestId) {
+      homeRecommendationSections.value = [];
+    }
+    console.error("[TREGIO] Home recommendations failed:", error);
+  }
+}
+
 async function loadHomeCatalogProducts() {
   const requestId = ++homeCatalogRequestId;
   const { response, data } = await requestJson(

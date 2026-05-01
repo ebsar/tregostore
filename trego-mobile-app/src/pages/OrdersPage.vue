@@ -115,7 +115,7 @@ async function scrollToSelectedOrder() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-orders-screen">
         <AppPageHeader
           kicker="Porosite"
           title="Historiku i porosive nga i njejti account."
@@ -151,15 +151,15 @@ async function scrollToSelectedOrder() {
         </EmptyStatePanel>
 
         <template v-else-if="orders.length">
-          <section>
-            <div>
+          <section class="trego-orders-overview">
+            <div class="trego-orders-overview__header">
               <div>
                 <p>Panorama</p>
                 <h2>Porosite e tua ne levizje</h2>
               </div>
             </div>
 
-            <div>
+            <div class="trego-orders-overview__stats">
               <article>
                 <strong>{{ orderSummary.total }}</strong>
                 <span>gjithsej</span>
@@ -175,11 +175,12 @@ async function scrollToSelectedOrder() {
             </div>
           </section>
 
-          <div>
+          <div class="trego-orders-list">
             <article
               v-for="order in displayOrders"
              
               :key="order.id"
+              class="trego-order-card"
              
              
             >

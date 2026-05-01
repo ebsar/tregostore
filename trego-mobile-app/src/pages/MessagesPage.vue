@@ -103,8 +103,8 @@ watch(
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-messages-screen">
+        <section class="trego-messages-header">
           <div>
             <AppBackButton back-to="/tabs/account" />
           </div>
@@ -114,13 +114,13 @@ watch(
           </div>
         </section>
 
-        <section v-if="sessionState.sessionLoaded && sessionState.user">
-          <button type="button" @click="openSupport">
+        <section v-if="sessionState.sessionLoaded && sessionState.user" class="trego-messages-toolbar">
+          <button class="trego-secondary-button" type="button" @click="openSupport">
             <IonIcon :icon="headsetOutline" />
             <span>Contact support</span>
           </button>
 
-          <div role="search" aria-label="Kerko ne mesazhe">
+          <div class="trego-messages-search" role="search" aria-label="Kerko ne mesazhe">
             <IonIcon :icon="searchOutline" />
             <IonInput
               v-model="searchTerm"
@@ -145,10 +145,11 @@ watch(
           </IonButton>
         </EmptyStatePanel>
 
-        <div v-else-if="visibleConversations.length">
+        <div v-else-if="visibleConversations.length" class="trego-messages-list">
           <article
             v-for="conversation in visibleConversations"
             :key="conversation.id"
+            class="trego-message-card"
            
            
             @click="openConversation(conversation.id)"

@@ -362,7 +362,7 @@ async function handleLoadMore(event: CustomEvent) {
         >
         <input
           ref="uploadInputRef"
-         
+          class="trego-sr-only"
           type="file"
           accept="image/*"
           @change="handleVisualSearch"

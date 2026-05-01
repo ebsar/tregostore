@@ -120,7 +120,7 @@ onMounted(async () => {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-settings-screen">
         <AppPageHeader
           kicker="App settings"
           title="Preferences"
@@ -128,7 +128,7 @@ onMounted(async () => {
           back-to="/tabs/account"
         />
 
-        <section>
+        <section class="trego-settings-controls">
           <div>
             <div>
               <p>Kontrollet</p>
@@ -174,7 +174,7 @@ onMounted(async () => {
           </p>
         </section>
 
-        <section>
+        <section class="trego-settings-status">
           <div>
             <div>
               <p>Push status</p>

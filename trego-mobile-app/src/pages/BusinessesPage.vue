@@ -196,7 +196,7 @@ watch([query, selectedCategory], async () => {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-businesses-screen">
         <section class="trego-search-card">
           <div class="trego-search-form">
             <IonIcon :icon="storefrontOutline" />

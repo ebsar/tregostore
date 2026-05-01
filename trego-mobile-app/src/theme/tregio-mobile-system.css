@@ -11,13 +11,15 @@
   --trego-blue: #2563eb;
   --trego-bg: #f6f7f8;
   --trego-surface: #ffffff;
-  --trego-surface-muted: #fbfbfb;
+  --trego-surface-muted: #f8fafc;
   --trego-border: #e5e7eb;
+  --trego-border-strong: #d1d5db;
   --trego-text: #111827;
   --trego-muted: #6b7280;
-  --trego-radius: 14px;
-  --trego-radius-sm: 10px;
-  --trego-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+  --trego-radius: 16px;
+  --trego-radius-sm: 12px;
+  --trego-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  --trego-shadow-soft: 0 2px 10px rgba(15, 23, 42, 0.04);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +42,7 @@ body,
 ion-app {
   background: var(--trego-bg);
   color: var(--trego-text);
+  overflow-x: hidden;
 }
 
 ion-content {
@@ -62,21 +65,428 @@ img {
 }
 
 .trego-mobile-screen {
-  width: min(100%, 720px);
+  width: min(100%, 980px);
   margin: 0 auto;
-  padding: calc(12px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom));
+  padding: calc(12px + env(safe-area-inset-top)) clamp(12px, 2.4vw, 20px) calc(92px + env(safe-area-inset-bottom));
 }
 
 .trego-mobile-screen > * + * {
   margin-top: 12px;
 }
 
-.trego-mobile-screen > section:not(.trego-top-actions):not(.trego-filter-row):not(.trego-rail-section):not(.trego-search-card):not(.trego-product-grid):not(.trego-business-list):not(.trego-function-list):not(.trego-segment-row):not(.trego-studio-actions):not(.trego-studio-focus):not(.trego-flow-steps) {
-  padding: 12px;
-  background: var(--trego-surface);
+.trego-mobile-screen section {
+  display: grid;
+  gap: 12px;
+}
+
+.trego-mobile-screen section h1,
+.trego-mobile-screen section h2,
+.trego-mobile-screen section h3 {
+  margin: 0;
+  color: var(--trego-text);
+  line-height: 1.2;
+}
+
+.trego-mobile-screen section p {
+  margin: 0;
+  color: var(--trego-muted);
+}
+
+.trego-mobile-screen label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trego-mobile-screen label > span:first-child {
+  color: var(--trego-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-mobile-screen input[type="text"],
+.trego-mobile-screen input[type="email"],
+.trego-mobile-screen input[type="password"],
+.trego-mobile-screen input[type="tel"],
+.trego-mobile-screen input[type="date"],
+.trego-mobile-screen select,
+.trego-mobile-screen textarea,
+.trego-mobile-screen ion-input {
+  width: 100%;
+  min-height: 42px;
   border: 1px solid var(--trego-border);
+  border-radius: 11px;
+  background: var(--trego-surface-muted);
+  color: var(--trego-text);
+}
+
+.trego-mobile-screen ion-input {
+  --background: var(--trego-surface-muted);
+  --border-radius: 11px;
+  --padding-start: 12px;
+  --padding-end: 12px;
+}
+
+.trego-mobile-screen input[type="text"],
+.trego-mobile-screen input[type="email"],
+.trego-mobile-screen input[type="password"],
+.trego-mobile-screen input[type="tel"],
+.trego-mobile-screen input[type="date"],
+.trego-mobile-screen select,
+.trego-mobile-screen textarea {
+  padding: 10px 12px;
+  outline: none;
+}
+
+.trego-mobile-screen a {
+  color: var(--trego-accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.trego-mobile-screen ion-button {
+  width: 100%;
+  --border-radius: 12px;
+  --box-shadow: none;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.trego-auth-header {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.trego-auth-header h1 {
+  font-size: clamp(22px, 4.4vw, 30px);
+}
+
+.trego-auth-form {
+  gap: 14px;
+}
+
+.trego-auth-form__row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trego-form-message {
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.trego-form-message--error {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.trego-form-message--success {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.trego-social-auth {
+  display: grid;
+  gap: 8px;
+}
+
+.trego-social-auth button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  color: var(--trego-text);
+  background: var(--trego-surface);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-checkout-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trego-checkout-screen section > button[type="button"] {
+  display: grid;
+  gap: 4px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  color: var(--trego-text);
+  background: var(--trego-surface);
+  text-align: left;
+}
+
+.trego-cart-header,
+.trego-messages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trego-cart-header h1,
+.trego-messages-header h1 {
+  font-size: clamp(22px, 4.4vw, 30px);
+}
+
+.trego-cart-list {
+  gap: 10px;
+}
+
+.trego-cart-item {
+  display: grid;
+  grid-template-columns: 74px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-cart-item img {
+  width: 74px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.trego-cart-item h3 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+.trego-cart-item strong {
+  color: var(--trego-accent-strong);
+}
+
+.trego-cart-item button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface);
+}
+
+.trego-cart-summary__totals {
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-orders-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-orders-overview__stats article {
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-order-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--trego-border);
+  border-radius: 14px;
+  background: var(--trego-surface);
+  box-shadow: var(--trego-shadow-soft);
+}
+
+.trego-orders-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-messages-toolbar {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-messages-search {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-messages-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-message-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--trego-border);
+  border-radius: 14px;
+  background: var(--trego-surface);
+  box-shadow: var(--trego-shadow-soft);
+}
+
+.trego-product-screen > section {
+  border: 1px solid var(--trego-border);
+  border-radius: 14px;
+  box-shadow: var(--trego-shadow-soft);
+}
+
+.trego-businesses-screen .trego-search-card,
+.trego-settings-screen section,
+.trego-business-hub-screen section,
+.trego-business-store-screen section,
+.trego-admin-screen section {
+  box-shadow: var(--trego-shadow-soft);
+}
+
+.trego-business-store-hero img {
+  width: 100%;
+  aspect-ratio: 16 / 8;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.trego-business-store-products > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trego-business-hub-insights > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-business-hub-insights article {
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-business-hub-actions > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-business-hub-actions button {
+  min-height: 40px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface-muted);
+  color: var(--trego-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trego-business-hub-products > div:last-child {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.trego-admin-tabs button {
+  min-height: 36px;
+  border: 1px solid var(--trego-border);
+  border-radius: 999px;
+  background: var(--trego-surface-muted);
+  color: var(--trego-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.trego-admin-stats > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trego-admin-stats article {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-admin-users article,
+.trego-admin-businesses article,
+.trego-admin-reports article {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-admin-create-business > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trego-settings-controls > div:last-child {
+  display: grid;
+  gap: 10px;
+}
+
+.trego-settings-controls label {
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-settings-status > div:last-child {
+  display: grid;
+  gap: 8px;
+}
+
+.trego-settings-status > div:last-child > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--trego-border);
+  border-radius: 12px;
+  background: var(--trego-surface-muted);
+}
+
+.trego-mobile-screen > section:not(.trego-top-actions):not(.trego-filter-row):not(.trego-rail-section):not(.trego-search-card):not(.trego-product-grid):not(.trego-business-list):not(.trego-function-list):not(.trego-segment-row):not(.trego-studio-actions):not(.trego-studio-focus):not(.trego-flow-steps) {
+  padding: 14px;
+  background: var(--trego-surface);
+  border: 1px solid var(--trego-border-strong);
   border-radius: var(--trego-radius);
-  box-shadow: var(--trego-shadow);
+  box-shadow: var(--trego-shadow-soft);
 }
 
 .trego-mobile-screen h1,
@@ -136,8 +546,8 @@ img {
 .trego-section-title {
   margin: 0;
   color: var(--trego-text);
-  font-size: 22px;
-  line-height: 1.1;
+  font-size: clamp(20px, 3.8vw, 28px);
+  line-height: 1.15;
   letter-spacing: 0;
 }
 
@@ -147,8 +557,8 @@ img {
 .trego-studio-card p {
   margin: 0;
   color: var(--trego-muted);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: clamp(13px, 2.3vw, 15px);
+  line-height: 1.45;
 }
 
 .trego-status-banner {
@@ -312,6 +722,13 @@ img {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+}
+
+.trego-top-actions__icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .trego-search-button,
@@ -320,8 +737,8 @@ img {
 .trego-chip,
 .trego-primary-button,
 .trego-secondary-button {
-  min-height: 38px;
-  border: 1px solid var(--trego-border);
+  min-height: 42px;
+  border: 1px solid var(--trego-border-strong);
   border-radius: 999px;
   background: var(--trego-surface);
   color: var(--trego-text);
@@ -335,6 +752,7 @@ img {
   padding: 0 12px;
   font-size: 12px;
   font-weight: 850;
+  box-shadow: var(--trego-shadow-soft);
 }
 
 .trego-search-button {
@@ -345,11 +763,13 @@ img {
   gap: 10px;
   padding: 8px 10px 8px 14px;
   text-align: left;
+  min-width: 0;
 }
 
 .trego-search-button strong,
 .trego-search-button span {
   display: block;
+  min-width: 0;
 }
 
 .trego-search-button strong {
@@ -361,13 +781,17 @@ img {
   margin-top: 2px;
   color: var(--trego-muted);
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trego-icon-button {
-  width: 40px;
+  width: 42px;
   display: inline-grid;
   place-items: center;
   padding: 0;
+  box-shadow: var(--trego-shadow-soft);
 }
 
 .trego-icon-button ion-icon {
@@ -386,11 +810,18 @@ img {
   background:
     linear-gradient(135deg, rgba(255, 111, 24, 0.12), rgba(255, 243, 234, 0.2)),
     var(--trego-surface);
+  overflow-x: clip;
+}
+
+.trego-home-screen {
+  margin-left: auto;
+  margin-right: auto;
+  overflow-x: clip;
 }
 
 .trego-stats-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(88px, 1fr));
   gap: 8px;
 }
 
@@ -1062,16 +1493,76 @@ img {
     padding-right: 10px;
   }
 
+  .trego-top-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .trego-top-actions__icons {
+    justify-content: flex-end;
+  }
+
   .trego-product-grid,
   .trego-studio-actions,
   .trego-studio-focus,
   .trego-flow-steps {
     grid-template-columns: 1fr;
   }
+
+  .trego-auth-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .trego-checkout-row {
+    grid-template-columns: 1fr;
+  }
+
+  .trego-cart-item {
+    grid-template-columns: 64px 1fr auto;
+  }
+
+  .trego-cart-item img {
+    width: 64px;
+    height: 64px;
+  }
+
+  .trego-orders-overview__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .trego-business-store-products > div,
+  .trego-business-hub-insights > div:last-child,
+  .trego-business-hub-actions > div:last-child,
+  .trego-admin-stats > div,
+  .trego-admin-create-business > div,
+  .trego-admin-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .trego-stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 560px) {
   .trego-product-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 880px) {
+  .trego-mobile-screen {
+    padding-bottom: calc(102px + env(safe-area-inset-bottom));
+  }
+
+  .trego-home-screen .trego-list-stack,
+  .trego-home-screen > section:last-child {
+    max-width: 940px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .trego-product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

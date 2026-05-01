@@ -70,8 +70,8 @@ async function submit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-auth-screen">
+        <section class="trego-auth-header">
           <div>
             <AppBackButton back-to="/tabs/account" />
           </div>
@@ -86,8 +86,8 @@ async function submit() {
           </div>
         </section>
 
-        <section>
-          <div>
+        <section class="trego-auth-form">
+          <div class="trego-auth-form__row">
             <label>
               <span>Emri</span>
               <IonInput v-model="form.firstName" type="text" placeholder="Emri" />
@@ -114,7 +114,7 @@ async function submit() {
             <IonInput v-model="form.password" type="password" placeholder="Password" />
           </label>
 
-          <div>
+          <div class="trego-auth-form__row">
             <label>
               <span>Data e lindjes</span>
               <input v-model="form.birthDate" type="date" />
@@ -130,7 +130,12 @@ async function submit() {
             </label>
           </div>
 
-          <p v-if="form.message">{{ form.message }}</p>
+          <p
+            v-if="form.message"
+            :class="['trego-form-message', form.type === 'success' ? 'trego-form-message--success' : 'trego-form-message--error']"
+          >
+            {{ form.message }}
+          </p>
 
           <IonButton :disabled="form.busy" @click="submit">
             {{ form.busy ? "Duke krijuar llogarine..." : "Sign up" }}
@@ -141,7 +146,7 @@ async function submit() {
             <RouterLink to="/login">Log in</RouterLink>
           </p>
 
-          <div>
+          <div class="trego-social-auth">
             <p>Vazhdo me</p>
             <button type="button" @click="showSocialAuthMessage('Apple')">
               Sign up with Apple

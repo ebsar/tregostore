@@ -46,6 +46,7 @@ function warmCriticalRoutes() {
 
 const app = createApp(App)
   .use(IonicVue)
+  .use(VueQueryPlugin, { queryClient })
   .use(router);
 
 setupNativeChrome().finally(() => {

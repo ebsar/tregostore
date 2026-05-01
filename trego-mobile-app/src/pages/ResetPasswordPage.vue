@@ -87,17 +87,17 @@ async function resendCode() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-auth-screen">
+        <section class="trego-auth-header">
           <div>
             <AppBackButton back-to="/forgot-password" />
           </div>
           <div>
-            <h1>RESET PASSWORD</h1>
+            <h1>Rivendos fjalekalimin</h1>
           </div>
         </section>
 
-        <section>
+        <section class="trego-auth-form">
           <label>
             <span>Email</span>
             <IonInput v-model="form.email" type="email" placeholder="email@domain.com" />
@@ -130,9 +130,14 @@ async function resendCode() {
             />
           </label>
 
-          <p v-if="form.message">{{ form.message }}</p>
+          <p
+            v-if="form.message"
+            :class="['trego-form-message', form.type === 'success' ? 'trego-form-message--success' : 'trego-form-message--error']"
+          >
+            {{ form.message }}
+          </p>
 
-          <div>
+          <div class="trego-auth-form__row">
             <IonButton :disabled="form.busy" @click="submit">
               {{ form.busy ? "Duke ruajtur..." : "Ndrysho fjalekalimin" }}
             </IonButton>

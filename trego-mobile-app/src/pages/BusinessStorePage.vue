@@ -94,7 +94,7 @@ watch(
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-business-store-screen">
         <section v-if="loading">
           <IonSpinner name="crescent" />
         </section>
@@ -103,7 +103,7 @@ watch(
           <div>
             <AppBackButton back-to="/tabs/home" />
           </div>
-          <section>
+          <section class="trego-business-store-hero">
             <div>
               <img :src="heroImage" :alt="business.businessName" />
             </div>
@@ -143,7 +143,7 @@ watch(
             </div>
           </section>
 
-          <section>
+          <section class="trego-business-store-products">
             <div>
               <h2>Produktet e dyqanit</h2>
             </div>

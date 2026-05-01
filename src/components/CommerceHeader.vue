@@ -452,24 +452,24 @@ async function handleWishlistLogin() {
   top: 0;
   z-index: 1000;
   width: 100%;
-  background: #ffffff;
-  border-bottom: 1px solid #ececec;
-  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--dashboard-border);
+  font-family: inherit;
 }
 
 .site-header__main {
   width: min(100%, 1280px);
   margin: 0 auto;
   box-sizing: border-box;
-  min-height: 124px;
+  min-height: 72px;
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(260px, 560px) auto;
+  grid-template-columns: auto minmax(260px, 600px) auto;
   align-items: center;
-  gap: 18px;
+  gap: 32px;
   justify-content: space-between;
   padding: 0 24px;
-  background: #ffffff;
 }
 
 .site-header__brand {
@@ -482,8 +482,8 @@ async function handleWishlistLogin() {
 }
 
 .site-header__brand-image {
-  width: 114px;
-  height: 114px;
+  height: 44px;
+  width: auto;
   display: block;
   object-fit: contain;
 }
@@ -513,18 +513,16 @@ async function handleWishlistLogin() {
 
 .site-header__search-input {
   width: 100%;
-  height: 42px;
-  border: 1px solid #e5e5e5;
-  border-radius: 999px;
-  padding: 0 18px;
-  background: #fbfbfb;
-  color: #111111;
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--dashboard-radius);
+  padding: 0 16px;
+  background: #f1f5f9;
+  color: var(--dashboard-text);
   font-size: 14px;
   line-height: 1;
   outline: none;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease;
+  transition: all 0.2s ease;
 }
 
 .site-header__search-field--photo .site-header__search-input {
@@ -532,12 +530,13 @@ async function handleWishlistLogin() {
 }
 
 .site-header__search-input::placeholder {
-  color: #8a8a8a;
+  color: var(--dashboard-muted);
 }
 
 .site-header__search-input:focus {
-  border-color: #cfcfcf;
-  background: #ffffff;
+  background: var(--dashboard-surface);
+  border-color: var(--dashboard-accent);
+  box-shadow: 0 0 0 4px var(--dashboard-accent-soft);
 }
 
 .site-header__search-camera {
@@ -596,17 +595,15 @@ async function handleWishlistLogin() {
 
 .site-header__icon-link {
   position: relative;
-  width: 20px;
-  height: 20px;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #1a1a1a;
+  color: var(--dashboard-text);
   text-decoration: none;
-  opacity: 0.94;
-  transition:
-    opacity 160ms ease,
-    color 160ms ease;
+  border-radius: var(--dashboard-radius);
+  transition: all 0.2s ease;
 }
 
 .site-header__icon-button {
@@ -621,15 +618,15 @@ async function handleWishlistLogin() {
 }
 
 .site-header__icon-link:hover {
-  opacity: 1;
-  color: #111111;
+  background: var(--dashboard-bg);
+  color: var(--dashboard-accent);
 }
 
 .site-header__icon-link svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.6;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -637,8 +634,8 @@ async function handleWishlistLogin() {
 
 .site-header__icon-badge {
   position: absolute;
-  top: -8px;
-  right: -12px;
+  top: 4px;
+  right: 4px;
   min-width: 16px;
   height: 16px;
   display: inline-flex;
@@ -646,15 +643,16 @@ async function handleWishlistLogin() {
   justify-content: center;
   padding: 0 4px;
   border-radius: 999px;
-  background: #111111;
+  background: var(--dashboard-accent);
   color: #ffffff;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  box-shadow: 0 0 0 2px var(--dashboard-surface);
 }
 
 .site-header__icon-badge--notification {
-  background: #ff6f18;
+  background: var(--dashboard-rose);
 }
 
 .site-header__category-strip {

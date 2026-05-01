@@ -626,7 +626,7 @@ onUnmounted(() => {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-product-screen">
         <section v-if="loading">
           <IonSpinner name="crescent" />
         </section>

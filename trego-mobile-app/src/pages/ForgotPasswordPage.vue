@@ -51,23 +51,28 @@ async function submit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-auth-screen">
+        <section class="trego-auth-header">
           <div>
             <AppBackButton back-to="/login" />
           </div>
           <div>
-            <h1>FORGOT PASSWORD</h1>
+            <h1>Keni harruar fjalekalimin?</h1>
           </div>
         </section>
 
-        <section>
+        <section class="trego-auth-form">
           <label>
             <span>Email</span>
             <IonInput v-model="form.email" type="email" placeholder="email@domain.com" />
           </label>
 
-          <p v-if="form.message">{{ form.message }}</p>
+          <p
+            v-if="form.message"
+            :class="['trego-form-message', form.type === 'success' ? 'trego-form-message--success' : 'trego-form-message--error']"
+          >
+            {{ form.message }}
+          </p>
 
           <IonButton :disabled="form.busy" @click="submit">
             {{ form.busy ? "Duke derguar..." : "Me dergo kodin" }}

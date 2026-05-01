@@ -55,8 +55,8 @@ async function submit() {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
-        <section>
+      <div class="trego-mobile-screen trego-auth-screen">
+        <section class="trego-auth-header">
           <div>
             <AppBackButton back-to="/tabs/account" />
           </div>
@@ -66,12 +66,12 @@ async function submit() {
             </button>
           </div>
           <div>
-            <h1>Kyçuni</h1>
+            <h1>Kyquni</h1>
             <span />
           </div>
         </section>
 
-        <section>
+        <section class="trego-auth-form">
           <label>
             <span>Email ose telefoni</span>
             <IonInput v-model="form.identifier" type="text" placeholder="email@domain.com ose +383..." data-testid="login-identifier" />
@@ -84,7 +84,12 @@ async function submit() {
 
           <RouterLink to="/forgot-password">Keni harruar fjalekalimin?</RouterLink>
 
-          <p v-if="form.message">{{ form.message }}</p>
+          <p
+            v-if="form.message"
+            :class="['trego-form-message', form.type === 'success' ? 'trego-form-message--success' : 'trego-form-message--error']"
+          >
+            {{ form.message }}
+          </p>
 
           <IonButton data-testid="login-submit" :disabled="form.busy" @click="submit">
             {{ form.busy ? "Duke u kyçur..." : "Login" }}
@@ -95,7 +100,7 @@ async function submit() {
             <RouterLink to="/signup">Sign up</RouterLink>
           </p>
 
-          <div>
+          <div class="trego-social-auth">
             <p>Vazhdo me</p>
             <button type="button" @click="showSocialAuthMessage('Apple')">
               Continue with Apple

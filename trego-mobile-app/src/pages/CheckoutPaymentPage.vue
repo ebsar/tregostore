@@ -193,7 +193,7 @@ function selectDelivery(method: string) {
 <template>
   <IonPage>
     <IonContent :fullscreen="true">
-      <div class="trego-mobile-screen">
+      <div class="trego-mobile-screen trego-checkout-screen">
         <AppPageHeader
           kicker="Checkout"
           title="Zgjedhe dergesen dhe pagesen."
@@ -290,7 +290,12 @@ function selectDelivery(method: string) {
             <span>Secure checkout ne app</span>
           </div>
 
-          <p v-if="ui.message">{{ ui.message }}</p>
+          <p
+            v-if="ui.message"
+            :class="['trego-form-message', ui.type === 'error' ? 'trego-form-message--error' : 'trego-form-message--success']"
+          >
+            {{ ui.message }}
+          </p>
 
           <IonButton
            
