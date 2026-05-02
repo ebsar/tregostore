@@ -195,7 +195,7 @@ struct TregoNativeRootView: View {
                 TregoSearchScreen(store: store, tabBarScrollProgress: $tabBarScrollProgress)
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabBarMinimizeBehavior(.automatic)
         .tint(TregoNativeTheme.accent)
     }
 
@@ -2553,19 +2553,22 @@ private struct TregoPersonalDataScreen: View {
     @State private var deletePassword = ""
     @State private var deleteMessage = ""
     @State private var deleteMessageTone: TregoStatusMessageTone?
+    @State private var showsDeleteAccountSheet = false
     @State private var isSaving = false
     @State private var isDeleting = false
 
-    private let infoColumns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let user = store.user {
-                    TregoNoticeCard(
-                        title: "Profili yt",
-                        subtitle: "Ndrysho foton, emrin, daten e lindjes dhe detajet baze. Ndryshimet ruhen direkt ne llogarine tende."
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Profili yt")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(TregoNativeTheme.primaryText)
+                        Text("Menaxho foton, te dhenat personale dhe sigurine e llogarise ne nje vend.")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(TregoNativeTheme.secondaryText)
+                    }
 
                     TregoProfileImageEditorCard(
                         title: user.fullName ?? "Perdoruesi",
@@ -2575,21 +2578,40 @@ private struct TregoPersonalDataScreen: View {
                         onChoosePhoto: { showsPhotoOptions = true },
                         onRemovePhoto: {
                             selectedPhotoUpload = nil
+                            remoteProfileImagePath = ""
                         }
                     )
-
-                    LazyVGrid(columns: infoColumns, spacing: 12) {
-                        TregoInfoTile(title: "Email", value: user.email ?? "-")
-                        TregoInfoTile(title: "Telefoni", value: user.phoneNumber ?? "-")
-                    }
 
                     if let tone = saveMessageTone, !saveMessage.isEmpty {
                         TregoStatusMessageCard(message: saveMessage, tone: tone)
                     }
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        TregoSectionHeader(title: "Detajet personale")
+                    TregoSettingsSectionCard(title: "Kontakt") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Detajet e kontaktit qe perdoren per hyrje, komunikim dhe perditesime te llogarise.")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(TregoNativeTheme.secondaryText)
 
+                            VStack(spacing: 0) {
+                                TregoAccountDetailRow(
+                                    title: "Email",
+                                    value: user.email ?? "",
+                                    systemImage: "envelope.fill",
+                                    helper: "Per hyrje dhe njoftime"
+                                )
+                                Divider()
+                                    .overlay(Color.white.opacity(0.08))
+                                TregoAccountDetailRow(
+                                    title: "Telefoni",
+                                    value: user.phoneNumber ?? "",
+                                    systemImage: "phone.fill",
+                                    helper: "Per kontakt dhe verifikim"
+                                )
+                            }
+                        }
+                    }
+
+                    TregoSettingsSectionCard(title: "Detajet personale") {
                         TregoInputCard(title: "Emri", text: $firstName, placeholder: "Shkruaj emrin", textContentType: .givenName, disableAutocorrection: false)
                         TregoInputCard(title: "Mbiemri", text: $lastName, placeholder: "Shkruaj mbiemrin", textContentType: .familyName, disableAutocorrection: false)
                         TregoBirthDateGenderRow(
@@ -2618,30 +2640,24 @@ private struct TregoPersonalDataScreen: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        TregoSectionHeader(title: "Danger zone")
-                        Text("Per ta fshire llogarine, shkruaj fjalekalimin dhe konfirmo. Ky veprim nuk kthehet prapa.")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.secondary)
+                    if let tone = deleteMessageTone, !deleteMessage.isEmpty {
+                        TregoStatusMessageCard(message: deleteMessage, tone: tone)
+                    }
 
-                        TregoSecureInputCard(title: "Konfirmo me fjalekalim", text: $deletePassword, textContentType: .password)
+                    TregoSettingsSectionCard(title: "Veprime") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Fshirja e llogarise eshte veprim permanent dhe do te humbasesh te gjitha te dhenat e ruajtura.")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(TregoNativeTheme.secondaryText)
 
-                        if let tone = deleteMessageTone, !deleteMessage.isEmpty {
-                            TregoStatusMessageCard(message: deleteMessage, tone: tone)
-                        }
-
-                        Button {
-                            Task { await deleteAccount() }
-                        } label: {
-                            if isDeleting {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Text("Fshi llogarine")
+                            Button {
+                                showsDeleteAccountSheet = true
+                            } label: {
+                                Label("Fshi llogarine", systemImage: "exclamationmark.triangle.fill")
                                     .frame(maxWidth: .infinity)
                             }
+                            .buttonStyle(TregoDangerButtonStyle())
                         }
-                        .buttonStyle(TregoDangerButtonStyle())
                     }
                 } else {
                     TregoScreenGuestNotice(
@@ -2651,6 +2667,7 @@ private struct TregoPersonalDataScreen: View {
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.top, 14)
             .padding(.vertical, 18)
             .padding(.bottom, 90)
         }
@@ -2659,22 +2676,79 @@ private struct TregoPersonalDataScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .tregoHideTabBarOnSecondaryPage()
         .confirmationDialog("Foto e profilit", isPresented: $showsPhotoOptions) {
-            Button("Take photo") {
+            Button("Bej foto") {
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     pickerSource = .camera
                 } else {
                     store.globalMessage = "Kamera nuk eshte e disponueshme tani."
                 }
             }
-            Button("Choose from library") {
+            Button("Zgjidh nga galeria") {
                 pickerSource = .photoLibrary
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Anulo", role: .cancel) {}
         }
         .sheet(item: $pickerSource) { source in
             TregoImagePicker(source: source) { upload in
                 selectedPhotoUpload = upload
             }
+        }
+        .sheet(isPresented: $showsDeleteAccountSheet) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.red, in: Circle())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Fshij llogarine")
+                                .font(.system(size: 20, weight: .bold))
+                            Text("Nese e fshin llogarine, do t'i humbasesh pergjithmone te gjitha te dhenat e ruajtura.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    TregoSecureInputCard(title: "Fjalekalimi", text: $deletePassword, textContentType: .password)
+
+                    if let tone = deleteMessageTone, !deleteMessage.isEmpty {
+                        TregoStatusMessageCard(message: deleteMessage, tone: tone)
+                    }
+
+                    Button {
+                        Task { await deleteAccount() }
+                    } label: {
+                        if isDeleting {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Fshi llogarine", systemImage: "exclamationmark.triangle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(TregoDangerButtonStyle())
+
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                .background(TregoNativeTheme.systemBackground.ignoresSafeArea())
+                .navigationTitle("Fshij llogarine")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Anulo") {
+                            showsDeleteAccountSheet = false
+                            deletePassword = ""
+                            deleteMessage = ""
+                            deleteMessageTone = nil
+                        }
+                    }
+                }
+            }
+            .tregoPopupSheetStyle(height: 360)
         }
         .task {
             hydrateFromCurrentUser()
@@ -2695,6 +2769,8 @@ private struct TregoPersonalDataScreen: View {
         selectedPhotoUpload = nil
         saveMessage = ""
         saveMessageTone = nil
+        deleteMessage = ""
+        deleteMessageTone = nil
     }
 
     private func saveProfile() async {
@@ -2756,6 +2832,7 @@ private struct TregoPersonalDataScreen: View {
 
         store.resetSessionState()
         store.selectedTab = .llogaria
+        showsDeleteAccountSheet = false
         store.globalMessage = response.message ?? "Llogaria u fshi me sukses."
         dismiss()
     }
@@ -3242,6 +3319,7 @@ private struct TregoNotificationsScreen: View {
     @State private var message = ""
     @State private var messageTone: TregoStatusMessageTone?
     @State private var isLoading = false
+    @State private var selectedNotification: TregoNotificationItem?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -3270,8 +3348,16 @@ private struct TregoNotificationsScreen: View {
                     } else {
                         VStack(spacing: 12) {
                             ForEach(notifications) { notification in
-                                TregoNotificationCard(notification: notification) {
-                                    notificationAction(for: notification)
+                                Button {
+                                    selectedNotification = notification
+                                } label: {
+                                    TregoNotificationCard(notification: notification)
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button("Fshij", role: .destructive) {
+                                        Task { await deleteNotification(notification) }
+                                    }
                                 }
                             }
                         }
@@ -3297,15 +3383,21 @@ private struct TregoNotificationsScreen: View {
         .refreshable {
             await loadNotifications()
         }
-    }
-
-    @ViewBuilder
-    private func notificationAction(for notification: TregoNotificationItem) -> some View {
-        Button("Hape") {
-            Task { await store.openNotificationItem(notification) }
+        .sheet(item: $selectedNotification) { notification in
+            NavigationView {
+                TregoNotificationDetailSheet(
+                    notification: notification,
+                    onCancel: {
+                        selectedNotification = nil
+                    },
+                    onOpen: {
+                        selectedNotification = nil
+                        Task { await store.openNotificationItem(notification) }
+                    }
+                )
+            }
+            .tregoPopupSheetStyle(height: 340)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(TregoNativeTheme.accent)
     }
 
     private func loadNotifications() async {
@@ -3322,14 +3414,40 @@ private struct TregoNotificationsScreen: View {
         if payload.unreadCount > 0 {
             let response = await store.api.markNotificationsRead()
             if response.ok == true {
-                let refreshed = await store.api.fetchNotifications()
-                notifications = refreshed.notifications
-                unreadCount = refreshed.unreadCount
+                let readAt = ISO8601DateFormatter().string(from: Date())
+                notifications = notifications.map { item in
+                    TregoNotificationItem(
+                        id: item.id,
+                        type: item.type,
+                        title: item.title,
+                        body: item.body,
+                        href: item.href,
+                        isRead: true,
+                        createdAt: item.createdAt,
+                        readAt: item.readAt ?? readAt
+                    )
+                }
+                unreadCount = 0
                 await store.refreshNotificationBadgeCount()
             }
         } else {
             await store.refreshNotificationBadgeCount()
         }
+    }
+
+    private func deleteNotification(_ notification: TregoNotificationItem) async {
+        let response = await store.api.deleteNotification(notificationId: notification.id)
+        guard response.ok == true else {
+            message = response.message ?? "Njoftimi nuk u fshi."
+            messageTone = .error
+            return
+        }
+
+        notifications.removeAll { $0.id == notification.id }
+        unreadCount = notifications.filter { $0.isRead != true }.count
+        message = response.message ?? "Njoftimi u fshi."
+        messageTone = .success
+        await store.refreshNotificationBadgeCount()
     }
 }
 
@@ -6033,7 +6151,7 @@ private struct TregoPublicBusinessScreen: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
-                        .buttonStyle(TregoSecondaryButtonStyle())
+                        .buttonStyle(TregoPrimaryButtonStyle(tint: business.isFollowed == true ? TregoNativeTheme.softAccent : TregoNativeTheme.accent))
 
                         Button {
                             Task { await openConversation() }
@@ -8623,6 +8741,72 @@ private struct TregoSectionHeader: View {
     }
 }
 
+private struct TregoSettingsSectionCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(1.0)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .padding(16)
+            .tregoGlassRectBackground(cornerRadius: 28)
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+            }
+        }
+    }
+}
+
+private struct TregoAccountDetailRow: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let helper: String
+
+    private var trimmedValue: String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasValue: Bool {
+        !trimmedValue.isEmpty
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(TregoNativeTheme.accent)
+                .frame(width: 36, height: 36)
+                .tregoGlassCircleBackground()
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(hasValue ? trimmedValue : "Nuk eshte shtuar ende")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(hasValue ? TregoNativeTheme.primaryText : TregoNativeTheme.secondaryText)
+                    .lineLimit(3)
+                Text(helper)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(TregoNativeTheme.secondaryText)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
+    }
+}
+
 private struct TregoVisualSearchIcon: View {
     let symbolName: String
 
@@ -9350,12 +9534,12 @@ private struct TregoPublicBusinessExplorerCard: View {
                     Button(action: onMessage) {
                         Image(systemName: "message.fill")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(messageIconColor)
+                            .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .background(TregoNativeTheme.accent, in: Circle())
                             .overlay {
                                 Circle()
-                                    .strokeBorder(buttonStrokeColor, lineWidth: 0.7)
+                                    .strokeBorder(TregoNativeTheme.accent.opacity(0.22), lineWidth: 0.8)
                             }
                     }
                     .buttonStyle(.plain)
@@ -9363,25 +9547,25 @@ private struct TregoPublicBusinessExplorerCard: View {
                     if business.isFollowed == true {
                         Button("Following", action: onFollow)
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(followingTextColor)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: Capsule())
+                            .background(TregoNativeTheme.softAccent, in: Capsule())
                             .overlay {
                                 Capsule()
-                                    .strokeBorder(buttonStrokeColor, lineWidth: 0.8)
+                                    .strokeBorder(TregoNativeTheme.softAccent.opacity(0.24), lineWidth: 0.8)
                             }
                             .buttonStyle(.plain)
                     } else {
                         Button("Follow", action: onFollow)
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(followTextColor)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
-                            .background(followFillColor, in: Capsule())
+                            .background(TregoNativeTheme.accent, in: Capsule())
                             .overlay {
                                 Capsule()
-                                    .strokeBorder(followBorderColor, lineWidth: 0.8)
+                                    .strokeBorder(TregoNativeTheme.accent.opacity(0.24), lineWidth: 0.8)
                             }
                             .buttonStyle(.plain)
                     }
@@ -9907,6 +10091,10 @@ private struct TregoProfileImageEditorCard: View {
     let onRemovePhoto: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
+    private var canRemovePhoto: Bool {
+        upload != nil || !imagePath.isEmpty
+    }
+
     var body: some View {
         HStack(spacing: 16) {
             preview
@@ -9925,8 +10113,8 @@ private struct TregoProfileImageEditorCard: View {
                     Button("Zgjidh foton", action: onChoosePhoto)
                         .buttonStyle(TregoMiniButtonStyle(tint: TregoNativeTheme.softAccent))
 
-                    if upload != nil {
-                        Button("Anulo foton", action: onRemovePhoto)
+                    if canRemovePhoto {
+                        Button("Hiqe foton", action: onRemovePhoto)
                             .buttonStyle(TregoMiniOutlineButtonStyle())
                     }
                 }
@@ -10044,43 +10232,198 @@ private struct TregoBirthDateGenderRow: View {
     }
 }
 
-private struct TregoNotificationCard<Action: View>: View {
+private struct TregoNotificationCard: View {
     let notification: TregoNotificationItem
-    @ViewBuilder let action: () -> Action
     @Environment(\.colorScheme) private var colorScheme
 
+    private var visualStyle: TregoNotificationVisualStyle {
+        TregoNotificationVisualStyle(notification: notification)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(notification.title?.isEmpty == false ? (notification.title ?? "") : "Njoftim")
-                        .font(.system(size: 17, weight: .bold))
-                    Text(TregoNativeFormatting.readableDate(notification.createdAt))
-                        .font(.system(size: 12, weight: .medium))
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                visualStyle.tint.opacity(0.96),
+                                visualStyle.tint.opacity(0.68),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: visualStyle.symbolName)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(notification.title?.isEmpty == false ? (notification.title ?? "") : "Njoftim")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(TregoNativeTheme.primaryText)
+                            .lineLimit(2)
+
+                        if let body = notification.body, !body.isEmpty {
+                            Text(body)
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(TregoNativeTheme.secondaryText)
+                                .lineLimit(3)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if notification.isRead != true {
+                        Circle()
+                            .fill(TregoNativeTheme.accent)
+                            .frame(width: 9, height: 9)
+                            .padding(.top, 6)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Text(visualStyle.typeLabel)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(visualStyle.tint)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(visualStyle.tint.opacity(colorScheme == .dark ? 0.18 : 0.12), in: Capsule())
+
+                    Text(TregoNativeFormatting.readableDateTime(notification.createdAt))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                if notification.isRead != true {
-                    TregoMetaPill(text: "Ri")
-                }
-            }
-
-            if let body = notification.body, !body.isEmpty {
-                Text(body)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(0.8))
-            }
-
-            HStack {
-                action()
-                Spacer(minLength: 0)
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .tregoGlassRectBackground(cornerRadius: 26)
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .strokeBorder(colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.42), lineWidth: 0.8)
+        }
+        .shadow(color: visualStyle.tint.opacity(colorScheme == .dark ? 0.12 : 0.08), radius: 12, y: 6)
+    }
+}
+
+private struct TregoNotificationDetailSheet: View {
+    let notification: TregoNotificationItem
+    let onCancel: () -> Void
+    let onOpen: () -> Void
+
+    private var visualStyle: TregoNotificationVisualStyle {
+        TregoNotificationVisualStyle(notification: notification)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        visualStyle.tint.opacity(0.96),
+                                        visualStyle.tint.opacity(0.68),
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Image(systemName: visualStyle.symbolName)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 56, height: 56)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(notification.title?.isEmpty == false ? (notification.title ?? "") : "Njoftim")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(TregoNativeTheme.primaryText)
+                        HStack(spacing: 8) {
+                            Text(visualStyle.typeLabel)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(visualStyle.tint)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(visualStyle.tint.opacity(0.12), in: Capsule())
+                            Text(TregoNativeFormatting.readableDateTime(notification.createdAt))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let body = notification.body, !body.isEmpty {
+                    Text(body)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(TregoNativeTheme.secondaryText)
+                        .lineSpacing(3)
+                }
+            }
+            .padding(18)
+            .tregoGlassRectBackground(cornerRadius: 28)
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 12) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(TregoSecondaryButtonStyle())
+                Button("Shiko me shume", action: onOpen)
+                    .buttonStyle(TregoPrimaryButtonStyle())
+            }
+        }
+        .padding(18)
+        .background(TregoNativeTheme.systemBackground.ignoresSafeArea())
+        .navigationTitle("Njoftimi")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct TregoNotificationVisualStyle {
+    let typeLabel: String
+    let symbolName: String
+    let tint: Color
+
+    init(notification: TregoNotificationItem) {
+        let normalizedType = (notification.type ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch normalizedType {
+        case "message":
+            typeLabel = "Mesazh"
+            symbolName = "message.fill"
+            tint = Color(red: 0.18, green: 0.58, blue: 0.98)
+        case "order":
+            typeLabel = "Porosi"
+            symbolName = "bag.fill"
+            tint = TregoNativeTheme.accent
+        case "return":
+            typeLabel = "Kthim"
+            symbolName = "arrow.uturn.backward.circle.fill"
+            tint = Color(red: 0.94, green: 0.42, blue: 0.22)
+        case "verification":
+            typeLabel = "Verifikim"
+            symbolName = "checkmark.seal.fill"
+            tint = Color(red: 0.16, green: 0.72, blue: 0.44)
+        case "promotion":
+            typeLabel = "Promo"
+            symbolName = "sparkles"
+            tint = Color(red: 0.84, green: 0.46, blue: 0.98)
+        default:
+            typeLabel = "Njoftim"
+            symbolName = notification.isRead == true ? "bell.fill" : "bell.badge.fill"
+            tint = TregoNativeTheme.accent
         }
     }
 }
@@ -12185,6 +12528,17 @@ private extension View {
     func tregoGlassCircleBackground() -> some View {
         background {
             TregoGlassCircleBackground()
+        }
+    }
+
+    @ViewBuilder
+    func tregoPopupSheetStyle(height: CGFloat) -> some View {
+        if #available(iOS 16.0, *) {
+            self
+                .presentationDetents([.height(height), .medium])
+                .presentationDragIndicator(.visible)
+        } else {
+            self
         }
     }
 

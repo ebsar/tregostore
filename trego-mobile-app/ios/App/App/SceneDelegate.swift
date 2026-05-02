@@ -17,6 +17,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = UIHostingController(rootView: TregoNativeRootView())
         window.makeKeyAndVisible()
         self.window = window
+
+        if let userInfo = connectionOptions.notificationResponse?.notification.request.content.userInfo,
+           !userInfo.isEmpty {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Notification.Name("TregoRemoteNotificationOpened"),
+                    object: nil,
+                    userInfo: userInfo
+                )
+            }
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {

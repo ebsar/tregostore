@@ -140,6 +140,21 @@ data class Address(
     val isDefault: Boolean?
 )
 
+data class Order(
+    val id: Int,
+    val totalAmount: Double?,
+    val status: String?,
+    val paymentMethod: String?,
+    val createdAt: String?,
+    val items: List<CartItem>?
+)
+
+data class OrderResponse(
+    val ok: Boolean,
+    val message: String?,
+    val order: Order?
+)
+
 data class StatusResponse(
     val ok: Boolean,
     val message: String?,
@@ -166,4 +181,35 @@ data class OrderItem(
     val createdAt: String?,
     val total: Double?,
     val items: List<CartItem>?
+)
+
+data class NotificationItem(
+    val id: Int,
+    val title: String?,
+    val body: String?,
+    val type: String?,
+    val isRead: Boolean?,
+    val createdAt: String?,
+    val data: Map<String, String>?
+)
+
+data class NotificationsPayload(
+    val ok: Boolean,
+    val notifications: List<NotificationItem>,
+    val unreadCount: Int
+)
+
+data class BusinessAnalytics(
+    val totalOrders: Int,
+    val totalRevenue: Double,
+    val profileViews: Int,
+    val conversionRate: Double
+)
+
+data class Promotion(
+    val id: Int,
+    val code: String?,
+    val discountPercent: Int?,
+    val discountAmount: Double?,
+    val isActive: Boolean?
 )

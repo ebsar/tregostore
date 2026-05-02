@@ -1,8 +1,8 @@
 ext {
     minSdkVersion = 24
-    compileSdkVersion = 35
-    targetSdkVersion = 35
-    kotlinVersion = '1.9.23'
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    kotlinVersion = '2.1.0'
     composeBomVersion = '2024.04.01'
     androidxActivityVersion = '1.9.2'
     androidxAppCompatVersion = '1.7.0'

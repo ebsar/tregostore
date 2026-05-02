@@ -1,5 +1,6 @@
 package store.trego.mobile
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,6 +20,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
         object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
                 return MainViewModel(RetrofitClient.apiService) as T
             }
         }
@@ -26,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         setContent {
             TregoTheme {
                 Surface(
@@ -34,6 +37,23 @@ class MainActivity : ComponentActivity() {
                 ) {
                     MainScreen(viewModel)
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        
+        // Handle https://tregos.store/search?q=query
+        if (data.path?.contains("/search") == true) {
+            val query = data.getQueryParameter("q")
+            if (!query.isNullOrBlank()) {
+                viewModel.performSearch(query)
             }
         }
     }

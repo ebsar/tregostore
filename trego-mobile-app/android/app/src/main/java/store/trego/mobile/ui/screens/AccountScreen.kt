@@ -1,5 +1,6 @@
 package store.trego.mobile.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -23,7 +24,12 @@ import store.trego.mobile.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountScreen(viewModel: MainViewModel) {
+fun AccountScreen(
+    viewModel: MainViewModel,
+    onLogin: () -> Unit,
+    onSignup: () -> Unit,
+    onOrders: () -> Unit
+) {
     val user by viewModel.user.collectAsState()
 
     Scaffold(
@@ -44,13 +50,36 @@ fun AccountScreen(viewModel: MainViewModel) {
                 UserCard(user)
             }
 
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AccountItem("Te dhenat personale", "Emri dhe fotoja", Icons.Default.Person) {}
-                    AccountItem("Porosite e mia", "Historia e blerjeve", Icons.Default.ShoppingCart) {}
-                    AccountItem("Settings", "Aplikacioni dhe njoftimet", Icons.Default.Settings) {}
-                    AccountItem("Shkyçu", "Dil nga llogaria", Icons.Default.ExitToApp, isDestructive = true) {
-                        // viewModel.logout()
+            if (user == null) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = onLogin,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Kyçuni", fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = onSignup,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Regjistrohuni", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AccountItem("Te dhenat personale", "Emri dhe fotoja", Icons.Default.Person) {}
+                        AccountItem("Porosite e mia", "Historia e blerjeve", Icons.Default.ShoppingCart) {
+                            onOrders()
+                        }
+                        AccountItem("Settings", "Aplikacioni dhe njoftimet", Icons.Default.Settings) {}
+                        AccountItem("Shkyçu", "Dil nga llogaria", Icons.Default.ExitToApp, isDestructive = true) {
+                            viewModel.logout()
+                        }
                     }
                 }
             }
@@ -78,12 +107,12 @@ fun UserCard(user: store.trego.mobile.data.model.SessionUser?) {
             )
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text(
-                    text = user?.fullName ?: "Vizitor",
+                    text = user?.fullName ?: "Llogaria juaj",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = user?.email ?: "Kycu per te pare me shume",
+                    text = user?.email ?: "Kyçuni për të përfituar",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

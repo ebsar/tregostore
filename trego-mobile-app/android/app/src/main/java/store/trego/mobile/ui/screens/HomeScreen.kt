@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
@@ -14,13 +16,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import store.trego.mobile.ui.components.ProductCard
-import store.trego.mobile.ui.theme.TregoOrange
-import store.trego.mobile.ui.theme.TregoOrangeSoft
+import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,24 +35,24 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
                         "TREGIO",
-                        style = MaterialTheme.typography.titleLarge.copy(
+                        style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.Black,
-                            letterSpacing = (-1).sp
+                            letterSpacing = (-1.5).sp
                         )
                     )
                 },
                 actions = {
-                    IconButton(onClick = { /* Search */ }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
                     IconButton(onClick = { /* Notifications */ }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                        Icon(Icons.Default.Notifications, contentDescription = "Notifications", modifier = Modifier.size(28.dp))
                     }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->
@@ -57,30 +60,29 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 80.dp)
+            contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // Hero Stage / Pulse Rail
+            // Hero Stage
             item {
                 HomeHeroSection()
             }
 
-            // Recommendation Sections (Pulse Rails)
+            // Pulse Rails
             items(sections) { section ->
                 RecommendationRail(section, onOpenProduct)
             }
 
             // Main Product Grid
             item {
-                SectionTitle("Te gjitha")
+                SectionTitle("Zbuloni Produkte")
             }
 
-            // Simplified Grid using item chunks for performance in LazyColumn
             items(products.chunked(2)) { pair ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     ProductCard(
                         product = pair[0],
@@ -102,7 +104,50 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
     }
 }
 
-// ... (HomeHeroSection remains same)
+@Composable
+fun HomeHeroSection() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .padding(20.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(TregoColors.accent, TregoColors.softAccentLight)
+                )
+            ),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Column(modifier = Modifier.padding(32.dp)) {
+            Surface(
+                color = Color.White.copy(alpha = 0.2f),
+                shape = CircleShape
+            ) {
+                Text(
+                    "Ofertat e Ditës",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                "Miresevini ne\nEksperiencën TREGIO",
+                color = Color.White,
+                style = MaterialTheme.typography.headlineLarge,
+                lineHeight = 36.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Kualiteti takon vlerën.",
+                color = Color.White.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
 
 @Composable
 fun RecommendationRail(
@@ -129,18 +174,19 @@ fun RecommendationRail(
 
 @Composable
 fun SectionTitle(title: String, subtitle: String? = null) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp
             )
         )
         if (subtitle != null) {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
             )
         }
     }

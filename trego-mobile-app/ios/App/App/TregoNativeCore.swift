@@ -1059,6 +1059,14 @@ final class TregoAPIClient {
         await sendStatusRequest(path: "/api/notifications/read", method: "POST")
     }
 
+    func deleteNotification(notificationId: Int) async -> TregoStatusResponse {
+        await sendStatusRequest(
+            path: "/api/notifications/delete",
+            method: "POST",
+            body: ["notificationId": notificationId]
+        )
+    }
+
     func savePushSubscription(provider: String, platform: String, token: String, deviceId: String) async -> TregoStatusResponse {
         await sendStatusRequest(
             path: "/api/push/subscribe",

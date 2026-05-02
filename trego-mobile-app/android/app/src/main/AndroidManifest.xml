@@ -23,6 +23,30 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Deep Linking for tregos.store URLs -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <data android:scheme="https" android:host="www.tregos.store" />
+                <data android:scheme="http" android:host="www.tregos.store" />
+                <data android:scheme="https" android:host="tregos.store" />
+                
+                <!-- Support search paths -->
+                <data android:pathPrefix="/search" />
+                <data android:pathPrefix="/products" />
+                <data android:pathPrefix="/product" />
+            </intent-filter>
+
+            <!-- Custom Scheme Deep Linking -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tregio" />
+            </intent-filter>
+
         </activity>
 
         <provider

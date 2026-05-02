@@ -3,7 +3,6 @@ package store.trego.mobile.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedRectanglePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -18,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import store.trego.mobile.data.model.Product
-import store.trego.mobile.ui.theme.TregoOrange
+import store.trego.mobile.ui.theme.TregoColors
 
 @Composable
 fun ProductCard(
@@ -26,22 +25,20 @@ fun ProductCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .background(Color(0xFFF1F5F9))
             ) {
                 AsyncImage(
@@ -51,66 +48,65 @@ fun ProductCard(
                     contentScale = ContentScale.Crop
                 )
                 
-                if (product.compareAtPrice != null && product.price != null && product.compareAtPrice > product.price) {
-                    Surface(
-                        color = TregoOrange,
-                        shape = RoundedCornerShape(99.dp),
-                        modifier = Modifier
-                            .padding(8.dp)
-                            .align(Alignment.TopStart)
-                    ) {
-                        Text(
-                            text = "SALE",
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                if (product.compareAtPrice != null && product.price != null) {
+                    val discount = ((1 - (product.price / product.compareAtPrice)) * 100).toInt()
+                    if (discount > 0) {
+                        Surface(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .align(Alignment.TopEnd),
+                            shape = RoundedCornerShape(12.dp),
+                            color = TregoColors.accent,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = "-$discount%",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }
-
-            Column(modifier = Modifier.padding(8.dp)) {
+            
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = product.businessName ?: "Marketplace",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TregoColors.accent,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                 )
-                
                 Text(
                     text = product.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 16.sp
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        lineHeight = 19.sp
                     ),
                     maxLines = 2,
-                    minLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
-
-                Row(
-                    modifier = Modifier.padding(top = 4.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
+                
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = "€${product.price}",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = TregoOrange
-                        )
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Black
+                        ),
+                        color = Color.Black
                     )
-                    
                     if (product.compareAtPrice != null) {
                         Text(
                             text = "€${product.compareAtPrice}",
-                            style = MaterialTheme.typography.labelSmall.copy(
+                            style = MaterialTheme.typography.labelLarge.copy(
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
                             ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 6.dp)
+                            modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
                         )
                     }
                 }
