@@ -46,6 +46,7 @@ fun OrdersScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(orders) { order ->
+                    val orderTotal = order.totalPrice ?: order.total ?: 0.0
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -62,15 +63,22 @@ fun OrdersScreen(
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                             Divider(modifier = Modifier.padding(vertical = 12.dp))
-                            order.items?.forEach { item ->
-                                Text("• ${item.title} (x${item.quantity})", style = MaterialTheme.typography.bodyMedium)
+                            if (order.items.isNullOrEmpty()) {
+                                Text(
+                                    text = order.itemSummary ?: "${order.totalItems ?: 0} artikuj",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                order.items.forEach { item ->
+                                    Text("• ${item.title} (x${item.quantity})", style = MaterialTheme.typography.bodyMedium)
+                                }
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                                 horizontalArrangement = Arrangement.End
                             ) {
                                 Text("Total: ", fontWeight = FontWeight.Bold)
-                                Text("€${order.total}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text("€$orderTotal", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }

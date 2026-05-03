@@ -92,7 +92,7 @@ fun ProductCard(
                 
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = "€${product.price}",
+                        text = product.price?.let { "€$it" } ?: "Price unavailable",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Black

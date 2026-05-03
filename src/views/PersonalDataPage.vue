@@ -355,13 +355,13 @@ async function handleDelete() {
 
             <div class="account-profile-head__fields">
               <label>
-                <span>Display name</span>
-                <input v-model="formState.displayName" type="text" placeholder="Display name" required>
+                <span>First name</span>
+                <input v-model="formState.displayName" type="text" placeholder="First name" required>
               </label>
 
               <label>
-                <span>Full name</span>
-                <input v-model="formState.fullName" type="text" placeholder="Full name" required>
+                <span>Last name</span>
+                <input v-model="formState.fullName" type="text" placeholder="Last name" required>
               </label>
             </div>
           </div>
@@ -369,20 +369,8 @@ async function handleDelete() {
           <div class="account-form__grid">
             <div class="account-form__row">
               <label>
-                <span>Username</span>
-                <input v-model="formState.userName" type="text" readonly>
-              </label>
-
-              <label>
                 <span>Email</span>
                 <input v-model="formState.email" type="email" readonly>
-              </label>
-            </div>
-
-            <div class="account-form__row">
-              <label>
-                <span>Secondary email</span>
-                <input v-model="formState.secondaryEmail" type="email" readonly>
               </label>
 
               <label>

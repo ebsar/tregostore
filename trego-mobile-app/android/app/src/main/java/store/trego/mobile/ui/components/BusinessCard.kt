@@ -17,12 +17,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import store.trego.mobile.data.model.BusinessProfile
+import store.trego.mobile.ui.theme.TregoColors
 
 @Composable
 fun BusinessCard(
     business: BusinessProfile,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onMessage: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier
@@ -92,18 +94,35 @@ fun BusinessCard(
                 }
             }
 
-            Surface(
-                color = if (business.isFollowed == true) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.clickable { /* Follow */ }
-            ) {
-                Text(
-                    text = if (business.isFollowed == true) "Followed" else "Follow",
-                    color = if (business.isFollowed == true) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    color = if (business.isFollowed == true) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.clickable { /* Follow */ }
+                ) {
+                    Text(
+                        text = if (business.isFollowed == true) "Followed" else "Follow",
+                        color = if (business.isFollowed == true) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+                if (onMessage != null) {
+                    Surface(
+                        color = TregoColors.softAccentLight,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.clickable { onMessage() }
+                    ) {
+                        Text(
+                            text = "Message",
+                            color = TregoColors.accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
         }
     }

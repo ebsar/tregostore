@@ -1847,8 +1847,23 @@ function handleCompare(product) {
 
 .search-hero {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.search-hero .market-page__header {
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.search-hero .market-page__header-copy h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.5vw, 2.25rem);
+  line-height: 1.05;
+}
+
+.search-hero :deep(.search-hero__form) {
+  margin-top: 4px;
 }
 
 .search-hero :deep(.market-status--compact) {

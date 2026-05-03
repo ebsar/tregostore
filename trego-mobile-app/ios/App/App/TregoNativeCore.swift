@@ -1,10 +1,82 @@
 import Foundation
+import Security
 import SwiftUI
 import UIKit
 import UserNotifications
 
 struct TregoUploadedImagesPayload: Equatable {
     let paths: [String]
+}
+
+private enum TregoBiometricCredentialsStore {
+    private static let service = "store.trego.mobile.biometric-login"
+    private static let identifierAccount = "identifier"
+    private static let passwordAccount = "password"
+
+    static func save(identifier: String, password: String) -> Bool {
+        guard saveValue(identifier, account: identifierAccount) else { return false }
+        guard saveValue(password, account: passwordAccount) else {
+            _ = deleteAll()
+            return false
+        }
+        return true
+    }
+
+    static func load() -> (identifier: String, password: String)? {
+        guard
+            let identifier = readValue(account: identifierAccount),
+            let password = readValue(account: passwordAccount)
+        else {
+            return nil
+        }
+        return (identifier, password)
+    }
+
+    static func deleteAll() -> Bool {
+        let deletedIdentifier = deleteValue(account: identifierAccount)
+        let deletedPassword = deleteValue(account: passwordAccount)
+        return deletedIdentifier && deletedPassword
+    }
+
+    private static func saveValue(_ value: String, account: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        var insertQuery = query
+        insertQuery[kSecValueData as String] = data
+        return SecItemAdd(insertQuery as CFDictionary, nil) == errSecSuccess
+    }
+
+    private static func readValue(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    private static func deleteValue(account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 }
 
 struct TregoSessionUser: Codable, Identifiable, Equatable {
@@ -965,7 +1037,9 @@ final class TregoAPIClient {
         lastName: String,
         birthDate: String,
         gender: String,
-        profileImagePath: String
+        profileImagePath: String,
+        email: String,
+        phoneNumber: String
     ) async -> (TregoStatusResponse, TregoSessionUser?) {
         guard let json = await sendJSONRequest(
             path: "/api/profile",
@@ -976,6 +1050,8 @@ final class TregoAPIClient {
                 "birthDate": birthDate,
                 "gender": gender,
                 "profileImagePath": profileImagePath,
+                "email": email,
+                "phoneNumber": phoneNumber,
             ]
         ) else {
             return (TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil), nil)
@@ -1636,17 +1712,56 @@ final class TregoAPIClient {
     }
 
     func saveAdminLaunchAd(payload: [String: Any]) async -> ([TregoLaunchAd], TregoStatusResponse) {
-        guard let json = await sendJSONRequest(path: "/api/admin/launch-ads", method: "POST", body: payload) else {
-            return ([], TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil))
+        let attemptPayloads = [payload, legacyLaunchAdPayload(from: payload)]
+
+        for (index, candidatePayload) in attemptPayloads.enumerated() {
+            guard let json = await sendJSONRequest(path: "/api/admin/launch-ads", method: "POST", body: candidatePayload) else {
+                if index == attemptPayloads.count - 1 {
+                    return ([], TregoStatusResponse(ok: false, message: "Lidhja me serverin deshtoi.", errors: nil))
+                }
+                continue
+            }
+
+            let response = decode(json.object) as TregoStatusResponse?
+                ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
+            let launchAds: [TregoLaunchAd] = decodeArray(json.object["launchAds"]) ?? []
+
+            if response.ok == true {
+                return (launchAds, response)
+            }
+
+            if index == attemptPayloads.count - 1 {
+                return (launchAds, response)
+            }
         }
-        let response = decode(json.object) as TregoStatusResponse?
-            ?? TregoStatusResponse(ok: json.ok, message: json.message, errors: nil)
-        let launchAds: [TregoLaunchAd] = decodeArray(json.object["launchAds"]) ?? []
-        return (launchAds, response)
+
+        return ([], TregoStatusResponse(ok: false, message: "Launch ad nuk u ruajt.", errors: nil))
     }
 
     func deleteAdminLaunchAd(id: Int) async -> ([TregoLaunchAd], TregoStatusResponse) {
         await saveAdminLaunchAd(payload: ["action": "delete", "deleteLaunchAd": true, "launchAdId": id])
+    }
+
+    private func legacyLaunchAdPayload(from payload: [String: Any]) -> [String: Any] {
+        var legacy = payload
+
+        if let sortOrder = payload["sortOrder"] {
+            legacy["sortOrder"] = String(describing: sortOrder)
+        }
+
+        if legacy["startsAt"] == nil {
+            legacy["startsAt"] = ""
+        }
+
+        if legacy["endsAt"] == nil {
+            legacy["endsAt"] = ""
+        }
+
+        if legacy["action"] == nil {
+            legacy["action"] = (payload["launchAdId"] != nil) ? "update" : "create"
+        }
+
+        return legacy
     }
 
     func updateOrderStatus(
@@ -2251,6 +2366,10 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var toastMessage: String?
     @Published var globalMessage: String?
     @Published var authenticationPrompt: TregoAuthenticationPrompt?
+
+    var hasSavedBiometricLoginCredentials: Bool {
+        TregoBiometricCredentialsStore.load() != nil
+    }
 
     let api = TregoAPIClient()
     private var hasLoadedHome = false
@@ -3197,6 +3316,27 @@ final class TregoNativeAppStore: ObservableObject {
         return nil
     }
 
+    func updateBiometricLoginPreference(enabled: Bool, identifier: String, password: String) {
+        guard enabled else {
+            _ = TregoBiometricCredentialsStore.deleteAll()
+            return
+        }
+
+        let trimmedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedIdentifier.isEmpty, !password.isEmpty else { return }
+        let saved = TregoBiometricCredentialsStore.save(identifier: trimmedIdentifier, password: password)
+        if !saved {
+            globalMessage = "Face ID login nuk u ruajt ne menyre te sigurt."
+        }
+    }
+
+    func loginWithSavedBiometricCredentials() async -> String? {
+        guard let credentials = TregoBiometricCredentialsStore.load() else {
+            return "Face ID login nuk eshte aktivizuar ende."
+        }
+        return await login(identifier: credentials.identifier, password: credentials.password)
+    }
+
     func register(fullName: String, email: String, phoneNumber: String, password: String, birthDate: String, gender: String) async -> String? {
         guard !fullName.isEmpty, !email.isEmpty, !phoneNumber.isEmpty, !password.isEmpty else {
             return "Ploteso te gjitha fushat kryesore."
@@ -4091,16 +4231,11 @@ final class TregoNativeAppStore: ObservableObject {
     }
 
     private func rebuildHomeFeedSnapshot() {
-        let railSections = resolvedHomeRailSections()
-        let excludedIDs = Set(railSections.flatMap(\.products).map(\.id))
-
         var seen = Set<Int>()
-        let gridProducts = homeProducts.filter { product in
-            guard !excludedIDs.contains(product.id) else { return false }
-            return seen.insert(product.id).inserted
+        let personalizedProducts = personalizedHomeProducts(from: homeProducts)
+        let effectiveGridProducts = personalizedProducts.filter { product in
+            seen.insert(product.id).inserted
         }
-
-        let effectiveGridProducts = gridProducts.isEmpty ? homeProducts : gridProducts
         let categoryKeys = Set(effectiveGridProducts.compactMap { normalizedCategoryKey(for: $0) })
         let sortedCategoryKeys = categoryKeys.sorted {
             TregoNativeProductCatalog.sectionLabel(for: $0) < TregoNativeProductCatalog.sectionLabel(for: $1)
@@ -4109,7 +4244,7 @@ final class TregoNativeAppStore: ObservableObject {
             + sortedCategoryKeys.map { TregoHomeCategoryOption(key: $0, title: TregoNativeProductCatalog.sectionLabel(for: $0)) }
 
         homeFeedSnapshot = TregoHomeFeedSnapshot(
-            railSections: railSections,
+            railSections: [],
             gridProducts: effectiveGridProducts,
             categoryOptions: categoryOptions
         )

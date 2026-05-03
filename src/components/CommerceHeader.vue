@@ -298,6 +298,14 @@ function closeNotificationsDropdown() {
   notificationsDropdownOpen.value = false;
 }
 
+async function handleNotificationClick(notification) {
+  closeNotificationsDropdown();
+  const href = String(notification?.href || "").trim();
+  if (href) {
+    await router.push(href);
+  }
+}
+
 function formatNotificationTime(value) {
   const rawValue = String(value || "").trim();
   if (!rawValue) {
@@ -407,15 +415,68 @@ async function handleWishlistLogin() {
       </form>
 
       <div class="site-header__actions" aria-label="Quick actions">
-        <RouterLink class="site-header__icon-link" to="/njoftimet" aria-label="Notifications">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M18 9.8a6 6 0 1 0-12 0c0 5.2-2.2 5.8-2.2 5.8h16.4S18 15 18 9.8"></path>
-            <path d="M9.8 19a2.4 2.4 0 0 0 4.4 0"></path>
-          </svg>
-          <span v-if="accountNotificationBadgeLabel" class="site-header__icon-badge site-header__icon-badge--notification">
-            {{ accountNotificationBadgeLabel }}
-          </span>
-        </RouterLink>
+        <div ref="notificationsMenuRef" class="site-header__notifications" @click.stop>
+          <button
+            class="site-header__icon-link site-header__icon-button"
+            type="button"
+            :aria-expanded="notificationsDropdownOpen ? 'true' : 'false'"
+            aria-label="Notifications"
+            @click="toggleNotificationsDropdown"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 9.8a6 6 0 1 0-12 0c0 5.2-2.2 5.8-2.2 5.8h16.4S18 15 18 9.8"></path>
+              <path d="M9.8 19a2.4 2.4 0 0 0 4.4 0"></path>
+            </svg>
+            <span v-if="accountNotificationBadgeLabel" class="site-header__icon-badge site-header__icon-badge--notification">
+              {{ accountNotificationBadgeLabel }}
+            </span>
+          </button>
+
+          <div v-if="notificationsDropdownOpen" class="site-header__notifications-dropdown" role="menu">
+            <div class="site-header__notifications-head">
+              <strong>Notifications</strong>
+              <button type="button" @click="ensureNotificationsLoaded(true)">
+                Refresh
+              </button>
+            </div>
+
+            <div v-if="notificationsBusy" class="site-header__notifications-state">
+              Loading notifications...
+            </div>
+            <div v-else-if="notificationsMessage" class="site-header__notifications-state">
+              {{ notificationsMessage }}
+            </div>
+            <div v-else-if="notificationPreviewItems.length === 0" class="site-header__notifications-state">
+              No notifications yet.
+            </div>
+            <div v-else class="site-header__notifications-list">
+              <button
+                v-for="notification in notificationPreviewItems"
+                :key="notification.id"
+                class="site-header__notification-item"
+                type="button"
+                role="menuitem"
+                @click="handleNotificationClick(notification)"
+              >
+                <span class="site-header__notification-dot" aria-hidden="true"></span>
+                <span>
+                  <strong>{{ notification.title || "Notification" }}</strong>
+                  <small>{{ notification.body || "Open update" }}</small>
+                  <time v-if="notification.createdAt">{{ formatNotificationTime(notification.createdAt) }}</time>
+                </span>
+              </button>
+            </div>
+
+            <RouterLink
+              class="site-header__notifications-footer"
+              to="/njoftimet"
+              role="menuitem"
+              @click="closeNotificationsDropdown"
+            >
+              Show all notifications
+            </RouterLink>
+          </div>
+        </div>
 
         <button
           ref="mobileSearchToggleElement"
@@ -478,16 +539,9 @@ async function handleWishlistLogin() {
       </nav>
     </div>
 
-    <div class="site-header__promo">
+    <div class="site-header__promo" :class="{ 'site-header__promo--hidden': promoHidden }">
       <div class="site-header__promo-inner">
         <p>Take the chance, create account and get 10% discount on your first order</p>
-
-        <div class="site-header__timer" aria-label="Promotional countdown">
-          <div v-for="unit in promoUnits" :key="unit.label" class="site-header__timer-unit">
-            <strong>{{ unit.value }}</strong>
-            <span>{{ unit.label }}</span>
-          </div>
-        </div>
       </div>
     </div>
   </header>
@@ -672,6 +726,11 @@ async function handleWishlistLogin() {
   gap: var(--space-2);
 }
 
+.site-header__notifications {
+  position: relative;
+  display: inline-flex;
+}
+
 .site-header__icon-link {
   position: relative;
   width: var(--touch-target);
@@ -732,6 +791,132 @@ async function handleWishlistLogin() {
 
 .site-header__icon-badge--notification {
   background: var(--color-error);
+}
+
+.site-header__notifications-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  width: min(340px, calc(100vw - 28px));
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 22px 44px rgba(17, 17, 17, 0.14);
+  backdrop-filter: blur(16px);
+}
+
+.site-header__notifications-dropdown::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 16px;
+  width: 12px;
+  height: 12px;
+  border-left: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border);
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.site-header__notifications-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.site-header__notifications-head strong {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.site-header__notifications-head button,
+.site-header__notifications-footer {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--color-primary-border);
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.site-header__notifications-state {
+  padding: 14px 10px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.site-header__notifications-list {
+  display: grid;
+  gap: 4px;
+}
+
+.site-header__notification-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.site-header__notification-item:hover {
+  background: var(--color-primary-soft);
+}
+
+.site-header__notification-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+
+.site-header__notification-item span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.site-header__notification-item strong {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.site-header__notification-item small,
+.site-header__notification-item time {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.site-header__notifications-footer {
+  width: 100%;
 }
 
 .site-header__category-strip {
@@ -821,12 +1006,25 @@ async function handleWishlistLogin() {
 }
 
 .site-header__promo {
+  max-height: 38px;
   min-height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   background: var(--color-primary);
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    max-height 180ms ease,
+    min-height 180ms ease,
+    opacity 140ms ease;
+}
+
+.site-header__promo--hidden {
+  max-height: 0;
+  min-height: 0;
+  opacity: 0;
 }
 
 .site-header__promo-inner {
@@ -848,39 +1046,6 @@ async function handleWishlistLogin() {
   line-height: 1;
 }
 
-.site-header__timer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.site-header__timer-unit {
-  min-width: 48px;
-  min-height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.site-header__timer-unit strong {
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.site-header__timer-unit span {
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1;
-  opacity: 0.92;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 @media (max-width: 960px) {
   .site-header__main {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -898,11 +1063,12 @@ async function handleWishlistLogin() {
 
 @media (max-width: 640px) {
   .site-header__main {
-    grid-template-columns: auto auto;
+    grid-template-columns: auto minmax(0, auto);
     grid-template-areas:
       "brand actions"
       "search search";
     align-items: center;
+    justify-content: center;
     min-height: 56px;
     padding: 0 var(--space-3);
   }
@@ -932,6 +1098,8 @@ async function handleWishlistLogin() {
 
   .site-header__actions {
     grid-area: actions;
+    justify-self: center;
+    align-items: center;
     gap: var(--space-1);
   }
 
@@ -950,6 +1118,13 @@ async function handleWishlistLogin() {
 
   .site-header__promo {
     padding: 8px 0;
+    max-height: 74px;
+  }
+
+  .site-header__promo--hidden {
+    max-height: 0;
+    min-height: 0;
+    padding: 0;
   }
 
   .site-header__category-strip {
@@ -967,8 +1142,8 @@ async function handleWishlistLogin() {
   }
 
   .site-header__promo-inner {
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: row;
+    gap: 0;
   }
 
   .site-header__promo-inner p {
@@ -976,13 +1151,8 @@ async function handleWishlistLogin() {
     line-height: 1.35;
   }
 
-  .site-header__timer {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .site-header__timer-unit {
-    min-width: 44px;
+  .site-header__notifications-dropdown {
+    right: -6px;
   }
 }
 </style>

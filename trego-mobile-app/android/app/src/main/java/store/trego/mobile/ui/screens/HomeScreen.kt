@@ -19,9 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import store.trego.mobile.data.model.LaunchAd
 import store.trego.mobile.ui.components.ProductCard
 import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
@@ -31,7 +34,7 @@ import store.trego.mobile.viewmodel.MainViewModel
 fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
     val products by viewModel.homeProducts.collectAsState()
     val sections by viewModel.recommendationSections.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val launchAds by viewModel.launchAds.collectAsState()
 
     Scaffold(
         topBar = {
@@ -64,7 +67,7 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
         ) {
             // Hero Stage
             item {
-                HomeHeroSection()
+                HomeHeroSection(launchAds)
             }
 
             // Pulse Rails
@@ -105,46 +108,89 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
 }
 
 @Composable
-fun HomeHeroSection() {
+fun HomeHeroSection(launchAds: List<LaunchAd>) {
+    val heroAd = launchAds.firstOrNull()
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .height(290.dp)
             .padding(20.dp)
             .clip(RoundedCornerShape(32.dp))
             .background(
                 Brush.linearGradient(
-                    colors = listOf(TregoColors.accent, TregoColors.softAccentLight)
+                    colors = listOf(TregoColors.accent.copy(alpha = 0.98f), TregoColors.softAccentLight)
                 )
             ),
-        contentAlignment = Alignment.CenterStart
+        contentAlignment = Alignment.Center
     ) {
-        Column(modifier = Modifier.padding(32.dp)) {
-            Surface(
-                color = Color.White.copy(alpha = 0.2f),
-                shape = CircleShape
-            ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.22f),
+                    shape = CircleShape
+                ) {
+                    Text(
+                        heroAd?.badge?.ifBlank { "Launch Ad" } ?: "Launch Ad",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    "Ofertat e Ditës",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelLarge,
+                    heroAd?.title?.takeIf { it.isNotBlank() } ?: "Miresevini ne\nEksperiencen TREGIO",
                     color = Color.White,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.headlineLarge,
+                    lineHeight = 36.sp,
+                    fontWeight = FontWeight.Black
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    heroAd?.subtitle?.takeIf { it.isNotBlank() } ?: "Kualiteti takon vleren.",
+                    color = Color.White.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                "Miresevini ne\nEksperiencën TREGIO",
-                color = Color.White,
-                style = MaterialTheme.typography.headlineLarge,
-                lineHeight = 36.sp
+
+            AsyncImage(
+                model = heroAd?.imagePath,
+                contentDescription = heroAd?.title,
+                modifier = Modifier
+                    .width(118.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.2f)),
+                contentScale = ContentScale.Crop
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Kualiteti takon vlerën.",
-                color = Color.White.copy(alpha = 0.8f),
-                style = MaterialTheme.typography.bodyLarge
-            )
+        }
+
+        if (launchAds.size > 1) {
+            LazyRow(
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(launchAds.take(5)) { ad ->
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.22f)
+                    ) {
+                        Text(
+                            ad.title?.take(16) ?: "Launch",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
         }
     }
 }

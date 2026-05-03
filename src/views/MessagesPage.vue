@@ -75,6 +75,7 @@ let pollIntervalId = 0;
 let typingPollIntervalId = 0;
 let typingHeartbeatTimeoutId = 0;
 let countdownIntervalId = 0;
+let uiMessageTimeoutId = 0;
 let optimisticMessageCounter = 0;
 
 const isBusinessUser = computed(() => appState.user?.role === "business");
@@ -778,6 +779,13 @@ function closeComposerMenu() {
 
 function closeConversationSearch() {
   conversationSearchOpen.value = false;
+}
+
+function clearUiMessageTimeout() {
+  if (uiMessageTimeoutId) {
+    window.clearTimeout(uiMessageTimeoutId);
+    uiMessageTimeoutId = 0;
+  }
 }
 
 function handleGlobalClick() {
@@ -1759,6 +1767,21 @@ watch(
   },
 );
 
+watch(
+  () => ui.message,
+  (message) => {
+    clearUiMessageTimeout();
+    if (!message) {
+      return;
+    }
+
+    uiMessageTimeoutId = window.setTimeout(() => {
+      ui.message = "";
+      ui.type = "";
+    }, 3600);
+  },
+);
+
 onMounted(async () => {
   updateMessagesViewportMode();
   window.addEventListener("click", handleGlobalClick);
@@ -1772,6 +1795,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", updateMessagesViewportMode);
   stopPolling();
   stopTypingPolling();
+  clearUiMessageTimeout();
   clearTypingHeartbeatTimeout();
   Object.keys(pendingDeleteMap.value).forEach((messageId) => {
     clearPendingDeleteEntry(Number(messageId));
@@ -1798,15 +1822,20 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div
+    <Transition name="messages-toast">
+      <div
       v-if="ui.message"
-      class="market-status"
-      :class="{ 'market-status--error': ui.type === 'error' }"
+      class="messages-toast"
+      :class="{
+        'messages-toast--error': ui.type === 'error',
+        'messages-toast--success': ui.type === 'success',
+      }"
       role="status"
       aria-live="polite"
     >
       {{ ui.message }}
-    </div>
+      </div>
+    </Transition>
 
     <section v-if="ui.guest" class="market-empty messages-gate">
       <h2>Per te pare mesazhet duhet te kyçesh.</h2>
@@ -1835,7 +1864,7 @@ onBeforeUnmount(() => {
             <p>Bisedat</p>
           </div>
           <div>
-            <div @click.stop>
+            <div class="messages-search-control" @click.stop>
               <button
                 class="messages-icon-button"
                 type="button"
@@ -1856,13 +1885,12 @@ onBeforeUnmount(() => {
                 <span>Kerko ne biseda</span>
               </button>
 
-              <div v-if="conversationSearchOpen">
+              <div v-if="conversationSearchOpen" class="messages-search-popover">
                 <label for="messages-conversation-search">Kerko ne biseda</label>
                 <input
-                 
+                  id="messages-conversation-search"
                   ref="conversationSearchInputElement"
                   v-model="conversationSearch"
-                 
                   type="search"
                   placeholder="Kerko ne biseda..."
                   autocomplete="off"
@@ -2521,9 +2549,10 @@ onBeforeUnmount(() => {
 }
 
 .messages-page__hero > div:last-child {
-  display: grid;
-  justify-items: end;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .messages-page__hero span {
@@ -2536,6 +2565,49 @@ onBeforeUnmount(() => {
   color: var(--dashboard-text);
   font-size: 22px;
   line-height: 1;
+}
+
+.messages-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 1800;
+  width: min(360px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  padding: 14px 16px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 58px rgba(17, 17, 17, 0.18);
+  color: var(--dashboard-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  backdrop-filter: blur(12px);
+}
+
+.messages-toast--error {
+  border-color: rgba(255, 59, 48, 0.24);
+  background: rgba(255, 247, 247, 0.98);
+  color: #d8241c;
+}
+
+.messages-toast--success {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(241, 253, 246, 0.98);
+  color: #15803d;
+}
+
+.messages-toast-enter-active,
+.messages-toast-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.messages-toast-enter-from,
+.messages-toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 8px));
 }
 
 .messages-gate {
@@ -2587,6 +2659,11 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.messages-search-control {
+  position: relative;
+  display: inline-flex;
+}
+
 .messages-icon-button {
   width: 32px;
   min-width: 32px;
@@ -2618,6 +2695,22 @@ onBeforeUnmount(() => {
   height: 15px;
 }
 
+.messages-search-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 16;
+  width: min(280px, calc(100vw - 32px));
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 38px rgba(17, 17, 17, 0.14);
+  backdrop-filter: blur(12px);
+}
+
 .messages-sidebar .market-button,
 .messages-thread__header .market-button {
   min-height: 32px;
@@ -2638,7 +2731,7 @@ onBeforeUnmount(() => {
 .messages-sidebar input[type="search"] {
   width: 100%;
   min-height: 34px;
-  margin-top: 8px;
+  margin-top: 0;
   padding: 8px 10px;
   border: 1px solid var(--dashboard-border);
   border-radius: 10px;
@@ -3188,10 +3281,22 @@ onBeforeUnmount(() => {
     padding: 10px;
   }
 
-  .messages-page__hero,
   .messages-sidebar > div:first-child {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .messages-page__hero {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .messages-page__hero > div:last-child {
+    gap: 8px;
+  }
+
+  .messages-page__hero strong {
+    font-size: 20px;
   }
 
   .message-bubble {

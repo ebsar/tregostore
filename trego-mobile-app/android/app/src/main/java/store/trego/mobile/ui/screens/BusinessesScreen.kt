@@ -15,7 +15,10 @@ import store.trego.mobile.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BusinessesScreen(viewModel: MainViewModel) {
+fun BusinessesScreen(
+    viewModel: MainViewModel,
+    onOpenConversation: (Int) -> Unit
+) {
     val businesses by viewModel.publicBusinesses.collectAsState()
 
     Scaffold(
@@ -35,7 +38,10 @@ fun BusinessesScreen(viewModel: MainViewModel) {
             items(businesses) { business ->
                 BusinessCard(
                     business = business,
-                    onClick = { /* Open Business Profile */ }
+                    onClick = { /* Open Business Profile */ },
+                    onMessage = {
+                        viewModel.startBusinessConversation(business.id, onOpened = onOpenConversation)
+                    }
                 )
             }
         }

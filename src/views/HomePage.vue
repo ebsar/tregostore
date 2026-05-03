@@ -1464,16 +1464,6 @@ function stopCommerceHeroAutoplay() {
   commerceHeroAutoplayId = 0;
 }
 
-function goToCommerceHeroSlide(index) {
-  const totalSlides = commerceHeroProducts.value.length;
-  if (!totalSlides) {
-    return;
-  }
-
-  commerceHeroIndex.value = (index + totalSlides) % totalSlides;
-  startCommerceHeroAutoplay();
-}
-
 function handlePageSectionChange() {
   filters.category = "";
   filters.productType = "";
@@ -1714,7 +1704,6 @@ async function handleCart(productId) {
       :products="heroGridProducts"
       :slides="commerceHeroProducts"
       :active-index="commerceHeroIndex"
-      @select-slide="goToCommerceHeroSlide"
     />
 
     <section v-if="commerceHeaderCategories.length > 0" class="home-category-rail" aria-label="Shop categories">
@@ -1855,16 +1844,23 @@ async function handleCart(productId) {
 }
 
 .home-category-rail span {
+  position: relative;
   width: 38px;
   height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--color-primary-soft);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.25) 28%, transparent 45%),
+    linear-gradient(145deg, #fff7ed 0%, #ffd7b8 48%, #ff8a34 100%);
   color: var(--color-primary);
   font-size: 15px;
   font-weight: 850;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -6px 10px rgba(255, 106, 0, 0.16),
+    0 10px 20px rgba(255, 106, 0, 0.18);
 }
 
 .home-category-rail span svg {
@@ -1875,6 +1871,7 @@ async function handleCart(productId) {
   stroke-width: 1.85;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 2px 1px rgba(175, 74, 0, 0.18));
 }
 
 .home-category-rail strong {

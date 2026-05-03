@@ -1,7 +1,7 @@
 package store.trego.mobile.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.outlined.AddShoppingCart
@@ -33,15 +34,17 @@ import store.trego.mobile.viewmodel.MainViewModel
 fun ProductDetailScreen(
     productId: Int,
     viewModel: MainViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenConversation: (Int) -> Unit
 ) {
     var product by remember { mutableStateOf<Product?>(null) }
     val wishlist by viewModel.wishlist.collectAsState()
     val isWishlisted = wishlist.any { it.id == productId }
 
     LaunchedEffect(productId) {
-        product = viewModel.homeProducts.value.find { it.id == productId }
-            ?: viewModel.searchResults.value.find { it.id == productId }
+        viewModel.fetchProductDetail(productId) { loaded ->
+            product = loaded
+        }
     }
 
     Scaffold(
@@ -65,7 +68,7 @@ fun ProductDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "€${p.price}",
+                                text = p.price?.let { "€$it" } ?: "Price unavailable",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
                                 color = TregoColors.accent
@@ -75,7 +78,7 @@ fun ProductDetailScreen(
                             onClick = { viewModel.addToCart(p) },
                             colors = ButtonDefaults.buttonColors(containerColor = TregoColors.accent),
                             shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.height(64.dp).padding(start = 24.dp).weight(1.5f)
+                            modifier = Modifier.height(64.dp).padding(start = 12.dp).weight(1.2f)
                         ) {
                             Text("Shto në Shportë", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                         }
@@ -172,6 +175,25 @@ fun ProductDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 26.sp
                         )
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.startProductConversation(p, onOpened = onOpenConversation)
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                        ) {
+                            Icon(Icons.Default.ChatBubble, contentDescription = null, tint = TregoColors.accent)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Pyet biznesin per kete produkt",
+                                fontWeight = FontWeight.Bold,
+                                color = TregoColors.accent
+                            )
+                        }
                         
                         Spacer(modifier = Modifier.height(40.dp))
                     }
@@ -196,7 +218,7 @@ private fun FloatingCircleButton(
             .clickable { onClick() },
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.82f),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.34f)),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.34f)),
         tonalElevation = 4.dp
     ) {
         Box(contentAlignment = Alignment.Center) {

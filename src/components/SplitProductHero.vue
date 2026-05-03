@@ -3,7 +3,6 @@ import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { formatPrice, getProductDetailUrl } from "../lib/shop";
 
-const emit = defineEmits(["select-slide"]);
 const props = defineProps({
   leadProduct: {
     type: Object,
@@ -120,22 +119,6 @@ const activeSlidePrice = computed(() => {
         height="720"
       >
     </RouterLink>
-
-    <div v-if="launchSlides.length > 1" class="hero-split__ad-thumbs" aria-label="Launch ads">
-      <button
-        v-for="(slide, index) in launchSlides"
-        :key="`launch-slide-${slide.id}-${index}`"
-        type="button"
-        :aria-pressed="index === activeSlideIndex"
-        @click="emit('select-slide', index)"
-      >
-        <img :src="slide.imagePath" :alt="slide.title" loading="lazy" decoding="async">
-        <span>
-          <small>Launch ad</small>
-          <strong>{{ slide.title }}</strong>
-        </span>
-      </button>
-    </div>
   </section>
 </template>
 
@@ -257,7 +240,8 @@ const activeSlidePrice = computed(() => {
 .hero-split__ad-media {
   position: relative;
   z-index: 1;
-  min-height: clamp(260px, 34vw, 420px);
+  height: clamp(280px, 32vw, 420px);
+  min-height: 0;
   display: block;
   border-radius: 24px;
   overflow: hidden;
@@ -277,7 +261,6 @@ const activeSlidePrice = computed(() => {
 .hero-split__ad-media img {
   width: 100%;
   height: 100%;
-  min-height: inherit;
   object-fit: cover;
   display: block;
   transition: transform 260ms ease;
@@ -285,80 +268,6 @@ const activeSlidePrice = computed(() => {
 
 .hero-split__ad-media:hover img {
   transform: scale(1.025);
-}
-
-.hero-split__ad-thumbs {
-  position: relative;
-  z-index: 1;
-  grid-column: 1 / -1;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(164px, 1fr);
-  gap: 10px;
-  overflow-x: auto;
-  padding: 4px 2px 2px;
-  scrollbar-width: none;
-}
-
-.hero-split__ad-thumbs::-webkit-scrollbar {
-  display: none;
-}
-
-.hero-split__ad-thumbs button {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  border: 1px solid #e8e8e8;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.78);
-  color: #111111;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
-}
-
-.hero-split__ad-thumbs button:hover,
-.hero-split__ad-thumbs button[aria-pressed="true"] {
-  border-color: rgba(255, 106, 0, 0.42);
-  background: #ffffff;
-  transform: translateY(-1px);
-}
-
-.hero-split__ad-thumbs img {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  object-fit: cover;
-  background: #f4f4f4;
-}
-
-.hero-split__ad-thumbs span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.hero-split__ad-thumbs small {
-  color: #ff6a00;
-  font-size: 10px;
-  font-weight: 850;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.hero-split__ad-thumbs strong {
-  min-width: 0;
-  color: #111111;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 @media (max-width: 900px) {
@@ -369,7 +278,7 @@ const activeSlidePrice = computed(() => {
   }
 
   .hero-split__ad-media {
-    min-height: 260px;
+    height: 260px;
   }
 }
 
@@ -389,12 +298,8 @@ const activeSlidePrice = computed(() => {
   }
 
   .hero-split__ad-media {
-    min-height: 220px;
+    height: 220px;
     border-radius: 18px;
-  }
-
-  .hero-split__ad-thumbs {
-    grid-auto-columns: minmax(148px, 78vw);
   }
 }
 </style>

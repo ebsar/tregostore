@@ -23,18 +23,29 @@ fun MainScreen(viewModel: MainViewModel) {
     val isLoading by viewModel.isLoading.collectAsState()
     val cart by viewModel.cart.collectAsState()
     val orders by viewModel.orders.collectAsState()
+    val notifications by viewModel.notificationUnreadCount.collectAsState()
+    val uiMessage by viewModel.uiMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
+    LaunchedEffect(uiMessage) {
+        val message = uiMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.clearUiMessage()
+    }
+
     // Map cart count and notifications to badges
-    val badges = remember(cart, orders) {
+    val badges = remember(cart, orders, notifications) {
         val map = mutableMapOf<LiquidGlassTab, String>()
         if (cart.isNotEmpty()) {
             val totalQty = cart.sumOf { it.quantity ?: 1 }
             map[LiquidGlassTab.Cart] = if (totalQty > 99) "99+" else totalQty.toString()
         }
-        // Example: Notification count on Account tab
+        if (notifications > 0) {
+            map[LiquidGlassTab.Account] = if (notifications > 99) "99+" else notifications.toString()
+        }
         map
     }
 
@@ -42,6 +53,7 @@ fun MainScreen(viewModel: MainViewModel) {
         LoadingScreen()
     } else {
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 val currentRoute = currentDestination?.route
                 val showBottomBar = LiquidGlassTab.values().any { it.route == currentRoute }
@@ -77,7 +89,12 @@ fun MainScreen(viewModel: MainViewModel) {
                 composable(LiquidGlassTab.Home.route) { 
                     HomeScreen(viewModel, onOpenProduct = { id -> navController.navigate("product/$id") }) 
                 }
-                composable(LiquidGlassTab.Businesses.route) { BusinessesScreen(viewModel) }
+                composable(LiquidGlassTab.Businesses.route) {
+                    BusinessesScreen(
+                        viewModel = viewModel,
+                        onOpenConversation = { id -> navController.navigate("conversation/$id") }
+                    )
+                }
                 composable(LiquidGlassTab.Search.route) { 
                     SearchScreen(viewModel, onOpenProduct = { id -> navController.navigate("product/$id") }) 
                 }
@@ -87,7 +104,14 @@ fun MainScreen(viewModel: MainViewModel) {
                 composable(LiquidGlassTab.Account.route) { AccountScreen(viewModel, 
                     onLogin = { navController.navigate("login") },
                     onSignup = { navController.navigate("signup") },
-                    onOrders = { navController.navigate("orders") }) 
+                    onOrders = { navController.navigate("orders") },
+                    onWishlist = { navController.navigate("wishlist") },
+                    onNotifications = { navController.navigate("notifications") },
+                    onMessages = { navController.navigate("messages") },
+                    onReturns = { navController.navigate("returns") },
+                    onBusinessHub = { navController.navigate("business-hub") },
+                    onAdminControl = { navController.navigate("admin-control") }
+                )
                 }
 
                 // Sub-screens
@@ -102,6 +126,61 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
                 composable("orders") {
                     OrdersScreen(viewModel, onBack = { navController.popBackStack() })
+                }
+                composable("wishlist") {
+                    WishlistScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenProduct = { id -> navController.navigate("product/$id") }
+                    )
+                }
+                composable("notifications") {
+                    NotificationsScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenNotification = { notification ->
+                            val href = notification.href.orEmpty()
+                            val metadata = notification.metadata ?: emptyMap()
+                            fun metadataInt(key: String): Int? = (metadata[key] as? Number)?.toInt()
+                            val conversationId = metadataInt("conversationId")
+                            val productId = metadataInt("productId")
+
+                            when {
+                                conversationId != null -> navController.navigate("conversation/$conversationId")
+                                href.contains("mesazhet", ignoreCase = true) || href.contains("messages", ignoreCase = true) -> {
+                                    navController.navigate("messages")
+                                }
+                                productId != null -> navController.navigate("product/$productId")
+                                href.contains("returns", ignoreCase = true) || href.contains("refund", ignoreCase = true) -> {
+                                    navController.navigate("returns")
+                                }
+                                href.contains("porosite", ignoreCase = true) || href.contains("orders", ignoreCase = true) -> {
+                                    navController.navigate("orders")
+                                }
+                                else -> navController.navigate(LiquidGlassTab.Account.route)
+                            }
+                        }
+                    )
+                }
+                composable("messages") {
+                    MessagesScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenConversation = { id -> navController.navigate("conversation/$id") }
+                    )
+                }
+                composable("conversation/{conversationId}") { backStackEntry ->
+                    val conversationId = backStackEntry.arguments?.getString("conversationId")?.toIntOrNull() ?: 0
+                    ConversationScreen(conversationId, viewModel, onBack = { navController.popBackStack() })
+                }
+                composable("returns") {
+                    ReturnsScreen(viewModel, onBack = { navController.popBackStack() })
+                }
+                composable("business-hub") {
+                    BusinessHubScreen(viewModel, onBack = { navController.popBackStack() })
+                }
+                composable("admin-control") {
+                    AdminControlScreen(viewModel, onBack = { navController.popBackStack() })
                 }
                 composable("login") {
                     LoginScreen(viewModel, 
@@ -121,7 +200,12 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
                 composable("product/{productId}") { backStackEntry ->
                     val productId = backStackEntry.arguments?.getString("productId")?.toIntOrNull() ?: 0
-                    ProductDetailScreen(productId, viewModel, onBack = { navController.popBackStack() })
+                    ProductDetailScreen(
+                        productId,
+                        viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenConversation = { id -> navController.navigate("conversation/$id") }
+                    )
                 }
             }
         }

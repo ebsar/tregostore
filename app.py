@@ -1350,6 +1350,42 @@ def execute_insert_and_get_id(connection: DatabaseConnection, query: str, params
     return int(row["id"])
 
 
+def ensure_uploaded_assets_table(connection: DatabaseConnection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS uploaded_assets (
+            id BIGSERIAL PRIMARY KEY,
+            stored_name TEXT NOT NULL UNIQUE,
+            original_filename TEXT NOT NULL DEFAULT '',
+            content_type TEXT NOT NULL,
+            file_bytes BYTEA NOT NULL,
+            created_by_user_id BIGINT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+            FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+        if is_postgres_connection(connection)
+        else """
+        CREATE TABLE IF NOT EXISTS uploaded_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stored_name TEXT NOT NULL UNIQUE,
+            original_filename TEXT NOT NULL DEFAULT '',
+            content_type TEXT NOT NULL,
+            file_bytes BLOB NOT NULL,
+            created_by_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_uploaded_assets_created_at
+        ON uploaded_assets(created_at DESC)
+        """
+    )
+
+
 def initialize_database() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1378,6 +1414,7 @@ def initialize_database() -> None:
                 ensure_runtime_meta_table(connection)
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
 
+            ensure_uploaded_assets_table(connection)
             ensure_bootstrap_admin(connection)
         except Exception:
             if acquired_postgres_lock:
@@ -1464,6 +1501,7 @@ def store_uploaded_asset(
 ) -> None:
     if should_store_uploads_in_database():
         with get_db_connection() as connection:
+            ensure_uploaded_assets_table(connection)
             connection.execute(
                 """
                 INSERT INTO uploaded_assets (
@@ -1496,6 +1534,7 @@ def delete_uploaded_asset_by_stored_name(stored_name: str) -> None:
 
     if should_store_uploads_in_database():
         with get_db_connection() as connection:
+            ensure_uploaded_assets_table(connection)
             connection.execute(
                 """
                 DELETE FROM uploaded_assets
@@ -1514,6 +1553,7 @@ def fetch_uploaded_asset_by_stored_name(stored_name: str):
         return None
 
     with get_db_connection() as connection:
+        ensure_uploaded_assets_table(connection)
         return connection.execute(
             """
             SELECT

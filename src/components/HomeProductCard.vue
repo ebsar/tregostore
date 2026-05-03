@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { formatCategoryLabel, formatCount, formatPrice, getProductDetailUrl } from "../lib/shop";
+import { formatCount, formatPrice, getProductDetailUrl } from "../lib/shop";
 
 const props = defineProps({
   product: {
@@ -113,34 +113,6 @@ const badgeLabel = computed(() => {
 
   const daysSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
   return daysSinceCreated <= 75 ? "New Season" : "";
-});
-const previewDescription = computed(() => {
-  const text = String(
-    props.product?.shortDescription
-    || props.product?.description
-    || props.product?.summary
-    || "",
-  ).trim();
-
-  return text || "Open the product page to view seller details, variants, delivery options, and stock.";
-});
-const previewCategory = computed(() =>
-  formatCategoryLabel(props.product?.category || props.product?.pageSection || "Marketplace"),
-);
-const previewStockLabel = computed(() => {
-  const stockValue = Number(
-    props.product?.stock
-    ?? props.product?.totalStock
-    ?? props.product?.stockQuantity
-    ?? props.product?.quantity
-    ?? 0,
-  );
-
-  if (Number.isFinite(stockValue) && stockValue > 0) {
-    return `${formatCount(Math.trunc(stockValue))} in stock`;
-  }
-
-  return props.product?.requiresVariantSelection ? "Choose variant" : "Stock shown on detail page";
 });
 const primaryActionLabel = computed(() => {
   if (props.cartBusy) {
@@ -277,23 +249,6 @@ function handleWishlist() {
       </button>
     </div>
 
-    <div class="home-product-card__quick-preview" aria-hidden="true">
-      <div class="home-product-card__quick-head">
-        <span>{{ previewCategory }}</span>
-        <strong>{{ formatPrice(currentPrice) }}</strong>
-      </div>
-      <p>{{ previewDescription }}</p>
-      <dl>
-        <div>
-          <dt>Seller</dt>
-          <dd>{{ businessName || "TREGIO seller" }}</dd>
-        </div>
-        <div>
-          <dt>Stock</dt>
-          <dd>{{ previewStockLabel }}</dd>
-        </div>
-      </dl>
-    </div>
   </article>
 </template>
 
@@ -984,79 +939,6 @@ function handleWishlist() {
   box-shadow: var(--dashboard-shadow);
 }
 
-.home-product-card__quick-preview {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: calc(var(--touch-target) + 16px);
-  z-index: 6;
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid rgba(255, 106, 0, 0.22);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 42px rgba(17, 17, 17, 0.14);
-  color: var(--color-text);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(8px) scale(0.98);
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
-}
-
-.home-product-card__quick-head,
-.home-product-card__quick-preview dl div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.home-product-card__quick-head span,
-.home-product-card__quick-preview dt {
-  color: var(--color-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.home-product-card__quick-head strong,
-.home-product-card__quick-preview dd {
-  margin: 0;
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 800;
-  text-align: right;
-}
-
-.home-product-card__quick-preview p {
-  margin: 0;
-  color: #4f4f4f;
-  font-size: 12px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.home-product-card__quick-preview dl {
-  margin: 0;
-  display: grid;
-  gap: 6px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .home-product-card:hover .home-product-card__quick-preview,
-  .home-product-card:focus-within .home-product-card__quick-preview {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 .home-product-card__media-shell {
   position: relative;
 }
@@ -1261,10 +1143,6 @@ function handleWishlist() {
     gap: var(--space-2);
     padding: var(--space-2);
     border-radius: var(--radius-card);
-  }
-
-  .home-product-card__quick-preview {
-    display: none;
   }
 
   .home-product-card__media {
