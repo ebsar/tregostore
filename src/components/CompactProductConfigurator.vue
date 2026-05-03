@@ -1197,9 +1197,9 @@ function removeCustomVariantRow(index) {
 
 .product-compact-config__ai-chips button:hover,
 .product-compact-config__ai-chips button.is-selected {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--color-primary, #ff6a00);
+  background: var(--color-primary-soft, #fff3e8);
+  color: var(--color-primary, #ff6a00);
 }
 
 .product-compact-config__colors {

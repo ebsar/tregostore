@@ -78,7 +78,7 @@ const maxValue = computed(() =>
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
 }
 
 .dashboard-bar-chart__row:nth-child(4n + 2) .dashboard-bar-chart__fill {

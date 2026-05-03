@@ -19,7 +19,7 @@
   width: 42px;
   height: 42px;
   border: 3px solid #e9e9e9;
-  border-top-color: #f36a20;
+  border-top-color: var(--color-primary, #ff6a00);
   border-radius: 50%;
   animation: loader-spin 0.8s linear infinite;
 }

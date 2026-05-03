@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { getProductDetailUrl } from "../lib/shop";
+import { formatPrice, getProductDetailUrl } from "../lib/shop";
 
+const emit = defineEmits(["select-slide"]);
 const props = defineProps({
   leadProduct: {
     type: Object,
@@ -28,311 +29,372 @@ const props = defineProps({
     type: String,
     default: "/kerko",
   },
+  slides: {
+    type: Array,
+    default: () => [],
+  },
+  activeIndex: {
+    type: Number,
+    default: 0,
+  },
 });
 
-const GRID_SLOT_CLASSES = [
-  "hero-split__item--lead",
-  "hero-split__item--wide",
-  "hero-split__item--square",
-  "hero-split__item--small-one",
-  "hero-split__item--small-two",
-];
+const launchSlides = computed(() => {
+  const explicitSlides = Array.isArray(props.slides) ? props.slides : [];
+  const fallbackSlides = Array.isArray(props.products) ? props.products : [];
+  const mergedSlides = explicitSlides.length > 0 ? explicitSlides : fallbackSlides;
 
-const gridItems = computed(() => {
-  const availableProducts = Array.isArray(props.products)
-    ? props.products.filter((product) => Boolean(product?.imagePath))
-    : [];
+  return mergedSlides
+    .filter((product) => Boolean(product?.id && product?.imagePath))
+    .slice(0, 5);
+});
 
-  if (!availableProducts.length) {
-    return [];
+const activeSlideIndex = computed(() => {
+  const total = launchSlides.value.length;
+  if (total <= 0) {
+    return 0;
   }
 
-  return GRID_SLOT_CLASSES.map((slotClass, index) => ({
-    slotClass,
-    product: availableProducts[index % availableProducts.length],
-    index,
-  }));
+  const index = Number(props.activeIndex || 0);
+  return ((index % total) + total) % total;
 });
 
-const leadProductLink = computed(() => {
-  if (!props.leadProduct?.id) {
+const activeSlide = computed(() =>
+  launchSlides.value[activeSlideIndex.value] || props.leadProduct || null,
+);
+
+const activeSlideLink = computed(() => {
+  if (!activeSlide.value?.id) {
     return props.ctaTo;
   }
 
-  return getProductDetailUrl(props.leadProduct.id, "/");
+  return getProductDetailUrl(activeSlide.value.id, "/");
+});
+
+const activeSlideImage = computed(() => String(activeSlide.value?.imagePath || "").trim());
+const activeSlideTitle = computed(() =>
+  String(activeSlide.value?.title || props.headline || "Featured collection").trim(),
+);
+const activeSlideMeta = computed(() => {
+  const business = String(activeSlide.value?.businessName || "").trim();
+  const category = String(activeSlide.value?.category || activeSlide.value?.pageSection || "").trim();
+
+  return [business, category].filter(Boolean).join(" • ") || props.description;
+});
+const activeSlidePrice = computed(() => {
+  const price = Number(activeSlide.value?.price || 0);
+  return Number.isFinite(price) && price > 0 ? formatPrice(price) : "";
 });
 </script>
 
 <template>
-  <section v-if="leadProduct && gridItems.length" class="hero-split" aria-label="Featured collection">
-    <div class="hero-split__content">
-      <h1>{{ headline }}</h1>
-      <p>{{ description }}</p>
+  <section v-if="activeSlide && activeSlideImage" class="hero-split hero-split--ads" aria-label="Featured collection">
+    <div class="hero-split__ad-copy">
+      <span class="hero-split__ad-label">Launch ad</span>
+      <h1>{{ activeSlideTitle }}</h1>
+      <p>{{ activeSlideMeta }}</p>
 
-      <RouterLink class="hero-split__cta" :to="ctaTo">
-        <span>{{ ctaLabel }}</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 12h14M13 5l6 7-6 7" />
-        </svg>
-      </RouterLink>
+      <div class="hero-split__ad-actions">
+        <RouterLink class="hero-split__cta" :to="activeSlideLink">
+          <span>{{ ctaLabel }}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14M13 5l6 7-6 7" />
+          </svg>
+        </RouterLink>
+        <strong v-if="activeSlidePrice" class="hero-split__ad-price">{{ activeSlidePrice }}</strong>
+      </div>
     </div>
 
-    <div class="hero-split__visual">
-      <div class="hero-split__grid" aria-label="Product image grid">
-        <RouterLink
-          v-for="item in gridItems"
-          :key="`${item.slotClass}-${item.product.id}-${item.index}`"
-          class="hero-split__item"
-          :class="item.slotClass"
-          :to="getProductDetailUrl(item.product.id, '/')"
-          :aria-label="`View ${item.product.title}`"
-        >
-          <img
-            :src="item.product.imagePath"
-            :alt="item.product.title"
-            :loading="item.index === 0 ? 'eager' : 'lazy'"
-            :fetchpriority="item.index === 0 ? 'high' : 'auto'"
-            decoding="async"
-            width="800"
-            height="1000"
-          >
-          <span class="hero-split__item-fade" aria-hidden="true"></span>
-        </RouterLink>
-      </div>
+    <RouterLink
+      class="hero-split__ad-media"
+      :to="activeSlideLink"
+      :aria-label="`View ${activeSlideTitle}`"
+    >
+      <img
+        :src="activeSlideImage"
+        :alt="activeSlideTitle"
+        loading="eager"
+        fetchpriority="high"
+        decoding="async"
+        width="1200"
+        height="720"
+      >
+    </RouterLink>
 
-      <RouterLink class="hero-split__caption" :to="leadProductLink">
-        <strong>{{ leadProduct.title }}</strong>
-        <span>{{ leadProduct.businessName || "Live collection" }}</span>
-      </RouterLink>
+    <div v-if="launchSlides.length > 1" class="hero-split__ad-thumbs" aria-label="Launch ads">
+      <button
+        v-for="(slide, index) in launchSlides"
+        :key="`launch-slide-${slide.id}-${index}`"
+        type="button"
+        :aria-pressed="index === activeSlideIndex"
+        @click="emit('select-slide', index)"
+      >
+        <img :src="slide.imagePath" :alt="slide.title" loading="lazy" decoding="async">
+        <span>
+          <small>Launch ad</small>
+          <strong>{{ slide.title }}</strong>
+        </span>
+      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .hero-split {
+  position: relative;
+  min-height: clamp(380px, 52vw, 560px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  grid-template-columns: minmax(0, 0.86fr) minmax(320px, 0.92fr);
   align-items: center;
-  justify-items: stretch;
-  gap: clamp(20px, 4vw, 52px);
-  padding: clamp(1rem, 2vw, 1.8rem) 0;
+  gap: clamp(24px, 4vw, 64px);
+  padding: clamp(28px, 5vw, 72px);
+  border: 1px solid #e8e8e8;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255, 106, 0, 0.12), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f7f7f7 100%);
+  overflow: hidden;
 }
 
-.hero-split__content {
-  max-width: 620px;
+.hero-split::after {
+  content: "";
+  position: absolute;
+  inset: auto -8% -42% 45%;
+  height: 70%;
+  border-radius: 999px;
+  background: rgba(255, 106, 0, 0.08);
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+.hero-split__ad-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
   display: grid;
   gap: 16px;
-  z-index: 1;
 }
 
-.hero-split__content h1 {
+.hero-split__ad-label {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 106, 0, 0.1);
+  color: #ff6a00;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hero-split__ad-copy h1 {
   margin: 0;
+  max-width: 640px;
   color: #111111;
-  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(2.6rem, 5vw, 4.6rem);
-  font-weight: 700;
-  line-height: 0.98;
-  letter-spacing: -0.05em;
+  font-size: clamp(2.6rem, 5vw, 4.9rem);
+  font-weight: 850;
+  line-height: 0.95;
+  letter-spacing: -0.06em;
   text-wrap: balance;
 }
 
-.hero-split__content p {
+.hero-split__ad-copy p {
   margin: 0;
-  max-width: 460px;
-  color: #6f6f6f;
-  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  max-width: 480px;
+  color: #666666;
   font-size: 1rem;
-  line-height: 1.7;
+  line-height: 1.65;
+}
+
+.hero-split__ad-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
 }
 
 .hero-split__cta {
-  width: fit-content;
-  min-height: 46px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f47a2c 0%, #f36a20 100%);
+  padding: 0 20px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ff7a1a 0%, #ff5a00 100%);
   color: #ffffff;
   text-decoration: none;
-  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
-  font-weight: 600;
-  transition:
-    filter 160ms ease,
-    transform 160ms ease;
+  font-weight: 800;
+  transition: transform 160ms ease, filter 160ms ease;
 }
 
 .hero-split__cta:hover {
-  filter: brightness(0.96);
+  transform: translateY(-1px);
+  filter: brightness(1.03);
 }
 
 .hero-split__cta svg {
   width: 16px;
   height: 16px;
-  stroke: currentColor;
-  stroke-width: 1.8;
   fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.hero-split__visual {
-  justify-self: end;
-  width: min(100%, 420px);
-  display: grid;
-  gap: 8px;
+.hero-split__ad-price {
+  color: #ff6a00;
+  font-size: 20px;
+  line-height: 1;
 }
 
-.hero-split__grid {
-  display: grid;
-  grid-template-columns: 1.1fr 0.92fr 0.92fr;
-  grid-template-rows: 1.08fr 0.92fr 0.8fr;
-  gap: 7px;
-  min-height: 92px;
-}
-
-.hero-split__item {
+.hero-split__ad-media {
   position: relative;
+  z-index: 1;
+  min-height: clamp(260px, 34vw, 420px);
+  display: block;
+  border-radius: 24px;
   overflow: hidden;
-  border-radius: 9px;
-  background: #ececec;
+  background: #ffffff;
   text-decoration: none;
 }
 
-.hero-split__item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition:
-    transform 180ms ease,
-    filter 180ms ease;
-}
-
-.hero-split__item:hover img {
-  transform: scale(1.02);
-  filter: brightness(1.03);
-}
-
-.hero-split__item-fade {
+.hero-split__ad-media::after {
+  content: "";
   position: absolute;
   inset: auto 0 0;
-  height: 24%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(17, 17, 17, 0.08) 100%);
+  height: 36%;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.18));
   pointer-events: none;
 }
 
-.hero-split__item--lead {
-  grid-column: 1;
-  grid-row: 1 / span 3;
+.hero-split__ad-media img {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  object-fit: cover;
+  display: block;
+  transition: transform 260ms ease;
 }
 
-.hero-split__item--wide {
-  grid-column: 2 / span 2;
-  grid-row: 1;
+.hero-split__ad-media:hover img {
+  transform: scale(1.025);
 }
 
-.hero-split__item--square {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-.hero-split__item--small-one {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.hero-split__item--small-two {
-  grid-column: 2 / span 2;
-  grid-row: 3;
-}
-
-.hero-split__caption {
-  width: fit-content;
+.hero-split__ad-thumbs {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
   display: grid;
-  gap: 4px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(164px, 1fr);
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 2px;
+  scrollbar-width: none;
+}
+
+.hero-split__ad-thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-split__ad-thumbs button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
   color: #111111;
-  text-decoration: none;
-  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
 }
 
-.hero-split__caption strong {
+.hero-split__ad-thumbs button:hover,
+.hero-split__ad-thumbs button[aria-pressed="true"] {
+  border-color: rgba(255, 106, 0, 0.42);
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+.hero-split__ad-thumbs img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f4f4f4;
+}
+
+.hero-split__ad-thumbs span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hero-split__ad-thumbs small {
+  color: #ff6a00;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hero-split__ad-thumbs strong {
+  min-width: 0;
+  color: #111111;
   font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.hero-split__caption span {
-  color: #7b7b7b;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-@media (max-width: 1024px) {
-  .hero-split {
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
-    gap: 24px;
-  }
-
-  .hero-split__visual {
-    justify-self: end;
-    width: min(100%, 360px);
-    max-width: none;
-  }
-
-  .hero-split__grid {
-    min-height: 92px;
-  }
-}
-
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .hero-split {
     grid-template-columns: 1fr;
-    padding: 1.5rem 0 1rem;
+    min-height: 0;
+    padding: 24px;
   }
 
-  .hero-split__visual {
-    justify-self: stretch;
-    width: min(100%, 360px);
+  .hero-split__ad-media {
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-split {
+    border-radius: 20px;
+    padding: 18px;
+    gap: 18px;
   }
 
-  .hero-split__content {
-    gap: 16px;
+  .hero-split__ad-copy h1 {
+    font-size: clamp(2.1rem, 12vw, 3.2rem);
   }
 
-  .hero-split__content h1 {
-    font-size: clamp(2rem, 11vw, 3rem);
+  .hero-split__ad-copy p {
+    font-size: 0.92rem;
   }
 
-  .hero-split__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: 1.2fr 1fr 1fr;
-    gap: 8px;
-    min-height: 140px;
+  .hero-split__ad-media {
+    min-height: 220px;
+    border-radius: 18px;
   }
 
-  .hero-split__item--lead {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-  }
-
-  .hero-split__item--wide {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .hero-split__item--square {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .hero-split__item--small-one {
-    grid-column: 1;
-    grid-row: 3;
-  }
-
-  .hero-split__item--small-two {
-    grid-column: 2;
-    grid-row: 3;
+  .hero-split__ad-thumbs {
+    grid-auto-columns: minmax(148px, 78vw);
   }
 }
 </style>

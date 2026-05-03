@@ -15,6 +15,7 @@ export function getAccountDashboardMenuItems(user, activeKey = "") {
       { key: "users", href: "/admin-users", label: "Users", icon: "users", group: "Management" },
       { key: "disputes", href: "/admin-disputes", label: "Disputes", icon: "messages", group: "Management" },
       { key: "categories", href: "/admin-categories", label: "Categories", icon: "bag", group: "Operations" },
+      { key: "ads", href: "/admin-ads", label: "Launch Ads", icon: "offers", group: "Operations" },
       { key: "commissions", href: "/admin-commissions", label: "Commissions", icon: "offers", group: "Operations" },
       { key: "payouts", href: "/admin-payouts", label: "Payouts", icon: "shipping", group: "Operations" },
       { key: "settings", href: "/te-dhenat-personale", label: "Settings", icon: "settings", group: "Workspace" },
@@ -38,6 +39,7 @@ export function getAccountDashboardMenuItems(user, activeKey = "") {
       { key: "address", href: "/adresat", label: "Addresses", icon: "address", group: "Account" },
       { key: "payments", href: "/payments", label: "Payment Methods", icon: "card", group: "Account" },
       { key: "settings", href: "/te-dhenat-personale", label: "Account Settings", icon: "settings", group: "Account" },
+      { key: "track-order", href: "/track-order", label: "Track Order", icon: "shipping", group: "Help" },
       { key: "support", href: "/support", label: "Support / Help", icon: "messages", group: "Help" },
     ],
   };

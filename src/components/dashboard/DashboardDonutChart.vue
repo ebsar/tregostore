@@ -8,7 +8,7 @@ const props = defineProps({
   },
 });
 
-const palette = ["#2563eb", "#1f8a57", "#d08a22", "#d14b72", "#6d5efc"];
+const palette = ["#ff6a00", "#22c55e", "#d08a22", "#d14b72", "#6d5efc"];
 
 const normalizedItems = computed(() => {
   const fallback = [

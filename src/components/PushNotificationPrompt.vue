@@ -142,7 +142,7 @@ async function sendTest() {
   gap: 10px;
   width: min(calc(100vw - 24px), 420px);
   padding: 10px;
-  border: 1px solid rgba(243, 106, 32, 0.28);
+  border: 1px solid var(--color-primary-border);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18px 48px rgba(17, 17, 17, 0.14);
@@ -155,8 +155,8 @@ async function sendTest() {
   height: 36px;
   place-items: center;
   border-radius: 12px;
-  background: #fff4ec;
-  color: #f36a20;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .push-prompt__icon svg {
@@ -199,8 +199,8 @@ async function sendTest() {
 }
 
 .push-prompt__primary {
-  border: 1px solid #f36a20;
-  background: #f36a20;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
   color: #ffffff;
 }
 

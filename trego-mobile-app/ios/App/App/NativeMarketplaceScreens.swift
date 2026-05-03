@@ -14,7 +14,6 @@ struct TregoNativeRootView: View {
     @State private var tabBarScrollProgress: CGFloat = 0
     @State private var isBootstrapping = true
     @State private var didStartBootstrap = false
-    @State private var isLaunchPromoPresented = false
 
     var body: some View {
         ZStack {
@@ -39,18 +38,6 @@ struct TregoNativeRootView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 .zIndex(15)
-            }
-
-            if !isBootstrapping && isLaunchPromoPresented && shouldShowLaunchPromo {
-                TregoLaunchPromoOverlay(
-                    isPresented: $isLaunchPromoPresented,
-                    launchAds: store.launchAds,
-                    onShopNow: {
-                        store.selectedTab = .home
-                    }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                .zIndex(18)
             }
 
             if isBootstrapping {
@@ -122,20 +109,8 @@ struct TregoNativeRootView: View {
             withAnimation(.easeOut(duration: 0.38)) {
                 isBootstrapping = false
             }
-
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled else { return }
-
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) {
-                isLaunchPromoPresented = true
-            }
         }
         .onChange(of: store.selectedTab) { newValue in
-            if newValue == .llogaria && store.user == nil {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isLaunchPromoPresented = false
-                }
-            }
             if newValue != .home && newValue != .kerko {
                 withAnimation(.easeOut(duration: 0.22)) {
                     tabBarScrollProgress = 0
@@ -143,20 +118,6 @@ struct TregoNativeRootView: View {
             }
             Task {
                 await handleTabChange(for: newValue)
-            }
-        }
-        .onChange(of: store.authRoute) { route in
-            if route != nil {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isLaunchPromoPresented = false
-                }
-            }
-        }
-        .onChange(of: store.authenticationPrompt?.id) { promptID in
-            if promptID != nil {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isLaunchPromoPresented = false
-                }
             }
         }
     }
@@ -251,15 +212,6 @@ struct TregoNativeRootView: View {
         }
     }
 
-    private var shouldShowLaunchPromo: Bool {
-        if store.authenticationPrompt != nil || store.authRoute != nil {
-            return false
-        }
-        if store.selectedTab == .llogaria && store.user == nil {
-            return false
-        }
-        return true
-    }
 }
 
 private struct TregoPresentedScreenHost: View {

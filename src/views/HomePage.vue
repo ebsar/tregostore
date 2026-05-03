@@ -168,6 +168,19 @@ const homeNewsletterBenefits = [
   "Njoftime kur dalin artikuj te rinj",
   "Drop-et dhe zbritjet me te mira te javes",
 ];
+const CATEGORY_RAIL_ICON_PATHS = {
+  clothing: "M6.5 6 9 4h6l2.5 2 2.5 2.5-2.2 2.1-1.8-1.5V20h-9V9.1l-1.8 1.5L4 8.5Z",
+  cosmetics: "M9 3h6v3H9Zm-1 3h8l1 14H7Zm-3 3-2 2 2 2 2-2Zm14-5-1 1 1 1 1-1Z",
+  home: "M4 11 12 4l8 7v9h-5v-6H9v6H4Z",
+  sport: "M5 12a7 7 0 1 1 14 0 7 7 0 0 1-14 0Zm2-4c3 2 7 2 10 0M7 16c3-2 7-2 10 0M12 5c-2.2 3.2-2.2 10.8 0 14",
+  technology: "M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 15h4",
+  default: "M5 7h14l-1 12H6Zm4 0a3 3 0 0 1 6 0",
+};
+
+function getCategoryRailIconPath(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return CATEGORY_RAIL_ICON_PATHS[key] || CATEGORY_RAIL_ICON_PATHS.default;
+}
 
 function updateHomeSeo() {
   const featuredProducts = homeCatalogProducts.value.slice(0, 8);
@@ -957,6 +970,7 @@ const commerceHeaderCategories = computed(() =>
   PRODUCT_PAGE_SECTION_OPTIONS.slice(0, 6).map((section) => ({
     value: section.value,
     label: section.label,
+    iconPath: getCategoryRailIconPath(section.value),
   })),
 );
 const visibleHomeRecommendationSections = computed(() => homeRecommendationSections.value);
@@ -1012,11 +1026,13 @@ onMounted(async () => {
     statusText.value = "Produktet nuk u ngarkuan. Provoje perseri pas pak.";
   } finally {
     markRouteReady();
+    startCommerceHeroAutoplay();
   }
 });
 
 onBeforeUnmount(() => {
   stopProductsPageSizeSubscription();
+  stopCommerceHeroAutoplay();
 });
 
 watch(
@@ -1025,6 +1041,7 @@ watch(
     if (commerceHeroIndex.value >= nextLength) {
       commerceHeroIndex.value = 0;
     }
+    startCommerceHeroAutoplay();
   },
 );
 
@@ -1231,8 +1248,20 @@ async function loadBusinessProducts() {
 }
 
 function setMessage(message, type = "") {
-  ui.message = message;
-  ui.type = type;
+  ui.message = "";
+  ui.type = "";
+
+  const nextMessage = String(message || "").trim();
+  if (!nextMessage || typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent("trego:toast", {
+    detail: {
+      message: nextMessage,
+      type: type || "success",
+    },
+  }));
 }
 
 function handleCompare(product) {
@@ -1679,20 +1708,29 @@ async function handleCart(productId) {
   </section>
 
   <section v-else class="market-page market-page--wide home-page" aria-label="Faqja kryesore">
-    <div
-      v-if="ui.message"
-      :class="['market-status', ui.type === 'error' ? 'market-status--error' : ui.type === 'success' ? 'market-status--success' : '']"
-      role="status"
-      aria-live="polite"
-    >
-      {{ ui.message }}
-    </div>
-
     <SplitProductHero
       v-if="heroLeadProduct && heroGridProducts.length"
       :lead-product="heroLeadProduct"
       :products="heroGridProducts"
+      :slides="commerceHeroProducts"
+      :active-index="commerceHeroIndex"
+      @select-slide="goToCommerceHeroSlide"
     />
+
+    <section v-if="commerceHeaderCategories.length > 0" class="home-category-rail" aria-label="Shop categories">
+      <RouterLink
+        v-for="category in commerceHeaderCategories"
+        :key="category.value"
+        :to="{ path: '/kerko', query: { pageSection: category.value } }"
+      >
+        <span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="category.iconPath" />
+          </svg>
+        </span>
+        <strong>{{ category.label }}</strong>
+      </RouterLink>
+    </section>
 
     <RecommendationSections
       v-if="visibleHomeRecommendationSections.length > 0"
@@ -1754,8 +1792,8 @@ async function handleCart(productId) {
 .home-page {
   width: min(100%, 1440px);
   margin: 0 auto;
-  padding: 24px clamp(20px, 5vw, 64px) 72px;
-  background: #fbfbfa;
+  padding: var(--space-6) clamp(var(--space-4), 5vw, var(--space-16)) 72px;
+  background: var(--color-bg);
 }
 
 .home-catalog__header {
@@ -1775,53 +1813,122 @@ async function handleCart(productId) {
 }
 
 .home-page > * + * {
-  margin-top: 48px;
+  margin-top: var(--space-12);
+}
+
+.home-category-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(128px, 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+
+.home-category-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.home-category-rail a {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: #ffffff;
+  color: #111111;
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.home-category-rail a:hover {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+  transform: translateY(-1px);
+}
+
+.home-category-rail span {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.home-category-rail span svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home-category-rail strong {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .market-status {
-  margin-bottom: 24px;
-  padding: 12px 14px;
-  border: 1px solid #e2e2e2;
-  border-radius: 10px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   background: #ffffff;
-  color: #555555;
+  color: var(--color-muted);
   font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
 
 .market-status--error {
-  border-color: #efc8c8;
-  background: #fff8f8;
-  color: #a13232;
+  border-color: rgba(255, 59, 48, 0.25);
+  background: #fff7f6;
+  color: var(--color-error);
 }
 
 .market-status--success {
-  border-color: #d6ddd6;
-  background: #fbfcfb;
-  color: #415c47;
+  border-color: rgba(34, 197, 94, 0.25);
+  background: #f3fcf6;
+  color: #15803d;
 }
 
 .home-product-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  column-gap: 20px;
-  row-gap: 42px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-6);
   align-items: start;
 }
 
 .home-product-grid > * {
-  width: min(100%, 190px);
+  width: 100%;
   justify-self: center;
 }
 
 @media (max-width: 720px) {
   .home-page {
-    padding: 16px 16px 48px;
+    padding: var(--space-4) var(--space-4) var(--space-12);
   }
 
   .home-page > * + * {
-    margin-top: 36px;
+    margin-top: var(--space-8);
   }
 
   .home-catalog__header {
@@ -1836,9 +1943,8 @@ async function handleCart(productId) {
   }
 
   .home-product-grid {
-    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-    column-gap: 12px;
-    row-gap: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
   }
 
   .home-product-grid > * {
@@ -1849,23 +1955,21 @@ async function handleCart(productId) {
 
 @media (max-width: 1180px) {
   .home-product-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 880px) {
   .home-product-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    column-gap: 16px;
-    row-gap: 32px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
   }
 }
 
 @media (max-width: 540px) {
   .home-product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 12px;
-    row-gap: 16px;
+    gap: var(--space-3);
   }
 
   .home-product-grid > * {
@@ -1875,14 +1979,13 @@ async function handleCart(productId) {
 
 @media (max-width: 400px) {
   .home-product-grid {
-    column-gap: 10px;
-    row-gap: 14px;
+    gap: var(--space-2);
   }
 }
 
 @media (max-width: 340px) {
   .home-product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

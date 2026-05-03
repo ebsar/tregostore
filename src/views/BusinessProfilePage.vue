@@ -1140,8 +1140,8 @@ function getBusinessInfoIcon(label) {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #eef6ff;
-  color: #2563eb;
+  background: var(--color-primary-soft, #fff3e8);
+  color: var(--color-primary, #ff6a00);
 }
 
 .business-profile-stat span:last-child,

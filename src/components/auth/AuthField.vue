@@ -106,7 +106,7 @@ function handleInput(event) {
 }
 
 .auth-field__label {
-  color: #6b7280;
+  color: var(--color-muted);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -125,12 +125,13 @@ function handleInput(event) {
 
 .auth-field__input {
   width: 100%;
-  height: 44px;
+  min-height: var(--touch-target);
+  height: var(--touch-target);
   padding: 0 14px;
-  border: 1px solid #dddddd;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #111111;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
   font-size: 14px;
   line-height: 1.4;
   transition: border-color 160ms ease;
@@ -156,6 +157,6 @@ function handleInput(event) {
 
 .auth-field__input:focus {
   outline: none;
-  border-color: #bcbcbc;
+  border-color: var(--color-primary);
 }
 </style>

@@ -70,7 +70,8 @@ async function submitForm() {
 <template>
   <AuthShell
     title="Forgot your password?"
-    description="Enter your email and we'll send you a reset link."
+    description="Enter your email and we'll send you a reset code."
+    :show-brand="false"
     :message="ui.message"
     :message-type="ui.type"
   >
@@ -86,8 +87,8 @@ async function submitForm() {
         required
       />
 
-      <AuthPrimaryButton :loading="ui.loading" loading-label="Sending reset link...">
-        Send reset link
+      <AuthPrimaryButton :loading="ui.loading" loading-label="Sending code...">
+        Send the code
       </AuthPrimaryButton>
     </form>
 

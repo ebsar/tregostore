@@ -5,17 +5,17 @@ import { RouterLink } from "vue-router";
 const newsletterEmail = ref("");
 
 const programLinks = [
-  { label: "Strength Training", to: "/kerko?q=Strength%20Training" },
-  { label: "HIIT Classes", to: "/kerko?q=HIIT%20Classes" },
-  { label: "Yoga & Wellness", to: "/kerko?q=Yoga%20Wellness" },
-  { label: "Personal Training", to: "/kerko?q=Personal%20Training" },
+  { label: "All products", to: "/kerko" },
+  { label: "New arrivals", to: "/kerko?sort=newest" },
+  { label: "Best sellers", to: "/kerko?sort=popular" },
+  { label: "Businesses", to: "/bizneset" },
 ];
 
 const companyLinks = [
-  { label: "About Us", to: "/" },
-  { label: "Our Trainers", to: "/bizneset-e-regjistruara" },
-  { label: "Membership", to: "/signup" },
-  { label: "Contact", to: "/mesazhet" },
+  { label: "About TREGIO", to: "/" },
+  { label: "Become a seller", to: "/bizneset-e-regjistruara" },
+  { label: "Track order", to: "/track-order" },
+  { label: "Support", to: "/support" },
 ];
 
 function handleNewsletterSubmit() {
@@ -31,6 +31,15 @@ function handleNewsletterSubmit() {
     },
   }));
   newsletterEmail.value = "";
+}
+
+function handleAppDownload(platform) {
+  window.dispatchEvent(new CustomEvent("trego:toast", {
+    detail: {
+      message: `${platform} app download link will be connected soon.`,
+      type: "success",
+    },
+  }));
 }
 </script>
 
@@ -49,13 +58,23 @@ function handleNewsletterSubmit() {
             >
           </RouterLink>
           <p>
-            Minimal essentials for focused routines, cleaner discovery, and premium everyday movement.
+            TREGIO connects shoppers with local businesses, live products, marketplace deals, and fast checkout in one clean place.
           </p>
+          <div class="site-footer__app-links" aria-label="Download the app">
+            <button type="button" @click="handleAppDownload('iOS')">
+              <span>Download on</span>
+              <strong>iOS</strong>
+            </button>
+            <button type="button" @click="handleAppDownload('Android')">
+              <span>Get it on</span>
+              <strong>Android</strong>
+            </button>
+          </div>
         </section>
 
         <section class="site-footer__column">
-          <h2>Programs</h2>
-          <nav class="site-footer__links" aria-label="Programs">
+          <h2>Marketplace</h2>
+          <nav class="site-footer__links" aria-label="Marketplace">
             <RouterLink
               v-for="link in programLinks"
               :key="link.label"
@@ -67,8 +86,8 @@ function handleNewsletterSubmit() {
         </section>
 
         <section class="site-footer__column">
-          <h2>Company</h2>
-          <nav class="site-footer__links" aria-label="Company">
+          <h2>TREGIO</h2>
+          <nav class="site-footer__links" aria-label="TREGIO">
             <RouterLink
               v-for="link in companyLinks"
               :key="link.label"
@@ -82,7 +101,7 @@ function handleNewsletterSubmit() {
         <section class="site-footer__column">
           <h2>Newsletter</h2>
           <p class="site-footer__newsletter-copy">
-            Get thoughtful updates, new drops, and a cleaner weekly edit.
+            Get product drops, seller offers, app updates, and marketplace deals from TREGIO.
           </p>
           <form class="site-footer__newsletter" @submit.prevent="handleNewsletterSubmit">
             <input
@@ -138,8 +157,8 @@ function handleNewsletterSubmit() {
 }
 
 .site-footer__logo-image {
-  width: 44px;
-  height: 44px;
+  width: auto;
+  height: 52px;
   display: block;
   object-fit: contain;
 }
@@ -186,6 +205,50 @@ function handleNewsletterSubmit() {
 .site-footer__links a:hover {
   color: #111111;
   text-decoration-color: currentColor;
+}
+
+.site-footer__app-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.site-footer__app-links button {
+  min-height: 42px;
+  display: grid;
+  gap: 1px;
+  padding: 7px 14px;
+  border: 1px solid #dedede;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111111;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.site-footer__app-links button:hover {
+  border-color: rgba(255, 106, 0, 0.36);
+  background: rgba(255, 106, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.site-footer__app-links span {
+  color: #777777;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.site-footer__app-links strong {
+  color: #111111;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .site-footer__newsletter {

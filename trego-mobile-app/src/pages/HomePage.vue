@@ -64,6 +64,7 @@ const { data: recommendationSections, isLoading: recommendationsLoading } = useQ
 });
 
 const loading = computed(() => productsLoading.value || recommendationsLoading.value);
+const hasMore = computed(() => Boolean(productsData.value?.hasMore));
 
 const trendingProducts = computed(() =>
   [...products.value]

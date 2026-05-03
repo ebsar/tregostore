@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { formatCount, formatPrice, getProductDetailUrl } from "../lib/shop";
+import { formatCategoryLabel, formatCount, formatPrice, getProductDetailUrl } from "../lib/shop";
 
 const props = defineProps({
   product: {
@@ -113,6 +113,34 @@ const badgeLabel = computed(() => {
 
   const daysSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
   return daysSinceCreated <= 75 ? "New Season" : "";
+});
+const previewDescription = computed(() => {
+  const text = String(
+    props.product?.shortDescription
+    || props.product?.description
+    || props.product?.summary
+    || "",
+  ).trim();
+
+  return text || "Open the product page to view seller details, variants, delivery options, and stock.";
+});
+const previewCategory = computed(() =>
+  formatCategoryLabel(props.product?.category || props.product?.pageSection || "Marketplace"),
+);
+const previewStockLabel = computed(() => {
+  const stockValue = Number(
+    props.product?.stock
+    ?? props.product?.totalStock
+    ?? props.product?.stockQuantity
+    ?? props.product?.quantity
+    ?? 0,
+  );
+
+  if (Number.isFinite(stockValue) && stockValue > 0) {
+    return `${formatCount(Math.trunc(stockValue))} in stock`;
+  }
+
+  return props.product?.requiresVariantSelection ? "Choose variant" : "Stock shown on detail page";
 });
 const primaryActionLabel = computed(() => {
   if (props.cartBusy) {
@@ -242,10 +270,29 @@ function handleWishlist() {
         class="home-product-card__button"
         type="button"
         :disabled="cartBusy"
+        :aria-pressed="isInCart"
         @click.stop="handlePrimaryAction"
       >
         {{ primaryActionLabel }}
       </button>
+    </div>
+
+    <div class="home-product-card__quick-preview" aria-hidden="true">
+      <div class="home-product-card__quick-head">
+        <span>{{ previewCategory }}</span>
+        <strong>{{ formatPrice(currentPrice) }}</strong>
+      </div>
+      <p>{{ previewDescription }}</p>
+      <dl>
+        <div>
+          <dt>Seller</dt>
+          <dd>{{ businessName || "TREGIO seller" }}</dd>
+        </div>
+        <div>
+          <dt>Stock</dt>
+          <dd>{{ previewStockLabel }}</dd>
+        </div>
+      </dl>
     </div>
   </article>
 </template>
@@ -515,7 +562,7 @@ function handleWishlist() {
   padding: 0 10px;
   border: 0;
   border-radius: 8px;
-  background: #f36a20;
+  background: var(--color-primary);
   color: #ffffff;
   font-size: 12px;
   font-weight: 600;
@@ -534,7 +581,7 @@ function handleWishlist() {
 }
 
 .home-product-card__button:hover {
-  background: #df5e17;
+  background: var(--color-primary-hover);
 }
 
 .home-product-card__button:disabled {
@@ -914,6 +961,339 @@ function handleWishlist() {
   .home-product-card--compact .home-product-card__button {
     padding: 0 4px;
     font-size: 6.5px;
+  }
+}
+
+.home-product-card {
+  position: relative;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-color: var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.home-product-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-primary-border);
+  box-shadow: var(--dashboard-shadow);
+}
+
+.home-product-card__quick-preview {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--touch-target) + 16px);
+  z-index: 6;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 106, 0, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(17, 17, 17, 0.14);
+  color: var(--color-text);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.98);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.home-product-card__quick-head,
+.home-product-card__quick-preview dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-product-card__quick-head span,
+.home-product-card__quick-preview dt {
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-product-card__quick-head strong,
+.home-product-card__quick-preview dd {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.home-product-card__quick-preview p {
+  margin: 0;
+  color: #4f4f4f;
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.home-product-card__quick-preview dl {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .home-product-card:hover .home-product-card__quick-preview,
+  .home-product-card:focus-within .home-product-card__quick-preview {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.home-product-card__media-shell {
+  position: relative;
+}
+
+.home-product-card__media {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-control);
+  background: #f3f3f3;
+}
+
+.home-product-card__image {
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+
+.home-product-card:hover .home-product-card__image {
+  transform: scale(1.025);
+}
+
+.home-product-card__badge {
+  top: var(--space-2);
+  left: var(--space-2);
+  right: auto;
+  min-height: 22px;
+  height: auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.home-product-card__wishlist {
+  top: var(--space-2);
+  right: var(--space-2);
+  bottom: auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(17, 17, 17, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.home-product-card__wishlist:hover,
+.home-product-card__wishlist[aria-pressed="true"] {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-border);
+  color: var(--color-primary);
+  transform: none;
+}
+
+.home-product-card__body {
+  display: grid;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.home-product-card__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.home-product-card__copy {
+  gap: 0;
+}
+
+.home-product-card__business {
+  order: -1;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.home-product-card__title {
+  min-height: calc(1.3em * 2);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.home-product-card__title a:hover {
+  color: var(--color-primary);
+}
+
+.home-product-card__price-stack {
+  gap: var(--space-1);
+}
+
+.home-product-card__price {
+  color: var(--color-primary);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.home-product-card__price--sale {
+  color: var(--color-primary);
+}
+
+.home-product-card__compare-price {
+  color: var(--color-muted-2);
+  font-size: 11px;
+}
+
+.home-product-card__discount {
+  color: var(--color-error);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.home-product-card__rating {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.home-product-card__sold {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.home-product-card__button {
+  min-height: var(--touch-target);
+  height: var(--touch-target);
+  border-radius: var(--radius-control);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.home-product-card__button:hover {
+  background: var(--color-primary-hover);
+}
+
+.home-product-card__button[aria-pressed="true"] {
+  background: linear-gradient(180deg, #ff8a2a 0%, #d84f00 100%);
+}
+
+.home-product-card--compact {
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.home-product-card--compact .home-product-card__media {
+  aspect-ratio: 1 / 1;
+}
+
+.home-product-card--compact .home-product-card__badge {
+  top: var(--space-2);
+  left: var(--space-2);
+  right: auto;
+  min-height: 20px;
+  padding: 0 7px;
+  font-size: 9px;
+}
+
+.home-product-card--compact .home-product-card__wishlist {
+  top: var(--space-2);
+  right: var(--space-2);
+  bottom: auto;
+  width: 32px;
+  height: 32px;
+}
+
+.home-product-card--compact .home-product-card__body,
+.home-product-card--compact .home-product-card__summary {
+  gap: var(--space-2);
+}
+
+.home-product-card--compact .home-product-card__title,
+.home-product-card--compact .home-product-card__price {
+  font-size: 13px;
+  line-height: 1.28;
+}
+
+.home-product-card--compact .home-product-card__business {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.home-product-card--compact .home-product-card__compare-price,
+.home-product-card--compact .home-product-card__discount,
+.home-product-card--compact .home-product-card__rating,
+.home-product-card--compact .home-product-card__sold {
+  font-size: 10px;
+}
+
+.home-product-card--compact .home-product-card__button {
+  min-height: var(--touch-target);
+  height: var(--touch-target);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .home-product-card {
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--radius-card);
+  }
+
+  .home-product-card__quick-preview {
+    display: none;
+  }
+
+  .home-product-card__media {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-control);
+  }
+
+  .home-product-card__summary {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+
+  .home-product-card__price-stack {
+    justify-items: start;
+  }
+
+  .home-product-card__title {
+    font-size: 13px;
+    min-height: calc(1.28em * 2);
+  }
+
+  .home-product-card__business {
+    font-size: 11px;
+  }
+
+  .home-product-card__button {
+    min-height: var(--touch-target);
+    height: var(--touch-target);
+    font-size: 12px;
   }
 }
 </style>

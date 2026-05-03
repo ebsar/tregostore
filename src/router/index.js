@@ -336,6 +336,22 @@ const routes = [
     },
   },
   {
+    path: "/admin-ads",
+    component: AdminWorkspacePlaceholderPage,
+    meta: {
+      pageKey: "admin-ads",
+      title: "TREGIO | Admin Launch Ads",
+      routeLoader: true,
+      dashboardPlaceholder: {
+        activeKey: "ads",
+        eyebrow: "Launch ads",
+        title: "Hero slider and campaign ads",
+        description: "Prepare and review homepage launch banners from the correct admin workspace.",
+        note: "The public homepage now supports product-driven launch slides. Connect upload, schedule, and publish actions here when the dedicated ads API is exposed.",
+      },
+    },
+  },
+  {
     path: "/admin-commissions",
     component: AdminWorkspacePlaceholderPage,
     meta: {
@@ -423,6 +439,7 @@ const DASHBOARD_ROUTE_PAGE_KEYS = new Set([
   "account",
   "addresses",
   "admin-categories",
+  "admin-ads",
   "admin-commissions",
   "admin-disputes",
   "admin-orders",

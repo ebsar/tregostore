@@ -212,8 +212,8 @@ function getSectionActionTo(section) {
 }
 
 .recommendation-sections__slider-button:hover {
-  border-color: rgba(255, 106, 26, 0.45);
-  color: #ff6a1a;
+  border-color: var(--color-primary-border);
+  color: var(--color-primary);
   transform: translateY(-1px);
 }
 
@@ -243,11 +243,11 @@ function getSectionActionTo(section) {
 
 .recommendation-product-slider {
   display: flex;
-  gap: 24px;
+  gap: var(--space-4);
   align-items: start;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 4px 14px;
+  padding: 2px 4px var(--space-4);
   scroll-padding-inline: 4px;
   scroll-snap-type: x proximity;
   scroll-behavior: smooth;
@@ -261,33 +261,33 @@ function getSectionActionTo(section) {
 }
 
 .recommendation-product-slider > * {
-  flex: 0 0 190px;
-  width: 190px;
-  max-width: 190px;
+  flex: 0 0 calc((100% - (var(--space-4) * 3)) / 4);
+  width: calc((100% - (var(--space-4) * 3)) / 4);
+  max-width: 240px;
   scroll-snap-align: start;
 }
 
 @media (max-width: 1180px) {
   .recommendation-product-slider {
-    gap: 22px;
+    gap: var(--space-4);
   }
 
   .recommendation-product-slider > * {
-    flex-basis: 184px;
-    width: 184px;
-    max-width: 184px;
+    flex-basis: calc((100% - (var(--space-4) * 2)) / 3);
+    width: calc((100% - (var(--space-4) * 2)) / 3);
+    max-width: 220px;
   }
 }
 
 @media (max-width: 880px) {
   .recommendation-product-slider {
-    gap: 18px;
+    gap: var(--space-3);
   }
 
   .recommendation-product-slider > * {
-    flex-basis: 176px;
-    width: 176px;
-    max-width: 176px;
+    flex-basis: calc((100% - var(--space-3)) / 2);
+    width: calc((100% - var(--space-3)) / 2);
+    max-width: 210px;
   }
 }
 
@@ -307,27 +307,27 @@ function getSectionActionTo(section) {
   }
 
   .recommendation-product-slider {
-    gap: 14px;
+    gap: var(--space-3);
     padding-inline: 2px;
     margin-inline: -2px;
   }
 
   .recommendation-product-slider > * {
-    flex-basis: min(72vw, 178px);
-    width: min(72vw, 178px);
-    max-width: min(72vw, 178px);
+    flex-basis: min(48vw, 180px);
+    width: min(48vw, 180px);
+    max-width: min(48vw, 180px);
   }
 }
 
 @media (max-width: 420px) {
   .recommendation-product-slider {
-    gap: 12px;
+    gap: var(--space-2);
   }
 
   .recommendation-product-slider > * {
-    flex-basis: min(76vw, 168px);
-    width: min(76vw, 168px);
-    max-width: min(76vw, 168px);
+    flex-basis: calc((100vw - 44px) / 2);
+    width: calc((100vw - 44px) / 2);
+    max-width: 172px;
   }
 }
 </style>

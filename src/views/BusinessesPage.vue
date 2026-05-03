@@ -166,23 +166,23 @@ function getBusinessProfileTarget(business) {
 <style scoped>
 .businesses-page {
   display: grid;
-  gap: 24px;
-  padding-top: 28px;
-  padding-bottom: 64px;
+  gap: var(--space-6);
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-16);
 }
 
 .businesses-page__hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
   align-items: end;
-  gap: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #eeeeee;
+  gap: var(--space-6);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .businesses-page__eyebrow {
   margin: 0 0 8px;
-  color: #f36a20;
+  color: var(--color-primary);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -191,7 +191,7 @@ function getBusinessProfileTarget(business) {
 
 .businesses-page h1 {
   margin: 0;
-  color: #111111;
+  color: var(--color-text);
   font-size: clamp(2rem, 4vw, 3.5rem);
   line-height: 1;
   letter-spacing: -0.05em;
@@ -200,7 +200,7 @@ function getBusinessProfileTarget(business) {
 .businesses-page__hero p:not(.businesses-page__eyebrow) {
   max-width: 560px;
   margin: 12px 0 0;
-  color: #666666;
+  color: var(--color-muted);
   font-size: 15px;
   line-height: 1.65;
 }
@@ -211,44 +211,44 @@ function getBusinessProfileTarget(business) {
 }
 
 .businesses-page__search span {
-  color: #666666;
+  color: var(--color-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .businesses-page__search input {
   width: 100%;
-  height: 42px;
-  border: 1px solid #e5e5e5;
-  border-radius: 999px;
+  min-height: var(--touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
   background: #fbfbfb;
-  padding: 0 16px;
-  color: #111111;
+  padding: 0 var(--space-4);
+  color: var(--color-text);
   font-size: 14px;
   outline: none;
 }
 
 .businesses-page__search input:focus {
-  border-color: #cfcfcf;
+  border-color: var(--color-primary);
   background: #ffffff;
 }
 
 .businesses-page__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .business-profile-card {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--space-4);
   min-height: 150px;
-  padding: 16px;
-  border: 1px solid #eeeeee;
-  border-radius: 16px;
-  background: #ffffff;
-  color: #111111;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-text);
   text-decoration: none;
   transition:
     border-color 160ms ease,
@@ -256,8 +256,8 @@ function getBusinessProfileTarget(business) {
 }
 
 .business-profile-card:hover {
-  border-color: #f36a20;
-  transform: translateY(-2px);
+  border-color: var(--color-primary-border);
+  transform: translateY(-1px);
 }
 
 .business-profile-card__logo {

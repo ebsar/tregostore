@@ -17,17 +17,11 @@ const router = useRouter();
 
 const groupedTabs: TabShellItem[] = [
   { key: "home", label: "Home", icon: homeOutline, path: "/tabs/home" },
+  { key: "kerko", label: "Search", icon: searchOutline, path: "/tabs/search" },
   { key: "bizneset", label: "Bizneset", icon: storefrontOutline, path: "/tabs/businesses" },
   { key: "cart", label: "Cart", icon: cartOutline, path: "/tabs/cart" },
   { key: "llogaria", label: "Llogaria", icon: personCircleOutline, path: "/tabs/account" },
 ];
-
-const searchTab: TabShellItem = {
-  key: "kerko",
-  label: "Kerko",
-  icon: searchOutline,
-  path: "/tabs/search",
-};
 
 const cartBadge = computed(() => (sessionState.cartCount > 0 ? String(sessionState.cartCount) : ""));
 const activityBadge = computed(() => {
@@ -109,16 +103,6 @@ function navigateTo(path: string) {
         </button>
       </div>
 
-      <button
-        class="trego-tab-shell__search"
-        type="button"
-        @click="navigateTo(searchTab.path)"
-        :aria-label="searchTab.label"
-      >
-        <span>
-          <IonIcon :icon="searchTab.icon" />
-        </span>
-      </button>
     </nav>
   </IonTabs>
 </template>

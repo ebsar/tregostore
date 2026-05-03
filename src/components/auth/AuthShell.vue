@@ -82,8 +82,8 @@ defineProps({
 
 :global(body) {
   margin: 0;
-  background: #f5f5f5;
-  color: #111111;
+  background: var(--color-bg);
+  color: var(--color-text);
   font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -95,7 +95,7 @@ defineProps({
   min-height: 100svh;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: var(--color-bg);
 }
 
 .auth-shell-page__content {
@@ -108,8 +108,8 @@ defineProps({
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 16px;
-  background: #f5f5f5;
+  padding: var(--space-12) var(--space-4);
+  background: var(--color-bg);
 }
 
 .auth-shell__inner {
@@ -140,7 +140,7 @@ defineProps({
 
 .auth-shell__header h1 {
   margin: 0;
-  color: #111111;
+  color: var(--color-text);
   font-size: 24px;
   font-weight: 600;
   line-height: 1.25;
@@ -149,7 +149,7 @@ defineProps({
 
 .auth-shell__header p {
   margin: 0;
-  color: #6b7280;
+  color: var(--color-muted);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -157,19 +157,19 @@ defineProps({
 .auth-shell__status {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid #dddddd;
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   background: #ffffff;
-  color: #525252;
+  color: var(--color-muted);
   font-size: 13px;
   line-height: 1.5;
   text-align: center;
 }
 
 .auth-shell__status--error {
-  border-color: #efc8c8;
+  border-color: rgba(255, 59, 48, 0.25);
   background: #fff8f8;
-  color: #9f2f2f;
+  color: var(--color-error);
 }
 
 .auth-shell__status--success {
@@ -191,19 +191,19 @@ defineProps({
 .auth-shell :deep(.auth-helper) {
   margin: 0;
   text-align: center;
-  color: #6b7280;
+  color: var(--color-muted);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .auth-shell :deep(.auth-link) {
-  color: #6b7280;
+  color: var(--color-muted);
   text-decoration: none;
   transition: color 160ms ease;
 }
 
 .auth-shell :deep(.auth-link:hover) {
-  color: #111111;
+  color: var(--color-primary);
 }
 
 .auth-shell :deep(.auth-link:focus-visible) {

@@ -84,7 +84,7 @@ function renderLayout(title: string, preheader: string, body: string): string {
         <td align="center">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;">
             <tr>
-              <td style="background:#ff6f18;padding:18px 24px;">
+              <td style="background:#ff6a00;padding:18px 24px;">
                 <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#fff3ea;font-weight:700;">TREGIO</div>
                 <div style="font-size:20px;line-height:1.2;font-weight:800;color:#ffffff;margin-top:6px;">${escapeHtml(title)}</div>
               </td>
@@ -128,7 +128,7 @@ export function renderClientOrderConfirmationEmail(input: ClientOrderConfirmatio
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
       <tr><td style="padding:4px 0;color:#6b7280;">Subtotal</td><td style="padding:4px 0;text-align:right;color:#111827;">${escapeHtml(input.subtotal)}</td></tr>
       <tr><td style="padding:4px 0;color:#6b7280;">Shipping</td><td style="padding:4px 0;text-align:right;color:#111827;">${escapeHtml(input.shippingCost)}</td></tr>
-      <tr><td style="padding:8px 0;color:#111827;font-weight:800;">Total</td><td style="padding:8px 0;text-align:right;color:#ff6f18;font-weight:800;">${escapeHtml(input.total)}</td></tr>
+      <tr><td style="padding:8px 0;color:#111827;font-weight:800;">Total</td><td style="padding:8px 0;text-align:right;color:#ff6a00;font-weight:800;">${escapeHtml(input.total)}</td></tr>
     </table>
     <p style="margin:0;color:#6b7280;font-size:13px;">Need help? Contact us at <a href="mailto:${escapeHtml(supportEmail)}" style="color:#f26522;text-decoration:none;">${escapeHtml(supportEmail)}</a>.</p>
   `;
@@ -192,4 +192,3 @@ export function renderMessageReceivedEmail(input: MessageReceivedInput): string 
 
   return renderLayout("New Message Received", preheader, body);
 }
-

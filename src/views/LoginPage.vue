@@ -70,6 +70,11 @@ async function submitForm() {
     ui.loading = false;
   }
 }
+
+function handleSocialLogin(provider) {
+  ui.message = `${provider} sign in will be connected when OAuth credentials are configured.`;
+  ui.type = "success";
+}
 </script>
 
 <template>
@@ -112,6 +117,21 @@ async function submitForm() {
       </AuthPrimaryButton>
     </form>
 
+    <div class="auth-social-options" aria-label="Continue with social account">
+      <button type="button" aria-label="Continue with Google account" @click="handleSocialLogin('Google')">
+        <span>G</span>
+        <strong>Google</strong>
+      </button>
+      <button type="button" aria-label="Continue with Apple account" @click="handleSocialLogin('Apple')">
+        <span>A</span>
+        <strong>Apple</strong>
+      </button>
+      <button type="button" aria-label="Continue with Facebook account" @click="handleSocialLogin('Facebook')">
+        <span>f</span>
+        <strong>Facebook</strong>
+      </button>
+    </div>
+
     <template #footer>
       <p class="auth-helper">
         Not a member?
@@ -122,3 +142,57 @@ async function submitForm() {
     </template>
   </AuthShell>
 </template>
+
+<style scoped>
+.auth-social-options {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.auth-social-options button {
+  min-width: 78px;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.auth-social-options span {
+  width: 46px;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 17px;
+  font-weight: 800;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.auth-social-options strong {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.auth-social-options button:hover span,
+.auth-social-options button:focus-visible span {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  transform: translateY(-1px);
+}
+</style>

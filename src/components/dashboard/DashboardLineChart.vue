@@ -96,12 +96,12 @@ svg {
 }
 
 .dashboard-chart__area {
-  fill: rgba(37, 99, 235, 0.12);
+  fill: rgba(255, 106, 0, 0.12);
 }
 
 .dashboard-chart__line {
   fill: none;
-  stroke: #2563eb;
+  stroke: var(--color-primary);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -109,7 +109,7 @@ svg {
 
 circle {
   fill: #ffffff;
-  stroke: #2563eb;
+  stroke: var(--color-primary);
   stroke-width: 1.75;
 }
 

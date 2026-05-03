@@ -30,11 +30,6 @@ const SEARCH_VISUAL_FETCH_LIMIT = 48;
 const SEARCH_PRICE_SLIDER_DEFAULT_MAX = 10000;
 const SMART_SEARCH_MARKERS = new Set(["dua", "doja", "kerkoj", "kerko", "trego", "shfaq", "gjej"]);
 const GROUPED_PAGE_SECTIONS = new Set(["clothing", "cosmetics"]);
-const SEARCH_PROMPT_SUGGESTIONS = [
-  "me trego maica te kuqe",
-  "dua atlete te bardha",
-  "kerkoj produkte per shtepi",
-];
 const draftQuery = ref("");
 const recentSearches = ref([]);
 const products = ref([]);
@@ -1434,11 +1429,9 @@ function handleCompare(product) {
 
     <div class="search-page__shell">
       <header class="market-card market-card--padded search-hero">
-        <p class="search-hero__label">Marketplace search</p>
         <div class="market-page__header">
           <div class="market-page__header-copy">
             <h1>{{ searchTitle }}</h1>
-            <p class="search-hero__copy">{{ searchIntro }}</p>
           </div>
           <div class="market-status market-status--compact">
             <span>{{ formattedResultsCount }} active results</span>
@@ -1480,17 +1473,6 @@ function handleCompare(product) {
             </svg>
           </button>
         </form>
-
-        <div class="search-hero__suggestions" aria-label="Quick search suggestions">
-          <button
-            v-for="suggestion in SEARCH_PROMPT_SUGGESTIONS"
-            :key="suggestion"
-            type="button"
-            @click="applyRecentSearch(suggestion)"
-          >
-            {{ suggestion }}
-          </button>
-        </div>
 
         <div v-if="smartSearchChips.length > 0" class="search-smart-summary" aria-label="Smart search filters">
           <span>Smart filters</span>
@@ -1730,6 +1712,19 @@ function handleCompare(product) {
               <p class="market-page__eyebrow">Results</p>
               <strong>{{ activeQuery || breadcrumbTail }}</strong>
               <p class="section-heading__copy">{{ resultsLabel }}</p>
+              <div v-if="activeFilterChips.length > 0" class="search-toolbar__active-filters" aria-label="Active filters">
+                <button
+                  v-for="chip in activeFilterChips"
+                  :key="chip.key"
+                  type="button"
+                  @click="removeFilterChip(chip)"
+                >
+                  {{ chip.label }} x
+                </button>
+                <button type="button" @click="resetFilters">
+                  Clear all
+                </button>
+              </div>
             </div>
 
             <div class="search-toolbar">
@@ -1752,29 +1747,6 @@ function handleCompare(product) {
                   <option value="price-desc">Price high to low</option>
                 </select>
               </label>
-            </div>
-          </section>
-
-          <section v-if="activeFilterChips.length > 0" class="market-card market-card--padded">
-            <div class="search-sidebar__header">
-              <div>
-                <p class="search-sidebar__label">Active filters</p>
-                <strong>{{ activeFilterChips.length }} refinements applied</strong>
-              </div>
-              <button class="market-button market-button--ghost" type="button" @click="resetFilters">
-                Clear all
-              </button>
-            </div>
-
-            <div class="search-page__chips">
-              <button
-                v-for="chip in activeFilterChips"
-                :key="chip.key"
-                type="button"
-                @click="removeFilterChip(chip)"
-              >
-                {{ chip.label }} x
-              </button>
             </div>
           </section>
 
@@ -1875,40 +1847,28 @@ function handleCompare(product) {
 
 .search-hero {
   display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.search-hero__label {
-  margin: 0;
-  color: var(--dashboard-accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.search-hero__copy {
-  margin: 8px 0 0;
-  color: var(--dashboard-muted);
-  font-size: 14px;
-  line-height: 1.6;
+  gap: 12px;
+  padding: 14px;
 }
 
 .search-hero :deep(.market-status--compact) {
   justify-self: end;
 }
 
-.search-hero__suggestions,
-.search-page__chips,
 .search-results__pager {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.search-hero__suggestions button,
-.search-page__chips button {
+.search-toolbar__active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.search-toolbar__active-filters button {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid var(--dashboard-border);
@@ -1918,6 +1878,13 @@ function handleCompare(product) {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.search-toolbar__active-filters button:hover {
+  border-color: var(--dashboard-accent-border);
+  background: var(--dashboard-accent-soft);
+  color: var(--dashboard-accent);
 }
 
 .search-visual {

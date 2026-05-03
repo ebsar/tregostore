@@ -355,11 +355,11 @@ function updateSpeedInsightsRoute() {
 }
 
 .market-global-toast--success {
-  border-top: 3px solid #f36a20;
+  border-top: 3px solid var(--color-primary);
 }
 
 .market-global-toast--error {
-  border-top: 3px solid #b53b3b;
+  border-top: 3px solid var(--color-error);
 }
 
 .market-global-toast p {

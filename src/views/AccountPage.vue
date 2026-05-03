@@ -20,6 +20,18 @@ const adminUsers = ref([]);
 const adminReports = ref([]);
 const dashboardProductPage = ref(0);
 const accountSearchQuery = ref("");
+const activeDashboardKey = ref("dashboard");
+const wishlistItems = ref([]);
+const trackedOrder = ref(null);
+const trackForm = reactive({
+  orderId: "",
+  billingEmail: "",
+});
+const trackUi = reactive({
+  loading: false,
+  message: "",
+  type: "",
+});
 const ui = reactive({
   message: "",
   type: "",
@@ -32,13 +44,14 @@ const isAdminUser = computed(() => normalizedRole.value === "admin");
 const isBusinessUser = computed(() => normalizedRole.value === "business");
 const normalizedRole = computed(() => String(appState.user?.role || "client").trim().toLowerCase());
 
-const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, "dashboard"));
+const dashboardMenuItems = computed(() => getAccountDashboardMenuItems(appState.user, activeDashboardKey.value));
 const accountShellNavItems = computed(() =>
   dashboardMenuItems.value.map((item) => ({
     key: item.key,
     label: item.label,
     icon: item.icon,
     to: item.href,
+    local: isClientUser.value && ["dashboard", "wishlist", "track-order"].includes(item.key),
     group: item.group,
     badge: item.badge,
   })),
@@ -356,6 +369,7 @@ const dashboardProductRail = computed(() => {
   const start = activeDashboardProductPage.value * 4;
   return dashboardProductSource.value.slice(start, start + 4);
 });
+const dashboardWishlistProducts = computed(() => wishlistItems.value.slice(0, 8));
 
 const primaryAddressLines = computed(() => {
   const address = savedAddress.value;
@@ -385,6 +399,7 @@ onMounted(async () => {
     const requests = [loadAddress()];
     if (isClientUser.value) {
       requests.push(loadOrders());
+      requests.push(loadWishlistItems());
       requests.push(loadDashboardRecommendations());
     } else if (isAdminUser.value) {
       requests.push(loadAdminDashboardData());
@@ -422,6 +437,16 @@ async function loadAddress() {
 async function loadDashboardRecommendations() {
   const payload = await fetchHomeRecommendations(12);
   recommendationSections.value = Array.isArray(payload.sections) ? payload.sections : [];
+}
+
+async function loadWishlistItems() {
+  const { response, data } = await requestJson("/api/wishlist");
+  if (!response.ok || !data?.ok) {
+    wishlistItems.value = [];
+    return;
+  }
+
+  wishlistItems.value = Array.isArray(data.items) ? data.items : [];
 }
 
 async function loadAdminDashboardData() {
@@ -507,6 +532,59 @@ async function handleAccountDashboardSearch() {
     path: "/kerko",
     query: query ? { q: query } : {},
   });
+}
+
+function handleDashboardNavSelect(item) {
+  const nextKey = String(item?.key || "").trim();
+  if (!["dashboard", "wishlist", "track-order"].includes(nextKey)) {
+    return;
+  }
+
+  activeDashboardKey.value = nextKey || "dashboard";
+  if (nextKey === "wishlist" && wishlistItems.value.length === 0) {
+    void loadWishlistItems();
+  }
+  if (nextKey === "track-order" && !trackForm.billingEmail) {
+    trackForm.billingEmail = String(appState.user?.email || "").trim();
+  }
+}
+
+function selectLocalDashboardShortcut(item) {
+  handleDashboardNavSelect(item);
+}
+
+async function submitDashboardTrackOrder() {
+  const orderId = String(trackForm.orderId || "").trim();
+  const billingEmail = String(trackForm.billingEmail || appState.user?.email || "").trim();
+  if (!orderId || !billingEmail) {
+    trackUi.message = "Enter your order number and billing email.";
+    trackUi.type = "error";
+    return;
+  }
+
+  trackUi.loading = true;
+  trackUi.message = "";
+  trackUi.type = "";
+
+  try {
+    const { response, data } = await requestJson("/api/orders/track", {
+      method: "POST",
+      body: JSON.stringify({ orderId, billingEmail }),
+    });
+
+    if (!response.ok || !data?.ok) {
+      trackedOrder.value = null;
+      trackUi.message = resolveApiMessage(data, "We could not find that order.");
+      trackUi.type = "error";
+      return;
+    }
+
+    trackedOrder.value = data.order || null;
+    trackUi.message = data.message || "Order found.";
+    trackUi.type = "success";
+  } finally {
+    trackUi.loading = false;
+  }
 }
 
 function renderDashboardIcon(icon) {
@@ -651,7 +729,7 @@ function goToNextDashboardProductPage() {
     <DashboardShell
       v-if="appState.user"
       :nav-items="accountShellNavItems"
-      active-key="dashboard"
+      :active-key="activeDashboardKey"
       :brand-initial="userAvatarLabel"
       :brand-title="appState.user.fullName || appState.user.businessName || 'Tregio User'"
       :brand-subtitle="dashboardRoleLabel"
@@ -666,6 +744,7 @@ function goToNextDashboardProductPage() {
       search-placeholder="Search marketplace"
       @update:search-query="accountSearchQuery = $event"
       @submit-search="handleAccountDashboardSearch"
+      @nav-select="handleDashboardNavSelect"
     >
       <template #sidebar-footer>
         <button type="button" @click="handleLogout">
@@ -687,18 +766,29 @@ function goToNextDashboardProductPage() {
         </div>
 
         <div class="dashboard-shortcuts">
-          <RouterLink
-            v-for="item in dashboardQuickActions"
-            :key="`shortcut-${item.key}`"
-            class="dashboard-shortcut"
-            :to="item.href"
-          >
-            <strong>{{ item.label }}</strong>
-            <span>Open {{ item.label.toLowerCase() }}</span>
-          </RouterLink>
+          <template v-for="item in dashboardQuickActions" :key="`shortcut-${item.key}`">
+            <button
+              v-if="isClientUser && ['dashboard', 'wishlist', 'track-order'].includes(item.key)"
+              class="dashboard-shortcut dashboard-shortcut--button"
+              type="button"
+              @click="selectLocalDashboardShortcut(item)"
+            >
+              <strong>{{ item.label }}</strong>
+              <span>Open {{ item.label.toLowerCase() }}</span>
+            </button>
+            <RouterLink
+              v-else
+              class="dashboard-shortcut"
+              :to="item.href"
+            >
+              <strong>{{ item.label }}</strong>
+              <span>Open {{ item.label.toLowerCase() }}</span>
+            </RouterLink>
+          </template>
         </div>
       </header>
 
+      <template v-if="activeDashboardKey === 'dashboard'">
       <template v-if="isAdminUser">
         <section class="dashboard-section-group">
           <div class="dashboard-section__head">
@@ -976,6 +1066,81 @@ function goToNextDashboardProductPage() {
           <p>Nuk ka ende produkte për këtë seksion.</p>
         </div>
       </section>
+      </template>
+
+      <template v-else-if="activeDashboardKey === 'wishlist'">
+        <section class="dashboard-section">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Wishlist</p>
+              <h2>Saved products</h2>
+              <p class="dashboard-note">Your saved products stay inside the dashboard, so you can review them without leaving the account workspace.</p>
+            </div>
+            <button class="market-button market-button--ghost" type="button" @click="loadWishlistItems">
+              Refresh
+            </button>
+          </div>
+
+          <div v-if="dashboardWishlistProducts.length > 0" class="product-collection__grid">
+            <ProductCard
+              v-for="product in dashboardWishlistProducts"
+              :key="`dashboard-wishlist-${product.id}-${product.title}`"
+              :product="product"
+              :show-overlay-actions="false"
+            />
+          </div>
+
+          <div v-else class="market-empty">
+            <h3>No wishlist products yet</h3>
+            <p>Save products from the homepage or search results and they will appear here.</p>
+          </div>
+        </section>
+      </template>
+
+      <template v-else-if="activeDashboardKey === 'track-order'">
+        <section class="dashboard-section">
+          <div class="dashboard-section__head">
+            <div>
+              <p class="market-page__eyebrow">Track order</p>
+              <h2>Check delivery status</h2>
+              <p class="dashboard-note">Enter your order number and billing email to check the latest marketplace status without opening a new page.</p>
+            </div>
+          </div>
+
+          <form class="account-form account-form--compact" @submit.prevent="submitDashboardTrackOrder">
+            <div class="account-form__row">
+              <label>
+                Order number
+                <input v-model="trackForm.orderId" type="text" placeholder="e.g. 1024" autocomplete="off">
+              </label>
+              <label>
+                Billing email
+                <input v-model="trackForm.billingEmail" type="email" placeholder="you@example.com" autocomplete="email">
+              </label>
+            </div>
+            <div class="account-form__actions">
+              <button class="market-button market-button--primary" type="submit" :disabled="trackUi.loading">
+                {{ trackUi.loading ? "Checking..." : "Track order" }}
+              </button>
+            </div>
+          </form>
+
+          <p
+            v-if="trackUi.message"
+            class="market-status market-status--compact"
+            :class="{ 'market-status--error': trackUi.type === 'error', 'market-status--success': trackUi.type === 'success' }"
+          >
+            {{ trackUi.message }}
+          </p>
+
+          <article v-if="trackedOrder" class="dashboard-shortcut dashboard-shortcut--order-result">
+            <strong>#{{ trackedOrder.id }}</strong>
+            <span>Status: {{ formatDashboardOrderStatus(trackedOrder) }}</span>
+            <span>Date: {{ formatDashboardOrderDate(trackedOrder.createdAt || trackedOrder.created_at) }}</span>
+            <span>Total: {{ formatDashboardOrderTotal(trackedOrder) }}</span>
+          </article>
+        </section>
+      </template>
     </DashboardShell>
 
     <div v-else class="market-empty">

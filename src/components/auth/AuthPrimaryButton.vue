@@ -25,13 +25,14 @@ defineProps({
 <style scoped>
 .auth-primary-button {
   width: 100%;
-  height: 44px;
+  min-height: var(--touch-target);
+  height: var(--touch-target);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #fb923c 0%, #f97316 100%);
+  border-radius: var(--radius-control);
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   color: #ffffff;
   font-size: 14px;
   font-weight: 600;
@@ -53,7 +54,7 @@ defineProps({
 }
 
 .auth-primary-button:focus-visible {
-  outline: 2px solid rgba(249, 115, 22, 0.22);
+  outline: 2px solid rgba(255, 106, 0, 0.22);
   outline-offset: 2px;
 }
 </style>
