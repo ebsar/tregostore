@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import store.trego.mobile.ui.components.TregoButton
+import store.trego.mobile.ui.components.TregoHeader
 import store.trego.mobile.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,23 +42,23 @@ fun AccountScreen(
     onMessages: () -> Unit,
     onReturns: () -> Unit,
     onBusinessHub: () -> Unit,
-    onAdminControl: () -> Unit
+    onAdminControl: () -> Unit,
+    onProfile: () -> Unit,
+    onSettings: () -> Unit
 ) {
     val user by viewModel.user.collectAsState()
     val unreadNotifications by viewModel.notificationUnreadCount.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Llogaria", fontWeight = FontWeight.Black) }
-            )
+            TregoHeader(title = "Llogaria")
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(bottom = 100.dp, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -66,27 +68,24 @@ fun AccountScreen(
             if (user == null) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = onLogin,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Text("Kyçuni", fontWeight = FontWeight.Bold)
-                        }
-                        OutlinedButton(
-                            onClick = onSignup,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Text("Regjistrohuni", fontWeight = FontWeight.Bold)
-                        }
+                        TregoButton(
+                            text = "Kyçuni",
+                            onClick = onLogin
+                        )
+                        TregoButton(
+                            text = "Regjistrohuni",
+                            isSecondary = true,
+                            onClick = onSignup
+                        )
                     }
                 }
             } else {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AccountItem("Te dhenat personale", "Emri dhe fotoja", Icons.Default.Person) {}
-                        AccountItem("Porosite e mia", "Historia e blerjeve", Icons.Default.ShoppingCart) {
+                        AccountItem("Të dhënat personale", "Emri dhe fotoja", Icons.Default.Person) {
+                            onProfile()
+                        }
+                        AccountItem("Porositë e mia", "Historia e blerjeve", Icons.Default.ShoppingCart) {
                             onOrders()
                         }
                         AccountItem("Wishlist", "Produktet e ruajtura", Icons.Default.Favorite) {
@@ -97,11 +96,11 @@ fun AccountScreen(
                         }
                         AccountItem(
                             title = "Njoftimet",
-                            subtitle = if (unreadNotifications > 0) "$unreadNotifications te palexuara" else "Porosi, mesazhe, oferta",
+                            subtitle = if (unreadNotifications > 0) "$unreadNotifications të palexuara" else "Porosi, mesazhe, oferta",
                             icon = Icons.Default.Notifications,
                             onClick = onNotifications
                         )
-                        AccountItem("Refund / Returne", "Statuset e kerkesave", Icons.Default.Reply) {
+                        AccountItem("Refund / Returne", "Statuset e kërkesave", Icons.Default.Reply) {
                             onReturns()
                         }
                         if (user?.role == "business") {
@@ -114,7 +113,9 @@ fun AccountScreen(
                                 onAdminControl()
                             }
                         }
-                        AccountItem("Settings", "Aplikacioni dhe njoftimet", Icons.Default.Settings) {}
+                        AccountItem("Cilësimet", "Aplikacioni dhe njoftimet", Icons.Default.Settings) {
+                            onSettings()
+                        }
                         AccountItem("Shkyçu", "Dil nga llogaria", Icons.Default.ExitToApp, isDestructive = true) {
                             viewModel.logout()
                         }

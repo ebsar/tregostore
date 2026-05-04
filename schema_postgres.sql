@@ -600,6 +600,39 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_created
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read
     ON notifications(user_id, is_read, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS whatsapp_message_queue (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    phone_number TEXT NOT NULL DEFAULT '',
+    message_text TEXT NOT NULL DEFAULT '',
+    notification_type TEXT NOT NULL DEFAULT 'info',
+    href TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    provider_message_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    sent_at TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_status_available
+    ON whatsapp_message_queue(status, available_at, id);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_user_created
+    ON whatsapp_message_queue(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_idempotency
+    ON whatsapp_message_queue(idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_provider_message
+    ON whatsapp_message_queue(provider_message_id);
+
 CREATE TABLE IF NOT EXISTS reports (
     id BIGSERIAL PRIMARY KEY,
     reporter_user_id BIGINT NOT NULL,

@@ -29,7 +29,6 @@ import store.trego.mobile.ui.components.ProductCard
 import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
     val products by viewModel.homeProducts.collectAsState()
@@ -38,25 +37,7 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "TREGIO",
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = (-1.5).sp
-                        )
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { /* Notifications */ }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notifications", modifier = Modifier.size(28.dp))
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Transparent
-                )
-            )
+            HomeHeader()
         }
     ) { padding ->
         LazyColumn(
@@ -77,15 +58,15 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
 
             // Main Product Grid
             item {
-                SectionTitle("Zbuloni Produkte")
+                SectionTitle("Zbuloni Produkte", "Përzgjedhje e veçantë për ju")
             }
 
             items(products.chunked(2)) { pair ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     ProductCard(
                         product = pair[0],
@@ -108,89 +89,100 @@ fun HomeScreen(viewModel: MainViewModel, onOpenProduct: (Int) -> Unit) {
 }
 
 @Composable
+fun HomeHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "TREGIO",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-1.5).sp,
+                color = TregoColors.primaryTextLight
+            )
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(
+                onClick = { /* Search */ },
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(TregoColors.mutedSurfaceLight)
+            ) {
+                Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(22.dp))
+            }
+            IconButton(
+                onClick = { /* Notifications */ },
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(TregoColors.mutedSurfaceLight)
+            ) {
+                Icon(Icons.Default.Notifications, contentDescription = "Notifications", modifier = Modifier.size(22.dp))
+            }
+        }
+    }
+}
+
+@Composable
 fun HomeHeroSection(launchAds: List<LaunchAd>) {
     val heroAd = launchAds.firstOrNull()
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(290.dp)
-            .padding(20.dp)
-            .clip(RoundedCornerShape(32.dp))
+            .height(260.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(28.dp))
             .background(
                 Brush.linearGradient(
-                    colors = listOf(TregoColors.accent.copy(alpha = 0.98f), TregoColors.softAccentLight)
+                    colors = listOf(TregoColors.accent, TregoColors.accentStrong)
                 )
-            ),
-        contentAlignment = Alignment.Center
+            )
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(22.dp),
+            modifier = Modifier.fillMaxSize().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Surface(
-                    color = Color.White.copy(alpha = 0.22f),
-                    shape = CircleShape
+                    color = Color.White.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        heroAd?.badge?.ifBlank { "Launch Ad" } ?: "Launch Ad",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelLarge,
+                        heroAd?.badge?.uppercase() ?: "NEW ARRIVAL",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Black,
+                        fontSize = 10.sp
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    heroAd?.title?.takeIf { it.isNotBlank() } ?: "Miresevini ne\nEksperiencen TREGIO",
+                    heroAd?.title ?: "Zbuloni\nKoleksionin e Ri",
                     color = Color.White,
-                    style = MaterialTheme.typography.headlineLarge,
-                    lineHeight = 36.sp,
+                    style = MaterialTheme.typography.headlineSmall,
+                    lineHeight = 28.sp,
                     fontWeight = FontWeight.Black
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    heroAd?.subtitle?.takeIf { it.isNotBlank() } ?: "Kualiteti takon vleren.",
-                    color = Color.White.copy(alpha = 0.84f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    heroAd?.subtitle ?: "Kualiteti takon vlerën.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 2
                 )
             }
 
             AsyncImage(
                 model = heroAd?.imagePath,
-                contentDescription = heroAd?.title,
+                contentDescription = null,
                 modifier = Modifier
-                    .width(118.dp)
+                    .width(100.dp)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color.White.copy(alpha = 0.2f)),
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White.copy(alpha = 0.1f)),
                 contentScale = ContentScale.Crop
             )
-        }
-
-        if (launchAds.size > 1) {
-            LazyRow(
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(launchAds.take(5)) { ad ->
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.22f)
-                    ) {
-                        Text(
-                            ad.title?.take(16) ?: "Launch",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
         }
     }
 }

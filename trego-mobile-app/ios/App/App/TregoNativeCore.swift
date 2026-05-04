@@ -271,6 +271,11 @@ struct TregoCartItem: Codable, Identifiable, Equatable {
     let selectedColor: String?
     let variantKey: String?
     let variantLabel: String?
+    let status: String?
+    let fulfillmentStatus: String?
+    let trackingCode: String?
+    let trackingUrl: String?
+    let returnRequestStatus: String?
 }
 
 struct TregoOrderItem: Codable, Identifiable, Equatable {
@@ -2141,10 +2146,14 @@ final class TregoAPIClient {
         fieldName: String,
         fields: [String: String] = [:]
     ) async -> TregoJSONResult? {
-        guard let request = buildMultipartRequest(path: path, uploads: uploads, fieldName: fieldName, fields: fields) else { return nil }
+        guard let builtRequest = buildMultipartRequest(path: path, uploads: uploads, fieldName: fieldName, fields: fields) else { return nil }
 
         do {
-            let (data, response) = try await session.upload(for: request, from: request.httpBody ?? Data())
+            guard let body = builtRequest.httpBody else { return nil }
+            var request = builtRequest
+            request.httpBody = nil
+
+            let (data, response) = try await session.upload(for: request, from: body)
             guard let http = response as? HTTPURLResponse else { return nil }
             return parseJSONResult(data: data, response: http)
         } catch {
@@ -2366,6 +2375,7 @@ final class TregoNativeAppStore: ObservableObject {
     @Published var toastMessage: String?
     @Published var globalMessage: String?
     @Published var authenticationPrompt: TregoAuthenticationPrompt?
+    @Published var shouldAutoPromptBiometricLogin = false
 
     var hasSavedBiometricLoginCredentials: Bool {
         TregoBiometricCredentialsStore.load() != nil
@@ -3473,6 +3483,10 @@ final class TregoNativeAppStore: ObservableObject {
     func logout() async {
         await api.logout()
         resetSessionState()
+        if hasSavedBiometricLoginCredentials {
+            shouldAutoPromptBiometricLogin = true
+            openAccountAuth(.login)
+        }
         showToast("U ckyce me sukses.")
     }
 

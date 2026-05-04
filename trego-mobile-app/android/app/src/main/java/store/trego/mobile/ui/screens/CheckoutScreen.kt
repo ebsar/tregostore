@@ -2,20 +2,24 @@ package store.trego.mobile.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import store.trego.mobile.ui.components.TregoButton
+import store.trego.mobile.ui.components.TregoHeader
+import store.trego.mobile.ui.components.TregoTextField
+import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckoutScreen(
     viewModel: MainViewModel,
@@ -24,12 +28,13 @@ fun CheckoutScreen(
 ) {
     val cart by viewModel.cart.collectAsState()
     val user by viewModel.user.collectAsState()
+    val userAddress by viewModel.userAddress.collectAsState()
     
-    var addressLine by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
+    var addressLine by remember { mutableStateOf(userAddress["addressLine"]?.toString() ?: "") }
+    var city by remember { mutableStateOf(userAddress["city"]?.toString() ?: "") }
     var country by remember { mutableStateOf("Kosovë") }
-    var zipCode by remember { mutableStateOf("") }
-    var phoneNumber by remember { mutableStateOf(user?.phoneNumber ?: "") }
+    var zipCode by remember { mutableStateOf(userAddress["zipCode"]?.toString() ?: "") }
+    var phoneNumber by remember { mutableStateOf(user?.phoneNumber ?: userAddress["phoneNumber"]?.toString() ?: "") }
     var paymentMethod by remember { mutableStateOf("cash-on-delivery") }
     
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -38,13 +43,10 @@ fun CheckoutScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Checkout") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+            TregoHeader(
+                title = "Checkout",
+                subtitle = "Plotesoni te dhenat per dërgesën.",
+                onBack = onBack
             )
         }
     ) { padding ->
@@ -52,103 +54,118 @@ fun CheckoutScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Spacer(Modifier.height(8.dp))
+
             Text(
-                text = "Adresa e dërgesës",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 16.dp)
+                text = "ADRESA E DËRGESËS",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Black,
+                color = TregoColors.accent
             )
 
-            OutlinedTextField(
+            TregoTextField(
                 value = addressLine,
                 onValueChange = { addressLine = it },
-                label = { Text("Adresa (Rruga, Nr. etj)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                label = "Rruga / Lagjja",
+                placeholder = "Psh: Rruga Agim Ramadani, Nr. 15"
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                TregoTextField(
                     value = city,
                     onValueChange = { city = it },
-                    label = { Text("Qyteti") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                    label = "Qyteti",
+                    placeholder = "Psh: Prishtinë",
+                    modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
+                TregoTextField(
                     value = zipCode,
                     onValueChange = { zipCode = it },
-                    label = { Text("Zip Code") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                    label = "Kodi Postar",
+                    placeholder = "10000",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
+            TregoTextField(
                 value = phoneNumber,
                 onValueChange = { phoneNumber = it },
-                label = { Text("Nr. Telefonit për dërgesë") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                label = "Numri i telefonit",
+                placeholder = "+383 4X XXX XXX",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
             )
 
-            Divider(modifier = Modifier.padding(vertical = 24.dp))
+            Divider(color = TregoColors.borderLight.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 8.dp))
 
             Text(
-                text = "Mënyra e pagesës",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
+                text = "MËNYRA E PAGESËS",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Black,
+                color = TregoColors.accent
             )
             
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = paymentMethod == "cash-on-delivery",
-                    onClick = { paymentMethod = "cash-on-delivery" }
-                )
-                Text("Pagesë në dorë (Cash on Delivery)")
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = TregoColors.mutedSurfaceLight,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = paymentMethod == "cash-on-delivery",
+                        onClick = { paymentMethod = "cash-on-delivery" },
+                        colors = RadioButtonDefaults.colors(selectedColor = TregoColors.accent)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Pagesë në dorë (Cash on Delivery)", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
             }
 
-            Divider(modifier = Modifier.padding(vertical = 24.dp))
+            Divider(color = TregoColors.borderLight.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 8.dp))
 
             val total = cart.sumOf { (it.price ?: 0.0) * (it.quantity ?: 1) }
             
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Subtotal", color = MaterialTheme.colorScheme.secondary)
-                Text("€$total")
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Dërgesa", color = MaterialTheme.colorScheme.secondary)
-                Text("FALAS")
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Total", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("€$total", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Subtotal", color = TregoColors.secondaryTextLight)
+                    Text("€$total", fontWeight = FontWeight.Bold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Dërgesa", color = TregoColors.secondaryTextLight)
+                    Text("FALAS", color = TregoColors.success, fontWeight = FontWeight.Black)
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Total", fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text("€$total", fontWeight = FontWeight.Black, fontSize = 20.sp, color = TregoColors.accent)
+                }
             }
 
             if (errorMessage != null) {
                 Text(
                     text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 16.dp),
-                    fontSize = 14.sp
+                    color = TregoColors.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
+            TregoButton(
+                text = "Përfundo Porosinë",
+                isLoading = isSubmitting,
+                enabled = cart.isNotEmpty(),
                 onClick = {
                     if (addressLine.isBlank() || city.isBlank() || phoneNumber.isBlank()) {
-                        errorMessage = "Ju lutem plotësoni të dhënat e dërgesës."
-                        return@Button
+                        errorMessage = "Ju lutem plotësoni të gjitha të dhënat."
+                        return@TregoButton
                     }
                     
                     isSubmitting = true
@@ -170,23 +187,10 @@ fun CheckoutScreen(
                             errorMessage = result.message ?: "Porosia dështoi."
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isSubmitting && cart.isNotEmpty(),
-                shape = MaterialTheme.shapes.medium
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Përfundo Porosinë", fontWeight = FontWeight.Bold)
                 }
-            }
+            )
             
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(60.dp))
         }
     }
 }

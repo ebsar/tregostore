@@ -11,12 +11,11 @@ import { appState, ensureSessionLoaded, markRouteReady } from "../stores/app-sta
 const ORDER_STATUS_TABS = [
   { key: "all", label: "All" },
   { key: "new", label: "New" },
-  { key: "paid", label: "Paid" },
-  { key: "processing", label: "Processing" },
+  { key: "waiting_shipping", label: "Waiting shipping" },
   { key: "shipped", label: "Shipped" },
-  { key: "delivered", label: "Delivered" },
+  { key: "for_review", label: "For review" },
+  { key: "return_refund", label: "Return / Refund" },
   { key: "cancelled", label: "Cancelled" },
-  { key: "refunded", label: "Refunded" },
 ];
 
 const router = useRouter();
@@ -420,26 +419,28 @@ function matchesBusinessOrderTab(order, tabKey) {
   if (tabKey === "new") {
     return normalizedStatus === "pending_confirmation";
   }
-  if (tabKey === "paid") {
-    return ["confirmed", "partially_confirmed"].includes(normalizedStatus);
-  }
-  if (tabKey === "processing") {
-    return normalizedStatus === "packed";
+  if (tabKey === "waiting_shipping") {
+    return ["confirmed", "packed", "partially_confirmed"].includes(normalizedStatus);
   }
   if (tabKey === "shipped") {
     return normalizedStatus === "shipped";
   }
-  if (tabKey === "delivered") {
+  if (tabKey === "for_review") {
     return normalizedStatus === "delivered";
+  }
+  if (tabKey === "return_refund") {
+    return ["returned", "refunded"].includes(normalizedStatus) || hasBusinessOrderReturnActivity(order);
   }
   if (tabKey === "cancelled") {
     return ["cancelled", "canceled", "failed"].includes(normalizedStatus);
   }
-  if (tabKey === "refunded") {
-    return ["returned", "refunded"].includes(normalizedStatus);
-  }
 
   return true;
+}
+
+function hasBusinessOrderReturnActivity(order) {
+  return Array.isArray(order?.items)
+    && order.items.some((item) => String(item?.returnRequestStatus || "").trim());
 }
 </script>
 

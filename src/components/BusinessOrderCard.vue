@@ -389,12 +389,12 @@ const clientIdentityInitials = computed(() => getBusinessInitials(clientIdentity
             <label>
               <span>Next status</span>
               <select v-model="orderDraftFor(order).fulfillmentStatus">
-                <option value="confirmed">Confirmed</option>
-                <option value="packed">Packed</option>
+                <option value="confirmed">Waiting for shipping</option>
+                <option value="packed">Ready to ship</option>
                 <option value="shipped">Shipped</option>
-                <option value="delivered">Delivered</option>
+                <option value="delivered">Delivered / for review</option>
                 <option value="cancelled">Cancelled</option>
-                <option value="returned">Returned</option>
+                <option value="returned">Return / Refund</option>
               </select>
             </label>
 

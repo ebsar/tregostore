@@ -2,27 +2,32 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import AccountUtilityShell from "../components/account/AccountUtilityShell.vue";
-import UserOrderCard from "../components/UserOrderCard.vue";
+import OrderCard from "../components/orders/OrderCard.vue";
+import OrderDetails from "../components/orders/OrderDetails.vue";
+import OrderFilters from "../components/orders/OrderFilters.vue";
 import { requestJson, resolveApiMessage } from "../lib/api";
-import { consumeOrderConfirmationMessage, formatPrice } from "../lib/shop";
+import { consumeOrderConfirmationMessage } from "../lib/shop";
 import { ensureSessionLoaded, markRouteReady } from "../stores/app-state";
 
 const router = useRouter();
 const route = useRoute();
 const ORDERS_PER_PAGE = 6;
 const ORDER_STATUS_TABS = [
-  { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
+  { key: "all", label: "All Orders" },
   { key: "processing", label: "Processing" },
   { key: "shipped", label: "Shipped" },
   { key: "delivered", label: "Delivered" },
   { key: "cancelled", label: "Cancelled" },
-  { key: "returned", label: "Returned / Refunded" },
+  { key: "refunded", label: "Refunded" },
 ];
 
 const orders = ref([]);
+const ordersLoaded = ref(false);
+const loadingOrders = ref(false);
+const ordersError = ref("");
 const busyOrderItemId = ref(0);
-const selectedOrderId = ref(0);
+const selectedOrderId = ref(readRouteOrderId(route.query.orderId));
+const actionsMenuOrderId = ref(0);
 const currentPage = ref(1);
 const orderSearchQuery = ref(readRouteSearchQuery(route.query.q));
 const activeStatusTab = ref(readRouteStatusTab(route.query.status));
@@ -32,20 +37,14 @@ const ui = reactive({
   type: "",
   guest: false,
 });
+
 const dashboardNotificationCount = computed(() =>
-  orders.value.filter((order) =>
-    [
-      "pending_confirmation",
-      "confirmed",
-      "packed",
-      "shipped",
-      "partially_confirmed",
-    ].includes(String(order.fulfillmentStatus || order.status || "").trim().toLowerCase()),
-  ).length,
+  orders.value.filter((order) => ["processing", "shipped"].includes(getNormalizedOrderStatus(order))).length,
 );
 
 const filteredOrders = computed(() => {
   const normalizedQuery = normalizeOrderSearchValue(orderSearchQuery.value);
+
   return orders.value.filter((order) => {
     if (!matchesOrderStatusTab(order, activeStatusTab.value)) {
       return false;
@@ -87,11 +86,16 @@ const paginatedOrders = computed(() => {
   return filteredOrders.value.slice(start, start + ORDERS_PER_PAGE);
 });
 
-const selectedOrder = computed(() =>
-  filteredOrders.value.find((order) => Number(order.id) === Number(selectedOrderId.value))
-  || paginatedOrders.value[0]
-  || null,
-);
+const selectedOrder = computed(() => {
+  if (!selectedOrderId.value) {
+    return null;
+  }
+
+  return filteredOrders.value.find((order) => Number(order.id) === Number(selectedOrderId.value)) || null;
+});
+
+const hasAnyOrders = computed(() => orders.value.length > 0);
+const hasSearchOrFilter = computed(() => Boolean(orderSearchQuery.value.trim()) || activeStatusTab.value !== "all");
 
 watch(filteredOrders, (nextOrders) => {
   const maxPage = Math.max(1, Math.ceil(nextOrders.length / ORDERS_PER_PAGE));
@@ -99,16 +103,16 @@ watch(filteredOrders, (nextOrders) => {
     currentPage.value = maxPage;
   }
 
-  if (nextOrders.length === 0) {
-    selectedOrderId.value = 0;
+  if (!ordersLoaded.value || !selectedOrderId.value) {
     return;
   }
 
-  const hasSelected = nextOrders.some((order) => Number(order.id) === Number(selectedOrderId.value));
-  if (!hasSelected) {
-    selectedOrderId.value = Number(nextOrders[0]?.id || 0);
+  const selectionStillVisible = nextOrders.some((order) => Number(order.id) === Number(selectedOrderId.value));
+  if (!selectionStillVisible) {
+    selectedOrderId.value = 0;
+    syncRouteFilters({ q: orderSearchQuery.value, status: activeStatusTab.value, orderId: "" });
   }
-}, { immediate: true });
+});
 
 watch(
   () => route.query.q,
@@ -132,16 +136,15 @@ watch(
   },
 );
 
-watch(currentPage, () => {
-  if (paginatedOrders.value.length === 0) {
-    return;
-  }
-
-  const visibleSelection = paginatedOrders.value.some((order) => Number(order.id) === Number(selectedOrderId.value));
-  if (!visibleSelection) {
-    selectedOrderId.value = Number(paginatedOrders.value[0]?.id || 0);
-  }
-});
+watch(
+  () => route.query.orderId,
+  (orderId) => {
+    const nextOrderId = readRouteOrderId(orderId);
+    if (nextOrderId !== selectedOrderId.value) {
+      selectedOrderId.value = nextOrderId;
+    }
+  },
+);
 
 onMounted(async () => {
   try {
@@ -166,20 +169,36 @@ onMounted(async () => {
 });
 
 async function loadOrders() {
-  const { response, data } = await requestJson("/api/orders");
-  if (!response.ok || !data?.ok) {
-    if (!ui.message) {
-      ui.message = resolveApiMessage(data, "Porosite nuk u ngarkuan.");
-      ui.type = "error";
-    }
-    orders.value = [];
-    return;
-  }
+  loadingOrders.value = true;
+  ordersError.value = "";
 
-  orders.value = Array.isArray(data.orders) ? data.orders : [];
+  try {
+    const { response, data } = await requestJson("/api/orders");
+    if (!response.ok || !data?.ok) {
+      orders.value = [];
+      ordersError.value = resolveApiMessage(data, "Orders could not be loaded.");
+      return;
+    }
+
+    orders.value = Array.isArray(data.orders) ? data.orders : [];
+    const routeOrderId = readRouteOrderId(route.query.orderId);
+    selectedOrderId.value = orders.value.some((order) => Number(order.id) === Number(routeOrderId)) ? routeOrderId : 0;
+  } catch (error) {
+    orders.value = [];
+    ordersError.value = "Network error. Please try again.";
+  } finally {
+    ordersLoaded.value = true;
+    loadingOrders.value = false;
+  }
 }
 
 async function handleReturnRequest(item) {
+  if (!item?.id) {
+    ui.message = "This order item cannot be returned yet.";
+    ui.type = "error";
+    return;
+  }
+
   const reason = window.prompt("Shkruaj arsyen e kthimit:");
   if (!reason) {
     return;
@@ -221,8 +240,26 @@ async function handleReturnRequest(item) {
   }
 }
 
-function selectOrder(order) {
+function handleSearchQueryUpdate(value) {
+  orderSearchQuery.value = String(value || "");
+  currentPage.value = 1;
+  syncRouteFilters({ q: orderSearchQuery.value, status: activeStatusTab.value, orderId: selectedOrderId.value });
+}
+
+function openOrder(order) {
   selectedOrderId.value = Number(order?.id || 0);
+  actionsMenuOrderId.value = 0;
+  syncRouteFilters({ q: orderSearchQuery.value, status: activeStatusTab.value, orderId: selectedOrderId.value });
+}
+
+function closeOrderDetails() {
+  selectedOrderId.value = 0;
+  syncRouteFilters({ q: orderSearchQuery.value, status: activeStatusTab.value, orderId: "" });
+}
+
+function toggleOrderMenu(order) {
+  const nextOrderId = Number(order?.id || 0);
+  actionsMenuOrderId.value = Number(actionsMenuOrderId.value) === nextOrderId ? 0 : nextOrderId;
 }
 
 function goToPage(page) {
@@ -234,8 +271,101 @@ function goToPage(page) {
   currentPage.value = nextPage;
 }
 
+async function setOrderStatusTab(tabKey) {
+  const nextTab = ORDER_STATUS_TABS.some((tab) => tab.key === tabKey) ? tabKey : "all";
+  if (nextTab === activeStatusTab.value) {
+    return;
+  }
+
+  activeStatusTab.value = nextTab;
+  currentPage.value = 1;
+  await syncRouteFilters({ q: orderSearchQuery.value, status: nextTab, orderId: selectedOrderId.value });
+}
+
+function handleOrderMenuAction({ action, order }) {
+  actionsMenuOrderId.value = 0;
+
+  if (action === "download-invoice") {
+    window.open(`/api/orders/invoice?id=${encodeURIComponent(order?.id || "")}`, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  if (action === "request-return") {
+    requestReturnForOrder(order);
+    return;
+  }
+
+  if (action === "contact-support") {
+    handleContactSupport(order);
+  }
+}
+
+function requestReturnForOrder(order) {
+  const item = getFirstReturnableItem(order);
+  if (!item) {
+    ui.message = "Return/refund is available after the order is shipped or delivered.";
+    ui.type = "error";
+    return;
+  }
+
+  handleReturnRequest(item);
+}
+
+function handleContactSeller(item) {
+  router.push({
+    path: "/mesazhet",
+    query: {
+      orderId: selectedOrderId.value || undefined,
+      productId: item?.productId || undefined,
+      sellerId: item?.businessUserId || undefined,
+    },
+  });
+}
+
+function handleContactSupport(order = null) {
+  router.push({
+    path: "/support",
+    query: order?.id ? { orderId: order.id } : {},
+  });
+}
+
+function handleReportProblem(order) {
+  router.push({
+    path: "/support",
+    query: {
+      topic: "order",
+      orderId: order?.id || undefined,
+    },
+  });
+}
+
 function readRouteSearchQuery(value) {
   return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+function readRouteOrderId(value) {
+  const nextValue = Array.isArray(value) ? value[0] : value;
+  const nextNumber = Number(nextValue || 0);
+  return Number.isFinite(nextNumber) ? nextNumber : 0;
+}
+
+function readRouteStatusTab(value) {
+  const nextValue = Array.isArray(value) ? String(value[0] || "") : String(value || "");
+  return ORDER_STATUS_TABS.some((tab) => tab.key === nextValue) ? nextValue : "all";
+}
+
+async function syncRouteFilters({ q = "", status = "all", orderId = "" } = {}) {
+  const nextQuery = {
+    ...route.query,
+    q: String(q || "").trim() || undefined,
+    status: status && status !== "all" ? status : undefined,
+    orderId: orderId ? String(orderId) : undefined,
+  };
+
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  });
 }
 
 function normalizeOrderSearchValue(value) {
@@ -251,42 +381,6 @@ function extractOrderSearchNumber(value) {
   return match?.[1] || "";
 }
 
-async function handleOrderSearch() {
-  const query = String(orderSearchQuery.value || "").trim();
-  orderSearchQuery.value = query;
-  currentPage.value = 1;
-  await syncRouteFilters({ q: query, status: activeStatusTab.value });
-}
-
-async function setOrderStatusTab(tabKey) {
-  const nextTab = ORDER_STATUS_TABS.some((tab) => tab.key === tabKey) ? tabKey : "all";
-  if (nextTab === activeStatusTab.value) {
-    return;
-  }
-
-  activeStatusTab.value = nextTab;
-  currentPage.value = 1;
-  await syncRouteFilters({ q: orderSearchQuery.value, status: nextTab });
-}
-
-function readRouteStatusTab(value) {
-  const nextValue = Array.isArray(value) ? String(value[0] || "") : String(value || "");
-  return ORDER_STATUS_TABS.some((tab) => tab.key === nextValue) ? nextValue : "all";
-}
-
-async function syncRouteFilters({ q = "", status = "all" } = {}) {
-  const nextQuery = {
-    ...route.query,
-    q: String(q || "").trim() || undefined,
-    status: status && status !== "all" ? status : undefined,
-  };
-
-  await router.replace({
-    path: route.path,
-    query: nextQuery,
-  });
-}
-
 function getOrderSearchHaystack(order) {
   const itemText = Array.isArray(order?.items)
     ? order.items.map((item) => [
@@ -295,6 +389,8 @@ function getOrderSearchHaystack(order) {
       item?.productName,
       item?.businessName,
       item?.variantLabel,
+      item?.color,
+      item?.size,
     ].filter(Boolean).join(" ")).join(" ")
     : "";
 
@@ -304,6 +400,7 @@ function getOrderSearchHaystack(order) {
     order?.fulfillmentStatus,
     order?.paymentStatus,
     order?.createdAt,
+    order?.customerName,
     order?.totalPrice,
     order?.totalItems,
     itemText,
@@ -311,89 +408,50 @@ function getOrderSearchHaystack(order) {
 }
 
 function matchesOrderStatusTab(order, tabKey) {
-  const normalizedStatus = String(order?.fulfillmentStatus || order?.status || "").trim().toLowerCase();
-
   if (tabKey === "all") {
     return true;
   }
-  if (tabKey === "pending") {
-    return ["pending_confirmation"].includes(normalizedStatus);
-  }
-  if (tabKey === "processing") {
-    return ["confirmed", "packed", "partially_confirmed"].includes(normalizedStatus);
-  }
-  if (tabKey === "shipped") {
-    return normalizedStatus === "shipped";
-  }
-  if (tabKey === "delivered") {
-    return normalizedStatus === "delivered";
-  }
-  if (tabKey === "cancelled") {
-    return ["cancelled", "canceled", "failed"].includes(normalizedStatus);
-  }
-  if (tabKey === "returned") {
-    return ["returned", "refunded"].includes(normalizedStatus);
-  }
 
-  return true;
+  return getNormalizedOrderStatus(order) === tabKey;
 }
 
-function getOrderHistoryStatus(order) {
-  const normalizedStatus = String(order?.fulfillmentStatus || order?.status || "").trim().toLowerCase();
+function getNormalizedOrderStatus(order) {
+  const statuses = [
+    order?.status,
+    order?.fulfillmentStatus,
+    ...(Array.isArray(order?.items) ? order.items.map((item) => item?.fulfillmentStatus) : []),
+  ].map((status) => String(status || "").trim().toLowerCase());
 
-  if (["delivered"].includes(normalizedStatus)) {
-    return {
-      label: "COMPLETED",
-      tone: "is-completed",
-    };
+  if (hasReturnActivity(order) || statuses.some((status) => ["returned", "refunded", "return_requested"].includes(status))) {
+    return "refunded";
   }
 
-  if (["cancelled", "returned"].includes(normalizedStatus)) {
-    return {
-      label: "CANCELED",
-      tone: "is-canceled",
-    };
+  if (statuses.some((status) => ["cancelled", "canceled", "failed"].includes(status))) {
+    return "cancelled";
   }
 
-  return {
-    label: "IN PROGRESS",
-    tone: "is-progress",
-  };
+  if (statuses.includes("delivered")) {
+    return "delivered";
+  }
+
+  if (statuses.some((status) => ["shipped", "in_transit", "out_for_delivery"].includes(status))) {
+    return "shipped";
+  }
+
+  return "processing";
 }
 
-function formatOrderDateTime(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const parsedDate = new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(parsedDate.getTime())) {
-    return String(value);
-  }
-
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(parsedDate);
-  const month = parts.find((part) => part.type === "month")?.value || "";
-  const day = parts.find((part) => part.type === "day")?.value || "";
-  const year = parts.find((part) => part.type === "year")?.value || "";
-  const hour = parts.find((part) => part.type === "hour")?.value || "";
-  const minute = parts.find((part) => part.type === "minute")?.value || "";
-
-  return `${month} ${day}, ${year} ${hour}:${minute}`.trim();
+function hasReturnActivity(order) {
+  return Array.isArray(order?.items)
+    && order.items.some((item) => String(item?.returnRequestStatus || "").trim());
 }
 
-function formatOrderTotal(order) {
-  const itemCount = Number(order?.totalItems || order?.items?.length || 0);
-  const productLabel = itemCount === 1 ? "Product" : "Products";
-  return `${formatPrice(order?.totalPrice || 0)} (${itemCount} ${productLabel})`;
+function getFirstReturnableItem(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items.find((item) => {
+    const status = String(item.fulfillmentStatus || order?.fulfillmentStatus || order?.status || "").toLowerCase();
+    return ["delivered", "shipped"].includes(status) && !item.returnRequestStatus;
+  }) || null;
 }
 </script>
 
@@ -402,143 +460,134 @@ function formatOrderTotal(order) {
     v-if="!ui.guest"
     active-key="orders"
     eyebrow="Customer account"
-    title="Order history"
-    description="Track recent purchases, open the full order breakdown, and start a return when the order is eligible."
+    title="My Orders"
+    description="Track, view, and manage your orders"
     :status-message="ui.message"
     :status-type="ui.type"
     :notification-count="dashboardNotificationCount"
-    search-placeholder="Search orders, products, returns"
+    search-placeholder="Search orders, products, sellers"
   >
-    <div class="orders-history-grid">
-      <section class="orders-history-card">
-        <div class="dashboard-toolbar">
-          <div class="orders-history-card__header">
+    <section class="orders-marketplace" aria-label="My Orders">
+      <header class="orders-marketplace__hero">
+        <div>
+          <span>Orders</span>
+          <h2>My Orders</h2>
+          <p>Track, view, and manage your marketplace orders without leaving your dashboard.</p>
+        </div>
+        <RouterLink class="orders-marketplace__shop-link" to="/kerko">
+          Start shopping
+        </RouterLink>
+      </header>
+
+      <OrderFilters
+        :tabs="orderStatusTabs"
+        :active-tab="activeStatusTab"
+        :search-query="orderSearchQuery"
+        @select-tab="setOrderStatusTab"
+        @update:search-query="handleSearchQueryUpdate"
+      />
+
+      <section v-if="loadingOrders" class="orders-marketplace__layout orders-marketplace__layout--loading" aria-label="Loading orders">
+        <div class="orders-list-panel">
+          <article v-for="index in 3" :key="`order-skeleton-${index}`" class="order-card order-card--skeleton">
+            <span></span>
+            <span></span>
+            <span></span>
+          </article>
+        </div>
+        <aside class="order-details-panel order-details-panel--skeleton">
+          <span></span>
+          <span></span>
+          <span></span>
+        </aside>
+      </section>
+
+      <section v-else-if="ordersError" class="orders-state-card orders-state-card--error">
+        <h3>Orders could not be loaded</h3>
+        <p>{{ ordersError }}</p>
+        <button type="button" class="market-button market-button--primary" @click="loadOrders">
+          Retry
+        </button>
+      </section>
+
+      <section v-else-if="!hasAnyOrders" class="orders-state-card">
+        <h3>No orders yet</h3>
+        <p>Your placed orders will appear here as soon as checkout is completed.</p>
+        <RouterLink class="market-button market-button--primary" to="/kerko">
+          Start shopping
+        </RouterLink>
+      </section>
+
+      <section v-else class="orders-marketplace__layout">
+        <div class="orders-list-panel">
+          <div class="orders-list-panel__head">
             <div>
-              <h2>Orders</h2>
-              <p>{{ filteredOrders.length }} result<span v-if="filteredOrders.length !== 1">s</span> ready to review.</p>
+              <span>Results</span>
+              <h3>{{ filteredOrders.length }} order{{ filteredOrders.length === 1 ? "" : "s" }}</h3>
             </div>
+            <small v-if="hasSearchOrFilter">Filtered view</small>
           </div>
 
-          <form class="dashboard-toolbar__search" role="search" @submit.prevent="handleOrderSearch">
-            <input
-              v-model="orderSearchQuery"
-              type="search"
-              placeholder="Search by order number or product"
-              aria-label="Search orders"
-            >
-          </form>
-        </div>
-
-        <div v-if="orders.length > 0" class="dashboard-status-tabs" aria-label="Filter orders by status">
-          <button
-            v-for="tab in orderStatusTabs"
-            :key="tab.key"
-            class="dashboard-status-tab"
-            :class="{ 'is-active': activeStatusTab === tab.key }"
-            type="button"
-            @click="setOrderStatusTab(tab.key)"
-          >
-            <span>{{ tab.label }}</span>
-            <strong>{{ tab.count }}</strong>
-          </button>
-        </div>
-
-        <div v-if="orders.length === 0" class="market-empty">
-          <h2>No orders yet</h2>
-          <p>Your placed orders will appear here as soon as checkout is completed.</p>
-        </div>
-
-        <div v-else-if="filteredOrders.length === 0" class="market-empty">
-          <h2>No matching orders</h2>
-          <p>Try a different order number, status, or product name.</p>
-        </div>
-
-        <template v-else>
-          <table class="dashboard-table">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Total</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="order in paginatedOrders" :key="order.id">
-                <td>
-                  <strong>#{{ order.id || "-" }}</strong>
-                </td>
-                <td>
-                  <span class="dashboard-badge" :class="{
-                    'dashboard-badge--success': getOrderHistoryStatus(order).tone === 'is-completed',
-                    'dashboard-badge--warning': getOrderHistoryStatus(order).tone === 'is-progress',
-                    'dashboard-badge--error': getOrderHistoryStatus(order).tone === 'is-canceled',
-                  }">
-                    {{ getOrderHistoryStatus(order).label }}
-                  </span>
-                </td>
-                <td>{{ formatOrderDateTime(order.createdAt || "") }}</td>
-                <td>{{ formatOrderTotal(order) }}</td>
-                <td>
-                  <button class="dashboard-table__action" type="button" @click="selectOrder(order)">
-                    View details
-                    <span aria-hidden="true">→</span>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div v-if="pageCount > 1" class="account-form__actions" aria-label="Pagination">
+          <section v-if="filteredOrders.length === 0" class="orders-state-card orders-state-card--compact">
+            <h3>No search results</h3>
+            <p>Try another order number, product name, seller, or status filter.</p>
             <button
+              type="button"
               class="market-button market-button--secondary"
-              type="button"
-              :disabled="currentPage === 1"
-              @click="goToPage(currentPage - 1)"
+              @click="handleSearchQueryUpdate(''); setOrderStatusTab('all')"
             >
-              Previous
+              Clear filters
             </button>
-            <button
-              v-for="page in pageCount"
-              :key="`page-${page}`"
-              class="market-button"
-              :class="page === currentPage ? 'market-button--primary' : 'market-button--secondary'"
-              type="button"
-              @click="goToPage(page)"
-            >
-              {{ String(page).padStart(2, "0") }}
-            </button>
-            <button
-              class="market-button market-button--secondary"
-              type="button"
-              :disabled="currentPage === pageCount"
-              @click="goToPage(currentPage + 1)"
-            >
-              Next
-            </button>
-          </div>
-        </template>
-      </section>
+          </section>
 
-      <section v-if="selectedOrder" class="orders-history-card">
-        <div class="orders-history-card__header">
-          <div>
-            <h2>Selected order</h2>
-            <p>Products are grouped by seller so multivendor order details stay easier to read.</p>
-          </div>
+          <template v-else>
+            <OrderCard
+              v-for="order in paginatedOrders"
+              :key="order.id"
+              :order="order"
+              :selected="Number(order.id) === Number(selectedOrderId)"
+              :menu-open="Number(actionsMenuOrderId) === Number(order.id)"
+              @select="openOrder"
+              @view="openOrder"
+              @toggle-menu="toggleOrderMenu"
+              @menu-action="handleOrderMenuAction"
+            />
+
+            <nav v-if="pageCount > 1" class="orders-pagination" aria-label="Orders pagination">
+              <button type="button" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
+                Previous
+              </button>
+              <span>Page {{ currentPage }} of {{ pageCount }}</span>
+              <button type="button" :disabled="currentPage === pageCount" @click="goToPage(currentPage + 1)">
+                Next
+              </button>
+            </nav>
+          </template>
         </div>
 
-        <UserOrderCard
-          :order="selectedOrder"
-          :busy-order-item-id="busyOrderItemId"
-          @request-return="handleReturnRequest"
-        />
+        <div class="orders-details-wrap">
+          <OrderDetails
+            v-if="selectedOrder"
+            :order="selectedOrder"
+            :busy-order-item-id="busyOrderItemId"
+            @close="closeOrderDetails"
+            @contact-seller="handleContactSeller"
+            @contact-support="handleContactSupport"
+            @report-problem="handleReportProblem"
+            @request-return="handleReturnRequest"
+          />
+
+          <aside v-else class="orders-details-empty">
+            <span aria-hidden="true">#</span>
+            <h3>Select an order</h3>
+            <p>Click an order card to see tracking, products, payment, delivery address, and support actions.</p>
+          </aside>
+        </div>
       </section>
-    </div>
+    </section>
   </AccountUtilityShell>
 
-  <section v-else class="market-page market-page--wide dashboard-page" aria-label="Order History">
+  <section v-else class="market-page market-page--wide dashboard-page" aria-label="My Orders">
     <div class="market-empty account-gate">
       <h2>Sign in to see your orders</h2>
       <p>Create an account or log in to follow your purchases, delivery progress, and return requests.</p>

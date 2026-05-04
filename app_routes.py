@@ -126,6 +126,7 @@ GET_API_ROUTES = {
     "/api/notifications": ("handle_notifications_list", False),
     "/api/notifications/count": ("handle_notifications_count", False),
     "/api/push/public-key": ("handle_push_public_key", False),
+    "/api/whatsapp/webhook": ("handle_whatsapp_webhook_verify", True),
 }
 
 POST_API_ROUTES = {
@@ -205,6 +206,7 @@ POST_API_ROUTES = {
     "/api/push/test": "handle_push_test",
     "/api/send-notification": "handle_send_notification",
     "/send-notification": "handle_send_notification",
+    "/api/whatsapp/webhook": "handle_whatsapp_webhook_event",
 }
 
 

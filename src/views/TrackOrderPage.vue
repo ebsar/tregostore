@@ -27,9 +27,9 @@ const trackForm = reactive({
 
 const progressStages = [
   { key: "placed", label: "Order Placed", icon: "receipt" },
-  { key: "packaging", label: "Packaging", icon: "box" },
-  { key: "road", label: "On The Road", icon: "truck" },
-  { key: "delivered", label: "Delivered", icon: "hand" },
+  { key: "waiting_shipping", label: "Waiting Shipping", icon: "box" },
+  { key: "shipped", label: "Shipped", icon: "truck" },
+  { key: "for_review", label: "For Review", icon: "hand" },
 ];
 
 const currentStageIndex = computed(() => {
@@ -278,7 +278,7 @@ function buildOrderActivity(orderPayload) {
       key: "confirmed",
       tone: "progress",
       icon: "user",
-      title: "The business confirmed your order and started preparing it.",
+      title: "The business confirmed your order. It is waiting for shipping.",
       date: confirmedAt,
     });
   }
@@ -298,7 +298,7 @@ function buildOrderActivity(orderPayload) {
       key: "delivered",
       tone: "success",
       icon: "check",
-      title: "Your order has been delivered. Thank you for shopping at TREGIO!",
+      title: "Your order has been delivered and is ready for review or return/refund if needed.",
       date: deliveredAt,
     });
   }
@@ -330,14 +330,15 @@ function buildOrderActivity(orderPayload) {
 
 function humanizeStatus(status) {
   const labels = {
-    pending_confirmation: "Awaiting confirmation",
-    confirmed: "Confirmed",
-    partially_confirmed: "Partially confirmed",
-    packed: "Packaging",
-    shipped: "On the road",
-    delivered: "Delivered",
+    pending_confirmation: "Waiting for seller approval",
+    confirmed: "Waiting for shipping",
+    partially_confirmed: "Partially waiting for shipping",
+    packed: "Ready to ship",
+    shipped: "Shipped",
+    delivered: "For review",
     cancelled: "Cancelled",
-    returned: "Returned",
+    returned: "Return / Refund",
+    refunded: "Refunded",
   };
 
   return labels[String(status || "").trim().toLowerCase()] || "In progress";

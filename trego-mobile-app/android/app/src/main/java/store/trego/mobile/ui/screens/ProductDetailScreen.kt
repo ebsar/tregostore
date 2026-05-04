@@ -26,10 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import store.trego.mobile.data.model.Product
+import store.trego.mobile.ui.components.TregoButton
+import store.trego.mobile.ui.components.TregoHeader
 import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductDetailScreen(
     productId: Int,
@@ -40,6 +41,7 @@ fun ProductDetailScreen(
     var product by remember { mutableStateOf<Product?>(null) }
     val wishlist by viewModel.wishlist.collectAsState()
     val isWishlisted = wishlist.any { it.id == productId }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(productId) {
         viewModel.fetchProductDetail(productId) { loaded ->
@@ -52,36 +54,35 @@ fun ProductDetailScreen(
             product?.let { p ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    tonalElevation = 12.dp,
-                    shadowElevation = 24.dp
+                    tonalElevation = 8.dp,
+                    color = Color.White
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(24.dp)
+                            .padding(20.dp)
                             .navigationBarsPadding(),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Çmimi Total",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "Çmimi",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TregoColors.secondaryTextLight,
+                                fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = p.price?.let { "€$it" } ?: "Price unavailable",
-                                style = MaterialTheme.typography.headlineMedium,
+                                text = p.price?.let { "€$it" } ?: "-",
+                                style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Black,
-                                color = TregoColors.accent
+                                color = TregoColors.primaryTextLight
                             )
                         }
-                        Button(
-                            onClick = { viewModel.addToCart(p) },
-                            colors = ButtonDefaults.buttonColors(containerColor = TregoColors.accent),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.height(64.dp).padding(start = 12.dp).weight(1.2f)
-                        ) {
-                            Text("Shto në Shportë", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                        }
+                        TregoButton(
+                            text = "Shto në Shportë",
+                            modifier = Modifier.weight(1.5f),
+                            onClick = { viewModel.addToCart(p) }
+                        )
                     }
                 }
             }
@@ -94,44 +95,32 @@ fun ProductDetailScreen(
                     .padding(bottom = padding.calculateBottomPadding())
             ) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().height(380.dp).padding(12.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
                         AsyncImage(
                             model = p.imagePath,
                             contentDescription = p.title,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(32.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
 
-                        // iOS-style Floating Overlays
+                        // Top Navigation
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp)
-                                .align(Alignment.BottomCenter),
+                                .statusBarsPadding()
+                                .padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             FloatingCircleButton(
+                                icon = Icons.Default.ArrowBack,
+                                onClick = onBack
+                            )
+                            FloatingCircleButton(
                                 icon = if (isWishlisted) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                tint = if (isWishlisted) Color.Red else MaterialTheme.colorScheme.onSurface,
+                                tint = if (isWishlisted) Color.Red else TregoColors.primaryTextLight,
                                 onClick = { viewModel.toggleWishlist(p) }
                             )
-                            
-                            FloatingCircleButton(
-                                icon = Icons.Outlined.AddShoppingCart,
-                                tint = TregoColors.accent,
-                                onClick = { viewModel.addToCart(p) }
-                            )
                         }
-
-                        // Back Button Overlay
-                        FloatingCircleButton(
-                            icon = Icons.Default.ArrowBack,
-                            modifier = Modifier.padding(16.dp).align(Alignment.TopStart),
-                            onClick = onBack
-                        )
                     }
                 }
 
@@ -139,63 +128,66 @@ fun ProductDetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp)
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Surface(
-                            color = TregoColors.accent.copy(alpha = 0.1f),
-                            shape = CircleShape
-                        ) {
-                            Text(
-                                text = p.businessName ?: "Marketplace",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = TregoColors.accent,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = (p.businessName ?: "TREGO").uppercase(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = TregoColors.accent,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
                         
                         Text(
                             text = p.title,
-                            style = MaterialTheme.typography.headlineLarge,
+                            style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(top = 12.dp)
+                            color = TregoColors.primaryTextLight
                         )
                         
-                        Spacer(modifier = Modifier.height(32.dp))
+                        Divider(color = TregoColors.borderLight.copy(alpha = 0.5f))
                         
                         Text(
-                            text = "Përshkrimi i Produktit",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            text = "Përshkrimi",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black
                         )
                         Text(
                             text = p.description ?: "Nuk ka përshkrim për këtë produkt.",
                             style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(top = 12.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 26.sp
+                            color = TregoColors.secondaryTextLight,
+                            lineHeight = 24.sp
                         )
 
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        OutlinedButton(
+                        Surface(
                             onClick = {
                                 viewModel.startProductConversation(p, onOpened = onOpenConversation)
                             },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(18.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                            color = TregoColors.mutedSurfaceLight,
+                            border = BorderStroke(1.dp, TregoColors.borderLight.copy(alpha = 0.5f))
                         ) {
-                            Icon(Icons.Default.ChatBubble, contentDescription = null, tint = TregoColors.accent)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Pyet biznesin per kete produkt",
-                                fontWeight = FontWeight.Bold,
-                                color = TregoColors.accent
-                            )
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.ChatBubble, contentDescription = null, tint = TregoColors.accent, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    "Bisedo me biznesin",
+                                    fontWeight = FontWeight.Black,
+                                    color = TregoColors.accent,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                         
-                        Spacer(modifier = Modifier.height(40.dp))
+                        Spacer(modifier = Modifier.height(60.dp))
                     }
                 }
             }

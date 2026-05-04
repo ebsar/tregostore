@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.parser import BytesParser
 from email.policy import default
 import hashlib
+import hmac
 from io import BytesIO, StringIO
 import html
 import json
@@ -126,6 +127,26 @@ BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 ONESIGNAL_APP_ID = str(os.environ.get("ONESIGNAL_APP_ID", "")).strip()
 ONESIGNAL_REST_API_KEY = str(os.environ.get("ONESIGNAL_REST_API_KEY", "")).strip()
 ONESIGNAL_API_URL = "https://api.onesignal.com/notifications?c=push"
+WHATSAPP_CLOUD_ACCESS_TOKEN = str(os.environ.get("WHATSAPP_CLOUD_ACCESS_TOKEN", "")).strip()
+WHATSAPP_PHONE_NUMBER_ID = str(os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")).strip()
+WHATSAPP_GRAPH_API_VERSION = (
+    str(os.environ.get("WHATSAPP_GRAPH_API_VERSION", "v23.0")).strip().strip("/")
+    or "v23.0"
+)
+WHATSAPP_API_BASE_URL = f"https://graph.facebook.com/{WHATSAPP_GRAPH_API_VERSION}"
+WHATSAPP_WEBHOOK_VERIFY_TOKEN = str(os.environ.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")).strip()
+WHATSAPP_APP_SECRET = str(os.environ.get("WHATSAPP_APP_SECRET", "")).strip()
+WHATSAPP_DEFAULT_COUNTRY_CODE = re.sub(
+    r"\D",
+    "",
+    str(os.environ.get("WHATSAPP_DEFAULT_COUNTRY_CODE", "")).strip(),
+)
+WHATSAPP_NOTIFICATIONS_FLAG = str(os.environ.get("TREGO_WHATSAPP_NOTIFICATIONS_ENABLED", "")).strip().lower()
+WHATSAPP_NOTIFICATIONS_ENABLED = (
+    WHATSAPP_NOTIFICATIONS_FLAG in {"1", "true", "yes", "on", "po"}
+    if WHATSAPP_NOTIFICATIONS_FLAG
+    else bool(WHATSAPP_CLOUD_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
+)
 WEB_PUSH_VAPID_PUBLIC_KEY = str(os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "")).strip()
 WEB_PUSH_VAPID_PRIVATE_KEY = str(os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "")).strip()
 WEB_PUSH_CONTACT = (
@@ -172,6 +193,20 @@ try:
     )
 except (TypeError, ValueError):
     PUSH_QUEUE_MAX_ATTEMPTS = 3
+try:
+    WHATSAPP_QUEUE_BATCH_SIZE = min(
+        100,
+        max(1, int(str(os.environ.get("TREGO_WHATSAPP_QUEUE_BATCH_SIZE", "25")).strip() or 25)),
+    )
+except (TypeError, ValueError):
+    WHATSAPP_QUEUE_BATCH_SIZE = 25
+try:
+    WHATSAPP_QUEUE_MAX_ATTEMPTS = min(
+        8,
+        max(1, int(str(os.environ.get("TREGO_WHATSAPP_QUEUE_MAX_ATTEMPTS", "3")).strip() or 3)),
+    )
+except (TypeError, ValueError):
+    WHATSAPP_QUEUE_MAX_ATTEMPTS = 3
 GOOGLE_WEB_CLIENT_ID = str(
     os.environ.get("GOOGLE_WEB_CLIENT_ID") or os.environ.get("VITE_GOOGLE_WEB_CLIENT_ID") or ""
 ).strip()
@@ -643,6 +678,7 @@ CHAT_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
 SALE_NOTIFICATION_SCAN_LOCK = threading.Lock()
 LAST_SALE_NOTIFICATION_SCAN_MONOTONIC = 0.0
 PUSH_QUEUE_WORKER_LOCK = threading.Lock()
+WHATSAPP_QUEUE_WORKER_LOCK = threading.Lock()
 FCM_ACCESS_TOKEN_LOCK = threading.Lock()
 FCM_ACCESS_TOKEN_CACHE = {"token": "", "expires_at": 0.0}
 APNS_PROVIDER_TOKEN_LOCK = threading.Lock()
@@ -1386,6 +1422,80 @@ def ensure_uploaded_assets_table(connection: DatabaseConnection) -> None:
     )
 
 
+def ensure_whatsapp_message_queue_table(connection: DatabaseConnection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS whatsapp_message_queue (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            phone_number TEXT NOT NULL DEFAULT '',
+            message_text TEXT NOT NULL DEFAULT '',
+            notification_type TEXT NOT NULL DEFAULT 'info',
+            href TEXT NOT NULL DEFAULT '',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            provider_message_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+            sent_at TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+        if is_postgres_connection(connection)
+        else """
+        CREATE TABLE IF NOT EXISTS whatsapp_message_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            phone_number TEXT NOT NULL DEFAULT '',
+            message_text TEXT NOT NULL DEFAULT '',
+            notification_type TEXT NOT NULL DEFAULT 'info',
+            href TEXT NOT NULL DEFAULT '',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            provider_message_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            sent_at TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_status_available
+        ON whatsapp_message_queue(status, available_at, id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_user_created
+        ON whatsapp_message_queue(user_id, created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_idempotency
+        ON whatsapp_message_queue(idempotency_key)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_queue_provider_message
+        ON whatsapp_message_queue(provider_message_id)
+        """
+    )
+
+
 def initialize_database() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1415,6 +1525,7 @@ def initialize_database() -> None:
                 set_runtime_meta_value(connection, "schema_version", APP_SCHEMA_VERSION)
 
             ensure_uploaded_assets_table(connection)
+            ensure_whatsapp_message_queue_table(connection)
             ensure_bootstrap_admin(connection)
         except Exception:
             if acquired_postgres_lock:
@@ -3946,6 +4057,7 @@ def migrate_database(connection: DatabaseConnection) -> None:
         ON push_notification_queue(idempotency_key)
         """
     )
+    ensure_whatsapp_message_queue_table(connection)
 
     if not table_exists(connection, "product_sale_alerts"):
         connection.execute(
@@ -13196,6 +13308,519 @@ def send_sms_fallback_notification(*, phone_number: str, body: str) -> str:
     return ""
 
 
+def is_whatsapp_notifications_configured() -> bool:
+    return bool(
+        WHATSAPP_NOTIFICATIONS_ENABLED
+        and WHATSAPP_CLOUD_ACCESS_TOKEN
+        and WHATSAPP_PHONE_NUMBER_ID
+    )
+
+
+def normalize_whatsapp_recipient_phone(raw_value: object) -> str:
+    digits = re.sub(r"\D", "", str(raw_value or ""))
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if WHATSAPP_DEFAULT_COUNTRY_CODE and digits.startswith("0"):
+        digits = f"{WHATSAPP_DEFAULT_COUNTRY_CODE}{digits.lstrip('0')}"
+    if len(digits) < 8 or len(digits) > 15:
+        return ""
+    return digits
+
+
+def build_whatsapp_notification_text(
+    *,
+    title: str,
+    body: str,
+    href: str = "",
+    public_app_origin: str = "",
+) -> str:
+    clean_title = re.sub(r"\s+", " ", str(title or "TREGIO").replace("`", "")).strip() or "TREGIO"
+    clean_body = re.sub(r"\s+", " ", str(body or "").replace("`", "")).strip()
+    clean_href = str(href or "").strip()
+    message_parts = [clean_title]
+    if clean_body:
+        message_parts.append(clean_body)
+    if clean_href:
+        notification_url = clean_href
+        if public_app_origin and clean_href.startswith("/"):
+            notification_url = f"{public_app_origin.rstrip('/')}{clean_href}"
+        message_parts.append(f"Hape ne TREGIO: {notification_url}")
+    return "\n\n".join(message_parts)[:3500]
+
+
+def queue_whatsapp_notification(
+    connection: DatabaseConnection,
+    *,
+    user_id: int,
+    title: str,
+    body: str,
+    href: str = "",
+    notification_type: str = "info",
+    metadata: dict[str, object] | None = None,
+    idempotency_key: str = "",
+    public_app_origin: str = "",
+) -> int:
+    if not is_whatsapp_notifications_configured():
+        return 0
+
+    normalized_user_id = int(user_id or 0)
+    if normalized_user_id <= 0:
+        return 0
+
+    ensure_whatsapp_message_queue_table(connection)
+    user_row = connection.execute(
+        """
+        SELECT phone_number, phone_lookup
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (normalized_user_id,),
+    ).fetchone()
+    if not user_row:
+        return 0
+
+    phone_number = normalize_whatsapp_recipient_phone(
+        user_row["phone_lookup"] or user_row["phone_number"]
+    )
+    if not phone_number:
+        return 0
+
+    clean_key = str(idempotency_key or "").strip()
+    if clean_key:
+        existing_row = connection.execute(
+            """
+            SELECT id
+            FROM whatsapp_message_queue
+            WHERE idempotency_key = ?
+              AND user_id = ?
+              AND status IN ('pending', 'processing', 'sent', 'delivered', 'read')
+            LIMIT 1
+            """,
+            (clean_key, normalized_user_id),
+        ).fetchone()
+        if existing_row:
+            return int(existing_row["id"])
+
+    timestamp = datetime_to_storage_text(utc_now())
+    return execute_insert_and_get_id(
+        connection,
+        """
+        INSERT INTO whatsapp_message_queue (
+            user_id,
+            phone_number,
+            message_text,
+            notification_type,
+            href,
+            metadata,
+            idempotency_key,
+            provider_message_id,
+            status,
+            attempts,
+            max_attempts,
+            available_at,
+            last_error,
+            created_at,
+            updated_at,
+            sent_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, '', 'pending', 0, ?, ?, '', ?, ?, '')
+        """,
+        (
+            normalized_user_id,
+            phone_number,
+            build_whatsapp_notification_text(
+                title=title,
+                body=body,
+                href=href,
+                public_app_origin=public_app_origin,
+            ),
+            str(notification_type or "info").strip().lower() or "info",
+            str(href or "").strip(),
+            json.dumps(metadata or {}, ensure_ascii=False),
+            clean_key,
+            WHATSAPP_QUEUE_MAX_ATTEMPTS,
+            timestamp,
+            timestamp,
+            timestamp,
+        ),
+    )
+
+
+def fetch_pending_whatsapp_queue_rows(connection: DatabaseConnection, limit: int) -> list[sqlite3.Row]:
+    ensure_whatsapp_message_queue_table(connection)
+    now_text = datetime_to_storage_text(utc_now())
+    return connection.execute(
+        """
+        SELECT
+            id,
+            user_id,
+            phone_number,
+            message_text,
+            attempts,
+            max_attempts
+        FROM whatsapp_message_queue
+        WHERE status = 'pending'
+          AND available_at <= ?
+        ORDER BY available_at ASC, id ASC
+        LIMIT ?
+        """,
+        (now_text, max(1, int(limit))),
+    ).fetchall()
+
+
+def send_whatsapp_cloud_text_message(*, phone_number: str, message_text: str) -> tuple[bool, str, str]:
+    if not is_whatsapp_notifications_configured():
+        return False, "", "WhatsApp Cloud API is not configured."
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": normalize_whatsapp_recipient_phone(phone_number),
+        "type": "text",
+        "text": {
+            "preview_url": True,
+            "body": str(message_text or "").strip()[:3500],
+        },
+    }
+    if not payload["to"] or not payload["text"]["body"]:
+        return False, "", "WhatsApp recipient or message text is missing."
+
+    request = Request(
+        f"{WHATSAPP_API_BASE_URL}/{quote(WHATSAPP_PHONE_NUMBER_ID)}/messages",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {WHATSAPP_CLOUD_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=PUSH_DELIVERY_TIMEOUT_SECONDS) as response:
+            response_body = response.read().decode("utf-8", errors="ignore")
+            if response.status >= 400:
+                return False, "", f"WhatsApp HTTP {response.status}: {response_body}"
+            try:
+                response_payload = json.loads(response_body or "{}")
+            except json.JSONDecodeError:
+                response_payload = {}
+            messages = response_payload.get("messages")
+            provider_message_id = ""
+            if isinstance(messages, list) and messages:
+                provider_message_id = str((messages[0] or {}).get("id") or "").strip()
+            return True, provider_message_id, ""
+    except HTTPError as error:
+        body_text = error.read().decode("utf-8", errors="ignore") if error.fp else ""
+        return False, "", f"WhatsApp HTTP {error.code}: {body_text}"
+    except URLError as error:
+        return False, "", f"WhatsApp nuk u arrit: {error.reason}"
+    except Exception as error:
+        return False, "", f"WhatsApp: {error}"
+
+
+def process_whatsapp_message_queue(limit: int = WHATSAPP_QUEUE_BATCH_SIZE) -> list[str]:
+    warnings: list[str] = []
+    if not is_whatsapp_notifications_configured():
+        return warnings
+
+    with get_db_connection() as connection:
+        rows = fetch_pending_whatsapp_queue_rows(connection, limit)
+        if not rows:
+            return warnings
+
+        queue_ids = [int(row["id"]) for row in rows]
+        placeholders = ", ".join("?" for _ in queue_ids)
+        connection.execute(
+            f"""
+            UPDATE whatsapp_message_queue
+            SET status = 'processing',
+                attempts = attempts + 1,
+                updated_at = ?
+            WHERE id IN ({placeholders})
+              AND status = 'pending'
+            """,
+            (datetime_to_storage_text(utc_now()), *queue_ids),
+        )
+        connection.commit()
+
+        for row in rows:
+            queue_id = int(row["id"])
+            ok, provider_message_id, error_text = send_whatsapp_cloud_text_message(
+                phone_number=str(row["phone_number"] or ""),
+                message_text=str(row["message_text"] or ""),
+            )
+            if ok:
+                connection.execute(
+                    """
+                    UPDATE whatsapp_message_queue
+                    SET status = 'sent',
+                        provider_message_id = ?,
+                        last_error = '',
+                        updated_at = ?,
+                        sent_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        provider_message_id,
+                        datetime_to_storage_text(utc_now()),
+                        datetime_to_storage_text(utc_now()),
+                        queue_id,
+                    ),
+                )
+                continue
+
+            current_attempt = int(row["attempts"] or 0) + 1
+            max_attempts = max(1, int(row["max_attempts"] or WHATSAPP_QUEUE_MAX_ATTEMPTS))
+            clean_error = str(error_text or "WhatsApp delivery failed.")[:1000]
+            if current_attempt >= max_attempts:
+                connection.execute(
+                    """
+                    UPDATE whatsapp_message_queue
+                    SET status = 'failed',
+                        last_error = ?,
+                        updated_at = ?,
+                        available_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        clean_error,
+                        datetime_to_storage_text(utc_now()),
+                        datetime_to_storage_text(utc_now()),
+                        queue_id,
+                    ),
+                )
+            else:
+                retry_delay_seconds = min(300, 5 * (2 ** max(0, current_attempt - 1)))
+                connection.execute(
+                    """
+                    UPDATE whatsapp_message_queue
+                    SET status = 'pending',
+                        last_error = ?,
+                        updated_at = ?,
+                        available_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        clean_error,
+                        datetime_to_storage_text(utc_now()),
+                        datetime_to_storage_text(utc_now() + timedelta(seconds=retry_delay_seconds)),
+                        queue_id,
+                    ),
+                )
+            warnings.append(f"WhatsApp queue #{queue_id}: {clean_error}")
+
+    return warnings
+
+
+def dispatch_whatsapp_queue_async() -> None:
+    if not is_whatsapp_notifications_configured():
+        return
+    if not WHATSAPP_QUEUE_WORKER_LOCK.acquire(blocking=False):
+        return
+
+    def _worker() -> None:
+        try:
+            warnings = process_whatsapp_message_queue()
+            for warning in warnings:
+                print(f"[TREGO] WhatsApp warning: {warning}", flush=True)
+        finally:
+            WHATSAPP_QUEUE_WORKER_LOCK.release()
+
+    try:
+        threading.Thread(target=_worker, name="trego-whatsapp-queue", daemon=True).start()
+    except Exception:
+        WHATSAPP_QUEUE_WORKER_LOCK.release()
+        raise
+
+
+def verify_whatsapp_webhook_signature(raw_body: bytes, signature_header: object) -> bool:
+    if not WHATSAPP_APP_SECRET:
+        return True
+
+    signature = str(signature_header or "").strip()
+    if not signature.startswith("sha256="):
+        return False
+
+    expected_signature = "sha256=" + hmac.new(
+        WHATSAPP_APP_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected_signature, signature)
+
+
+def extract_whatsapp_inbound_text(message_payload: dict[str, object]) -> str:
+    message_type = str(message_payload.get("type") or "").strip().lower()
+    if message_type == "text":
+        text_payload = message_payload.get("text")
+        if isinstance(text_payload, dict):
+            return str(text_payload.get("body") or "").strip()
+    if message_type == "button":
+        button_payload = message_payload.get("button")
+        if isinstance(button_payload, dict):
+            return str(button_payload.get("text") or button_payload.get("payload") or "").strip()
+    if message_type == "interactive":
+        interactive_payload = message_payload.get("interactive")
+        if isinstance(interactive_payload, dict):
+            button_reply = interactive_payload.get("button_reply")
+            list_reply = interactive_payload.get("list_reply")
+            if isinstance(button_reply, dict):
+                return str(button_reply.get("title") or button_reply.get("id") or "").strip()
+            if isinstance(list_reply, dict):
+                return str(list_reply.get("title") or list_reply.get("id") or "").strip()
+    if message_type:
+        return f"[{message_type} message]"
+    return "[whatsapp message]"
+
+
+def get_whatsapp_contact_name(value_payload: dict[str, object], sender_phone: str) -> str:
+    contacts = value_payload.get("contacts")
+    if not isinstance(contacts, list):
+        return ""
+
+    normalized_sender = normalize_whatsapp_recipient_phone(sender_phone)
+    for contact in contacts:
+        if not isinstance(contact, dict):
+            continue
+        wa_id = normalize_whatsapp_recipient_phone(contact.get("wa_id"))
+        if wa_id and wa_id != normalized_sender:
+            continue
+        profile = contact.get("profile")
+        if isinstance(profile, dict):
+            name = str(profile.get("name") or "").strip()
+            if name:
+                return name
+    return ""
+
+
+def update_whatsapp_delivery_status_from_webhook(
+    connection: DatabaseConnection,
+    status_payload: dict[str, object],
+) -> bool:
+    provider_message_id = str(status_payload.get("id") or "").strip()
+    if not provider_message_id:
+        return False
+
+    provider_status = str(status_payload.get("status") or "").strip().lower()
+    queue_status = provider_status if provider_status in {"sent", "delivered", "read", "failed"} else "sent"
+    error_text = ""
+    errors_payload = status_payload.get("errors")
+    if isinstance(errors_payload, list) and errors_payload:
+        first_error = errors_payload[0] if isinstance(errors_payload[0], dict) else {}
+        error_text = str(first_error.get("message") or first_error.get("title") or "").strip()
+
+    connection.execute(
+        """
+        UPDATE whatsapp_message_queue
+        SET status = ?,
+            last_error = ?,
+            updated_at = ?
+        WHERE provider_message_id = ?
+        """,
+        (
+            queue_status,
+            error_text[:1000],
+            datetime_to_storage_text(utc_now()),
+            provider_message_id,
+        ),
+    )
+    return True
+
+
+def process_whatsapp_webhook_payload(payload: dict[str, object]) -> dict[str, int]:
+    processed = {"messages": 0, "statuses": 0, "adminNotifications": 0}
+    entries = payload.get("entry")
+    if not isinstance(entries, list):
+        return processed
+
+    with get_db_connection() as connection:
+        ensure_whatsapp_message_queue_table(connection)
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            changes = entry.get("changes")
+            if not isinstance(changes, list):
+                continue
+            for change in changes:
+                if not isinstance(change, dict):
+                    continue
+                value_payload = change.get("value")
+                if not isinstance(value_payload, dict):
+                    continue
+
+                statuses = value_payload.get("statuses")
+                if isinstance(statuses, list):
+                    for status_payload in statuses:
+                        if isinstance(status_payload, dict) and update_whatsapp_delivery_status_from_webhook(
+                            connection,
+                            status_payload,
+                        ):
+                            processed["statuses"] += 1
+
+                messages = value_payload.get("messages")
+                if not isinstance(messages, list):
+                    continue
+                for message_payload in messages:
+                    if not isinstance(message_payload, dict):
+                        continue
+                    sender_phone = normalize_whatsapp_recipient_phone(message_payload.get("from"))
+                    if not sender_phone:
+                        continue
+
+                    message_text = extract_whatsapp_inbound_text(message_payload)
+                    contact_name = get_whatsapp_contact_name(value_payload, sender_phone)
+                    lookup_candidates = [sender_phone]
+                    if WHATSAPP_DEFAULT_COUNTRY_CODE and sender_phone.startswith(WHATSAPP_DEFAULT_COUNTRY_CODE):
+                        local_lookup = f"0{sender_phone[len(WHATSAPP_DEFAULT_COUNTRY_CODE):]}"
+                        if local_lookup not in lookup_candidates:
+                            lookup_candidates.append(local_lookup)
+                    lookup_placeholders = ", ".join("?" for _ in lookup_candidates)
+                    user_row = connection.execute(
+                        f"""
+                        SELECT id, full_name, email
+                        FROM users
+                        WHERE phone_lookup IN ({lookup_placeholders})
+                        LIMIT 1
+                        """,
+                        tuple(lookup_candidates),
+                    ).fetchone()
+                    display_name = (
+                        str(contact_name or "").strip()
+                        or (str(user_row["full_name"] or "").strip() if user_row else "")
+                        or f"+{sender_phone}"
+                    )
+                    admin_row = connection.execute(
+                        """
+                        SELECT id
+                        FROM users
+                        WHERE role = 'admin'
+                        ORDER BY id ASC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                    if admin_row:
+                        create_notification(
+                            connection,
+                            user_id=int(admin_row["id"]),
+                            notification_type="message",
+                            title=f"WhatsApp message from {display_name}",
+                            body=message_text[:500],
+                            href="/mesazhet",
+                            metadata={
+                                "source": "whatsapp",
+                                "whatsappMessageId": str(message_payload.get("id") or "").strip(),
+                                "from": sender_phone,
+                                "matchedUserId": int(user_row["id"]) if user_row else 0,
+                                "messageType": str(message_payload.get("type") or "").strip().lower(),
+                            },
+                        )
+                        processed["adminNotifications"] += 1
+                    processed["messages"] += 1
+
+    return processed
+
+
 def process_push_notification_queue(limit: int = PUSH_QUEUE_BATCH_SIZE, *, public_app_origin: str = "") -> list[str]:
     warnings: list[str] = []
     with get_db_connection() as connection:
@@ -13396,6 +14021,10 @@ def send_push_notifications_via_onesignal(messages: list[dict[str, object]]) -> 
 
 def send_push_notifications(messages: list[dict[str, object]]) -> list[str]:
     if not messages:
+        try:
+            dispatch_whatsapp_queue_async()
+        except Exception as error:
+            print(f"[TREGO] WhatsApp dispatch warning: {error}", flush=True)
         return []
 
     warnings: list[str] = []
@@ -13409,6 +14038,10 @@ def send_push_notifications(messages: list[dict[str, object]]) -> list[str]:
     if is_onesignal_configured():
         warnings.extend(send_push_notifications_via_onesignal(messages))
 
+    try:
+        dispatch_whatsapp_queue_async()
+    except Exception as error:
+        warnings.append(f"WhatsApp dispatch failed: {error}")
     return warnings
 
 
@@ -18493,7 +19126,14 @@ def create_notification(
     href: str = "",
     metadata: dict[str, object] | None = None,
 ) -> None:
-    connection.execute(
+    normalized_user_id = int(user_id or 0)
+    normalized_type = str(notification_type or "info").strip().lower() or "info"
+    normalized_title = str(title or "").strip()
+    normalized_body = str(body or "").strip()
+    normalized_href = str(href or "").strip()
+    normalized_metadata = metadata or {}
+    notification_id = execute_insert_and_get_id(
+        connection,
         """
         INSERT INTO notifications (
             user_id,
@@ -18509,13 +19149,24 @@ def create_notification(
         VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, '')
         """,
         (
-            user_id,
-            str(notification_type or "info").strip().lower() or "info",
-            str(title or "").strip(),
-            str(body or "").strip(),
-            str(href or "").strip(),
-            json.dumps(metadata or {}, ensure_ascii=False),
+            normalized_user_id,
+            normalized_type,
+            normalized_title,
+            normalized_body,
+            normalized_href,
+            json.dumps(normalized_metadata, ensure_ascii=False),
         ),
+    )
+    queue_whatsapp_notification(
+        connection,
+        user_id=normalized_user_id,
+        title=normalized_title,
+        body=normalized_body,
+        href=normalized_href,
+        notification_type=normalized_type,
+        metadata=normalized_metadata,
+        idempotency_key=f"notification:{notification_id}",
+        public_app_origin=STRIPE_PUBLIC_APP_URL or "",
     )
 
 
@@ -20363,6 +21014,10 @@ class AppHandler(SimpleHTTPRequestHandler):
             api_handler_name = POST_API_ROUTES.get(path)
             if api_handler_name:
                 getattr(self, api_handler_name)()
+                try:
+                    dispatch_whatsapp_queue_async()
+                except Exception as error:
+                    print(f"[TREGO] WhatsApp dispatch warning: {error}", flush=True)
                 return
 
             self.send_json(404, {"ok": False, "message": "Rruga nuk u gjet."})
@@ -25603,6 +26258,45 @@ class AppHandler(SimpleHTTPRequestHandler):
             mark_notifications_as_read(connection, user_id=int(user["id"]))
 
         self.send_json(200, {"ok": True, "message": "Njoftimet u shenuan si te lexuara."})
+
+    def handle_whatsapp_webhook_verify(self, query_params: dict[str, list[str]]) -> None:
+        mode = str(query_params.get("hub.mode", [""])[0] or "").strip()
+        verify_token = str(query_params.get("hub.verify_token", [""])[0] or "").strip()
+        challenge = str(query_params.get("hub.challenge", [""])[0] or "").strip()
+        if (
+            mode == "subscribe"
+            and WHATSAPP_WEBHOOK_VERIFY_TOKEN
+            and hmac.compare_digest(verify_token, WHATSAPP_WEBHOOK_VERIFY_TOKEN)
+            and challenge
+        ):
+            self.send_bytes(
+                200,
+                challenge.encode("utf-8"),
+                content_type="text/plain; charset=utf-8",
+            )
+            return
+
+        self.send_json(403, {"ok": False, "message": "WhatsApp webhook verification failed."})
+
+    def handle_whatsapp_webhook_event(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0") or 0)
+        raw_body = self.rfile.read(max(0, content_length)) if content_length > 0 else b"{}"
+        if not verify_whatsapp_webhook_signature(raw_body, self.headers.get("X-Hub-Signature-256")):
+            self.send_json(403, {"ok": False, "message": "WhatsApp webhook signature is invalid."})
+            return
+
+        try:
+            payload = json.loads(raw_body or b"{}")
+        except json.JSONDecodeError:
+            self.send_json(400, {"ok": False, "message": "WhatsApp webhook JSON is invalid."})
+            return
+
+        if not isinstance(payload, dict):
+            self.send_json(400, {"ok": False, "message": "WhatsApp webhook payload must be an object."})
+            return
+
+        processed = process_whatsapp_webhook_payload(payload)
+        self.send_json(200, {"ok": True, "processed": processed})
 
     def handle_push_public_key(self) -> None:
         self.send_json(

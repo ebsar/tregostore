@@ -29,17 +29,17 @@ fun ProductCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        color = TregoColors.cardSurfaceLight,
         tonalElevation = 1.dp
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xFFF1F5F9))
+                    .aspectRatio(1.1f)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(TregoColors.mutedSurfaceLight)
             ) {
                 AsyncImage(
                     model = product.imagePath,
@@ -55,58 +55,59 @@ fun ProductCard(
                             modifier = Modifier
                                 .padding(12.dp)
                                 .align(Alignment.TopEnd),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = TregoColors.accent,
                             contentColor = Color.White
                         ) {
                             Text(
                                 text = "-$discount%",
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Black
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 10.sp
                             )
                         }
                     }
                 }
             }
             
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = product.businessName ?: "Marketplace",
-                    style = MaterialTheme.typography.labelLarge,
+                    text = (product.businessName ?: "TREGO").uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
                     color = TregoColors.accent,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    letterSpacing = 0.5.sp
                 )
                 Text(
                     text = product.title,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
-                        lineHeight = 19.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
                     ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    color = TregoColors.primaryTextLight,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
                 )
                 
-                Row(verticalAlignment = Alignment.Bottom) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = product.price?.let { "€$it" } ?: "Price unavailable",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 19.sp,
+                        text = product.price?.let { "€$it" } ?: "-",
+                        style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Black
                         ),
-                        color = Color.Black
+                        color = TregoColors.primaryTextLight
                     )
                     if (product.compareAtPrice != null) {
                         Text(
                             text = "€${product.compareAtPrice}",
-                            style = MaterialTheme.typography.labelLarge.copy(
+                            style = MaterialTheme.typography.labelSmall.copy(
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+                            color = TregoColors.secondaryTextLight,
+                            modifier = Modifier.padding(start = 6.dp)
                         )
                     }
                 }

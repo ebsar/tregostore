@@ -34,6 +34,7 @@ import coil.compose.AsyncImage
 import store.trego.mobile.data.model.ChatConversation
 import store.trego.mobile.data.model.ChatMessage
 import store.trego.mobile.data.model.NotificationItem
+import store.trego.mobile.data.model.OrderItem
 import store.trego.mobile.data.model.Product
 import store.trego.mobile.data.model.ReturnRequest
 import store.trego.mobile.ui.components.ProductCard
@@ -348,138 +349,6 @@ fun ReturnsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BusinessHubScreen(
-    viewModel: MainViewModel,
-    onBack: () -> Unit
-) {
-    val analytics by viewModel.businessAnalytics.collectAsState()
-    val products by viewModel.businessProducts.collectAsState()
-    val orders by viewModel.businessOrders.collectAsState()
-    val promotions by viewModel.businessPromotions.collectAsState()
-
-    LaunchedEffect(Unit) {
-        viewModel.loadBusinessStudio()
-    }
-
-    TregoSecondaryScaffold(
-        title = "Business Studio",
-        subtitle = "Produkte, porosi dhe performanca",
-        onBack = onBack,
-        leadingIcon = Icons.Default.Business,
-        action = {
-            IconButton(onClick = { viewModel.loadBusinessStudio() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                MetricStrip(
-                    listOf(
-                        "Revenue" to "€${analytics?.grossSales ?: 0.0}",
-                        "Orders" to "${analytics?.orderItems ?: orders.size}",
-                        "Views" to "${analytics?.viewsCount ?: 0}"
-                    )
-                )
-            }
-            item {
-                SectionCard("Inventory", "${products.size} produkte", Icons.Default.Store) {
-                    products.take(4).forEach { product ->
-                        CompactProductRow(product)
-                    }
-                }
-            }
-            item {
-                SectionCard("Orders", "${orders.size} aktive", Icons.Default.Inbox) {
-                    orders.take(4).forEach { order ->
-                        CompactLine("Order #${order.id}", order.status ?: "pending", "€${order.totalPrice ?: order.total ?: 0.0}")
-                    }
-                }
-            }
-            item {
-                SectionCard("Promotions", "${promotions.size} aktive", Icons.Default.SyncAlt) {
-                    promotions.take(3).forEach { promo ->
-                        CompactLine(promo.code ?: "Promo", "${promo.discountPercent ?: 0}%", if (promo.isActive == true) "Active" else "Off")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AdminControlScreen(
-    viewModel: MainViewModel,
-    onBack: () -> Unit
-) {
-    val products by viewModel.adminProducts.collectAsState()
-    val users by viewModel.adminUsers.collectAsState()
-    val businesses by viewModel.adminBusinesses.collectAsState()
-    val orders by viewModel.adminOrders.collectAsState()
-
-    LaunchedEffect(Unit) {
-        viewModel.loadAdminControl()
-    }
-
-    TregoSecondaryScaffold(
-        title = "Admin Control",
-        subtitle = "Platform overview",
-        onBack = onBack,
-        leadingIcon = Icons.Default.AdminPanelSettings,
-        action = {
-            IconButton(onClick = { viewModel.loadAdminControl() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                MetricStrip(
-                    listOf(
-                        "Users" to "${users.size}",
-                        "Businesses" to "${businesses.size}",
-                        "Orders" to "${orders.size}"
-                    )
-                )
-            }
-            item {
-                SectionCard("Products", "${products.size} listings", Icons.Default.Store) {
-                    products.take(5).forEach { product -> CompactProductRow(product) }
-                }
-            }
-            item {
-                SectionCard("Businesses", "${businesses.size} vendors", Icons.Default.Business) {
-                    businesses.take(5).forEach { business ->
-                        CompactLine(
-                            business.businessName ?: "Business",
-                            business.verificationStatus ?: "unverified",
-                            "${business.productsCount ?: 0} products"
-                        )
-                    }
-                }
-            }
-            item {
-                SectionCard("Users", "${users.size} accounts", Icons.Default.AdminPanelSettings) {
-                    users.take(5).forEach { user ->
-                        CompactLine(user.fullName ?: user.email ?: "User", user.role ?: "user", user.email ?: "")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun TregoSecondaryScaffold(
     title: String,
     subtitle: String,
@@ -680,12 +549,35 @@ private fun StatusPill(status: String) {
     }
     Surface(shape = CircleShape, color = color.copy(alpha = 0.12f)) {
         Text(
-            normalized.uppercase(),
+            androidStatusPillLabel(normalized),
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
             color = color,
             fontWeight = FontWeight.Black
         )
+    }
+}
+
+private fun androidOrderStatusLabel(order: OrderItem): String {
+    return androidStatusPillLabel((order.fulfillmentStatus ?: order.status ?: "pending_confirmation").trim().lowercase())
+}
+
+private fun androidStatusPillLabel(status: String): String {
+    return when (status.trim().lowercase()) {
+        "pending_confirmation" -> "WAITING APPROVAL"
+        "confirmed" -> "WAITING SHIPPING"
+        "partially_confirmed" -> "PARTIALLY WAITING"
+        "packed" -> "READY TO SHIP"
+        "shipped" -> "SHIPPED"
+        "delivered" -> "FOR REVIEW"
+        "cancelled", "canceled" -> "CANCELLED"
+        "returned" -> "RETURN / REFUND"
+        "refunded" -> "REFUNDED"
+        "requested" -> "REQUESTED"
+        "approved" -> "APPROVED"
+        "received" -> "RECEIVED"
+        "rejected" -> "REJECTED"
+        else -> "IN PROGRESS"
     }
 }
 

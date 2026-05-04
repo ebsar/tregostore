@@ -23,6 +23,12 @@ interface TregoApiService {
     @POST("api/password-reset/confirm")
     suspend fun confirmPasswordReset(@Body body: Map<String, String>): Response<StatusResponse>
 
+    @POST("api/email/verify")
+    suspend fun verifyEmail(@Body body: Map<String, String>): Response<StatusResponse>
+
+    @POST("api/email/resend")
+    suspend fun resendEmailVerification(@Body body: Map<String, String>): Response<StatusResponse>
+
     // Marketplace
     @GET("api/products")
     suspend fun getProducts(
@@ -68,6 +74,9 @@ interface TregoApiService {
     @POST("api/orders/create")
     suspend fun createOrder(@Body body: Map<String, Any?>): Response<OrderResponse>
 
+    @POST("api/promotions/apply")
+    suspend fun applyPromotion(@Body body: Map<String, Any?>): Response<Map<String, Any?>>
+
     // Wishlist
     @GET("api/wishlist")
     suspend fun getWishlist(): Response<ItemsPayload<Product>>
@@ -87,6 +96,18 @@ interface TregoApiService {
 
     @POST("api/notifications/read")
     suspend fun markNotificationsRead(): Response<StatusResponse>
+
+    @POST("api/profile")
+    suspend fun updateProfile(@Body body: Map<String, Any?>): Response<StatusResponse>
+
+    @POST("api/change-password")
+    suspend fun changePassword(@Body body: Map<String, String>): Response<StatusResponse>
+
+    @GET("api/address")
+    suspend fun getAddress(): Response<Map<String, Any?>>
+
+    @POST("api/address")
+    suspend fun saveAddress(@Body body: Map<String, Any?>): Response<StatusResponse>
 
     @POST("api/push/subscribe")
     suspend fun subscribeToPush(@Body body: Map<String, String>): Response<StatusResponse>
@@ -108,6 +129,9 @@ interface TregoApiService {
     @GET("api/returns")
     suspend fun getReturns(): Response<ReturnsPayload>
 
+    @POST("api/returns/request")
+    suspend fun createReturnRequest(@Body body: Map<String, Any>): Response<StatusResponse>
+
     @POST("api/returns/status")
     suspend fun updateReturnStatus(@Body body: Map<String, Any>): Response<StatusResponse>
 
@@ -118,20 +142,38 @@ interface TregoApiService {
     @GET("api/business-profile")
     suspend fun getBusinessProfile(): Response<BusinessProfilePayload>
 
+    @POST("api/business-profile")
+    suspend fun updateBusinessProfile(@Body body: Map<String, Any?>): Response<StatusResponse>
+
     @GET("api/launch-ads")
     suspend fun getLaunchAds(): Response<LaunchAdsPayload>
 
     @GET("api/business/products")
     suspend fun getBusinessProducts(): Response<ItemsPayload<Product>>
 
+    @POST("api/products")
+    suspend fun createProduct(@Body body: Map<String, Any?>): Response<StatusResponse>
+
+    @POST("api/products/update")
+    suspend fun updateProduct(@Body body: Map<String, Any?>): Response<StatusResponse>
+
+    @POST("api/products/delete")
+    suspend fun deleteProduct(@Body body: Map<String, Int>): Response<StatusResponse>
+
     @GET("api/business/orders")
     suspend fun getBusinessOrders(): Response<OrdersPayload>
+
+    @POST("api/orders/status")
+    suspend fun updateOrderStatus(@Body body: Map<String, Any?>): Response<StatusResponse>
 
     @GET("api/business/analytics")
     suspend fun getBusinessAnalytics(): Response<BusinessAnalyticsPayload>
 
     @GET("api/business/promotions")
     suspend fun getBusinessPromotions(): Response<PromotionsPayload>
+
+    @POST("api/business/promotions")
+    suspend fun saveBusinessPromotion(@Body body: Map<String, Any?>): Response<PromotionsPayload>
 
     // Admin
     @GET("api/admin/products")
@@ -140,8 +182,20 @@ interface TregoApiService {
     @GET("api/admin/users")
     suspend fun getAdminUsers(): Response<AdminUsersPayload>
 
+    @POST("api/admin/users/role")
+    suspend fun updateAdminUserRole(@Body body: Map<String, Any?>): Response<StatusResponse>
+
+    @POST("api/admin/users/set-password")
+    suspend fun setAdminUserPassword(@Body body: Map<String, Any?>): Response<StatusResponse>
+
     @GET("api/admin/businesses")
     suspend fun getAdminBusinesses(): Response<AdminBusinessesPayload>
+
+    @POST("api/admin/businesses/create")
+    suspend fun createAdminBusiness(@Body body: Map<String, Any?>): Response<StatusResponse>
+
+    @POST("api/admin/businesses/update")
+    suspend fun updateAdminBusiness(@Body body: Map<String, Any?>): Response<StatusResponse>
 
     @GET("api/admin/orders")
     suspend fun getAdminOrders(): Response<OrdersPayload>

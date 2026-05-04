@@ -1,14 +1,15 @@
 package store.trego.mobile.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -17,20 +18,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import store.trego.mobile.ui.components.TregoButton
+import store.trego.mobile.ui.components.TregoHeader
+import store.trego.mobile.ui.components.TregoTextField
+import store.trego.mobile.ui.theme.TregoColors
 import store.trego.mobile.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     viewModel: MainViewModel,
@@ -45,201 +46,183 @@ fun LoginScreen(
     var isSubmitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Scaffold(
+        topBar = {
+            TregoHeader(
+                title = "Mirësevini përsëri",
+                subtitle = "Kyçuni në llogarinë tuaj për të vazhduar blerjet.",
+                onBack = onBack
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .padding(padding)
+                .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text(
-                text = "Login",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 40.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TregoTextField(
+                value = identifier,
+                onValueChange = { 
+                    identifier = it
+                    errorMessage = null
+                },
+                label = "Email ose Telefoni",
+                placeholder = "emri@email.com",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    OutlinedTextField(
-                        value = identifier,
-                        onValueChange = { identifier = it },
-                        placeholder = { Text("Email ose telefoni") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            containerColor = MaterialTheme.colorScheme.background
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        placeholder = { Text("Password") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(imageVector = image, contentDescription = null)
-                            }
-                        },
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            containerColor = MaterialTheme.colorScheme.background
-                        )
-                    )
-
-                    if (errorMessage != null) {
-                        Text(
-                            text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 16.dp),
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
+            TregoTextField(
+                value = password,
+                onValueChange = { 
+                    password = it
+                    errorMessage = null
+                },
+                label = "Fjalëkalimi",
+                placeholder = "••••••••",
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(
+                            imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            tint = TregoColors.secondaryTextLight
                         )
                     }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
 
-                    Spacer(modifier = Modifier.height(24.dp))
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TregoColors.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Start,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-                    Button(
-                        onClick = {
-                            if (identifier.isBlank() || password.isBlank()) {
-                                errorMessage = "Ju lutem plotësoni të gjitha fushat."
-                                return@Button
-                            }
-                            
-                            isSubmitting = true
-                            errorMessage = null
-                            scope.launch {
-                                val result = viewModel.login(identifier, password)
-                                isSubmitting = false
-                                if (result.ok) {
-                                    onLoginSuccess()
-                                } else {
-                                    errorMessage = result.message ?: "Kyçja dështoi."
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = !isSubmitting,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        if (isSubmitting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
+            Text(
+                text = "Keni harruar fjalëkalimin?",
+                style = MaterialTheme.typography.labelLarge,
+                color = TregoColors.accent,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .clickable { /* Forgot Password */ }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TregoButton(
+                text = "Kyçu",
+                isLoading = isSubmitting,
+                onClick = {
+                    if (identifier.isBlank() || password.isBlank()) {
+                        errorMessage = "Ju lutem plotësoni të gjitha fushat."
+                        return@TregoButton
+                    }
+                    
+                    isSubmitting = true
+                    errorMessage = null
+                    scope.launch {
+                        val result = viewModel.login(identifier, password)
+                        isSubmitting = false
+                        if (result.ok) {
+                            onLoginSuccess()
                         } else {
-                            Text("Login", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            errorMessage = result.message ?: "Kyçja dështoi."
                         }
                     }
                 }
-            }
+            )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Divider(color = TregoColors.borderLight.copy(alpha = 0.5f))
+                Text(
+                    text = "OSE",
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TregoColors.secondaryTextLight,
+                    fontWeight = FontWeight.Black
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Social Icons (Placeholder circular buttons)
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFF1F5F9))
-                        .clickable { /* Google Login */ },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("G", fontWeight = FontWeight.Black, color = Color.Gray)
-                }
-                
-                Spacer(modifier = Modifier.width(24.dp))
-
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFF1F5F9))
-                        .clickable { /* Facebook Login */ },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("f", fontWeight = FontWeight.Black, color = Color.Gray)
-                }
+                SocialLoginButton(
+                    text = "Google",
+                    modifier = Modifier.weight(1f),
+                    onClick = { /* Google Login */ }
+                )
+                SocialLoginButton(
+                    text = "Facebook",
+                    modifier = Modifier.weight(1f),
+                    onClick = { /* Facebook Login */ }
+                )
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Nuk keni llogari? ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TregoColors.secondaryTextLight
+                )
+                Text(
+                    text = "Regjistrohuni",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TregoColors.accent,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.clickable { onGoToSignup() }
+                )
+            }
+            
             Spacer(modifier = Modifier.height(40.dp))
-
-            val annotatedString = buildAnnotatedString {
-                append("Ju nuk keni llogari? ")
-                pushStringAnnotation(tag = "signup", annotation = "signup")
-                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) {
-                    append("Regjistrohuni tani.")
-                }
-                pop()
-            }
-
-            ClickableText(
-                text = annotatedString,
-                style = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center),
-                onClick = { offset ->
-                    annotatedString.getStringAnnotations(tag = "signup", start = offset, end = offset)
-                        .firstOrNull()?.let {
-                            onGoToSignup()
-                        }
-                }
-            )
-        }
-
-        // Back button
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.TopStart)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
         }
     }
 }
 
 @Composable
-fun ClickableText(
-    text: androidx.compose.ui.text.AnnotatedString,
-    modifier: Modifier = Modifier,
-    style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
-    onClick: (Int) -> Unit
+fun SocialLoginButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    androidx.compose.foundation.text.ClickableText(
-        text = text,
-        modifier = modifier,
-        style = style,
-        onClick = onClick
-    )
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(54.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = TregoColors.mutedSurfaceLight,
+        border = BorderStroke(1.dp, TregoColors.borderLight.copy(alpha = 0.5f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = TregoColors.primaryTextLight
+            )
+        }
+    }
 }
+

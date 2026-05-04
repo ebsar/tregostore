@@ -79,6 +79,9 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
     private val _adminOrders = MutableStateFlow<List<OrderItem>>(emptyList())
     val adminOrders: StateFlow<List<OrderItem>> = _adminOrders.asStateFlow()
 
+    private val _userAddress = MutableStateFlow<Map<String, Any?>>(emptyMap())
+    val userAddress: StateFlow<Map<String, Any?>> = _userAddress.asStateFlow()
+
     private val _uiMessage = MutableStateFlow<String?>(null)
     val uiMessage: StateFlow<String?> = _uiMessage.asStateFlow()
 
@@ -108,6 +111,7 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
                 launch { fetchNotifications() }
                 launch { loadConversations() }
                 launch { loadReturns() }
+                launch { loadAddress() }
             }
             _isLoading.value = false
         }
@@ -176,6 +180,66 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
         }
     }
 
+    suspend fun verifyEmail(email: String, code: String): StatusResponse {
+        return try {
+            val response = apiService.verifyEmail(mapOf("email" to email, "code" to code))
+            response.body() ?: StatusResponse(false, "Gabim", null)
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun resendEmailVerification(email: String): StatusResponse {
+        return try {
+            val response = apiService.resendEmailVerification(mapOf("email" to email))
+            response.body() ?: StatusResponse(false, "Gabim", null)
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun updateProfile(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.updateProfile(payload)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) refreshSession(force = true)
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun changePassword(current: String, next: String): StatusResponse {
+        return try {
+            val response = apiService.changePassword(mapOf("currentPassword" to current, "newPassword" to next))
+            response.body() ?: StatusResponse(false, "Gabim", null)
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    fun loadAddress() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getAddress()
+                if (response.isSuccessful) {
+                    _userAddress.value = response.body() ?: emptyMap()
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    suspend fun saveAddress(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.saveAddress(payload)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadAddress()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
     fun logout() {
         viewModelScope.launch {
             try {
@@ -198,11 +262,14 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
                 _adminUsers.value = emptyList()
                 _adminBusinesses.value = emptyList()
                 _adminOrders.value = emptyList()
+                _userAddress.value = emptyMap()
             } catch (e: Exception) {
                 _user.value = null
             }
         }
     }
+
+    // ... (keep home, ads, businesses methods)
 
     fun loadHomeData() {
         viewModelScope.launch {
@@ -241,6 +308,8 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
             } catch (e: Exception) {}
         }
     }
+
+    // ... (keep cart, wishlist, orders, notifications methods)
 
     fun loadCart() {
         viewModelScope.launch {
@@ -297,6 +366,8 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
             } catch (e: Exception) {}
         }
     }
+
+    // ... (keep chat methods)
 
     fun loadConversations() {
         viewModelScope.launch {
@@ -425,6 +496,8 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
         }
     }
 
+    // ... (keep returns, search, wishlist methods)
+
     fun loadReturns() {
         viewModelScope.launch {
             try {
@@ -455,6 +528,42 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
         }
     }
 
+    fun requestReturn(orderItemId: Int, reason: String, details: String = "") {
+        val trimmedReason = reason.trim()
+        if (orderItemId <= 0 || trimmedReason.isEmpty()) {
+            _uiMessage.value = "Shkruaj arsyen per return/refund."
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val response = apiService.createReturnRequest(
+                    mapOf(
+                        "orderItemId" to orderItemId,
+                        "reason" to trimmedReason,
+                        "details" to details.trim()
+                    )
+                )
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true) {
+                    _orders.value = _orders.value.map { order ->
+                        order.copy(
+                            items = order.items?.map { item ->
+                                if (item.id == orderItemId) item.copy(returnRequestStatus = "requested") else item
+                            }
+                        )
+                    }
+                    loadReturns()
+                    _uiMessage.value = body.message ?: "Return / refund request was sent."
+                } else {
+                    _uiMessage.value = body?.message ?: "Return / refund request was not sent."
+                }
+            } catch (e: Exception) {
+                _uiMessage.value = "Return / refund request was not sent."
+            }
+        }
+    }
+
     fun performSearch(query: String) {
         viewModelScope.launch {
             _searchLoading.value = true
@@ -480,6 +589,8 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
             } catch (e: Exception) {}
         }
     }
+
+    // ... (keep product detail, business studio methods)
 
     fun addToCart(product: Product, quantity: Int = 1) {
         viewModelScope.launch {
@@ -537,6 +648,75 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
         }
     }
 
+    suspend fun createProduct(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.createProduct(payload)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadBusinessStudio()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun updateProduct(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.updateProduct(payload)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadBusinessStudio()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun deleteProduct(productId: Int): StatusResponse {
+        return try {
+            val response = apiService.deleteProduct(mapOf("productId" to productId))
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadBusinessStudio()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun updateOrderStatus(orderItemId: Int, status: String, trackingCode: String = "", trackingUrl: String = ""): StatusResponse {
+        return try {
+            val response = apiService.updateOrderStatus(mapOf(
+                "orderItemId" to orderItemId,
+                "fulfillmentStatus" to status,
+                "trackingCode" to trackingCode,
+                "trackingUrl" to trackingUrl
+            ))
+            val res = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (res.ok) loadBusinessStudio()
+            res
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun saveBusinessPromotion(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.saveBusinessPromotion(payload)
+            if (response.isSuccessful) {
+                _businessPromotions.value = response.body()?.promotions ?: emptyList()
+                StatusResponse(true, "Promocioni u ruajt.", null)
+            } else {
+                StatusResponse(false, "Gabim gjate ruajtjes.", null)
+            }
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun deleteBusinessPromotion(id: Int): StatusResponse {
+        return saveBusinessPromotion(mapOf("action" to "delete", "deletePromotion" to true, "promotionId" to id))
+    }
+
+    // ... (keep admin control, create order, subscribe to push methods)
+
     fun loadAdminControl() {
         viewModelScope.launch {
             try {
@@ -561,6 +741,50 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
                 val orders = apiService.getAdminOrders()
                 if (orders.isSuccessful) _adminOrders.value = orders.body()?.orders ?: emptyList()
             } catch (e: Exception) {}
+        }
+    }
+
+    suspend fun updateAdminUserRole(userId: Int, role: String): StatusResponse {
+        return try {
+            val response = apiService.updateAdminUserRole(mapOf("userId" to userId, "role" to role))
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadAdminControl()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun setAdminUserPassword(userId: Int, next: String): StatusResponse {
+        return try {
+            val response = apiService.setAdminUserPassword(mapOf("userId" to userId, "newPassword" to next))
+            response.body() ?: StatusResponse(false, "Gabim", null)
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun createAdminBusiness(payload: Map<String, Any?>): StatusResponse {
+        return try {
+            val response = apiService.createAdminBusiness(payload)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadAdminControl()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
+        }
+    }
+
+    suspend fun updateAdminBusiness(businessId: Int, payload: Map<String, Any?>): StatusResponse {
+        val body = payload.toMutableMap()
+        body["businessId"] = businessId
+        return try {
+            val response = apiService.updateAdminBusiness(body)
+            val status = response.body() ?: StatusResponse(false, "Gabim", null)
+            if (status.ok) loadAdminControl()
+            status
+        } catch (e: Exception) {
+            StatusResponse(false, e.message, null)
         }
     }
 
@@ -608,7 +832,7 @@ class MainViewModel(private val apiService: TregoApiService) : ViewModel() {
 
     suspend fun subscribeToPush(token: String, deviceId: String): StatusResponse {
         return try {
-            val response = apiService.subscribeToPush(mapOf(
+            val response = apiService.subscribeToPush(mapOf<String, String>(
                 "provider" to "fcm",
                 "platform" to "android",
                 "token" to token,

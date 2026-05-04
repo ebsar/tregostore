@@ -110,10 +110,25 @@ fun MainScreen(viewModel: MainViewModel) {
                     onMessages = { navController.navigate("messages") },
                     onReturns = { navController.navigate("returns") },
                     onBusinessHub = { navController.navigate("business-hub") },
-                    onAdminControl = { navController.navigate("admin-control") }
-                )
-                }
-
+                    onAdminControl = { navController.navigate("admin-control") },
+                    onSettings = { navController.navigate("settings") },
+                    onProfile = { navController.navigate("profile-editor") }
+                    )
+                    }
+                    composable("verify-email/{email}") { backStackEntry ->
+                    val email = backStackEntry.arguments?.getString("email") ?: ""
+                    VerifyEmailScreen(viewModel, email, onBack = { navController.popBackStack() }) {
+                    navController.navigate(LiquidGlassTab.Home.route) {
+                        popUpTo(0)
+                    }
+                    }
+                    }
+                    composable("profile-editor") {
+                    ProfileEditorScreen(viewModel) { navController.popBackStack() }
+                    }
+                    composable("settings") {
+                    AppSettingsScreen(viewModel) { navController.popBackStack() }
+                    }
                 // Sub-screens
                 composable("checkout") {
                     CheckoutScreen(viewModel, 
@@ -177,8 +192,37 @@ fun MainScreen(viewModel: MainViewModel) {
                     ReturnsScreen(viewModel, onBack = { navController.popBackStack() })
                 }
                 composable("business-hub") {
-                    BusinessHubScreen(viewModel, onBack = { navController.popBackStack() })
+                    BusinessHubScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onAddProduct = { navController.navigate("business-product-editor") },
+                        onEditProduct = { id -> navController.navigate("business-product-editor?id=$id") },
+                        onAddPromotion = { navController.navigate("business-promotion-editor") },
+                        onEditPromotion = { id -> navController.navigate("business-promotion-editor?id=$id") },
+                        onUpdateOrder = { id -> navController.navigate("order-status-editor/$id") }
+                    )
                 }
+                composable("business-product-editor?id={id}") { backStackEntry ->
+                    val productId = backStackEntry.arguments?.getString("id")?.toIntOrNull()
+                    val product = if (productId != null) viewModel.businessProducts.value.find { it.id == productId } else null
+                    BusinessProductEditorScreen(viewModel, product) { navController.popBackStack() }
+                }
+                composable("business-promotion-editor?id={id}") { backStackEntry ->
+                    val promoId = backStackEntry.arguments?.getString("id")?.toIntOrNull()
+                    val promo = if (promoId != null) viewModel.businessPromotions.value.find { it.id == promoId } else null
+                    BusinessPromotionEditorScreen(viewModel, promo) { navController.popBackStack() }
+                }
+                composable("order-status-editor/{id}") { backStackEntry ->
+                    val orderItemId = backStackEntry.arguments?.getString("id")?.toIntOrNull() ?: 0
+                    val orderItem = viewModel.businessOrders.value.find { it.id == orderItemId }
+                        ?: viewModel.orders.value.find { it.id == orderItemId }
+                    if (orderItem != null) {
+                        OrderStatusEditorScreen(viewModel, orderItem) { navController.popBackStack() }
+                    } else {
+                        navController.popBackStack()
+                    }
+                }
+
                 composable("admin-control") {
                     AdminControlScreen(viewModel, onBack = { navController.popBackStack() })
                 }

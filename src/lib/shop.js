@@ -910,42 +910,50 @@ export function formatEstimatedDeliveryLabel(deliveryMethod, fallbackText = "") 
 
 export function formatOrderStatusLabel(status) {
   const labels = {
-    pending_confirmation: "Porosia pret konfirmim",
-    confirmed: "Porosia u konfirmua",
-    partially_confirmed: "Porosia pjeserisht u konfirmua",
-    pending: "Ne pritje",
-    packed: "Po pergatitet",
-    shipped: "Ne transport",
-    delivered: "E dorezuar",
-    cancelled: "E anuluar",
-    returned: "E kthyer",
+    pending_confirmation: "Waiting for seller approval",
+    confirmed: "Waiting for shipping",
+    partially_confirmed: "Partially waiting for shipping",
+    pending: "Waiting for shipping",
+    packed: "Ready to ship",
+    shipped: "Shipped",
+    delivered: "For review",
+    cancelled: "Cancelled",
+    returned: "Return / Refund",
+    refunded: "Refunded",
   };
 
-  return labels[String(status || "").trim()] || "Porosia";
+  return labels[String(status || "").trim().toLowerCase()] || "Order";
 }
 
 export function formatOrderStatusBadgeLabel(status) {
   const labels = {
-    pending_confirmation: "Pret konfirmim",
-    partially_confirmed: "Pjeserisht e konfirmuar",
+    pending_confirmation: "Waiting approval",
+    confirmed: "Waiting shipping",
+    partially_confirmed: "Partially waiting",
+    packed: "Ready to ship",
+    shipped: "Shipped",
+    delivered: "For review",
+    returned: "Return / Refund",
+    refunded: "Refunded",
   };
 
-  return labels[String(status || "").trim()] || "";
+  return labels[String(status || "").trim().toLowerCase()] || "";
 }
 
 export function formatFulfillmentStatusLabel(status) {
   const labels = {
-    pending_confirmation: "Ne pritje te konfirmimit",
-    confirmed: "E konfirmuar",
-    partially_confirmed: "Pjeserisht e konfirmuar",
-    packed: "E paketuar",
-    shipped: "Ne dergese",
-    delivered: "E dorezuar",
-    cancelled: "E anuluar",
-    returned: "E kthyer",
+    pending_confirmation: "Waiting for seller approval",
+    confirmed: "Waiting for shipping",
+    partially_confirmed: "Partially waiting for shipping",
+    packed: "Ready to ship",
+    shipped: "Shipped",
+    delivered: "For review",
+    cancelled: "Cancelled",
+    returned: "Return / Refund",
+    refunded: "Refunded",
   };
 
-  return labels[String(status || "").trim()] || "Ne proces";
+  return labels[String(status || "").trim().toLowerCase()] || "In progress";
 }
 
 export function summarizeOrderFulfillmentStatus(items = []) {
@@ -966,6 +974,9 @@ export function summarizeOrderFulfillmentStatus(items = []) {
   if (uniqueStatuses.size === 1 && uniqueStatuses.has("returned")) {
     return "returned";
   }
+  if (uniqueStatuses.size === 1 && uniqueStatuses.has("refunded")) {
+    return "refunded";
+  }
   if (uniqueStatuses.size === 1 && uniqueStatuses.has("cancelled")) {
     return "cancelled";
   }
@@ -973,22 +984,22 @@ export function summarizeOrderFulfillmentStatus(items = []) {
     return "partially_confirmed";
   }
 
-  const onlyDeliveredStates = [...uniqueStatuses].every((status) => ["delivered", "returned"].includes(status));
+  const onlyDeliveredStates = [...uniqueStatuses].every((status) => ["delivered", "returned", "refunded"].includes(status));
   if (onlyDeliveredStates) {
     return "delivered";
   }
 
-  const onlyShippedStates = [...uniqueStatuses].every((status) => ["shipped", "delivered", "returned"].includes(status));
+  const onlyShippedStates = [...uniqueStatuses].every((status) => ["shipped", "delivered", "returned", "refunded"].includes(status));
   if (onlyShippedStates) {
     return "shipped";
   }
 
-  const onlyPackedStates = [...uniqueStatuses].every((status) => ["packed", "shipped", "delivered", "returned"].includes(status));
+  const onlyPackedStates = [...uniqueStatuses].every((status) => ["packed", "shipped", "delivered", "returned", "refunded"].includes(status));
   if (onlyPackedStates) {
     return "packed";
   }
 
-  const onlyConfirmedStates = [...uniqueStatuses].every((status) => ["confirmed", "packed", "shipped", "delivered", "returned"].includes(status));
+  const onlyConfirmedStates = [...uniqueStatuses].every((status) => ["confirmed", "packed", "shipped", "delivered", "returned", "refunded"].includes(status));
   if (onlyConfirmedStates) {
     if (uniqueStatuses.has("delivered")) {
       return "delivered";
@@ -1010,7 +1021,7 @@ export function buildFulfillmentTimeline(item = {}) {
     .toLowerCase() || "pending_confirmation";
   const progressSteps = ["pending_confirmation", "confirmed", "packed", "shipped", "delivered"];
   const indexedStatus = progressSteps.indexOf(normalizedStatus);
-  const fallbackIndex = normalizedStatus === "returned" ? 4 : 0;
+  const fallbackIndex = ["returned", "refunded"].includes(normalizedStatus) ? 4 : 0;
   const resolvedIndex = indexedStatus >= 0 ? indexedStatus : fallbackIndex;
 
   return progressSteps.map((stepKey, index) => {
@@ -1032,8 +1043,8 @@ export function buildFulfillmentTimeline(item = {}) {
       label: formatOrderStatusLabel(stepKey),
       meta,
       isCompleted: index < resolvedIndex || (index === resolvedIndex && normalizedStatus === "delivered"),
-      isCurrent: index === resolvedIndex && !["delivered", "cancelled", "returned"].includes(normalizedStatus),
-      isDelivered: stepKey === "delivered" && ["delivered", "returned"].includes(normalizedStatus),
+      isCurrent: index === resolvedIndex && !["delivered", "cancelled", "returned", "refunded"].includes(normalizedStatus),
+      isDelivered: stepKey === "delivered" && ["delivered", "returned", "refunded"].includes(normalizedStatus),
     };
   });
 }
@@ -1051,7 +1062,7 @@ export function getFulfillmentTerminalEvent(item = {}) {
     };
   }
 
-  if (normalizedStatus === "returned") {
+  if (["returned", "refunded"].includes(normalizedStatus)) {
     return {
       label: formatFulfillmentStatusLabel(normalizedStatus),
       meta: item?.deliveredAt ? formatDateLabel(item.deliveredAt) : "",

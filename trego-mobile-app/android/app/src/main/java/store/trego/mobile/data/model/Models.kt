@@ -126,16 +126,52 @@ data class BusinessesPayload(
 
 data class BusinessProfile(
     val id: Int,
+    val userId: Int?,
     val businessName: String?,
     val businessDescription: String?,
+    val businessNumber: String?,
     val logoPath: String?,
+    val supportEmail: String?,
+    val websiteUrl: String?,
+    val supportHours: String?,
+    val returnPolicySummary: String?,
     val verificationStatus: String?,
+    val verificationNotes: String?,
+    val profileEditAccessStatus: String?,
+    val profileEditNotes: String?,
+    val phoneNumber: String?,
     val city: String?,
+    val addressLine: String?,
+    val shippingSettings: BusinessShippingSettings?,
+    val ownerEmail: String?,
     val followersCount: Int?,
     val productsCount: Int?,
+    val ordersCount: Int?,
     val sellerRating: Double?,
     val sellerReviewCount: Int?,
     val isFollowed: Boolean? = false
+)
+
+data class BusinessShippingSettings(
+    val standardEnabled: Boolean?,
+    val standardFee: Double?,
+    val standardEta: String?,
+    val expressEnabled: Boolean?,
+    val expressFee: Double?,
+    val expressEta: String?,
+    val pickupEnabled: Boolean?,
+    val pickupEta: String?,
+    val pickupAddress: String?,
+    val pickupHours: String?,
+    val pickupMapUrl: String?,
+    val cityRates: List<BusinessCityRate>?,
+    val halfOffThreshold: Double?,
+    val freeShippingThreshold: Double?
+)
+
+data class BusinessCityRate(
+    val city: String,
+    val surcharge: Double?
 )
 
 data class BusinessProfilePayload(
@@ -156,7 +192,12 @@ data class CartItem(
     val businessProfileId: Int?,
     val selectedSize: String?,
     val selectedColor: String?,
-    val variantKey: String?
+    val variantKey: String?,
+    val status: String? = null,
+    val fulfillmentStatus: String? = null,
+    val trackingCode: String? = null,
+    val trackingUrl: String? = null,
+    val returnRequestStatus: String? = null
 )
 
 data class CartPayload(
@@ -362,7 +403,9 @@ data class BusinessAnalytics(
     val viewsCount: Int? = null,
     val wishlistCount: Int? = null,
     val cartCount: Int? = null,
-    val shareCount: Int? = null
+    val shareCount: Int? = null,
+    val buyersCount: Int? = null,
+    val ordersCount: Int? = null
 )
 
 data class BusinessAnalyticsPayload(
